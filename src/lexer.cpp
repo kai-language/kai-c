@@ -74,7 +74,6 @@
     TKind(Struct, "struct"), \
     TKind(Nil, "nil")
 
-
 enum TokenKind {
 #define TKind(e, s) TK_##e
     TOKEN_KINDS
@@ -86,6 +85,10 @@ String const TokenDescriptions[] = {
     TOKEN_KINDS
 #undef TKind
 };
+
+String DescribeTokenKind(TokenKind tk) {
+    return TokenDescriptions[tk];
+}
 
 struct Position {
     String filename;
@@ -269,6 +272,47 @@ TokenKind GetTokenKind(String ident) {
     return TK_Ident;
 }
 
+TokenKind switch2(Lexer *l, TokenKind t1, TokenKind t2) {
+    if (l->currentCp == '=') {
+        NextCodePoint(l);
+        return t2;
+    }
+
+    return t1;
+}
+
+TokenKind switch3(Lexer *l, TokenKind t1, TokenKind t2, TokenKind t3, u32 ch) {
+    if (l->currentCp == '=') {
+        NextCodePoint(l);
+        return t2;
+    }
+
+    if (l->currentCp == ch) {
+        NextCodePoint(l);
+        return t3;
+    }
+
+    return t1;
+}
+
+TokenKind switch4(Lexer *l, TokenKind t1, TokenKind t2, TokenKind t3, TokenKind t4, u8 ch) {
+    if (l->currentCp == '=') {
+        NextCodePoint(l);
+        return t2;
+    }
+
+    if (l->currentCp == ch) {
+        NextCodePoint(l);
+        if (l->currentCp == '=') {
+            NextCodePoint(l);
+            return t4;
+        }
+        return t3;
+    }
+
+    return t1;
+}
+
 Token NextToken(Lexer *l) {
     skipWhitespace(l);
 
@@ -291,7 +335,7 @@ Token NextToken(Lexer *l) {
             cp = l->currentCp;
         }
 
-        lit.len = l->offset = offset;
+        lit.len = l->offset - offset;
         token.kind = GetTokenKind(lit);
 
         switch (token.kind) {
@@ -312,7 +356,9 @@ Token NextToken(Lexer *l) {
         }
     } else if (IsNumeric(cp)) {
         l->insertSemi = true;
-        token = scanNumber(l, false);
+        // NOTE: `scanNumber` handles its own lit parsing logic and we must return this token
+        // or the `token.lit = lit` below will override it
+        return scanNumber(l, false);
     } else {
         NextCodePoint(l);
 
@@ -328,8 +374,55 @@ Token NextToken(Lexer *l) {
             }
         } break;
 
-        default: UNIMPLEMENTED();
+        case '\n': {
+            // NOTE: we only reach here is self.insertSemi was
+            // set in the first place and exited early
+            // from `skipWhitespace`
+            l->insertSemi = false;
+            l->insertSemiBeforeLBrace = false;
+            token.kind = TK_Semicolon;
+        } break;
 
+        case '+': token.kind = switch2(l, TK_Add, TK_AssignAdd); break;
+        case '-': token.kind = switch3(l, TK_Sub, TK_AssignSub, TK_RetArrow, '>'); break;
+        case '*': token.kind = switch2(l, TK_Mul, TK_AssignMul); break;
+        case '/': UNIMPLEMENTED(); break;
+
+        case '%': token.kind = switch2(l, TK_Rem, TK_AssignRem);
+        case '^': token.kind = switch2(l, TK_Xor, TK_AssignXor);
+        case '>': token.kind = switch4(l, TK_Gtr, TK_Geq, TK_Shr, TK_AssignShr, '>');
+        case '<': token.kind = switch4(l, TK_Lss, TK_Leq, TK_Shl, TK_AssignShl, '<');
+        case '=': token.kind = switch2(l, TK_Assign, TK_Eql);
+        case '!': token.kind = switch2(l, TK_Not,    TK_Neq);
+        case '&': token.kind = switch3(l, TK_And, TK_AssignAnd, TK_Land, '&');
+        case '|': token.kind = switch3(l, TK_Or, TK_AssignOr, TK_Lor, '|');
+
+        case ':': token.kind = TK_Colon; break;
+        case '$': token.kind = TK_Dollar; break;
+        case '?': token.kind = TK_Question; break;
+        case ',': token.kind = TK_Comma; break;
+        case ';': token.kind = TK_Semicolon; break;
+        case '#': token.kind = TK_Directive; break;
+
+        case '(': token.kind = TK_Lparen; break;
+        case '[': token.kind = TK_Lbrack; break;
+        case '{': token.kind = TK_Lbrace; break;
+
+
+        case ')': { token.kind = TK_Rparen; l->insertSemi = true; } break;
+        case ']': { token.kind = TK_Rbrack; l->insertSemi = true; } break;
+        case '}': { token.kind = TK_Rbrace; l->insertSemi = true; } break;
+
+        case '.': {
+            token.kind = TK_Period;
+            if (l->currentCp == '.') {
+                token.kind = TK_Ellipsis;
+                lit.len = 2;
+                NextCodePoint(l);
+            }
+        } break;
+
+        default: token.kind = TK_Invalid;
         }
     }
 

@@ -75,7 +75,7 @@ b32 IsAlpha(u32 cp) {
     // TODO(Brett): valid unicode identifier range
     // Swift actually has good documentation for this
     // See: https://developer.apple.com/library/content/documentation/Swift/Conceptual/Swift_Programming_Language/LexicalStructure.html#//apple_ref/doc/uid/TP40014097-CH30-ID410
-    if (cp >= 0x100) {
+    if (cp >= 0x100 && cp != FileEnd) {
         return true;
     }
 
