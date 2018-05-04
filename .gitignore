@@ -1,4 +1,6 @@
 kai
+.DS_Store
+*.xcuserstate
 *.so
 *.dSYM
 test/wip.kai
