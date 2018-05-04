@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
 
     Token token;
     while ((token = NextToken(lexer)).kind != TK_Eof) {
-        printf("test %p", &token);
+        printf("kind: '%.*s', lit: '%.*s'\n", LIT(TokenDescriptions[token.kind]), LIT(token.lit));
     }
 
     return 0;

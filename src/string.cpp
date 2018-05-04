@@ -21,7 +21,7 @@ String MakeString(u8 *data, u32 len) {
 
 Inline
 String MakeCString(char *data) {
-    return MakeString((u8 *)data, strlen(data));
+    return MakeString((u8 *)data, (u32)strlen(data));
 }
 
 Inline

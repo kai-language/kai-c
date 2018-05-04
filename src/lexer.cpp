@@ -1,95 +1,90 @@
+#define TOKEN_KINDS \
+    TKind(Invalid, "<invalid>"), \
+    TKind(Eof, "EOF"), \
+    TKind(Comment, "comment"), \
+    TKind(Ident, "identifier"), \
+    TKind(Directive, "directive"), \
+    TKind(Int, "int"), \
+    TKind(Float, "float"), \
+    TKind(String, "string"), \
+    TKind(Add, "+"), \
+    TKind(Sub, "-"), \
+    TKind(Mul, "*"), \
+    TKind(Div, "/"), \
+    TKind(Rem, "%"), \
+    TKind(And, "&"), \
+    TKind(Or, "|"), \
+    TKind(Xor, "^"), \
+    TKind(Shl, "<<"), \
+    TKind(Shr, ">>"), \
+    TKind(AssignAdd, "+="), \
+    TKind(AssignSub, "-="), \
+    TKind(AssignMul, "*="), \
+    TKind(AssignDiv, "/="), \
+    TKind(AssignRem, "%="), \
+    TKind(AssignAnd, "&="), \
+    TKind(AssignOr, "|="), \
+    TKind(AssignXor, "^="), \
+    TKind(AssignShl, "<<="), \
+    TKind(AssignShr, ">>="), \
+    TKind(Land, "&&"), \
+    TKind(Lor, "||"), \
+    TKind(Lss, "<"), \
+    TKind(Gtr, ">"), \
+    TKind(Not, "!"), \
+    TKind(Eql, "=="), \
+    TKind(Neq, "!="), \
+    TKind(Leq, "<="), \
+    TKind(Geq, ">="), \
+    TKind(Assign, "="), \
+    TKind(Ellipsis, ".."), \
+    TKind(Dollar, "$"), \
+    TKind(Question, "?"), \
+    TKind(RetArrow, "->"), \
+    TKind(Lparen, "("), \
+    TKind(Lbrack, "["), \
+    TKind(Lbrace, "{"), \
+    TKind(Rparen, ")"), \
+    TKind(Rbrack, "]"), \
+    TKind(Rbrace, "}"), \
+    TKind(Comma, ","), \
+    TKind(Period, "."), \
+    TKind(Colon, ":"), \
+    TKind(Semicolon, ";"), \
+    TKind(Cast, "cast"), \
+    TKind(Bitcast, "bitcast"), \
+    TKind(Autocast, "autocast"), \
+    TKind(Using, "using"), \
+    TKind(Goto, "goto"), \
+    TKind(Break, "break"), \
+    TKind(Continue, "continue"), \
+    TKind(Fallthrough, "fallthrough"), \
+    TKind(Return, "return"), \
+    TKind(If, "if"), \
+    TKind(For, "for"), \
+    TKind(Else, "else"), \
+    TKind(Defer, "defer"), \
+    TKind(In, "in"), \
+    TKind(Switch, "switch"), \
+    TKind(Case, "case"), \
+    TKind(Fn, "fn"), \
+    TKind(Union, "union"), \
+    TKind(Variant, "variant"), \
+    TKind(Enum, "enum"), \
+    TKind(Struct, "struct"), \
+    TKind(Nil, "nil")
+
+
 enum TokenKind {
-    TK_Invalid,
-    TK_Eof,
-    TK_Comment,
+#define TKind(e, s) TK_##e
+    TOKEN_KINDS
+#undef TKind
+};
 
-    TK_Ident,
-    TK_Directive,
-
-    TK_Int,
-    TK_Float,
-    TK_String,
-
-    TK_Add,
-    TK_Sub,
-    TK_Mul,
-    TK_Div,
-    TK_Rem,
-
-    TK_And,
-    TK_Or,
-    TK_Xor,
-    TK_Shl,
-    TK_Shr,
-
-    TK_AssignAdd,
-    TK_AssignSub,
-    TK_AssignMul,
-    TK_AssignDiv,
-    TK_AssignRem,
-
-    TK_AssignAnd,
-    TK_AssignOr,
-    TK_AssignXor,
-    TK_AssignShl,
-    TK_AssignShr,
-
-    TK_Land,
-    TK_Lor,
-    TK_Lss,
-    TK_Gtr,
-    TK_Not,
-
-    TK_Eql,
-    TK_Neq,
-    TK_Leq,
-    TK_Geq,
-
-    TK_Assign,
-    TK_Ellipsis,
-    TK_Dollar,
-    TK_Question,
-    TK_RetArrow,
-    TK_Lparen,
-    TK_Lbrack,
-    TK_Lbrace,
-    TK_Rparen,
-    TK_Rbrack,
-    TK_Rbrace,
-
-    TK_Comma,
-    TK_Period,
-    TK_Colon,
-    TK_Semicolon,
-
-    TK_Cast,
-    TK_Bitcast,
-    TK_Autocast,
-
-    TK_Using,
-
-    TK_Goto,
-    TK_Break,
-    TK_Continue,
-    TK_Fallthrough,
-
-    TK_Return,
-
-    TK_If,
-    TK_For,
-    TK_Else,
-    TK_Defer,
-    TK_In,
-    TK_Switch,
-    TK_Case,
-
-    TK_Fn,
-    TK_Union,
-    TK_Variant,
-    TK_Enum,
-    TK_Struct,
-
-    TK_Nil
+String const TokenDescriptions[] = {
+#define TKind(e, s) STR(s)
+    TOKEN_KINDS
+#undef TKind
 };
 
 struct Position {
@@ -149,7 +144,7 @@ b32 MakeLexer(Lexer *l, String path) {
 
 void NextCodePoint(Lexer *l) {
     if (l->offset < l->data.len) {
-        String curr = Slice(l->data, l->offset, l->data.len - l->offset);
+        String curr = Slice(l->data, l->offset, l->data.len - 1);
         u32 cp, cpWidth;
         cp = DecodeCodePoint(&cpWidth, curr);
 
@@ -333,7 +328,7 @@ Token NextToken(Lexer *l) {
             }
         } break;
 
-
+        default: UNIMPLEMENTED();
 
         }
     }
