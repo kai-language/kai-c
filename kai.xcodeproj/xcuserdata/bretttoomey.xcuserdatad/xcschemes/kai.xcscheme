@@ -17,7 +17,7 @@
                BlueprintIdentifier = "B219499A209B79E0007BB781"
                BuildableName = "kai"
                BlueprintName = "kai"
-               ReferencedContainer = "container:Kai.xcodeproj">
+               ReferencedContainer = "container:kai.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -35,7 +35,7 @@
             BlueprintIdentifier = "B219499A209B79E0007BB781"
             BuildableName = "kai"
             BlueprintName = "kai"
-            ReferencedContainer = "container:Kai.xcodeproj">
+            ReferencedContainer = "container:kai.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <AdditionalOptions>
@@ -45,6 +45,8 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      enableAddressSanitizer = "YES"
+      enableASanStackUseAfterReturn = "YES"
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
@@ -58,7 +60,7 @@
             BlueprintIdentifier = "B219499A209B79E0007BB781"
             BuildableName = "kai"
             BlueprintName = "kai"
-            ReferencedContainer = "container:Kai.xcodeproj">
+            ReferencedContainer = "container:kai.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -90,7 +92,7 @@
             BlueprintIdentifier = "B219499A209B79E0007BB781"
             BuildableName = "kai"
             BlueprintName = "kai"
-            ReferencedContainer = "container:Kai.xcodeproj">
+            ReferencedContainer = "container:kai.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

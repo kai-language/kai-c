@@ -51,6 +51,21 @@
     TKind(Period, "."), \
     TKind(Colon, ":"), \
     TKind(Semicolon, ";"), \
+\
+    /* NOTE: all keywords must come after this case and be before "__Meta_KeywordsEnd" */ \
+    /* These keywords are roughly-sorted by how common they are */ \
+    TKind(__Meta_KeywordsStart, ""), \
+    TKind(If, "if"), \
+    TKind(For, "for"), \
+    TKind(Fn, "fn"), \
+    TKind(Return, "return"), \
+    TKind(Nil, "nil"), \
+    TKind(Struct, "struct"), \
+    TKind(Enum, "enum"), \
+    TKind(Union, "union"), \
+    TKind(Else, "else"), \
+    TKind(Switch, "switch"), \
+    TKind(Case, "case"), \
     TKind(Cast, "cast"), \
     TKind(Bitcast, "bitcast"), \
     TKind(Autocast, "autocast"), \
@@ -59,20 +74,10 @@
     TKind(Break, "break"), \
     TKind(Continue, "continue"), \
     TKind(Fallthrough, "fallthrough"), \
-    TKind(Return, "return"), \
-    TKind(If, "if"), \
-    TKind(For, "for"), \
-    TKind(Else, "else"), \
     TKind(Defer, "defer"), \
     TKind(In, "in"), \
-    TKind(Switch, "switch"), \
-    TKind(Case, "case"), \
-    TKind(Fn, "fn"), \
-    TKind(Union, "union"), \
     TKind(Variant, "variant"), \
-    TKind(Enum, "enum"), \
-    TKind(Struct, "struct"), \
-    TKind(Nil, "nil")
+    TKind(__Meta_KeywordsEnd, "")
 
 enum TokenKind {
 #define TKind(e, s) TK_##e
@@ -268,10 +273,6 @@ Token scanNumber(Lexer *l, b32 seenDecimal) {
     return token;
 }
 
-TokenKind GetTokenKind(String ident) {
-    return TK_Ident;
-}
-
 TokenKind switch2(Lexer *l, TokenKind t1, TokenKind t2) {
     if (l->currentCp == '=') {
         NextCodePoint(l);
@@ -313,6 +314,72 @@ TokenKind switch4(Lexer *l, TokenKind t1, TokenKind t2, TokenKind t3, TokenKind 
     return t1;
 }
 
+b32 findLineEnd(Lexer *l) {
+    u32 cp, offset, lc;
+    cp = l->currentCp;
+    offset = l->offset;
+    lc = l->lineCount;
+    b32 found = false;
+
+    while (l->currentCp == '/' || l->currentCp == '*') {
+        if (l->currentCp == '/') {
+            found = true;
+            goto done;
+        }
+
+        NextCodePoint(l);
+        while (l->currentCp != FileEnd) {
+            if (l->currentCp == '\n') {
+                found = true;
+                goto done;
+            }
+
+            NextCodePoint(l);
+            if (l->currentCp == '*' && l->currentCp == '/') {
+                break;
+            }
+        }
+
+        skipWhitespace(l);
+        if (l->currentCp == '\n' || l->currentCp == FileEnd) {
+            found = true;
+            goto done;
+        }
+
+        if (l->currentCp != '/') {
+            found = false;
+            goto done;
+        }
+
+        NextCodePoint(l);
+    }
+
+done:
+    l->currentCp = cp;
+    l->offset = offset;
+    l->lineCount = lc;
+    return found;
+}
+
+void scanEscape(Lexer *l) {
+    switch (l->currentCp) {
+    case 'a':
+    case 'b':
+    case 'f':
+    case 'n':
+    case 'r':
+    case 't':
+    case 'v':
+    case '\\':
+    case '"': {
+        NextCodePoint(l);
+    } break;
+
+    default:
+        UNIMPLEMENTED(); // TODO(Brett): "unknown escape" error
+    }
+}
+
 Token NextToken(Lexer *l) {
     skipWhitespace(l);
 
@@ -336,7 +403,14 @@ Token NextToken(Lexer *l) {
         }
 
         lit.len = l->offset - offset;
-        token.kind = GetTokenKind(lit);
+        token.kind = TK_Ident;
+
+        for (u32 i = TK___Meta_KeywordsStart; i < TK___Meta_KeywordsEnd; i += 1) {
+            if (lit == TokenDescriptions[i]) {
+                token.kind = (TokenKind)i;
+                break;
+            }
+        }
 
         switch (token.kind) {
         case TK_Ident:
@@ -367,7 +441,7 @@ Token NextToken(Lexer *l) {
             if (l->insertSemi) {
                 l->insertSemi = false;
                 token.kind = TK_Semicolon;
-                token.lit = STR("\n");
+                lit = STR("\n");
             } else {
                 token.kind = TK_Eof;
                 lit.len = 0;
@@ -383,10 +457,66 @@ Token NextToken(Lexer *l) {
             token.kind = TK_Semicolon;
         } break;
 
+        case '"': {
+            l->insertSemi = true;
+            u32 offset = l->offset - l->currentCpWidth;
+
+            while (true) {
+                u32 cp = l->currentCp;
+
+                if (cp == FileEnd) {
+                    // TODO(Brett): error handling
+                    UNIMPLEMENTED(); //"String literal not terminated"
+                    break;
+                }
+
+                NextCodePoint(l);
+
+                if (cp == '"')
+                    break;
+
+                if (cp == '\\')
+                    scanEscape(l);
+            }
+
+            lit.len = l->offset - offset;
+            token.kind = TK_String;
+            // TODO(Brett): string escaping
+        } break;
+
         case '+': token.kind = switch2(l, TK_Add, TK_AssignAdd); break;
         case '-': token.kind = switch3(l, TK_Sub, TK_AssignSub, TK_RetArrow, '>'); break;
         case '*': token.kind = switch2(l, TK_Mul, TK_AssignMul); break;
-        case '/': UNIMPLEMENTED(); break;
+        case '/': {
+            if (l->currentCp == '/' || l->currentCp == '*') {
+                token.kind = TK_Comment;
+                if (l->insertSemi && findLineEnd(l)) {
+                    l->insertSemi = false;
+                    token.kind = TK_Semicolon;
+                    lit = STR("\n");
+                } else {
+                    u32 offset = l->offset - l->currentCpWidth;
+                    if (l->currentCp == '/') {
+                        NextCodePoint(l);
+                        while (l->currentCp != '\n' && l->currentCp != FileEnd) {
+                            NextCodePoint(l);
+                        }
+                    } else {
+                        for (cp = l->currentCp; cp != FileEnd; cp = l->currentCp) {
+                            NextCodePoint(l);
+                            if (cp == '*' && l->currentCp == '/') {
+                                NextCodePoint(l);
+                                break;
+                            }
+                        }
+                    }
+
+                    lit.len = l->offset - offset;
+                }
+            } else {
+                token.kind = switch2(l, TK_Div, TK_AssignDiv);
+            }
+        } break;
 
         case '%': token.kind = switch2(l, TK_Rem, TK_AssignRem);
         case '^': token.kind = switch2(l, TK_Xor, TK_AssignXor);
