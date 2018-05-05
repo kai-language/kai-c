@@ -67,9 +67,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    Map<String> test;
-    MapGet(&test, HashString(STR("Test")));
-
     String path = MakeCString(argv[1]);
     Lexer _lexer;
     Lexer *lexer = &_lexer;
