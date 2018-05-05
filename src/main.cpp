@@ -53,12 +53,17 @@ void Backtrace() {
 void assertHandler(char const *file, i32 line, char const *msg, ...) {
     Backtrace();
 
+    fprintf(stderr, "Assert failure");
+
     if (msg) {
-        fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
+        fprintf(stderr, ": ");
+        va_list va;
+        va_start(va, msg);
+        vfprintf(stderr, msg, va);
+        va_end(va);
     }
-    else {
-        fprintf(stderr, "Assert failure: %s:%d\n", file, line);
-    }
+
+    fprintf(stderr, "\n");
 }
 
 int main(int argc, char **argv) {

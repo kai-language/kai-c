@@ -85,7 +85,7 @@ T *MapGet(Map<T> *m, Hash key) {
 template <typename T>
 Inline
 b32 MapSet(Map<T> *m, Hash key, T value) {
-    if (m->len >= m->cap) {
+    if (m->len >= m->cap*0.7) {
         // TODO(Brett): reallocate and rehash
         UNIMPLEMENTED();
     }

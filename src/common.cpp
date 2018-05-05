@@ -85,7 +85,7 @@ typedef i32      b32;
 #if !defined(RELEASE) && !defined(ASSERTS)
     #define ASSERT_MSG_VA(cond, msg, ...) do { \
         if (!(cond)) { \
-            assertHandler(__FILE__, (i64)__LINE__, msg, __VA_ARGS__); \
+            assertHandler(__FILE__, (i32)__LINE__, msg, __VA_ARGS__); \
             DEBUG_TRAP(); \
         } \
     } while(0)
