@@ -481,7 +481,14 @@ Token NextToken(Lexer *l) {
 
             lit.len = l->offset - offset;
             token.kind = TK_String;
-            // TODO(Brett): string escaping
+            StringEscapeError status;
+            status = EscapeString(&lit);
+            if (status == SEE_Error) {
+                // TODO(Brett): report error
+            } else if (status == SEE_AllocatedMem) {
+                // TODO(Brett): register this allocation
+                fprintf(stderr, "NOTE: string escaping is currently unsupported\n");
+            }
         } break;
 
         case '+': token.kind = switch2(l, TK_Add, TK_AssignAdd); break;
