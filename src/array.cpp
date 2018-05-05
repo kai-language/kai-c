@@ -7,17 +7,17 @@ struct Array {
               cap;
 
 
-    T &operator[](u32 index) {
+    T &operator[](u32 i) {
         #if !defined(NO_BOUNDS_CHECK)
-            ASSERT_MSG_VA(index >= 0 && index < len, "Index %td is out of bounds 0..<%td", index, len);
+            ASSERT_MSG_VA(i >= 0 && i < len, "Index %td is out of bounds 0..<%td", i, len);
         #endif
-        return data[index];
+        return data[i];
     }
 
-    T const &operator[](u32 index) const {
+    T const &operator[](u32 i) const {
         #if !defined(NO_BOUNDS_CHECK)
-            ASSERT_MSG_VA(index >= 0 && index < len, "Index %td is out of bounds 0..<%td", index, len);
+            ASSERT_MSG_VA(i >= 0 && i < len, "Index %td is out of bounds 0..<%td", i, len);
         #endif
-        return data[index];
+        return data[i];
     }
 };

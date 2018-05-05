@@ -3,10 +3,16 @@ struct String {
     u32 len;
 
     u8 &operator[](u32 i) {
+        #ifndef NO_BOUNDS_CHECK
+        ASSERT_MSG_VA(i >= 0 && i < len, "Index %td is out of bounds 0..<%td", i, len);
+        #endif
         return data[i];
     }
 
     u8 const &operator[](u32 i) const {
+        #ifndef NO_BOUNDS_CHECK
+        ASSERT_MSG_VA(i >= 0 && i < len, "Index %td is out of bounds 0..<%td", i, len);
+        #endif
         return data[i];
     }
 };
@@ -26,8 +32,10 @@ String MakeCString(char *data) {
 
 Inline
 String Slice(String string, u32 lo, u32 hi) {
+    #ifndef NO_BOUNDS_CHECK
     u32 max = string.len;
     ASSERT(lo <= hi && hi <= max);
+    #endif
     return MakeString(string.data+lo, hi-lo);
 }
 

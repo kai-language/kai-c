@@ -36,7 +36,23 @@ void Usage() {
     printUsage(1, "-emit-times            Emit times for each stage of compilation");
 }
 
-void assert_handler(char const *file, i32 line, char const *msg, ...) {
+void Backtrace() {
+    #if SYSTEM_POSIX
+        void* callstack[25];
+        int i, frames = backtrace(callstack, ArrayCount(callstack));
+        char** strs = backtrace_symbols(callstack, frames);
+        for (i = 0; i < frames; ++i) {
+            fprintf(stderr, "%s\n", strs[i]);
+        }
+        free(strs);
+    #elif SYSTEM_WINDOWS
+        UNIMPLEMENTED();
+    #endif
+}
+
+void assertHandler(char const *file, i32 line, char const *msg, ...) {
+    Backtrace();
+
     if (msg) {
         fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
     }
@@ -50,6 +66,9 @@ int main(int argc, char **argv) {
         Usage();
         return 1;
     }
+
+    Map<String> test;
+    MapGet(&test, HashString(STR("Test")));
 
     String path = MakeCString(argv[1]);
     Lexer _lexer;

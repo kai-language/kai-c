@@ -44,6 +44,7 @@
     #include <fcntl.h>
     #include <sys/stat.h>
     #include <sys/mman.h>
+    #include <execinfo.h>
 #elif SYSTEM_WINDOWS
 
 #endif
@@ -70,6 +71,7 @@ typedef double   f64;
 typedef i8       b8;
 typedef i32      b32;
 
+
 #if defined(_MSC_VER)
     #if _MSC_VER < 1300
     #define DEBUG_TRAP() __asm int 3
@@ -80,10 +82,10 @@ typedef i32      b32;
     #define DEBUG_TRAP() __builtin_trap()
 #endif
 
-#ifndef RELEASE
+#if !defined(RELEASE) && !defined(ASSERTS)
     #define ASSERT_MSG_VA(cond, msg, ...) do { \
         if (!(cond)) { \
-            assert_handler(__FILE__, (i64)__LINE__, msg, __VA_ARGS__); \
+            assertHandler(__FILE__, (i64)__LINE__, msg, __VA_ARGS__); \
             DEBUG_TRAP(); \
         } \
     } while(0)
@@ -113,7 +115,7 @@ typedef i32      b32;
 	#endif
 #endif
 
-void assert_handler(char const *file, i32 line, char const *msg, ...);
+void assertHandler(char const *file, i32 line, char const *msg, ...);
 
 struct Allocator {
 
@@ -122,6 +124,8 @@ struct Allocator {
 #include "string.cpp"
 #include "utf.cpp"
 #include "array.cpp"
+#include "hash.cpp"
+#include "map.cpp"
 
 b32 ReadFile(String *data, String path) {
     i32 file;

@@ -152,7 +152,7 @@ b32 MakeLexer(Lexer *l, String path) {
 
 void NextCodePoint(Lexer *l) {
     if (l->offset < l->data.len) {
-        String curr = Slice(l->data, l->offset, l->data.len - 1);
+        String curr = Slice(l->data, l->offset, l->data.len);
         u32 cp, cpWidth;
         cp = DecodeCodePoint(&cpWidth, curr);
 
