@@ -1,3 +1,6 @@
+#ifndef MAP_CPP
+#define MAP_CPP
+
 // a struct to ensure someone doesn't accidentally pass in a u64 that's not a hash
 struct Hash {
     u64 key;
@@ -32,7 +35,7 @@ struct Map {
 template <typename T>
 i32 mapFind(Map<T> *m, Hash hash) {
     if (m->len > 0) {
-        i32 index = hash.key % m->len;
+        i32 index = (i32) hash.key % m->len;
         while (m->hashes[index].key != 0) {
             if (m->hashes[index].key == hash.key) {
                 return index;
@@ -77,3 +80,5 @@ Inline
 void MapSet(Map<T> *m, Hash key, T value) {
 
 }
+
+#endif /* MAP_CPP */

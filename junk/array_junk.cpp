@@ -22,7 +22,7 @@ i32 main(void) {
 
     initArrayArena(&aa, 10, 7);
 
-    for (u32 i=0; i<12; ++i) {
+    for (u32 i=0; i<40; ++i) {
         Array<TestData> ar;
         initArray(&aa, &ar);
 

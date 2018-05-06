@@ -1,3 +1,5 @@
+//#include "map.cpp"
+
 
 template <typename T>
 struct Array {
@@ -21,25 +23,36 @@ struct Array {
     }
 };
 
+template <typename T>
+struct Map;
+struct Hash;
+Hash HashPtr(void *);
 
 // NOTE(jonas): this arena can never be freed
 template <typename T>
 struct ArrayArena {
     Allocator  baseAllocator;
     
-    // initial array size
-    u32               defaultLength;
-    // max array num per memory chunk
-    u32               maxCount;
-    // number of arrays remaining
-    u32               remaining;
+    Map<T*>    reallocs;
     
-    T                 *nextArray;
+    // initial array size
+    u32        defaultLength;
+    // max array num per memory chunk
+    u32        maxCount;
+    // number of arrays remaining
+    u32        remaining;
+    
+    T          *nextArray;
 };
+
+#define ARRAY_ARENA_GROWTH 1.5
 
 template <typename T>
 void initArrayArena(ArrayArena<T> *aa, u32 defaultLength, u32 maxCount) {
     aa->baseAllocator = makeDefaultAllocator();
+    
+    // TODO(jonas): init map
+    // aa->reallocs = initMap();
     
     aa->defaultLength = defaultLength;
     aa->maxCount      = maxCount;
@@ -53,8 +66,9 @@ template <typename T>
 T * allocArray(ArrayArena<T> *aa) {
     
     if ( aa->remaining <= 0 ) {
+        aa->maxCount  *= ARRAY_ARENA_GROWTH;
         aa->remaining = aa->maxCount;
-        u64 size      = sizeof(T) * aa->defaultLength * aa->maxCount;
+        u64 size      = sizeof(T) * aa->defaultLength * aa->remaining;
         aa->nextArray = (T *) alloc(aa->baseAllocator, size);
         if ( ! aa->nextArray )
             return NULL;
