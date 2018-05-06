@@ -33,6 +33,16 @@ struct Map {
 };
 
 template <typename T>
+b32 MakeMap(Map<T> *m, u32 cap) {
+    // TODO(Brett, Jonas): custom allocators
+    m->hashes = (Hash *)calloc(cap, sizeof(Hash));
+    m->values = (T *)malloc(cap * sizeof(T));
+    m->len = 0;
+    m->cap = cap;
+    return true;
+}
+
+template <typename T>
 i32 mapFind(Map<T> *m, Hash hash) {
     if (m->len > 0) {
         i32 index = (i32) hash.key % m->len;
@@ -54,8 +64,8 @@ i32 mapFindFreeSlot(Map<T> *m, Hash hash) {
 
     i32 index = -1;
 
-    if (m->len > 0) {
-        index = hash.key % m->len;
+    if (m->cap > 0) {
+        index = hash.key % m->cap;
         // NOTE: this loop will never exit if the map is full
         while (m->hashes[index].key != 0) {
             index = (index+1) % m->len;
@@ -77,8 +87,21 @@ T *MapGet(Map<T> *m, Hash key) {
 
 template <typename T>
 Inline
-void MapSet(Map<T> *m, Hash key, T value) {
+b32 MapSet(Map<T> *m, Hash key, T value) {
+    if (m->len >= m->cap*0.7) {
+        // TODO(Brett): reallocate and rehash
+        UNIMPLEMENTED();
+    }
 
+    i32 index = mapFindFreeSlot(m, key);
+    if (index >= 0) {
+        m->hashes[index] = key;
+        m->values[index] = value;
+        m->len += 1;
+        return true;
+    }
+
+    return false;
 }
 
 #endif /* MAP_CPP */
