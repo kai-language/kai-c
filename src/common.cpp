@@ -116,6 +116,10 @@ typedef i32      b32;
 #endif
 
 
+#define MAXF(a,b) ((a) > (b) ? (a) : (b))
+#define MINF(a,b) ((a) < (b) ? (a) : (b))
+
+
 void Backtrace() {
 #if SYSTEM_POSIX
     void* callstack[25];
@@ -277,6 +281,23 @@ void freeAll(Allocator al) {
 
 void * realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
+}
+
+
+void printBits(u64 const size, void const * const ptr) {
+    unsigned char *b = (unsigned char*) ptr;
+    unsigned char byte;
+    i64 i, j;
+    
+    for (i=size-1;i>=0;i--)
+    {
+        for (j=7;j>=0;j--)
+        {
+            byte = (b[i] >> j) & 1;
+            printf("%u", byte);
+        }
+    }
+    puts("");
 }
 
 

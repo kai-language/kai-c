@@ -21,17 +21,18 @@ struct Array {
     }
 };
 
-template <typename T>
-struct Map;
-struct Hash;
-Hash HashPtr(void *);
+#define ARRAY_GROWTH 1.5
+
+#define MAX_CAP    0x7FFFFFFF
+#define FLAG_SLICE 0x80000000
+
+#define ARRAY_IS_SLICE(x) (x->cap & FLAG_SLICE)
+
 
 // NOTE(jonas): this arena can never be freed
 template <typename T>
 struct ArrayArena {
     Allocator  baseAllocator;
-    
-    Map<T*>    reallocs;
     
     // initial array size
     u32        defaultLength;
@@ -45,12 +46,16 @@ struct ArrayArena {
 
 #define ARRAY_ARENA_GROWTH 1.5
 
+
 template <typename T>
 void initArrayArena(ArrayArena<T> *aa, u32 defaultLength, u32 maxCount) {
+#if DEBUG
+    if ( defaultLength > MAX_CAP ) {
+        printf("Requested array length too large!\n");
+        defaultLength = MAX_CAP;
+    }
+#endif
     aa->baseAllocator = makeDefaultAllocator();
-    
-    // TODO(jonas): init map
-    // aa->reallocs = initMap();
     
     aa->defaultLength = defaultLength;
     aa->maxCount      = maxCount;
@@ -59,6 +64,7 @@ void initArrayArena(ArrayArena<T> *aa, u32 defaultLength, u32 maxCount) {
     u64 size      = sizeof(T) * defaultLength * maxCount;
     aa->nextArray = (T *) alloc(aa->baseAllocator, size);
 }
+
 
 template <typename T>
 T * allocArray(ArrayArena<T> *aa) {
@@ -81,15 +87,47 @@ T * allocArray(ArrayArena<T> *aa) {
     return ptr;
 }
 
+
 template <typename T>
-void reallocArray(ArrayArena<T> aa, Array<T> *ar) {
-    
+void dumpArray(Array<T> ar) {
+    printf("Array = {\n");
+    printf("\tdata = %p\n", ar.data);
+    printf("\tlen  = %u\n", ar.len);
+    printf("\tcap  = %u\n", ARRAY_IS_SLICE((&ar)) ? ar.cap & MAX_CAP : ar.cap );
+    printf("}\n");
 }
+
+
+template <typename T>
+void reallocArray(ArrayArena<T> aa, Array<T> *ar, u32 newCap) {
+#if DEBUG
+    if ( newCap > MAX_CAP )
+        newCap = MAX_CAP;
+#endif
+    if ( ARRAY_IS_SLICE(ar) ) {
+        T * oldData = ar->data;
+        ar->data = (T *) alloc(aa.baseAllocator, newCap);
+        memcpy( &(ar->data), &oldData, ar->len * sizeof(T));
+        ar->cap  = ar->cap & MAX_CAP;
+#if DEBUG
+        printf("Reallocating a slice!\n");
+#endif
+    }
+    else {
+        ar->data = (T *) realloc(aa.baseAllocator, ar->data, ar->cap * sizeof(T), newCap * sizeof(T));
+#if DEBUG
+        printf("Reallocating!\n");
+#endif
+
+    }
+    ar->cap  = newCap;
+}
+
 
 template <typename T>
 void initArray(ArrayArena<T> *aa, Array<T> *ar) {
     ar->data = (T *) allocArray(aa);
     ar->len  = 0;
-    ar->cap  = aa->defaultLength;
+    ar->cap  = aa->defaultLength | FLAG_SLICE;
 }
 
