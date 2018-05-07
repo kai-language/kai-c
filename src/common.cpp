@@ -115,11 +115,170 @@ typedef i32      b32;
 	#endif
 #endif
 
-void assertHandler(char const *file, i32 line, char const *msg, ...);
+
+void Backtrace() {
+#if SYSTEM_POSIX
+    void* callstack[25];
+    int i, frames = backtrace(callstack, ArrayCount(callstack));
+    char** strs = backtrace_symbols(callstack, frames);
+    for (i = 0; i < frames; ++i) {
+        fprintf(stderr, "%s\n", strs[i]);
+    }
+    free(strs);
+#elif SYSTEM_WINDOWS
+    UNIMPLEMENTED();
+#endif
+}
+
+void assertHandler(char const *file, i32 line, char const *msg, ...) {
+    Backtrace();
+    
+    if (msg) {
+        fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
+    }
+    else {
+        fprintf(stderr, "Assert failure: %s:%d\n", file, line);
+    }
+}
+
+
+typedef enum AllocType {
+    AT_Alloc,
+    AT_Free,
+    AT_FreeAll,
+    AT_Realloc
+} AllocType;
+
+
+struct Allocator;
+struct Arena;
+
+void * alloc(Allocator, u64);
+void free(Allocator, void *);
+void freeAll(Allocator);
+void * realloc(Allocator, void *, u64, u64);
+
+
+#define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, u64 size, u64 oldSize, void *old)
+typedef ALLOC_FUNC(allocFunc);
+
 
 struct Allocator {
-
+    allocFunc *func;
+    void *payload;
 };
+
+struct Arena {
+    Allocator allocator;
+    u8  *raw;
+    u64 cap;
+    u64 len;
+};
+
+
+ALLOC_FUNC(arenaAllocFunc) {
+    Arena *arena = (Arena *) payload;
+    
+    switch (alType) {
+        case AT_Alloc: {
+            if (arena->len + size > arena->cap) {
+                return NULL;
+            }
+            u8 *ptr = &arena->raw[arena->len];
+            arena->len += size;
+            return ptr;
+        }
+        case AT_Free:
+        case AT_FreeAll: {
+            arena->len = 0;
+            break;
+        }
+        case AT_Realloc: {
+            u8 *buff = (u8 *) realloc(arena->allocator, arena->raw, oldSize, size);
+            arena->raw = buff;
+            arena->cap = size;
+            return buff;
+        }
+    }
+    
+    return NULL;
+}
+
+
+ALLOC_FUNC(heapAllocFunc) {
+    
+    switch (alType) {
+        case AT_Alloc:
+            return malloc(size);
+        case AT_Free: {
+            free(old);
+            break;
+        }
+        case AT_FreeAll: {
+            break;
+        }
+        case AT_Realloc:
+            return realloc(old, size);
+    }
+    
+    return NULL;
+}
+
+
+Allocator initArenaAllocator(Arena *arena) {
+    Allocator al;
+    al.func    = arenaAllocFunc;
+    al.payload = arena;
+    return al;
+}
+
+
+void initArenaCustomAllocator(Arena *arena, Allocator al, u64 size) {
+    arena->allocator = al;
+    arena->raw = (u8 *) alloc(al, size);
+    arena->cap = size;
+    arena->len = 0;
+}
+
+
+Allocator makeDefaultAllocator(void) {
+    Allocator al = {0};
+    al.func = heapAllocFunc;
+    return al;
+}
+
+
+void initArena(Arena *arena, u64 size) {
+    initArenaCustomAllocator(arena, makeDefaultAllocator(), size);
+}
+
+
+void destroyArena(Arena *arena) {
+    ASSERT(arena->raw);
+    free(arena->raw);
+}
+
+
+void * alloc(Allocator al, u64 size) {
+    return al.func(al.payload, AT_Alloc, size, 0, NULL);
+}
+
+
+void free(Allocator al, void *ptr) {
+    if ( ptr )
+        al.func(al.payload, AT_Free, 0, 0, ptr);
+}
+
+
+void freeAll(Allocator al) {
+    al.func(al.payload, AT_FreeAll, 0, 0, NULL);
+}
+
+
+void * realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
+    return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
+}
+
 
 #include "string.cpp"
 #include "utf.cpp"
@@ -147,3 +306,4 @@ b32 ReadFile(String *data, String path) {
 
     return true;
 }
+
