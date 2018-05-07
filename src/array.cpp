@@ -131,3 +131,41 @@ void initArray(ArrayArena<T> *aa, Array<T> *ar) {
     ar->cap  = aa->defaultLength | FLAG_SLICE;
 }
 
+
+template <typename T>
+void freeArray(ArrayArena<T> aa, Array<T> *ar) {
+    if ( ! ARRAY_IS_SLICE(ar) ) {
+        free(aa.baseAllocator, ar->data);
+    }
+    else {
+        ar->data = NULL;
+    }
+    ar->len = 0;
+    ar->cap = 0;
+}
+
+
+template <typename T>
+T popArray(Array<T> *ar) {
+    ASSERT( ar->len > 0 );
+    ar->len -= 1;
+    return ar->data[ar->len];
+}
+
+
+template <typename T>
+Array<T> sliceArray(Array<T> const &baseAr, u32 lo, u32 hi) {
+    ASSERT(0 <= lo && lo <= hi && hi <= baseAr.len);
+    Array<T> out = {};
+    u32 len = hi - lo;
+    if (len > 0) {
+        out.data = baseAr.data + lo;
+        out.len  = len;
+        out.cap  = len | FLAG_SLICE;
+    }
+    return out;
+}
+
+
+
+
