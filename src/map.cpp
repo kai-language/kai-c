@@ -42,7 +42,7 @@ b32 MakeMap(Map<T> *m, u32 cap) {
 template <typename T>
 i32 mapFind(Map<T> *m, Hash hash) {
     if (m->len > 0) {
-        i32 index = hash.key % m->cap;
+        i32 index = (i32) hash.key % m->cap;
         while (m->hashes[index].key != 0) {
             if (m->hashes[index].key == hash.key) {
                 return index;
@@ -100,3 +100,4 @@ b32 MapSet(Map<T> *m, Hash key, T value) {
 
     return false;
 }
+

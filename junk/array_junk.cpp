@@ -17,19 +17,34 @@ typedef struct TestData {
 i32 main(void) {
 
     printf("sizeof(TestData) = %lu\n\n", sizeof(TestData));
+    printf("sizeof(Array<TestData>) = %lu\n\n", sizeof(Array<TestData>));
+    printf("sizeof(ArrayArena<TestData>) = %lu\n\n", sizeof(ArrayArena<TestData>));
+
 
     ArrayArena<TestData> aa;
 
-    initArrayArena(&aa, 10, 7);
+    InitArrayArena(&aa, 10, 7);
 
-    for (u32 i=0; i<12; ++i) {
-        Array<TestData> ar;
-        initArray(&aa, &ar);
+    Array<TestData> ar;
 
-        printf("ar.data = %p\n", ar.data);
-        printf("ar.len  = %u\n", ar.len);
-        printf("ar.cap  = %u\n", ar.cap);
+    for (u32 i=0; i<14; ++i) {
+        InitArray(&aa, &ar);
+
+
+        DumpArray(ar);
     }
+
+    printf("ar is a slice : %d\n", (bool) ARRAY_IS_SLICE((&ar)));
+
+    ReallocArray(aa, &ar, 15);
+
+    printf("ar is a slice : %d\n", (bool) ARRAY_IS_SLICE((&ar)));
+
+    ReallocArray(aa, &ar, 20);
+
+    Array<TestData> ar2;
+    InitArray(MakeDefaultAllocator(), &ar2, 12);
+    DumpArray(ar2);
 
     return 0;
 }

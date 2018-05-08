@@ -36,6 +36,7 @@ void Usage() {
     printUsage(1, "-emit-times            Emit times for each stage of compilation");
 }
 
+
 #if 0
 void Backtrace() {
     #if SYSTEM_POSIX
@@ -67,6 +68,7 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
     fprintf(stderr, "\n");
 }
 #endif
+
 
 int main(int argc, char **argv) {
     if (argc < 2) {

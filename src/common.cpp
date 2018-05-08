@@ -116,6 +116,10 @@ typedef i32      b32;
 #endif
 
 
+#define MAXF(a,b) ((a) > (b) ? (a) : (b))
+#define MINF(a,b) ((a) < (b) ? (a) : (b))
+
+
 void Backtrace() {
 #if SYSTEM_POSIX
     void* callstack[25];
@@ -153,10 +157,10 @@ typedef enum AllocType {
 struct Allocator;
 struct Arena;
 
-void * alloc(Allocator, u64);
-void free(Allocator, void *);
-void freeAll(Allocator);
-void * realloc(Allocator, void *, u64, u64);
+void * Alloc(Allocator, u64);
+void Free(Allocator, void *);
+void FreeAll(Allocator);
+void * Realloc(Allocator, void *, u64, u64);
 
 
 #define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, u64 size, u64 oldSize, void *old)
@@ -194,7 +198,7 @@ ALLOC_FUNC(arenaAllocFunc) {
             break;
         }
         case AT_Realloc: {
-            u8 *buff = (u8 *) realloc(arena->allocator, arena->raw, oldSize, size);
+            u8 *buff = (u8 *) Realloc(arena->allocator, arena->raw, oldSize, size);
             arena->raw = buff;
             arena->cap = size;
             return buff;
@@ -225,7 +229,7 @@ ALLOC_FUNC(heapAllocFunc) {
 }
 
 
-Allocator initArenaAllocator(Arena *arena) {
+Allocator InitArenaAllocator(Arena *arena) {
     Allocator al;
     al.func    = arenaAllocFunc;
     al.payload = arena;
@@ -233,50 +237,69 @@ Allocator initArenaAllocator(Arena *arena) {
 }
 
 
-void initArenaCustomAllocator(Arena *arena, Allocator al, u64 size) {
+void InitArenaCustomAllocator(Arena *arena, Allocator al, u64 size) {
     arena->allocator = al;
-    arena->raw = (u8 *) alloc(al, size);
+    arena->raw = (u8 *) Alloc(al, size);
     arena->cap = size;
     arena->len = 0;
 }
 
 
-Allocator makeDefaultAllocator(void) {
+Allocator MakeDefaultAllocator(void) {
     Allocator al = {0};
     al.func = heapAllocFunc;
     return al;
 }
 
 
-void initArena(Arena *arena, u64 size) {
-    initArenaCustomAllocator(arena, makeDefaultAllocator(), size);
+void InitArena(Arena *arena, u64 size) {
+    InitArenaCustomAllocator(arena, MakeDefaultAllocator(), size);
 }
 
 
-void destroyArena(Arena *arena) {
+void DestroyArena(Arena *arena) {
     ASSERT(arena->raw);
-    free(arena->raw);
+    Free(arena->allocator, arena->raw);
+    arena->len = 0;
+    arena->cap = 0;
 }
 
 
-void * alloc(Allocator al, u64 size) {
+void * Alloc(Allocator al, u64 size) {
     return al.func(al.payload, AT_Alloc, size, 0, NULL);
 }
 
 
-void free(Allocator al, void *ptr) {
+void Free(Allocator al, void *ptr) {
     if ( ptr )
         al.func(al.payload, AT_Free, 0, 0, ptr);
 }
 
 
-void freeAll(Allocator al) {
+void FreeAll(Allocator al) {
     al.func(al.payload, AT_FreeAll, 0, 0, NULL);
 }
 
 
-void * realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
+void * Realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
+}
+
+
+void PrintBits(u64 const size, void const * const ptr) {
+    u8 *b = (u8*) ptr;
+    u8 byte;
+    i64 i, j;
+    
+    for (i=size-1;i>=0;i--)
+    {
+        for (j=7;j>=0;j--)
+        {
+            byte = (b[i] >> j) & 1;
+            printf("%u", byte);
+        }
+    }
+    puts("");
 }
 
 
@@ -285,6 +308,7 @@ void * realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
 #include "array.cpp"
 #include "hash.cpp"
 #include "map.cpp"
+
 
 b32 ReadFile(String *data, String path) {
     i32 file;
