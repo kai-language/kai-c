@@ -273,47 +273,6 @@ Token scanNumber(Lexer *l, b32 seenDecimal) {
     return token;
 }
 
-TokenKind switch2(Lexer *l, TokenKind t1, TokenKind t2) {
-    if (l->currentCp == '=') {
-        NextCodePoint(l);
-        return t2;
-    }
-
-    return t1;
-}
-
-TokenKind switch3(Lexer *l, TokenKind t1, TokenKind t2, TokenKind t3, u32 ch) {
-    if (l->currentCp == '=') {
-        NextCodePoint(l);
-        return t2;
-    }
-
-    if (l->currentCp == ch) {
-        NextCodePoint(l);
-        return t3;
-    }
-
-    return t1;
-}
-
-TokenKind switch4(Lexer *l, TokenKind t1, TokenKind t2, TokenKind t3, TokenKind t4, u8 ch) {
-    if (l->currentCp == '=') {
-        NextCodePoint(l);
-        return t2;
-    }
-
-    if (l->currentCp == ch) {
-        NextCodePoint(l);
-        if (l->currentCp == '=') {
-            NextCodePoint(l);
-            return t4;
-        }
-        return t3;
-    }
-
-    return t1;
-}
-
 b32 findLineEnd(Lexer *l) {
     u32 cp, offset, lc;
     cp = l->currentCp;
@@ -379,6 +338,46 @@ void scanEscape(Lexer *l) {
         UNIMPLEMENTED(); // TODO(Brett): "unknown escape" error
     }
 }
+
+#define CASE1(c1, t1) \
+    case c1: \
+        token.kind = t1; \
+        break;
+
+#define CASE2(c1, t1, c2, t2) \
+    case c1: \
+        token.kind = t1; \
+        if (l->currentCp == c2) { \
+            NextCodePoint(l); \
+            token.kind = t2; \
+        } \
+        break;
+    
+#define CASE3(c1, t1, c2, t2, c3, t3) \
+    case c1: \
+        token.kind = t1; \
+        if (l->currentCp == c2) { \
+            NextCodePoint(l); \
+            token.kind = t2; \
+        } else if (l->currentCp == c3) { \
+            NextCodePoint(l); \
+            token.kind = t3; \
+        } \
+        break;
+
+#define CASE_SHIFT(c1, t1, t2, teq1, teq2) \
+    case c1: \
+        token.kind = t1; \
+        if (l->currentCp == c1) { \
+            NextCodePoint(l); \
+            token.kind = t2; \
+            if (l->currentCp == '=') { \
+                token.kind = teq2; \
+            } \
+        } else if (l->currentCp == '=') { \
+            token.kind = teq1; \
+        } \
+        break;
 
 Token NextToken(Lexer *l) {
     skipWhitespace(l);
@@ -491,10 +490,8 @@ Token NextToken(Lexer *l) {
             }
         } break;
 
-        case '+': token.kind = switch2(l, TK_Add, TK_AssignAdd); break;
-        case '-': token.kind = switch3(l, TK_Sub, TK_AssignSub, TK_RetArrow, '>'); break;
-        case '*': token.kind = switch2(l, TK_Mul, TK_AssignMul); break;
         case '/': {
+            token.kind = TK_Div;
             if (l->currentCp == '/' || l->currentCp == '*') {
                 token.kind = TK_Comment;
                 if (l->insertSemi && findLineEnd(l)) {
@@ -520,45 +517,37 @@ Token NextToken(Lexer *l) {
 
                     lit.len = l->offset - offset;
                 }
-            } else {
-                token.kind = switch2(l, TK_Div, TK_AssignDiv);
+            } else if (l->currentCp == '=') {
+                NextCodePoint(l);
+                token.kind = TK_AssignDiv;
             }
         } break;
 
-        case '%': token.kind = switch2(l, TK_Rem, TK_AssignRem);
-        case '^': token.kind = switch2(l, TK_Xor, TK_AssignXor);
-        case '>': token.kind = switch4(l, TK_Gtr, TK_Geq, TK_Shr, TK_AssignShr, '>');
-        case '<': token.kind = switch4(l, TK_Lss, TK_Leq, TK_Shl, TK_AssignShl, '<');
-        case '=': token.kind = switch2(l, TK_Assign, TK_Eql);
-        case '!': token.kind = switch2(l, TK_Not,    TK_Neq);
-        case '&': token.kind = switch3(l, TK_And, TK_AssignAnd, TK_Land, '&');
-        case '|': token.kind = switch3(l, TK_Or, TK_AssignOr, TK_Lor, '|');
-
-        case ':': token.kind = TK_Colon; break;
-        case '$': token.kind = TK_Dollar; break;
-        case '?': token.kind = TK_Question; break;
-        case ',': token.kind = TK_Comma; break;
-        case ';': token.kind = TK_Semicolon; break;
-        case '#': token.kind = TK_Directive; break;
-
-        case '(': token.kind = TK_Lparen; break;
-        case '[': token.kind = TK_Lbrack; break;
-        case '{': token.kind = TK_Lbrace; break;
-
+        CASE1(':', TK_Colon);
+        CASE1('$', TK_Dollar);
+        CASE1('?', TK_Question);
+        CASE1(',', TK_Comma);
+        CASE1(';', TK_Semicolon);
+        CASE1('#', TK_Directive);
+        CASE1('(', TK_Lparen);
+        CASE1('[', TK_Lbrack);
+        CASE1('{', TK_Lbrace);
+        CASE2('!', TK_Not, '=', TK_Neq);
+        CASE2('+', TK_Add, '=', TK_AssignAdd);
+        CASE2('*', TK_Mul, '=', TK_AssignMul);
+        CASE2('%', TK_Rem, '=', TK_AssignRem);
+        CASE2('^', TK_Xor, '=', TK_AssignXor);
+        CASE2('=', TK_Assign, '=', TK_Eql);
+        CASE2('.', TK_Period, '.', TK_Ellipsis);
+        CASE3('|', TK_Or, '=', TK_AssignOr, '|', TK_Lor);
+        CASE3('&', TK_And, '=', TK_AssignAnd, '&', TK_Land);
+        CASE3('-', TK_Sub, '=', TK_AssignSub, '>', TK_RetArrow);
+        CASE_SHIFT('>', TK_Gtr, TK_Shr, TK_Geq, TK_AssignShr);
+        CASE_SHIFT('<', TK_Lss, TK_Shl, TK_Leq, TK_AssignShl);
 
         case ')': { token.kind = TK_Rparen; l->insertSemi = true; } break;
         case ']': { token.kind = TK_Rbrack; l->insertSemi = true; } break;
         case '}': { token.kind = TK_Rbrace; l->insertSemi = true; } break;
-
-        case '.': {
-            token.kind = TK_Period;
-            if (l->currentCp == '.') {
-                token.kind = TK_Ellipsis;
-                lit.len = 2;
-                NextCodePoint(l);
-            }
-        } break;
-
         default: token.kind = TK_Invalid;
         }
     }
@@ -566,3 +555,8 @@ Token NextToken(Lexer *l) {
     token.lit = lit;
     return token;
 }
+
+#undef CASE1
+#undef CASE2
+#undef CASE3
+#undef CASE4
