@@ -287,8 +287,8 @@ void * Realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
 
 
 void PrintBits(u64 const size, void const * const ptr) {
-    unsigned char *b = (unsigned char*) ptr;
-    unsigned char byte;
+    u8 *b = (u8*) ptr;
+    u8 byte;
     i64 i, j;
     
     for (i=size-1;i>=0;i--)
