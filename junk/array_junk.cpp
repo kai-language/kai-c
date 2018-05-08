@@ -23,24 +23,28 @@ i32 main(void) {
 
     ArrayArena<TestData> aa;
 
-    initArrayArena(&aa, 10, 7);
+    InitArrayArena(&aa, 10, 7);
 
     Array<TestData> ar;
 
     for (u32 i=0; i<14; ++i) {
-        initArray(&aa, &ar);
+        InitArray(&aa, &ar);
 
 
-        dumpArray(ar);
+        DumpArray(ar);
     }
 
     printf("ar is a slice : %d\n", (bool) ARRAY_IS_SLICE((&ar)));
 
-    reallocArray(aa, &ar, 15);
+    ReallocArray(aa, &ar, 15);
 
     printf("ar is a slice : %d\n", (bool) ARRAY_IS_SLICE((&ar)));
 
-    reallocArray(aa, &ar, 20);
+    ReallocArray(aa, &ar, 20);
+
+    Array<TestData> ar2;
+    InitArray(MakeDefaultAllocator(), &ar2, 12);
+    DumpArray(ar2);
 
     return 0;
 }
