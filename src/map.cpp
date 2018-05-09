@@ -1,3 +1,4 @@
+
 // a struct to ensure someone doesn't accidentally pass in a u64 that's not a hash
 struct Hash {
     u64 key;

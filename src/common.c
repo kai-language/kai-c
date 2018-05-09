@@ -305,11 +305,10 @@ void PrintBits(u64 const size, void const * const ptr) {
 
 
 #include "string.cpp"
-#include "utf.cpp"
+#include "utf.c"
 #include "array.cpp"
-#include "hash.cpp"
+#include "hash.c"
 #include "map.cpp"
-
 
 b32 ReadFile(String *data, String path) {
     i32 file;
@@ -332,3 +331,11 @@ b32 ReadFile(String *data, String path) {
     return true;
 }
 
+#if TEST
+void test_ReadFile() {
+    String data = MakeString(NULL, 5000);
+    b32 result = ReadFile(&data, STR(__FILE__));
+    TEST_ASSERT(result);
+    ASSERT(0);
+}
+#endif

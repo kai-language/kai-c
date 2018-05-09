@@ -1,16 +1,17 @@
-#include "common.cpp"
-#include "lexer.cpp"
+
+#include "common.c"
+#include "lexer.c"
 
 // forward declarations
-#include "parser.hpp"
-#include "checker.hpp"
+#include "parser.h"
+#include "checker.h"
 
-#include "parser.cpp"
-#include "checker.cpp"
+#include "parser.c"
+#include "checker.c"
 
 #define IndentSize 2
 
-void printUsage(u32 indentLevel, char *fmt, ...) {
+void printUsage(u32 indentLevel, const char *fmt, ...) {
     while (indentLevel --> 0) {
         fprintf(stderr, "%*s", IndentSize, "");
     }

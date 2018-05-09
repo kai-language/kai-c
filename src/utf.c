@@ -1,3 +1,4 @@
+
 #define FileEnd 0xFFFFFFFF
 
 u32 DecodeCodePoint(u32 *cpLen, String buffer) {

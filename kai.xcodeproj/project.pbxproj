@@ -7,10 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5D3CD46D20A3099800600F43 /* tests.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D3CD46C20A3099800600F43 /* tests.cpp */; };
 		B249A256209B80CA0016B49E /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B249A255209B80CA0016B49E /* main.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		5D3CD46220A308C500600F43 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 		B2194999209B79E0007BB781 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -23,21 +33,31 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5D3CD46420A308C500600F43 /* kai-tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "kai-tests"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5D3CD46C20A3099800600F43 /* tests.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = tests.cpp; sourceTree = "<group>"; };
+		5D3CD47C20A327C200600F43 /* hash.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = hash.c; path = src/hash.c; sourceTree = "<group>"; };
 		B219499B209B79E0007BB781 /* kai */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = kai; sourceTree = BUILT_PRODUCTS_DIR; };
 		B249A255209B80CA0016B49E /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = src/main.cpp; sourceTree = "<group>"; };
-		B249A257209B80E00016B49E /* checker.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = checker.cpp; path = src/checker.cpp; sourceTree = "<group>"; };
-		B249A258209B80E00016B49E /* lexer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = lexer.cpp; path = src/lexer.cpp; sourceTree = "<group>"; };
-		B249A259209B80E00016B49E /* parser.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = parser.cpp; path = src/parser.cpp; sourceTree = "<group>"; };
+		B249A257209B80E00016B49E /* checker.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = checker.c; path = src/checker.c; sourceTree = "<group>"; };
+		B249A258209B80E00016B49E /* lexer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = lexer.c; path = src/lexer.c; sourceTree = "<group>"; };
+		B249A259209B80E00016B49E /* parser.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = parser.c; path = src/parser.c; sourceTree = "<group>"; };
 		B249A25A209B80E00016B49E /* map.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = map.cpp; path = src/map.cpp; sourceTree = "<group>"; };
-		B249A25B209B80E00016B49E /* checker.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = checker.hpp; path = src/checker.hpp; sourceTree = "<group>"; };
-		B249A25C209B80E00016B49E /* common.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = common.cpp; path = src/common.cpp; sourceTree = "<group>"; };
-		B249A25D209B80E00016B49E /* parser.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = parser.hpp; path = src/parser.hpp; sourceTree = "<group>"; };
+		B249A25B209B80E00016B49E /* checker.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = checker.h; path = src/checker.h; sourceTree = "<group>"; };
+		B249A25C209B80E00016B49E /* common.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = common.c; path = src/common.c; sourceTree = "<group>"; };
+		B249A25D209B80E00016B49E /* parser.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = parser.h; path = src/parser.h; sourceTree = "<group>"; };
 		B249A25E209B80E00016B49E /* string.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = string.cpp; path = src/string.cpp; sourceTree = "<group>"; };
-		B249A25F209B80E00016B49E /* utf.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = utf.cpp; path = src/utf.cpp; sourceTree = "<group>"; };
+		B249A25F209B80E00016B49E /* utf.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = utf.c; path = src/utf.c; sourceTree = "<group>"; };
 		B249A260209B80E10016B49E /* array.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = array.cpp; path = src/array.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		5D3CD46120A308C500600F43 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B2194998209B79E0007BB781 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -52,16 +72,18 @@
 			isa = PBXGroup;
 			children = (
 				B249A260209B80E10016B49E /* array.cpp */,
-				B249A257209B80E00016B49E /* checker.cpp */,
-				B249A25B209B80E00016B49E /* checker.hpp */,
-				B249A25C209B80E00016B49E /* common.cpp */,
-				B249A258209B80E00016B49E /* lexer.cpp */,
+				B249A257209B80E00016B49E /* checker.c */,
+				B249A25B209B80E00016B49E /* checker.h */,
+				B249A25C209B80E00016B49E /* common.c */,
+				B249A258209B80E00016B49E /* lexer.c */,
 				B249A25A209B80E00016B49E /* map.cpp */,
-				B249A259209B80E00016B49E /* parser.cpp */,
-				B249A25D209B80E00016B49E /* parser.hpp */,
+				B249A259209B80E00016B49E /* parser.c */,
+				5D3CD47C20A327C200600F43 /* hash.c */,
+				B249A25D209B80E00016B49E /* parser.h */,
 				B249A25E209B80E00016B49E /* string.cpp */,
-				B249A25F209B80E00016B49E /* utf.cpp */,
+				B249A25F209B80E00016B49E /* utf.c */,
 				B249A255209B80CA0016B49E /* main.cpp */,
+				5D3CD46C20A3099800600F43 /* tests.cpp */,
 				B219499C209B79E0007BB781 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -70,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				B219499B209B79E0007BB781 /* kai */,
+				5D3CD46420A308C500600F43 /* kai-tests */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -77,6 +100,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		5D3CD46320A308C500600F43 /* kai-tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5D3CD46A20A308C500600F43 /* Build configuration list for PBXNativeTarget "kai-tests" */;
+			buildPhases = (
+				5D3CD46B20A3091000600F43 /* ShellScript */,
+				5D3CD46020A308C500600F43 /* Sources */,
+				5D3CD46120A308C500600F43 /* Frameworks */,
+				5D3CD46220A308C500600F43 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "kai-tests";
+			productName = "kai-tests";
+			productReference = 5D3CD46420A308C500600F43 /* kai-tests */;
+			productType = "com.apple.product-type.tool";
+		};
 		B219499A209B79E0007BB781 /* kai */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B21949A2209B79E0007BB781 /* Build configuration list for PBXNativeTarget "kai" */;
@@ -103,12 +144,15 @@
 				LastUpgradeCheck = 0930;
 				ORGANIZATIONNAME = "Brett Toomey";
 				TargetAttributes = {
+					5D3CD46320A308C500600F43 = {
+						CreatedOnToolsVersion = 9.3;
+					};
 					B219499A209B79E0007BB781 = {
 						CreatedOnToolsVersion = 9.3;
 					};
 				};
 			};
-			buildConfigurationList = B2194996209B79E0007BB781 /* Build configuration list for PBXProject "Kai" */;
+			buildConfigurationList = B2194996209B79E0007BB781 /* Build configuration list for PBXProject "kai" */;
 			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -121,11 +165,36 @@
 			projectRoot = "";
 			targets = (
 				B219499A209B79E0007BB781 /* kai */,
+				5D3CD46320A308C500600F43 /* kai-tests */,
 			);
 		};
 /* End PBXProject section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		5D3CD46B20A3091000600F43 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > tests.cpp";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		5D3CD46020A308C500600F43 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D3CD46D20A3099800600F43 /* tests.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B2194997209B79E0007BB781 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -137,6 +206,30 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		5D3CD46820A308C500600F43 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				GCC_C_LANGUAGE_STANDARD = c11;
+				OTHER_CFLAGS = "-DTEST";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		5D3CD46920A308C500600F43 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				GCC_C_LANGUAGE_STANDARD = c11;
+				OTHER_CFLAGS = "-DTEST";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 		B21949A0209B79E0007BB781 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -250,6 +343,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				GCC_C_LANGUAGE_STANDARD = c11;
 				OTHER_CFLAGS = (
 					"-g",
 					"-O0",
@@ -270,6 +364,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				GCC_C_LANGUAGE_STANDARD = c11;
 				OTHER_CFLAGS = (
 					"-O3",
 					"-march=native",
@@ -288,7 +383,16 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		B2194996209B79E0007BB781 /* Build configuration list for PBXProject "Kai" */ = {
+		5D3CD46A20A308C500600F43 /* Build configuration list for PBXNativeTarget "kai-tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5D3CD46820A308C500600F43 /* Debug */,
+				5D3CD46920A308C500600F43 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B2194996209B79E0007BB781 /* Build configuration list for PBXProject "kai" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B21949A0209B79E0007BB781 /* Debug */,
