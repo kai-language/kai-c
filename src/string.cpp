@@ -56,7 +56,7 @@ Inline b32 operator ==(String const &a, String const &b) { return StringEqual(a,
 Inline b32 operator !=(String const &a, String const &b) { return !StringEqual(a, b); }
 
 #define LIT(str) ((int)(str).len), (str).data
-#define STR(c) { (u8 *)c, ArrayCount(c)-1}
+#define STR(c) (String) { (u8 *)c, ArrayCount(c)-1}
 
 enum StringEscapeError {
     SEE_Error,
