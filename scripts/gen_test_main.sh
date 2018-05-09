@@ -1,6 +1,7 @@
 #!/bin/bash
 
 cat <<- EOF
+
 #include "stdio.h"
 #include "setjmp.h"
 #include "signal.h"
@@ -12,7 +13,7 @@ int _shouldNoteTestLog = 0;
 
 jmp_buf returnToTestMain;
 
-void handleSignal(int signum) {
+void handleSignal(int sig, siginfo_t *info, void *where) {
     longjmp(returnToTestMain, 1);
 }
 
@@ -63,7 +64,11 @@ void printTest(size_t sz, int padch, const char* name, int success) {
 }
 
 void setSignalHandlerCheckingError(int sig) {
-    if (signal(sig, handleSignal) == SIG_ERR) {
+    struct sigaction sa_new = {0};
+
+    sa_new.sa_sigaction = handleSignal;
+    sa_new.sa_flags = SA_SIGINFO;
+    if (sigaction(sig, &sa_new, NULL) == -1) {
         perror("failed to set handler for signal");
         exit(1);
     }
