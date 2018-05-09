@@ -82,6 +82,7 @@ typedef i32      b32;
     #define DEBUG_TRAP() __builtin_trap()
 #endif
 
+#ifndef TEST
 #if !defined(RELEASE) && !defined(ASSERTS)
     #define ASSERT_MSG_VA(cond, msg, ...) do { \
         if (!(cond)) { \
@@ -102,17 +103,18 @@ typedef i32      b32;
     #define PANIC(msg)
     #define UNIMPLEMENTED()
 #endif
+#endif
 
 #if !defined(Inline)
-	#if defined(_MSC_VER)
-		#if _MSC_VER < 1300
-		#define Inline
-		#else
-		#define Inline __forceinline
-		#endif
-	#else
-		#define Inline __attribute__ ((__always_inline__))
-	#endif
+    #if defined(_MSC_VER)
+        #if _MSC_VER < 1300
+        #define Inline
+        #else
+        #define Inline __forceinline
+        #endif
+    #else
+        #define Inline __attribute__ ((__always_inline__))
+    #endif
 #endif
 
 
@@ -139,8 +141,7 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
     
     if (msg) {
         fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
-    }
-    else {
+    } else {
         fprintf(stderr, "Assert failure: %s:%d\n", file, line);
     }
 }

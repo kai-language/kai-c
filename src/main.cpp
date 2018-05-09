@@ -69,7 +69,7 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
 }
 #endif
 
-
+#ifndef TEST
 int main(int argc, char **argv) {
     if (argc < 2) {
         Usage();
@@ -92,3 +92,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+#endif
