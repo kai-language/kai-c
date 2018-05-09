@@ -133,7 +133,7 @@ cat <<- EOF
     if (_shouldNoteTestLog)
         printf("\nNote: Some errors occured in called functions for details on these see tests.log\n");
 
-    return 0;
+    return !(_totalTestsPassCount == $totalTests);
 }
 
 EOF
