@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		5D3CD46D20A3099800600F43 /* tests.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D3CD46C20A3099800600F43 /* tests.cpp */; };
+		5D3CD46D20A3099800600F43 /* kai_tests.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D3CD46C20A3099800600F43 /* kai_tests.cpp */; };
 		B249A256209B80CA0016B49E /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B249A255209B80CA0016B49E /* main.cpp */; };
 /* End PBXBuildFile section */
 
@@ -34,7 +34,7 @@
 
 /* Begin PBXFileReference section */
 		5D3CD46420A308C500600F43 /* kai-tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "kai-tests"; sourceTree = BUILT_PRODUCTS_DIR; };
-		5D3CD46C20A3099800600F43 /* tests.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = tests.cpp; sourceTree = "<group>"; };
+		5D3CD46C20A3099800600F43 /* kai_tests.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kai_tests.cpp; sourceTree = "<group>"; };
 		5D3CD47C20A327C200600F43 /* hash.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = hash.c; path = src/hash.c; sourceTree = "<group>"; };
 		B219499B209B79E0007BB781 /* kai */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = kai; sourceTree = BUILT_PRODUCTS_DIR; };
 		B249A255209B80CA0016B49E /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = src/main.cpp; sourceTree = "<group>"; };
@@ -83,7 +83,7 @@
 				B249A25E209B80E00016B49E /* string.cpp */,
 				B249A25F209B80E00016B49E /* utf.c */,
 				B249A255209B80CA0016B49E /* main.cpp */,
-				5D3CD46C20A3099800600F43 /* tests.cpp */,
+				5D3CD46C20A3099800600F43 /* kai_tests.cpp */,
 				B219499C209B79E0007BB781 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -182,7 +182,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > tests.cpp";
+			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > kai_tests.cpp";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -191,7 +191,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5D3CD46D20A3099800600F43 /* tests.cpp in Sources */,
+				5D3CD46D20A3099800600F43 /* kai_tests.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,4 +1,7 @@
 # Kai
+
+[![Build Status](https://travis-ci.org/kai-language/kai-c.svg?branch=master)](https://travis-ci.org/kai-language/kai-c)
+
 A C(++) version of Kai
 
 ## Building
