@@ -330,12 +330,3 @@ b32 ReadFile(String *data, String path) {
 
     return true;
 }
-
-#if TEST
-void test_ReadFile() {
-    String data = MakeString(NULL, 5000);
-    b32 result = ReadFile(&data, STR(__FILE__));
-    TEST_ASSERT(result);
-    ASSERT(0);
-}
-#endif
