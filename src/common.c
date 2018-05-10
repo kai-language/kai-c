@@ -1,8 +1,10 @@
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <strings.h>
+#include <stddef.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
@@ -49,7 +51,16 @@
 
 #endif
 
-#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
+#define MIN(x, y) ((x) <= (y) ? (x) : (y))
+#define MAX(x, y) ((x) >= (y) ? (x) : (y))
+#define CLAMP_MAX(x, max) MIN(x, max)
+#define CLAMP_MIN(x, min) MAX(x, min)
+#define IS_POW2(x) (((x) != 0) && ((x) & ((x)-1)) == 0)
+#define ALIGN_DOWN(n, a) ((n) & ~((a) - 1))
+#define ALIGN_UP(n, a) ALIGN_DOWN((n) + (a) - 1, (a))
+#define ALIGN_DOWN_PTR(p, a) ((void *)ALIGN_DOWN((uintptr_t)(p), (a)))
+#define ALIGN_UP_PTR(p, a) ((void *)ALIGN_UP((uintptr_t)(p), (a)))
+
 #define KB(x) (  (x)*1024LL)
 #define MB(x) (KB(x)*1024LL)
 #define GB(x) (MB(x)*1024LL)
@@ -117,15 +128,11 @@ typedef i32      b32;
     #endif
 #endif
 
-
-#define MAXF(a,b) ((a) > (b) ? (a) : (b))
-#define MINF(a,b) ((a) < (b) ? (a) : (b))
-
-
 void Backtrace() {
+#define BACKTRACE_MAX_STACK_DEPTH 50
 #if SYSTEM_POSIX
-    void* callstack[25];
-    int i, frames = backtrace(callstack, ArrayCount(callstack));
+    void* callstack[BACKTRACE_MAX_STACK_DEPTH];
+    int i, frames = backtrace(callstack, BACKTRACE_MAX_STACK_DEPTH);
     char** strs = backtrace_symbols(callstack, frames);
     for (i = 0; i < frames; ++i) {
         fprintf(stderr, "%s\n", strs[i]);
@@ -147,6 +154,8 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
 }
 
 
+/// Allocators
+
 typedef enum AllocType {
     AT_Alloc,
     AT_Free,
@@ -154,25 +163,82 @@ typedef enum AllocType {
     AT_Realloc
 } AllocType;
 
-
-struct Allocator;
-struct Arena;
-
-void * Alloc(Allocator, u64);
-void Free(Allocator, void *);
-void FreeAll(Allocator);
-void * Realloc(Allocator, void *, u64, u64);
-
-
 #define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, u64 size, u64 oldSize, void *old)
 typedef ALLOC_FUNC(allocFunc);
 
-
+typedef struct Allocator Allocator;
 struct Allocator {
     allocFunc *func;
     void *payload;
 };
 
+void *checkedCalloc(size_t num_elems, size_t elem_size) {
+    void *ptr = calloc(num_elems, elem_size);
+    if (!ptr) {
+        perror("calloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
+void *checkedRealloc(void *ptr, size_t num_bytes) {
+    ptr = realloc(ptr, num_bytes);
+    if (!ptr) {
+        perror("realloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
+void *checkedMalloc(size_t num_bytes) {
+    void *ptr = malloc(num_bytes);
+    if (!ptr) {
+        perror("malloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
+ALLOC_FUNC(heapAllocFunc) {
+
+    switch (alType) {
+        case AT_Alloc:
+            return checkedMalloc(size);
+        case AT_Free:
+        case AT_FreeAll:
+            free(old);
+            return NULL;
+        case AT_Realloc:
+            return checkedRealloc(old, size);
+    }
+    return NULL;
+}
+
+Allocator DefaultAllocator = { .func = heapAllocFunc, .payload = 0 };
+
+void *Alloc(Allocator al, u64 size) {
+    return al.func(al.payload, AT_Alloc, size, 0, NULL);
+}
+
+void *Free(Allocator al, void* ptr) {
+    if (ptr)
+        al.func(al.payload, AT_Free, 0, 0, ptr);
+    return NULL;
+}
+
+void *FreeAll(Allocator al) {
+    al.func(al.payload, AT_FreeAll, 0, 0, NULL);
+    return NULL;
+}
+
+void *Realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
+    return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
+}
+
+
+// Arena Allocator
+
+typedef struct Arena Arena;
 struct Arena {
     Allocator allocator;
     u8  *raw;
@@ -209,27 +275,6 @@ ALLOC_FUNC(arenaAllocFunc) {
     return NULL;
 }
 
-
-ALLOC_FUNC(heapAllocFunc) {
-    
-    switch (alType) {
-        case AT_Alloc:
-            return malloc(size);
-        case AT_Free: {
-            free(old);
-            break;
-        }
-        case AT_FreeAll: {
-            break;
-        }
-        case AT_Realloc:
-            return realloc(old, size);
-    }
-    
-    return NULL;
-}
-
-
 Allocator InitArenaAllocator(Arena *arena) {
     Allocator al;
     al.func    = arenaAllocFunc;
@@ -245,18 +290,9 @@ void InitArenaCustomAllocator(Arena *arena, Allocator al, u64 size) {
     arena->len = 0;
 }
 
-
-Allocator MakeDefaultAllocator(void) {
-    Allocator al = {0};
-    al.func = heapAllocFunc;
-    return al;
-}
-
-
 void InitArena(Arena *arena, u64 size) {
-    InitArenaCustomAllocator(arena, MakeDefaultAllocator(), size);
+    InitArenaCustomAllocator(arena, DefaultAllocator, size);
 }
-
 
 void DestroyArena(Arena *arena) {
     ASSERT(arena->raw);
@@ -264,28 +300,6 @@ void DestroyArena(Arena *arena) {
     arena->len = 0;
     arena->cap = 0;
 }
-
-
-void * Alloc(Allocator al, u64 size) {
-    return al.func(al.payload, AT_Alloc, size, 0, NULL);
-}
-
-
-void Free(Allocator al, void *ptr) {
-    if ( ptr )
-        al.func(al.payload, AT_Free, 0, 0, ptr);
-}
-
-
-void FreeAll(Allocator al) {
-    al.func(al.payload, AT_FreeAll, 0, 0, NULL);
-}
-
-
-void * Realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
-    return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
-}
-
 
 void PrintBits(u64 const size, void const * const ptr) {
     u8 *b = (u8*) ptr;
