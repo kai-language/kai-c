@@ -47,9 +47,9 @@ void *Free(Allocator al, void* ptr);
 void MapSetU64(Map *map, u64 key, u64 val);
 void MapGrow(Map *map, size_t newCap) {
     newCap = CLAMP_MIN(newCap, 16);
-    Allocator al = *(map->allocator ?: &DefaultAllocator);
+    Allocator *al = map->allocator ?: &DefaultAllocator;
     Map new_map = {
-        .allocator = &al,
+        .allocator = al,
         .keys = (u64*) checkedCalloc(newCap, sizeof(u64)),
         .vals = (u64*) checkedMalloc(newCap * sizeof(u64)),
         .cap = newCap,
@@ -59,8 +59,8 @@ void MapGrow(Map *map, size_t newCap) {
             MapSetU64(&new_map, map->keys[i], map->vals[i]);
         }
     }
-    Free(al, (void *)map->keys);
-    Free(al, (void *)map->vals);
+    Free(*al, (void *)map->keys);
+    Free(*al, (void *)map->vals);
     *map = new_map;
 }
 

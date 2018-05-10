@@ -1,5 +1,6 @@
 
-#define FileEnd 0xFFFFFFFF
+// NOTE: The data passed to the Lexer must be nul terminated
+#define FileEnd 0
 
 u32 DecodeCodePoint(u32 *cpLen, const char *str) {
     static const u32 FIRST_LEN[] = {
@@ -89,4 +90,8 @@ b32 IsNumeric(u32 cp) {
 
 b32 IsValidIdentifierHead(u32 cp) {
     return IsAlpha(cp);
+}
+
+b32 IsValidIdentifierBody(u32 cp) {
+    return IsAlpha(cp) || IsNumeric(cp) || cp == '_';
 }

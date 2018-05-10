@@ -147,13 +147,20 @@ const char *DescribeTokenKind(TokenKind tk) {
     return TokenDescriptions[tk];
 }
 
-// FIXME: Replace when we get diagnostics
-#define LEXER_ERROR(pos, ...) ASSERT_MSG_VA(0, "ERROR: %s:%u:%u %s", pos.name, pos.line, pos.column, __VA_ARGS__)
-
 struct Position {
     const char *name;
     u32 offset, line, column;
 };
+
+// FIXME: Replace when we get diagnostics
+void LEXER_ERROR(Position pos, const char *msg, ...) {
+    va_list args;
+    va_start(args, msg);
+    printf("ERROR: %s:%u:%u ", pos.name, pos.line, pos.column);
+    vprintf(msg, args);
+    va_end(args);
+    printf("\n");
+}
 
 typedef struct Token Token;
 struct Token {
@@ -198,7 +205,6 @@ u32 NextCodePoint(Lexer *l) {
     u32 cpWidth;
     u32 cp = DecodeCodePoint(&cpWidth, l->stream);
     l->stream += cpWidth;
-    l->pos.offset = (u32)(uintptr_t) (l->stream - l->startOfFile);
 
     return cp;
 }
@@ -260,15 +266,14 @@ error:
 }
 
 const char *scanString(Lexer *l) {
-    char quote = l->stream[l->pos.offset];
+    char quote = *l->stream++;
     ASSERT(quote == '"' || quote == '\'');
-    l->pos.offset++;
 
     b8 isMultiline = quote == '\'';
     DynamicArray(char) str = NULL;
     char otherQuote = isMultiline ? '`' : '"';
 
-    while (l->stream[l->pos.offset] && l->stream[l->pos.offset] != quote) {
+    while (*l->stream && *l->stream != quote) {
         u32 cp = NextCodePoint(l);
         u32 val;
         if (cp == '\n' && !isMultiline) {
@@ -444,7 +449,7 @@ void scanInt(Lexer *l) {
 Token NextToken(Lexer *l) {
 repeat:
     Token token;
-    token.start = l->stream + l->pos.offset;
+    token.start = l->stream;
     token.pos = l->pos;
 
     l->insertSemi = false;
@@ -532,7 +537,6 @@ repeat:
         CASE1('?', TK_Question);
         CASE1(',', TK_Comma);
         CASE1(';', TK_Semicolon);
-        CASE1('#', TK_Directive);
         CASE1('(', TK_Lparen);
         CASE1('[', TK_Lbrack);
         CASE1('{', TK_Lbrace);
@@ -551,6 +555,21 @@ repeat:
         CASE_SHIFT('>', TK_Gtr, TK_Shr, TK_Geq, TK_AssignShr);
         CASE_SHIFT('<', TK_Lss, TK_Shl, TK_Leq, TK_AssignShl);
 
+        case '#': {
+            token.kind = TK_Directive;
+            l->stream++;
+            if (*l->stream == FileEnd) break;
+
+            u32 cpWidth;
+            u32 cp = DecodeCodePoint(&cpWidth, l->stream);
+            while (IsValidIdentifierBody(cp)) {
+                l->stream += cpWidth;
+                cp = DecodeCodePoint(&cpWidth, l->stream);
+            }
+            token.val.name = strInternRange(token.start + 1, l->stream);
+            break;
+        }
+
         default: {
             u32 cp = NextCodePoint(l);
             if (cp == FileEnd) {
@@ -563,9 +582,12 @@ repeat:
                 l->stream++;
                 goto repeat;
             }
-            
-            while (IsAlpha(cp) || IsNumeric(cp) || cp == '_') {
-                cp = NextCodePoint(l);
+
+            u32 cpWidth;
+            cp = DecodeCodePoint(&cpWidth, l->stream);
+            while (IsValidIdentifierBody(cp)) {
+                l->stream += cpWidth;
+                cp = DecodeCodePoint(&cpWidth, l->stream);
             }
             token.val.name = strInternRange(token.start, l->stream);
             token.kind = isKeyword(token.val.name) ? TK_Keyword : TK_Ident;

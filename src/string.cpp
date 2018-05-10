@@ -6,10 +6,10 @@ struct Intern {
     char data[];
 };
 
-Allocator internAllocator;
 Arena internArena;
 Map interns;
 
+void *ArenaAlloc(Arena *arena, size_t size);
 const char *strInternRange(const char *start, const char *end) {
     size_t len = end - start;
     u64 hash = HashBytes(start, len);
@@ -20,7 +20,7 @@ const char *strInternRange(const char *start, const char *end) {
             return it->data;
         }
     }
-    Intern *newIntern = (typeof newIntern) Alloc(internAllocator, offsetof(Intern, data) + len + 1);
+    Intern *newIntern = (typeof newIntern) ArenaAlloc(&internArena, offsetof(Intern, data) + len + 1);
     newIntern->len = len;
     newIntern->next = intern;
     memcpy(newIntern->data, start, len);

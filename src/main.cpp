@@ -54,7 +54,15 @@ int main(int argc, char **argv) {
 
     Token token;
     while ((token = NextToken(&lexer)).kind != TK_Eof) {
-        printf("kind: '%s', lit: '%s'\n", DescribeTokenKind(token.kind), token.val);
+        switch (token.kind) {
+            case TK_Int:
+                printf("kind: '%s', lit: '%llu'\n", DescribeTokenKind(token.kind), token.val.i);
+            case TK_Float:
+                printf("kind: '%s', lit: '%f'\n", DescribeTokenKind(token.kind), token.val.f);
+            default:
+                printf("kind: '%s', lit: '%s'\n", DescribeTokenKind(token.kind), token.val.s);
+        }
+        token.val.i = 0;
     }
 
     return 0;
