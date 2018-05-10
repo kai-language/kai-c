@@ -10,58 +10,69 @@ int _fileTestsPassCount = 0;
 int _totalTestsPassCount = 0;
 int _currentTestAsserted = 0;
 int _shouldNoteTestLog = 0;
+const char *_currentTestCaseName;
 
-jmp_buf returnToTestMain;
+jmp_buf _returnToPerformTestCase;
 
-void handleSignal(int sig, siginfo_t *info, void *where) {
-    longjmp(returnToTestMain, 1);
+void colorBold() {
+#ifndef NO_COLOR
+    printf("\033[1m");
+#endif
 }
 
-#define ASSERT_MSG_VA(cond, msg, ...) do { \
-        if (!(cond)) { \
-            assertHandler(__FILE__, (i32)__LINE__, msg, __VA_ARGS__); \
-            fprintf(stderr, "\n"); \
-            _currentTestAsserted = 1; \
-            _shouldNoteTestLog = 1; \
-            raise(SIGINT); \
-        } \
+void colorGreen() {
+#ifndef NO_COLOR
+    printf("\033[32m");
+#endif
+}
+
+void colorRed() {
+#ifndef NO_COLOR
+    printf("\033[31m");
+#endif
+}
+
+void colorGray() {
+#ifndef NO_COLOR
+    printf("\033[90m");
+#endif
+}
+
+void colorReset() {
+#ifndef NO_COLOR
+    printf("\033[0m");
+#endif
+}
+
+void handleSignal(int sig, siginfo_t *info, void *where) {
+    longjmp(_returnToPerformTestCase, 1);
+}
+
+#define ASSERT_MSG_VA(cond, msg, ...) do { \\
+        if (!(cond)) { \\
+            assertHandler(__FILE__, (i32)__LINE__, msg, __VA_ARGS__); \\
+            fprintf(stderr, "\n"); \\
+            _currentTestAsserted = 1; \\
+            _shouldNoteTestLog = 1; \\
+            raise(SIGINT); \\
+        } \\
     } while(0)
 
-    #define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, msg, 0)
+#define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, msg, 0)
 
-    #define ASSERT(cond) ASSERT_MSG_VA(cond, 0, 0)
-    #define PANIC(msg) ASSERT_MSG_VA(0, msg, 0)
-    #define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented", 0);
+#define ASSERT(cond) ASSERT_MSG_VA(cond, 0, 0)
+#define PANIC(msg) ASSERT_MSG_VA(0, msg, 0)
+#define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented", 0);
 
-#define TEST_ASSERT(cond) \
-if (!cond) { \
-    _currentTestAsserted = 1; \
-    raise(SIGINT); \
-    return; \
+#define TEST_ASSERT(cond) \\
+if (!(cond)) { \\
+    fprintf(stderr, "Assert failure: %s:%d: %s\n", __FILE__, (i32)__LINE__, "" #cond ""); \
+    _currentTestAsserted = 1; \\
+    raise(SIGINT); \\
+    return; \\
 }
 
 #include "src/main.cpp"
-
-void printTest(size_t sz, int padch, const char* name, int success) {
-    size_t width = strlen(name);
-
-    if (!success) sz -= 4;
-
-    // Pad if it's shorter than desired.
-
-    // Then output the actual thing.
-
-    printf("  %s", name);
-
-    putchar(' ');
-
-    while (width++ <= sz)
-        putchar(padch);
-
-    putchar(' ');
-
-    printf("%s\n", success ? "OK" : "FAILED");
-}
 
 void setSignalHandlerCheckingError(int sig) {
     struct sigaction sa_new = {0};
@@ -72,6 +83,40 @@ void setSignalHandlerCheckingError(int sig) {
         perror("failed to set handler for signal");
         exit(1);
     }
+}
+
+void _performTestCaseReportingResults(void (*testCase)(), const char *name) {
+    _currentTestCaseName = name;
+    if (setjmp(_returnToPerformTestCase) == 0)
+        testCase();
+
+    int success = _currentTestAsserted ? 0 : 1;
+
+    size_t width = strlen(name);
+
+    int approxWidth = 60;
+
+    if (!success) approxWidth -= 4;
+
+    // Pad if it's shorter than desired.
+
+    // Then output the actual thing.
+
+    printf("  %s", name);
+
+    putchar(' ');
+
+    while (width++ <= approxWidth)
+        putchar('.');
+
+    putchar(' ');
+
+    success ? colorGreen() : colorRed();
+    printf("%s\n", success ? "OK" : "FAILED");
+
+    _fileTestsPassCount += _currentTestAsserted ? 0 : 1;
+    _totalTestsPassCount += _currentTestAsserted ? 0 : 1;
+    _currentTestAsserted = 0;
 }
 
 int main() {
@@ -92,7 +137,7 @@ for file in src/*; do
     if [ -z "$matches" ]; then
         continue
     fi
-    cat <<- EOF
+cat <<- EOF
     printf("$file:\\n");
 EOF
     for testCase in $matches; do
@@ -100,29 +145,19 @@ EOF
             continue
         fi
         testCase=$(echo "$testCase" | awk -F"({|void|\\\()" '{if($1) print $1}')
-        cat <<- EOF
-    if (setjmp(returnToTestMain) == 0)
-EOF
-        cat <<- EOF
-        $testCase();
-
-    printTest(60, '.', "$testCase", _currentTestAsserted ? 0 : 1);
-    _fileTestsPassCount += _currentTestAsserted ? 0 : 1;
-    _totalTestsPassCount += _currentTestAsserted ? 0 : 1;
-    _currentTestAsserted = 0;
-
-    // ------
-    // End of $testCase
-
-
+cat <<- EOF
+    _performTestCaseReportingResults($testCase, "$testCase");
 EOF
     done
 
     let "totalTests+=nTests"
 
-    cat <<- EOF
-    printf("%3.1f%% success (%d out of $nTests)\\n", (double) _fileTestsPassCount / $nTests.f * 100, _fileTestsPassCount);
+cat <<- EOF
+    colorGray();
+    printf("%3.1f%% success (%d out of $nTests)\\n\\n", (double) _fileTestsPassCount / $nTests.f * 100, _fileTestsPassCount);
+    colorReset();
     _fileTestsPassCount = 0;
+
 EOF
 done
 
@@ -130,9 +165,14 @@ cat <<- EOF
 
     // All tests finished executing
 
-    printf("Executed $totalTests tests, with %d failures\n", $totalTests - _totalTestsPassCount);
+    colorGray();
     if (_shouldNoteTestLog)
-        printf("\nNote: Some errors occured in called functions for details on these see tests.log\n");
+        printf("Note: Some errors occured in called functions for details on these see tests.log\n");
+    colorReset();
+
+    colorBold();
+    printf("%3.1f%% success (%d out of $totalTests)\n", (double) _totalTestsPassCount / $totalTests.f * 100, _totalTestsPassCount);
+    colorReset();
 
     return !(_totalTestsPassCount == $totalTests);
 }

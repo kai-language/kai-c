@@ -213,7 +213,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
 				GCC_C_LANGUAGE_STANDARD = c11;
-				OTHER_CFLAGS = "-DTEST";
+				OTHER_CFLAGS = (
+					"-DTEST",
+					"-DNO_COLOR",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -225,7 +228,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
 				GCC_C_LANGUAGE_STANDARD = c11;
-				OTHER_CFLAGS = "-DTEST";
+				OTHER_CFLAGS = (
+					"-DTEST",
+					"-DNO_COLOR",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
