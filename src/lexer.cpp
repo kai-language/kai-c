@@ -395,9 +395,9 @@ Token NextToken(Lexer *l) {
     l->insertSemi = false;
 
     u32 cp = l->currentCp;
-    if (IsAlpha(cp)) {
+    if (IsIdentifierHead(cp)) {
         u32 offset = l->offset;
-        while (IsAlpha(cp) || IsNumeric(cp)) {
+        while (IsIdentifierCharacter(cp)) {
             NextCodePoint(l);
             cp = l->currentCp;
         }
@@ -489,6 +489,11 @@ Token NextToken(Lexer *l) {
                 // TODO(Brett): register this allocation
                 fprintf(stderr, "NOTE: string escaping is currently unsupported\n");
             }
+        } break;
+
+        case LeftDoubleQuote: { // “
+            // TODO(Brett): report error
+            fprintf(stderr, "NOTE: unsupported unicode character '“' (0x201c). Did you mean `\"`?\n");
         } break;
 
         case '+': token.kind = switch2(l, TK_Add, TK_AssignAdd); break;
