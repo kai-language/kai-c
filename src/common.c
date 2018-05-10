@@ -117,6 +117,7 @@ typedef i32      b32;
     #endif
 #endif
 
+#define CONCAT(x,y) x##y
 
 #define MAXF(a,b) ((a) > (b) ? (a) : (b))
 #define MINF(a,b) ((a) < (b) ? (a) : (b))

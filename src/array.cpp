@@ -44,7 +44,7 @@ struct ArrayArena {
     T          *nextArray;
 };
 
-#define ARRAY_ARENA_GROWTH 1.5
+#define ARRAY_ARENA_GROWTH 1
 
 template <typename T>
 void InitArrayArena(ArrayArena<T> *aa, u32 defaultLength, u32 maxCount) {
