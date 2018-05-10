@@ -97,8 +97,8 @@ enum Operator {
         IdentList, \
         "identifier list", \
         { \
-            Token       token; \
-            Array<Ast*> idents; \
+            Token              token; \
+            DynamicArray(Ast*) idents; \
         })\
     \
     AKind( \
@@ -115,9 +115,9 @@ enum Operator {
         CompositeLit, \
         "composite literal", \
         { \
-            Token       begin; \
-            Token       end; \
-            Array<Ast*> elements; \
+            Token              begin; \
+            Token              end; \
+            DynamicArray(Ast*) elements; \
         })\
     \
     AKind( \
@@ -182,8 +182,8 @@ enum Operator {
         { \
             Token       begin; \
             Token       end; \
-            Array<Ast*> labels; \
-            Array<Ast*> args; \
+            DynamicArray(Ast*) labels; \
+            DynamicArray(Ast*) args; \
         })\
     \
     AKind( \
@@ -313,10 +313,10 @@ enum Operator {
         FuncType, \
         "function type", \
         { \
-            Token       begin; \
-            Token       end; \
-            Ast         *result; \
-            Array<Ast*> params; \
+            Token              begin; \
+            Token              end; \
+            Ast                *result; \
+            DynamicArray(Ast*) params; \
         })\
     \
     AKind( \
@@ -352,17 +352,17 @@ enum Operator {
         Assign, \
         "assignment", \
         { \
-            Token       token; \
-            Array<Ast*> lhs; \
-            Array<Ast*> rhs; \
+            Token              token; \
+            DynamicArray(Ast*) lhs; \
+            DynamicArray(Ast*) rhs; \
         })\
     \
     AKind( \
         Return, \
         "return", \
         { \
-            Token       token; \
-            Array<Ast*> stmts; \
+            Token              token; \
+            DynamicArray(Ast*) stmts; \
         })\
     \
     AKind( \
@@ -391,9 +391,9 @@ enum Operator {
         Block, \
         "block", \
         {\
-            Token       begin; \
-            Token       end; \
-            Array<Ast*> stmts; \
+            Token              begin; \
+            Token              end; \
+            DynamicArray(Ast*) stmts; \
         })\
     \
     AKind( \
@@ -410,18 +410,18 @@ enum Operator {
         CaseClause, \
         "case clause", \
         { \
-            Token       token; \
-            Array<Ast*> match; \
-            Ast         *block;  /* TODO(Jonas, Brett): entity/label support */ \
+            Token              token; \
+            DynamicArray(Ast*) match; \
+            Ast                *block;  /* TODO(Jonas, Brett): entity/label support */ \
         })\
     \
     AKind( \
         Switch, \
         "switch", \
         { \
-            Token       token; \
-            Ast         *match; \
-            Array<Ast*> cases; /* TODO(Jonas, Brett): entity/label support */ \
+            Token              token; \
+            Ast                *match; \
+            DynamicArray(Ast*) cases; /* TODO(Jonas, Brett): entity/label support */ \
         })\
     \
     AKind( \
@@ -477,11 +477,11 @@ enum Operator {
         Declaration, \
         "declaration", \
         { \
-            Token       token; \
-            Array<Ast*> names; \
-            Array<Ast*> values; \
-            Ast         *type; \
-            b8          isConstant; \
+            Token              token; \
+            DynamicArray(Ast*) names; \
+            DynamicArray(Ast*) values; \
+            Ast                *type; \
+            b8                 isConstant; \
         })\
     \
     AKind( \

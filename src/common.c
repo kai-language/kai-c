@@ -161,19 +161,23 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
 
 
 /// Allocators
-
 typedef enum AllocType {
     AT_Alloc,
+    AT_Calloc,
+    AT_Realloc,
     AT_Free,
     AT_FreeAll,
-    AT_Realloc
 } AllocType;
 
-#define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, u64 size, u64 oldSize, void *old)
-typedef ALLOC_FUNC(allocFunc);
+
+// NOTE: count is the target bytes always, size is either the size in bytes of each entry (for calloc) or the old size for realloc.
+#define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, size_t count, size_t size, void *old)
+typedef void *allocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old);
+//typedef ALLOC_FUNC(allocFunc);
 
 typedef struct Allocator Allocator;
 struct Allocator {
+
     allocFunc *func;
     void *payload;
 };
@@ -205,25 +209,30 @@ void *checkedMalloc(size_t num_bytes) {
     return ptr;
 }
 
-ALLOC_FUNC(heapAllocFunc) {
-
+void *heapAllocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old) {
     switch (alType) {
         case AT_Alloc:
-            return checkedMalloc(size);
+            return checkedMalloc(count);
+        case AT_Calloc:
+            return checkedCalloc(count, size);
         case AT_Free:
         case AT_FreeAll:
             free(old);
             return NULL;
         case AT_Realloc:
-            return checkedRealloc(old, size);
+            return checkedRealloc(old, count);
     }
     return NULL;
 }
 
 Allocator DefaultAllocator = { .func = heapAllocFunc, .payload = 0 };
 
-void *Alloc(Allocator al, u64 size) {
-    return al.func(al.payload, AT_Alloc, size, 0, NULL);
+void *Alloc(Allocator al, size_t count) {
+    return al.func(al.payload, AT_Alloc, count, 0, NULL);
+}
+
+void *Calloc(Allocator al, size_t count, size_t size) {
+    return al.func(al.payload, AT_Calloc, count, size, NULL);
 }
 
 void *Free(Allocator al, void* ptr) {
@@ -237,7 +246,7 @@ void *FreeAll(Allocator al) {
     return NULL;
 }
 
-void *Realloc(Allocator al, void *ptr, u64 oldsize, u64 size) {
+void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
 }
 
@@ -252,17 +261,23 @@ struct Arena {
     u64 len;
 };
 
-
-ALLOC_FUNC(arenaAllocFunc) {
+void *arenaAllocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old) {
     Arena *arena = (Arena *) payload;
-    
+
     switch (alType) {
         case AT_Alloc: {
-            if (arena->len + size > arena->cap) {
-                return NULL;
-            }
+            if (arena->len + count > arena->cap) return NULL;
             u8 *ptr = &arena->raw[arena->len];
-            arena->len += size;
+            arena->len += count;
+            return ptr;
+        }
+        case AT_Calloc: {
+            size_t bytes = count * size;
+            ASSERT(bytes >= count || size == 0);
+            if (arena->len + bytes > arena->cap) return NULL;
+            u8 *ptr = &arena->raw[arena->len];
+            arena->len += bytes;
+            memset(ptr, 0, bytes);
             return ptr;
         }
         case AT_Free:
@@ -271,7 +286,7 @@ ALLOC_FUNC(arenaAllocFunc) {
             break;
         }
         case AT_Realloc: {
-            u8 *buff = (u8 *) Realloc(arena->allocator, arena->raw, oldSize, size);
+            u8 *buff = (u8 *) Realloc(arena->allocator, arena->raw, count, size);
             arena->raw = buff;
             arena->cap = size;
             return buff;
@@ -281,7 +296,7 @@ ALLOC_FUNC(arenaAllocFunc) {
     return NULL;
 }
 
-Allocator InitArenaAllocator(Arena *arena) {
+Allocator MakeArenaAllocator(Arena *arena) {
     Allocator al;
     al.func    = arenaAllocFunc;
     al.payload = arena;
@@ -302,10 +317,42 @@ void InitArena(Arena *arena, u64 size) {
 
 void DestroyArena(Arena *arena) {
     ASSERT(arena->raw);
-    Free(arena->allocator, arena->raw);
+    arena->raw = (typeof arena->raw) Free(arena->allocator, arena->raw);
     arena->len = 0;
     arena->cap = 0;
 }
+
+#if TEST
+void test_arena() {
+    u64 bytes = MB(1);
+    Arena arena;
+    InitArena(&arena, bytes);
+    TEST_ASSERT(arena.cap == bytes);
+
+    Allocator al = MakeArenaAllocator(&arena);
+
+    u64 N = 1024;
+    u64* mem = (u64*) Alloc(al, bytes);
+    TEST_ASSERT(arena.len == bytes);
+    for (int i = 0; i < N; i++) {
+        mem[i] = i;
+    }
+
+    arena.len = 0;
+    u64 *ptr = (u64*) Calloc(al, N, sizeof(u64));
+
+    TEST_ASSERT(arena.len == N * sizeof(u64));
+    for (int i = 0; i < N; i++) {
+        TEST_ASSERT(ptr[i] == 0);
+    }
+
+    DestroyArena(&arena);
+
+    TEST_ASSERT(arena.len == 0);
+    TEST_ASSERT(arena.cap == 0);
+    TEST_ASSERT(arena.raw == NULL);
+}
+#endif
 
 void PrintBits(u64 const size, void const * const ptr) {
     u8 *b = (u8*) ptr;
@@ -323,12 +370,22 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
+void testAssertHandler(char const *file, i32 line, char const *msg, ...) {
+    Backtrace();
+
+    if (msg) {
+        fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
+    } else {
+        fprintf(stderr, "Assert failure: %s:%d\n", file, line);
+    }
+}
+
+
 
 #include "string.cpp"
 #include "utf.c"
-#include "array.cpp"
-#include "hash.c"
-#include "map.cpp"
+#include "array.c"
+#include "map.c"
 
 b32 ReadFile(String *data, String path) {
     i32 file;
