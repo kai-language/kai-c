@@ -1,16 +1,17 @@
-#include "common.cpp"
-#include "lexer.cpp"
+
+#include "common.c"
+#include "lexer.c"
 
 // forward declarations
-#include "parser.hpp"
-#include "checker.hpp"
+#include "parser.h"
+#include "checker.h"
 
-#include "parser.cpp"
-#include "checker.cpp"
+#include "parser.c"
+#include "checker.c"
 
 #define IndentSize 2
 
-void printUsage(u32 indentLevel, char *fmt, ...) {
+void printUsage(u32 indentLevel, const char *fmt, ...) {
     while (indentLevel --> 0) {
         fprintf(stderr, "%*s", IndentSize, "");
     }
@@ -36,36 +37,7 @@ void Usage() {
     printUsage(1, "-emit-times            Emit times for each stage of compilation");
 }
 
-void Backtrace() {
-    #if SYSTEM_POSIX
-        void* callstack[25];
-        int i, frames = backtrace(callstack, ArrayCount(callstack));
-        char** strs = backtrace_symbols(callstack, frames);
-        for (i = 0; i < frames; ++i) {
-            fprintf(stderr, "%s\n", strs[i]);
-        }
-        free(strs);
-    #elif SYSTEM_WINDOWS
-        UNIMPLEMENTED();
-    #endif
-}
-
-void assertHandler(char const *file, i32 line, char const *msg, ...) {
-    Backtrace();
-
-    fprintf(stderr, "Assert failure");
-
-    if (msg) {
-        fprintf(stderr, ": ");
-        va_list va;
-        va_start(va, msg);
-        vfprintf(stderr, msg, va);
-        va_end(va);
-    }
-
-    fprintf(stderr, "\n");
-}
-
+#ifndef TEST
 int main(int argc, char **argv) {
     if (argc < 2) {
         Usage();
@@ -88,3 +60,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+#endif
