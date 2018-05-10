@@ -54,7 +54,7 @@ void InitArrayArena(ArrayArena<T> *aa, u32 defaultLength, u32 maxCount) {
         defaultLength = MAX_CAP;
     }
 #endif
-    aa->baseAllocator = MakeDefaultAllocator();
+    aa->baseAllocator = DefaultAllocator;
     
     aa->defaultLength = defaultLength;
     aa->maxCount      = maxCount;
