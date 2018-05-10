@@ -99,11 +99,12 @@ EOF
         if [[ "$testCase" = "void" ]] || [[ "$testCase" = "{" ]]; then
             continue
         fi
+        testCase=$(echo "$testCase" | awk -F"({|void|\\\()" '{if($1) print $1}')
         cat <<- EOF
     if (setjmp(returnToTestMain) == 0)
 EOF
-        echo "$testCase" | awk -F"({|void|\\\()" '{if($1) print "        " $1 "();"}'
         cat <<- EOF
+        $testCase();
 
     printTest(60, '.', "$testCase", _currentTestAsserted ? 0 : 1);
     _fileTestsPassCount += _currentTestAsserted ? 0 : 1;
