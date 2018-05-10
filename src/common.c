@@ -5,6 +5,8 @@
 #include <stdarg.h>
 #include <strings.h>
 #include <stddef.h>
+#include <ctype.h>
+#include <math.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
@@ -47,8 +49,19 @@
     #include <sys/stat.h>
     #include <sys/mman.h>
     #include <execinfo.h>
+    #include <limits.h>
 #elif SYSTEM_WINDOWS
 
+#endif
+
+#ifndef MAX_PATH
+    #if defined _MAX_PATH
+        #define MAX_PATH _MAX_PATH
+    #elif defined PATH_MAX
+        #define MAX_PATH PATH_MAX
+    #else
+        #error "No suitable MAX_PATH surrogate"
+    #endif
 #endif
 
 #define MIN(x, y) ((x) <= (y) ? (x) : (y))
@@ -246,7 +259,6 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
 
 #include "map.c"
 #include "array.c"
-#include "string.cpp"
 #include "utf.c"
 
 // Arena Allocator
@@ -257,6 +269,8 @@ struct Arena {
     u8 *end;
     u8 **blocks;
 };
+
+#include "string.cpp"
 
 #define ARENA_BLOCK_SIZE MB(1)
 
@@ -322,23 +336,20 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
-b32 ReadFile(String *data, String path) {
-    i32 file;
-    if ((file = open((const char *)path.data, O_RDONLY)) < -1) {
-        return false;
-    }
+// FIXME: We are mmap()'ing this with no way to munmap it currently
+char *ReadFile(const char *path) {
+    i32 fd = open(path, O_RDONLY);
+    if (fd < 0) return NULL;
 
-    struct stat buf;
-    if (fstat(file, &buf) < 0 ) {
-        return false;
-    }
+    FILE *file = fdopen(fd, "rb");
+    if (!file) return NULL;
 
-    u64 len = buf.st_size;
-    void *address = mmap(NULL, len, PROT_READ, MAP_PRIVATE, file, 0);
-    if (address == MAP_FAILED)
-        return false;
+    fseek(file, 0, SEEK_END);
+    size_t len = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-    *data = MakeString((u8 *) address, (u32)len);
+    char *address = (char*) mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (address == MAP_FAILED) return NULL;
 
-    return true;
+    return address;
 }

@@ -1,6 +1,80 @@
 
+const char *ifKeyword;
+const char *forKeyword;
+const char *fnKeyword;
+const char *returnKeyword;
+const char *nilKeyword;
+const char *structKeyword;
+const char *enumKeyword;
+const char *unionKeyword;
+const char *elseKeyword;
+const char *switchKeyword;
+const char *caseKeyword;
+const char *castKeyword;
+const char *bitcastKeyword;
+const char *autocastKeyword;
+const char *usingKeyword;
+const char *gotoKeyword;
+const char *breakKeyword;
+const char *continueKeyword;
+const char *fallthroughKeyword;
+const char *deferKeyword;
+const char *inKeyword;
+
+const char *firstKeyword;
+const char *lastKeyword;
+const char **keywords;
+
+const char *import_name;
+const char *foreign_name;
+const char *assert_name;
+
+#define KEYWORD(name) name##Keyword = strIntern(#name); ArrayPush(keywords, name##Keyword)
+
+void initKeywords(void) {
+    static bool inited;
+    if (inited) {
+        return;
+    }
+
+    KEYWORD(if);
+    KEYWORD(for);
+    KEYWORD(fn);
+    KEYWORD(return);
+    KEYWORD(nil);
+    KEYWORD(struct);
+    KEYWORD(enum);
+    KEYWORD(union);
+    KEYWORD(else);
+    KEYWORD(switch);
+    KEYWORD(case);
+    KEYWORD(cast);
+    KEYWORD(bitcast);
+    KEYWORD(autocast);
+    KEYWORD(using);
+    KEYWORD(goto);
+    KEYWORD(break);
+    KEYWORD(continue);
+    KEYWORD(fallthrough);
+    KEYWORD(defer);
+    KEYWORD(in);
+    firstKeyword = ifKeyword;
+    lastKeyword = inKeyword;
+
+    import_name = strIntern("import");
+    foreign_name = strIntern("foreign");
+    assert_name = strIntern("assert");
+
+    inited = true;
+}
+
+#undef KEYWORD
+
+bool isKeyword(const char *name) {
+    return firstKeyword <= name && name <= lastKeyword;
+}
+
 #define TOKEN_KINDS \
-    TKind(Invalid, "<invalid>"), \
     TKind(Eof, "EOF"), \
     TKind(Comment, "comment"), \
     TKind(Ident, "identifier"), \
@@ -55,30 +129,7 @@
 \
     /* NOTE: all keywords must come after this case and be before "__Meta_KeywordsEnd" */ \
     /* These keywords are roughly-sorted by how common they are */ \
-    TKind(__Meta_KeywordsStart, ""), \
-    TKind(If, "if"), \
-    TKind(For, "for"), \
-    TKind(Fn, "fn"), \
-    TKind(Return, "return"), \
-    TKind(Nil, "nil"), \
-    TKind(Struct, "struct"), \
-    TKind(Enum, "enum"), \
-    TKind(Union, "union"), \
-    TKind(Else, "else"), \
-    TKind(Switch, "switch"), \
-    TKind(Case, "case"), \
-    TKind(Cast, "cast"), \
-    TKind(Bitcast, "bitcast"), \
-    TKind(Autocast, "autocast"), \
-    TKind(Using, "using"), \
-    TKind(Goto, "goto"), \
-    TKind(Break, "break"), \
-    TKind(Continue, "continue"), \
-    TKind(Fallthrough, "fallthrough"), \
-    TKind(Defer, "defer"), \
-    TKind(In, "in"), \
-    TKind(Variant, "variant"), \
-    TKind(__Meta_KeywordsEnd, "")
+    TKind(Keyword, "")
 
 enum TokenKind {
 #define TKind(e, s) TK_##e
@@ -86,443 +137,395 @@ enum TokenKind {
 #undef TKind
 };
 
-String const TokenDescriptions[] = {
-#define TKind(e, s) STR(s)
+const char *TokenDescriptions[] = {
+#define TKind(e, s) "" #s ""
     TOKEN_KINDS
 #undef TKind
 };
 
-String DescribeTokenKind(TokenKind tk) {
+const char *DescribeTokenKind(TokenKind tk) {
     return TokenDescriptions[tk];
 }
 
+// FIXME: Replace when we get diagnostics
+#define LEXER_ERROR(pos, ...) ASSERT_MSG_VA(0, "ERROR: %s:%u:%u %s", pos.name, pos.line, pos.column, __VA_ARGS__)
+
 struct Position {
-    String filename;
-    u32 offset,
-        line,
-        column;
+    const char *name;
+    u32 offset, line, column;
 };
 
+typedef struct Token Token;
 struct Token {
     TokenKind kind;
-    String lit;
+    const char *start;
+    const char *end;
     Position pos;
+    union val {
+        unsigned long long i;
+        double f;
+        const char *s;
+        const char *name;
+    } val;
 };
 
-Token InvalidToken = {
-    TK_Invalid,
-    STR("<invalid>")
-};
-
+typedef struct Lexer Lexer;
 struct Lexer {
-    String path;
-    String data;
+    const char *stream;
+    const char *startOfLine;
+    const char *startOfFile;
 
-    u32 lineCount;
-    u32 offset;
-    u32 column;
-
-    u32 currentCp;
-
-    u8 currentCpWidth;
+    Position pos;
 
     b8 insertSemi;
     b8 insertSemiBeforeLBrace;
 };
 
-void NextCodePoint(Lexer *l);
+Lexer MakeLexer(const char *data, const char *name) {
+    Lexer l = {0};
 
-b32 MakeLexer(Lexer *l, String path) {
-    String data;
-    b32 ok = ReadFile(&data, path);
-    if (!ok) {
-        return false;
+    l.stream = data;
+    l.startOfLine = data;
+    l.startOfFile = data;
+
+    l.pos.name = name;
+    l.pos.line = 1;
+
+    return l;
+}
+
+u32 NextCodePoint(Lexer *l) {
+    u32 cpWidth;
+    u32 cp = DecodeCodePoint(&cpWidth, l->stream);
+    l->stream += cpWidth;
+    l->pos.offset = (u32)(uintptr_t) (l->stream - l->startOfFile);
+
+    return cp;
+}
+
+u8 charToDigit[256] = {
+    ['0'] = 0,
+    ['1'] = 1,
+    ['2'] = 2,
+    ['3'] = 3,
+    ['4'] = 4,
+    ['5'] = 5,
+    ['6'] = 6,
+    ['7'] = 7,
+    ['8'] = 8,
+    ['9'] = 9,
+    ['a'] = 10, ['A'] = 10,
+    ['b'] = 11, ['B'] = 11,
+    ['c'] = 12, ['C'] = 12,
+    ['d'] = 13, ['D'] = 13,
+    ['e'] = 14, ['E'] = 14,
+    ['f'] = 15, ['F'] = 15,
+};
+
+char escapeToChar[256] = {
+    ['\''] = '\'',
+    ['"'] = '"',
+    ['`'] = '`',
+    ['\\'] = '\\',
+    ['n'] = '\n',
+    ['r'] = '\r',
+    ['t'] = '\t',
+    ['v'] = '\v',
+    ['b'] = '\b',
+    ['a'] = '\a',
+    ['0'] = 0,
+};
+
+u32 scanNumericEscape(Lexer *l, i32 n, u32 max) {
+    u32 x = 0;
+
+    for (; n > 0; n--) {
+        u32 cp = NextCodePoint(l);
+        if (cp == FileEnd || cp > 255) goto error;
+        u32 digit = charToDigit[(u8) cp];
+        if (digit == 0 && cp != '0') goto error;
+        x *= 16 + digit;
     }
 
-    l->path = path;
-    l->data = data;
-    l->offset = 0;
-    l->lineCount = 1;
-    l->insertSemi = false;
-    l->insertSemiBeforeLBrace = false;
 
-    NextCodePoint(l);
-
-    return true;
-}
-
-void NextCodePoint(Lexer *l) {
-    if (l->offset < l->data.len) {
-        String curr = Slice(l->data, l->offset, l->data.len);
-        u32 cp, cpWidth;
-        cp = DecodeCodePoint(&cpWidth, curr);
-
-        if (cp == '\n') {
-            l->lineCount += (l->insertSemi) ? 1 : 0;
-            l->column = 0;
-        }
-
-        l->currentCp = cp;
-        l->currentCpWidth = cpWidth;
-        l->offset += cpWidth;
-        l->column += 1;
-    } else {
-        l->offset = l->data.len - 1;
-        if (l->data[l->offset] == '\n') {
-            l->lineCount += 1;
-            l->column = 0;
-        }
-
-        l->currentCp = FileEnd;
-        l->currentCpWidth = 1;
+    if (x > max || (0xD800 <= x && x < 0xE000)) {
+        LEXER_ERROR(l->pos, "Escape sequence is an invalid Unicode code point");
+        return 0;
     }
+    return x;
+
+error:
+    LEXER_ERROR(l->pos, "Invalid escape sequence");
+    return 0;
 }
 
-void skipWhitespace(Lexer *l) {
-    while (true) {
-        switch (l->currentCp) {
-        case '\n': {
-            if (l->insertSemi)
-                return;
-            NextCodePoint(l);
-        } break;
+const char *scanString(Lexer *l) {
+    char quote = l->stream[l->pos.offset];
+    ASSERT(quote == '"' || quote == '\'');
+    l->pos.offset++;
 
-        case ' ':
-        case '\t':
-        case '\r': {
-            NextCodePoint(l);
-        } break;
+    b8 isMultiline = quote == '\'';
+    DynamicArray(char) str = NULL;
+    char otherQuote = isMultiline ? '`' : '"';
 
-        default:
-            return;
+    while (l->stream[l->pos.offset] && l->stream[l->pos.offset] != quote) {
+        u32 cp = NextCodePoint(l);
+        u32 val;
+        if (cp == '\n' && !isMultiline) {
+            LEXER_ERROR(l->pos, "String literal cannot contain newline");
+            return NULL;
+        } else if (cp == '\\') {
+            u32 cp = NextCodePoint(l);
+            switch (cp) {
+                case 'x':
+                    val = scanNumericEscape(l, 2, 0xFF);
+                    break;
+
+                case 'u':
+                    val = scanNumericEscape(l, 4, 0x0010FFFF);
+                    break;
+
+                case 'U':
+                    val = scanNumericEscape(l, 8, 0x0010FFFF);
+                    break;
+
+                default:
+                    if (cp > 255) goto error;
+                    val = escapeToChar[(u8) cp];
+                    if (val == 0 && cp != '0' && cp != otherQuote) {
+                    error:
+                        LEXER_ERROR(l->pos, "Invalid character literal escape '\\%lc'", (wint_t) cp);
+                        return NULL;
+                    }
+            }
+
+            // Encode the code point directly to the array
+            ArrayFit(str, ArrayLen(str) + 4);
+            u32 len = EncodeCodePoint(str + ArrayLen(str), cp);
+            _array_hdr(str)->len += len;
         }
     }
+
+    u32 closingQuote = NextCodePoint(l);
+    if (closingQuote == FileEnd) {
+        LEXER_ERROR(l->pos, "Unexpected end of file within string literal");
+        return NULL;
+    }
+    ASSERT(closingQuote == quote);
+
+    ArrayPush(str, 0); // Nul term
+
+    return str;
 }
 
-u32 digitValue(u32 cp) {
-    if (cp >= '0' && cp <= '9')
-        return cp - '0';
-    else if (cp >= 'A' && cp <= 'F')
-        return cp - 'A' + 10;
-    else if (cp >= 'a' && cp <= 'f')
-        return cp - 'a' + 10;
-    else
-        return 16;
+double scanFloat(Lexer *l) {
+    const char *start = l->stream;
+    while (isdigit(*l->stream)) {
+        l->stream++;
+    }
+    if (*l->stream == '.') {
+        l->stream++;
+    }
+    if (tolower(*l->stream) == 'e') {
+        l->stream++;
+        if (*l->stream == '+' || *l->stream == '-') {
+            l->stream++;
+        }
+        if (!isdigit(*l->stream)) {
+            LEXER_ERROR(l->pos, "Expected digit after float literal exponent, found '%c'.", *l->stream);
+        }
+        while (isdigit(*l->stream)) {
+            l->stream++;
+        }
+    }
+
+    double val = strtod(start, NULL);
+    if (val == HUGE_VAL) {
+        LEXER_ERROR(l->pos, "Float literal overflow");
+        return 0.f;
+    }
+    return val;
 }
 
-void scanMatissa(Lexer *l, u32 base) {
-    while (l->currentCp != FileEnd) {
-        if (l->currentCp != '_' && digitValue(l->currentCp) >= base)
+void scanInt(Lexer *l) {
+    int base = 10;
+    const char *start_digits = l->stream;
+    if (*l->stream == '0') {
+        l->stream++;
+        if (tolower(*l->stream) == 'x') {
+            l->stream++;
+            base = 16;
+            start_digits = l->stream;
+        } else if (tolower(*l->stream) == 'b') {
+            l->stream++;
+            base = 2;
+            start_digits = l->stream;
+        } else if (isdigit(*l->stream)) {
+            base = 8;
+            start_digits = l->stream;
+        }
+    }
+    u64 val = 0;
+    for (;;) {
+        if (*l->stream == '_') {
+            l->stream++;
+            continue;
+        }
+        int digit = charToDigit[(u8) *l->stream];
+        if (digit == 0 && *l->stream != '0') {
             break;
-
-        NextCodePoint(l);
-    }
-}
-
-Token scanNumber(Lexer *l, b32 seenDecimal) {
-    u32 start = l->offset;
-
-    Token token;
-    token.kind = TK_Int;
-    token.lit = Slice(l->data, start-l->currentCpWidth, start);
-    token.pos.filename = l->path;
-    token.pos.line = l->lineCount;
-    token.pos.offset = l->offset;
-    token.pos.column = l->column;
-
-    b32 mustBeInteger = false;
-
-    if (seenDecimal) {
-        token.kind = TK_Float;
-        scanMatissa(l, 10);
-    }
-
-    if (l->currentCp == '0' && !seenDecimal) {
-        NextCodePoint(l);
-
-        switch (l->currentCp) {
-        case 'x': {
-            NextCodePoint(l);
-            scanMatissa(l, 16);
-            mustBeInteger = true;
-        } break;
-
-        case 'b': {
-            NextCodePoint(l);
-            scanMatissa(l, 2);
-            mustBeInteger = true;
-        } break;
-
-        default:
-            scanMatissa(l, 10);
         }
-    }
-
-    if (!seenDecimal && !mustBeInteger) {
-        scanMatissa(l, 10);
-    }
-
-    if (l->currentCp == '.' && !seenDecimal && !mustBeInteger) {
-        NextCodePoint(l);
-        token.kind = TK_Float;
-        scanMatissa(l, 10);
-    }
-
-    // TODO(Brett): exponent
-
-    token.lit.len = l->offset - start;
-    return token;
-}
-
-b32 findLineEnd(Lexer *l) {
-    u32 cp, offset, lc;
-    cp = l->currentCp;
-    offset = l->offset;
-    lc = l->lineCount;
-    b32 found = false;
-
-    while (l->currentCp == '/' || l->currentCp == '*') {
-        if (l->currentCp == '/') {
-            found = true;
-            goto done;
+        if (digit >= base) {
+            LEXER_ERROR(l->pos, "Digit '%c' out of range for base %d, *l->stream, base", *l->stream);
+            digit = 0;
         }
-
-        NextCodePoint(l);
-        while (l->currentCp != FileEnd) {
-            if (l->currentCp == '\n') {
-                found = true;
-                goto done;
+        if (val > (ULLONG_MAX - digit) / base) {
+            LEXER_ERROR(l->pos, "Integer literal overflow");
+            while (isdigit(*l->stream)) {
+                l->stream++;
             }
-
-            NextCodePoint(l);
-            if (l->currentCp == '*' && l->currentCp == '/') {
-                break;
-            }
+            val = 0;
+            break;
         }
-
-        skipWhitespace(l);
-        if (l->currentCp == '\n' || l->currentCp == FileEnd) {
-            found = true;
-            goto done;
-        }
-
-        if (l->currentCp != '/') {
-            found = false;
-            goto done;
-        }
-
-        NextCodePoint(l);
+        val = val*base + digit;
+        l->stream++;
     }
-
-done:
-    l->currentCp = cp;
-    l->offset = offset;
-    l->lineCount = lc;
-    return found;
-}
-
-void scanEscape(Lexer *l) {
-    switch (l->currentCp) {
-    case 'a':
-    case 'b':
-    case 'f':
-    case 'n':
-    case 'r':
-    case 't':
-    case 'v':
-    case '\\':
-    case '"': {
-        NextCodePoint(l);
-    } break;
-
-    default:
-        UNIMPLEMENTED(); // TODO(Brett): "unknown escape" error
+    if (l->stream == start_digits) {
+        LEXER_ERROR(l->pos, "Expected base %d digit, got '%c'", base, *l->stream);
     }
 }
 
 #define CASE1(c1, t1) \
     case c1: \
+        l->stream++; \
         token.kind = t1; \
         break;
 
 #define CASE2(c1, t1, c2, t2) \
     case c1: \
+        l->stream++; \
         token.kind = t1; \
-        if (l->currentCp == c2) { \
-            NextCodePoint(l); \
+        if (*l->stream == c2) { \
+            l->stream++; \
             token.kind = t2; \
         } \
         break;
     
 #define CASE3(c1, t1, c2, t2, c3, t3) \
     case c1: \
+        l->stream++; \
         token.kind = t1; \
-        if (l->currentCp == c2) { \
-            NextCodePoint(l); \
+        if (*l->stream == c2) { \
+            l->stream++; \
             token.kind = t2; \
-        } else if (l->currentCp == c3) { \
-            NextCodePoint(l); \
+        } else if (*l->stream == c3) { \
+            l->stream++; \
             token.kind = t3; \
         } \
         break;
 
 #define CASE_SHIFT(c1, t1, t2, teq1, teq2) \
     case c1: \
+        l->stream++; \
         token.kind = t1; \
-        if (l->currentCp == c1) { \
-            NextCodePoint(l); \
+        if (*l->stream == c1) { \
+            l->stream++; \
             token.kind = t2; \
-            if (l->currentCp == '=') { \
+            if (*l->stream == '=') { \
+                l->stream++; \
                 token.kind = teq2; \
             } \
-        } else if (l->currentCp == '=') { \
+        } else if (*l->stream == '=') { \
+            l->stream++; \
             token.kind = teq1; \
         } \
         break;
 
 Token NextToken(Lexer *l) {
-    skipWhitespace(l);
-
-    u8 *start = &l->data[l->offset - l->currentCpWidth];
-    String lit = MakeString(start, l->currentCpWidth);
-
-    Token token = InvalidToken;
-    token.pos.filename = l->path;
-    token.pos.line = l->lineCount;
-    token.pos.offset = l->offset;
-    token.pos.column = l->column;
+repeat:
+    Token token;
+    token.start = l->stream + l->pos.offset;
+    token.pos = l->pos;
 
     l->insertSemi = false;
 
-    u32 cp = l->currentCp;
-    if (IsAlpha(cp)) {
-        u32 offset = l->offset;
-        while (IsAlpha(cp) || IsNumeric(cp)) {
-            NextCodePoint(l);
-            cp = l->currentCp;
-        }
-
-        lit.len = l->offset - offset;
-        token.kind = TK_Ident;
-
-        for (u32 i = TK___Meta_KeywordsStart; i < TK___Meta_KeywordsEnd; i += 1) {
-            if (lit == TokenDescriptions[i]) {
-                token.kind = (TokenKind)i;
-                break;
-            }
-        }
-
-        switch (token.kind) {
-        case TK_Ident:
-        case TK_Break:
-        case TK_Continue:
-        case TK_Fallthrough:
-        case TK_Return:
-        case TK_Nil: {
-            l->insertSemi = true;
-        } break;
-
-        case TK_If:
-        case TK_For:
-        case TK_Switch: {
-            l->insertSemiBeforeLBrace = true;
-        } break;
-        }
-    } else if (IsNumeric(cp)) {
-        l->insertSemi = true;
-        // NOTE: `scanNumber` handles its own lit parsing logic and we must return this token
-        // or the `token.lit = lit` below will override it
-        return scanNumber(l, false);
-    } else {
-        NextCodePoint(l);
-
-        switch (cp) {
-        case FileEnd: {
-            if (l->insertSemi) {
-                l->insertSemi = false;
-                token.kind = TK_Semicolon;
-                lit = STR("\n");
-            } else {
-                token.kind = TK_Eof;
-                lit.len = 0;
-            }
-        } break;
-
-        case '\n': {
-            // NOTE: we only reach here is self.insertSemi was
-            // set in the first place and exited early
-            // from `skipWhitespace`
-            l->insertSemi = false;
-            l->insertSemiBeforeLBrace = false;
-            token.kind = TK_Semicolon;
-        } break;
-
-        case '"': {
-            l->insertSemi = true;
-            u32 offset = l->offset - l->currentCpWidth;
-
-            while (true) {
-                u32 cp = l->currentCp;
-
-                if (cp == FileEnd) {
-                    // TODO(Brett): error handling
-                    UNIMPLEMENTED(); //"String literal not terminated"
-                    break;
+    switch (*token.start) {
+        case ' ': case '\n': case '\r': case '\t': case '\v': {
+            // Skips whitespace
+            while (isspace(*l->stream)) {
+                if (*l->stream++ == '\n') {
+                    token.pos.line++;
                 }
-
-                NextCodePoint(l);
-
-                if (cp == '"')
-                    break;
-
-                if (cp == '\\')
-                    scanEscape(l);
             }
+            goto repeat;
+        }
 
-            lit.len = l->offset - offset;
-            token.kind = TK_String;
-            StringEscapeError status;
-            status = EscapeString(&lit);
-            if (status == SEE_Error) {
-                // TODO(Brett): report error
-            } else if (status == SEE_AllocatedMem) {
-                // TODO(Brett): register this allocation
-                fprintf(stderr, "NOTE: string escaping is currently unsupported\n");
+        case '"': case '`': {
+            token.val.s = scanString(l);
+            break;
+        }
+
+        case '.': {
+            if (isdigit(l->stream[1])) {
+                token.kind = TK_Float;
+                token.val.f = scanFloat(l);
+            } else if (l->stream[1] == '.') {
+                token.kind = TK_Ellipsis;
+                l->stream += 2;
+            } else {
+                token.kind = TK_Period;
+                l->stream++;
             }
-        } break;
+            break;
+        }
+
+        case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': {
+            while (isdigit(*l->stream)) {
+                l->stream++;
+            }
+            char c = *l->stream;
+            l->stream = token.start;
+            if (c == '.' || tolower(c) == 'e') {
+                scanFloat(l);
+            } else {
+                scanInt(l);
+            }
+            break;
+        }
 
         case '/': {
             token.kind = TK_Div;
-            if (l->currentCp == '/' || l->currentCp == '*') {
-                token.kind = TK_Comment;
-                if (l->insertSemi && findLineEnd(l)) {
-                    l->insertSemi = false;
-                    token.kind = TK_Semicolon;
-                    lit = STR("\n");
-                } else {
-                    u32 offset = l->offset - l->currentCpWidth;
-                    if (l->currentCp == '/') {
-                        NextCodePoint(l);
-                        while (l->currentCp != '\n' && l->currentCp != FileEnd) {
-                            NextCodePoint(l);
-                        }
-                    } else {
-                        for (cp = l->currentCp; cp != FileEnd; cp = l->currentCp) {
-                            NextCodePoint(l);
-                            if (cp == '*' && l->currentCp == '/') {
-                                NextCodePoint(l);
-                                break;
-                            }
-                        }
-                    }
-
-                    lit.len = l->offset - offset;
-                }
-            } else if (l->currentCp == '=') {
-                NextCodePoint(l);
+            l->stream++;
+            if (*l->stream == '=') {
                 token.kind = TK_AssignDiv;
+                l->stream++;
+            } else if (*l->stream == '/') {
+                l->stream++;
+                while (*l->stream && *l->stream != '\n') {
+                    l->stream++;
+                }
+                goto repeat;
+            } else if (*l->stream == '*') {
+                l->stream++;
+                int level = 1;
+                while (*l->stream && level > 0) {
+                    if (l->stream[0] == '/' && l->stream[1] == '*') {
+                        level++;
+                        l->stream += 2;
+                    } else if (l->stream[0] == '*' && l->stream[1] == '/') {
+                        level--;
+                        l->stream += 2;
+                    } else {
+                        if (*l->stream == '\n') {
+                            token.pos.line++;
+                        }
+                        l->stream++;
+                    }
+                }
+                goto repeat;
             }
-        } break;
+            break;
+        }
 
         CASE1(':', TK_Colon);
         CASE1('$', TK_Dollar);
@@ -533,27 +536,44 @@ Token NextToken(Lexer *l) {
         CASE1('(', TK_Lparen);
         CASE1('[', TK_Lbrack);
         CASE1('{', TK_Lbrace);
+        CASE1(')', TK_Rparen);
+        CASE1(']', TK_Rbrack);
+        CASE1('}', TK_Rbrace);
         CASE2('!', TK_Not, '=', TK_Neq);
         CASE2('+', TK_Add, '=', TK_AssignAdd);
         CASE2('*', TK_Mul, '=', TK_AssignMul);
         CASE2('%', TK_Rem, '=', TK_AssignRem);
         CASE2('^', TK_Xor, '=', TK_AssignXor);
         CASE2('=', TK_Assign, '=', TK_Eql);
-        CASE2('.', TK_Period, '.', TK_Ellipsis);
         CASE3('|', TK_Or, '=', TK_AssignOr, '|', TK_Lor);
         CASE3('&', TK_And, '=', TK_AssignAnd, '&', TK_Land);
         CASE3('-', TK_Sub, '=', TK_AssignSub, '>', TK_RetArrow);
         CASE_SHIFT('>', TK_Gtr, TK_Shr, TK_Geq, TK_AssignShr);
         CASE_SHIFT('<', TK_Lss, TK_Shl, TK_Leq, TK_AssignShl);
 
-        case ')': { token.kind = TK_Rparen; l->insertSemi = true; } break;
-        case ']': { token.kind = TK_Rbrack; l->insertSemi = true; } break;
-        case '}': { token.kind = TK_Rbrace; l->insertSemi = true; } break;
-        default: token.kind = TK_Invalid;
+        default: {
+            u32 cp = NextCodePoint(l);
+            if (cp == FileEnd) {
+                token.kind = TK_Eof;
+                break;
+            }
+
+            if (!IsValidIdentifierHead(cp)) {
+                LEXER_ERROR(l->pos, "Invalid '%lc' token, skipping", (wint_t) cp);
+                l->stream++;
+                goto repeat;
+            }
+            
+            while (IsAlpha(cp) || IsNumeric(cp) || cp == '_') {
+                cp = NextCodePoint(l);
+            }
+            token.val.name = strInternRange(token.start, l->stream);
+            token.kind = isKeyword(token.val.name) ? TK_Keyword : TK_Ident;
         }
     }
-
-    token.lit = lit;
+    token.end = l->stream;
+    l->pos.column = (u32)(intptr_t) (l->stream - l->startOfLine);
+    l->pos.offset = (u32)(intptr_t) (l->stream - l->startOfFile);
     return token;
 }
 

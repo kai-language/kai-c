@@ -31,11 +31,6 @@ u64 HashBytes(const void *ptr, size_t len) {
     return x;
 }
 
-Inline
-u64 HashString(String s) {
-    return HashBytes(s.data, s.len);
-}
-
 typedef struct Map Map;
 struct Map {
     Allocator *allocator;
