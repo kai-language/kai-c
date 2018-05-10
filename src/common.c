@@ -244,109 +244,67 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
 }
 
+#include "map.c"
+#include "array.c"
+#include "string.cpp"
+#include "utf.c"
 
 // Arena Allocator
 
 typedef struct Arena Arena;
 struct Arena {
-    Allocator allocator;
-    u8  *raw;
-    u64 cap;
-    u64 len;
+    u8 *ptr;
+    u8 *end;
+    u8 **blocks;
 };
 
-void *arenaAllocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old) {
-    Arena *arena = (Arena *) payload;
+#define ARENA_BLOCK_SIZE MB(1)
 
-    switch (alType) {
-        case AT_Alloc: {
-            if (arena->len + count > arena->cap) return NULL;
-            u8 *ptr = &arena->raw[arena->len];
-            arena->len += count;
-            return ptr;
-        }
-        case AT_Calloc: {
-            size_t bytes = count * size;
-            ASSERT(bytes >= count || size == 0);
-            if (arena->len + bytes > arena->cap) return NULL;
-            u8 *ptr = &arena->raw[arena->len];
-            arena->len += bytes;
-            memset(ptr, 0, bytes);
-            return ptr;
-        }
-        case AT_Free:
-        case AT_FreeAll: {
-            arena->len = 0;
-            break;
-        }
-        case AT_Realloc: {
-            u8 *buff = (u8 *) Realloc(arena->allocator, arena->raw, count, size);
-            arena->raw = buff;
-            arena->cap = size;
-            return buff;
-        }
+void ArenaGrow(Arena *arena, size_t minSize) {
+    size_t size = CLAMP_MIN(minSize, ARENA_BLOCK_SIZE);
+    arena->ptr = (typeof arena->ptr) Alloc(DefaultAllocator, size);
+    arena->end = arena->ptr + size;
+    ArrayPush(arena->blocks, arena->ptr);
+}
+
+void *ArenaAlloc(Arena *arena, size_t size) {
+    if (size > (size_t)(arena->end - arena->ptr)) {
+        ArenaGrow(arena, size);
+        ASSERT(size <= (size_t)(arena->end - arena->ptr));
     }
-    
-    return NULL;
+    ASSERT(arena->ptr <= arena->end);
+    return arena->ptr;
 }
 
-Allocator MakeArenaAllocator(Arena *arena) {
-    Allocator al;
-    al.func    = arenaAllocFunc;
-    al.payload = arena;
-    return al;
-}
-
-
-void InitArenaCustomAllocator(Arena *arena, Allocator al, u64 size) {
-    arena->allocator = al;
-    arena->raw = (u8 *) Alloc(al, size);
-    arena->cap = size;
-    arena->len = 0;
-}
-
-void InitArena(Arena *arena, u64 size) {
-    InitArenaCustomAllocator(arena, DefaultAllocator, size);
-}
-
-void DestroyArena(Arena *arena) {
-    ASSERT(arena->raw);
-    arena->raw = (typeof arena->raw) Free(arena->allocator, arena->raw);
-    arena->len = 0;
-    arena->cap = 0;
+void ArenaFree(Arena *arena) {
+    arena->ptr = NULL;
+    arena->end = NULL;
+    for (u8 **block = arena->blocks; block != ArrayEnd(arena->blocks); block++) {
+        Free(DefaultAllocator, *block);
+    }
+    ArrayFree(arena->blocks);
 }
 
 #if TEST
 void test_arena() {
     u64 bytes = MB(1);
-    Arena arena;
-    InitArena(&arena, bytes);
-    TEST_ASSERT(arena.cap == bytes);
-
-    Allocator al = MakeArenaAllocator(&arena);
+    Arena arena = {0};
 
     u64 N = 1024;
-    u64* mem = (u64*) Alloc(al, bytes);
-    TEST_ASSERT(arena.len == bytes);
+    u64* mem = (u64*) ArenaAlloc(&arena, bytes);
     for (int i = 0; i < N; i++) {
         mem[i] = i;
     }
 
-    arena.len = 0;
-    u64 *ptr = (u64*) Calloc(al, N, sizeof(u64));
+    ArenaFree(&arena);
 
-    TEST_ASSERT(arena.len == N * sizeof(u64));
-    for (int i = 0; i < N; i++) {
-        TEST_ASSERT(ptr[i] == 0);
-    }
-
-    DestroyArena(&arena);
-
-    TEST_ASSERT(arena.len == 0);
-    TEST_ASSERT(arena.cap == 0);
-    TEST_ASSERT(arena.raw == NULL);
+    TEST_ASSERT(arena.ptr == NULL);
+    TEST_ASSERT(arena.end == NULL);
+    TEST_ASSERT(arena.blocks == NULL);
 }
 #endif
+
+
 
 void PrintBits(u64 const size, void const * const ptr) {
     u8 *b = (u8*) ptr;
@@ -363,23 +321,6 @@ void PrintBits(u64 const size, void const * const ptr) {
     }
     puts("");
 }
-
-void testAssertHandler(char const *file, i32 line, char const *msg, ...) {
-    Backtrace();
-
-    if (msg) {
-        fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
-    } else {
-        fprintf(stderr, "Assert failure: %s:%d\n", file, line);
-    }
-}
-
-
-
-#include "string.cpp"
-#include "utf.c"
-#include "array.c"
-#include "map.c"
 
 b32 ReadFile(String *data, String path) {
     i32 file;
