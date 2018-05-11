@@ -266,12 +266,16 @@ error:
     return 0;
 }
 
+// thread_local is C11
+// NOTE: We can free this after we are done all lexing
+thread_local static DynamicArray(char) _scanStringTempBuffer;
 const char *scanString(Lexer *l) {
     char quote = *l->stream++;
     ASSERT(quote == '"' || quote == '`');
 
     b8 isMultiline = quote == '`';
-    DynamicArray(char) str = NULL;
+    ArrayClear(_scanStringTempBuffer);
+    
     char otherQuote = isMultiline ? '`' : '"';
 
     while (*l->stream && *l->stream != quote) {
@@ -307,9 +311,9 @@ const char *scanString(Lexer *l) {
             cp = val;
         }
         // Encode the code point directly to the array
-        ArrayFit(str, ArrayLen(str) + 4);
-        u32 len = EncodeCodePoint(str + ArrayLen(str), cp);
-        _array_hdr(str)->len += len;
+        ArrayFit(_scanStringTempBuffer, ArrayLen(_scanStringTempBuffer) + 4);
+        u32 len = EncodeCodePoint(_scanStringTempBuffer + ArrayLen(_scanStringTempBuffer), cp);
+        _array_hdr(_scanStringTempBuffer)->len += len;
     }
 
     u32 closingQuote = NextCodePoint(l);
@@ -319,9 +323,9 @@ const char *scanString(Lexer *l) {
     }
     ASSERT(closingQuote == quote);
 
-    ArrayPush(str, 0); // Nul term
+    ArrayPush(_scanStringTempBuffer, 0); // Nul term
 
-    return str;
+    return _scanStringTempBuffer;
 }
 
 double scanFloat(Lexer *l) {
