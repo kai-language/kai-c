@@ -157,13 +157,18 @@ void Backtrace() {
 }
 
 void assertHandler(char const *file, i32 line, char const *msg, ...) {
+    va_list args;
+    va_start(args, msg);
     Backtrace();
     
     if (msg) {
-        fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
+        fprintf(stderr, "Assert failure: %s:%d: ", file, line);
+        vfprintf(stderr, msg, args);
+        fprintf(stderr, "\n");
     } else {
         fprintf(stderr, "Assert failure: %s:%d\n", file, line);
     }
+    va_end(args);
 }
 
 
@@ -273,10 +278,12 @@ struct Arena {
 #include "string.cpp"
 
 #define ARENA_BLOCK_SIZE MB(1)
+#define ARENA_ALIGNMENT 8
 
 void ArenaGrow(Arena *arena, size_t minSize) {
-    size_t size = CLAMP_MIN(minSize, ARENA_BLOCK_SIZE);
+    size_t size = ALIGN_UP(CLAMP_MIN(minSize, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
     arena->ptr = (typeof arena->ptr) Alloc(DefaultAllocator, size);
+    ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
     arena->end = arena->ptr + size;
     ArrayPush(arena->blocks, arena->ptr);
 }
@@ -286,8 +293,11 @@ void *ArenaAlloc(Arena *arena, size_t size) {
         ArenaGrow(arena, size);
         ASSERT(size <= (size_t)(arena->end - arena->ptr));
     }
+    void *allocation = arena->ptr;
+    arena->ptr = (u8*) ALIGN_UP_PTR(arena->ptr + size, ARENA_ALIGNMENT);
     ASSERT(arena->ptr <= arena->end);
-    return arena->ptr;
+    ASSERT_MSG_VA(allocation == ALIGN_DOWN_PTR(allocation, ARENA_ALIGNMENT), "The pointer %p should be aligned to %d", allocation, ARENA_ALIGNMENT);
+    return allocation;
 }
 
 void ArenaFree(Arena *arena) {

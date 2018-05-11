@@ -65,9 +65,8 @@ void MapGrow(Map *map, size_t newCap) {
 }
 
 u64 MapGetU64(Map *map, u64 key) {
-    if (map->len == 0) {
-        return 0;
-    }
+    if (map->len == 0) return 0;
+
     ASSERT(IS_POW2(map->cap));
     size_t i = (size_t)HashU64(key);
     ASSERT(map->len < map->cap);

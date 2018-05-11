@@ -172,7 +172,7 @@ struct Token {
         unsigned long long i;
         double f;
         const char *s;
-        const char *name;
+        const char *ident;
     } val;
 };
 
@@ -280,7 +280,7 @@ const char *scanString(Lexer *l) {
             LEXER_ERROR(l->pos, "String literal cannot contain newline");
             return NULL;
         } else if (cp == '\\') {
-            u32 cp = NextCodePoint(l);
+            cp = NextCodePoint(l);
             switch (cp) {
                 case 'x':
                     val = scanNumericEscape(l, 2, 0xFF);
@@ -302,13 +302,13 @@ const char *scanString(Lexer *l) {
                         LEXER_ERROR(l->pos, "Invalid character literal escape '\\%lc'", (wint_t) cp);
                         return NULL;
                     }
+                    cp = val;
             }
-
-            // Encode the code point directly to the array
-            ArrayFit(str, ArrayLen(str) + 4);
-            u32 len = EncodeCodePoint(str + ArrayLen(str), cp);
-            _array_hdr(str)->len += len;
         }
+        // Encode the code point directly to the array
+        ArrayFit(str, ArrayLen(str) + 4);
+        u32 len = EncodeCodePoint(str + ArrayLen(str), cp);
+        _array_hdr(str)->len += len;
     }
 
     u32 closingQuote = NextCodePoint(l);
@@ -329,6 +329,9 @@ double scanFloat(Lexer *l) {
         l->stream++;
     }
     if (*l->stream == '.') {
+        l->stream++;
+    }
+    while (isdigit(*l->stream)) {
         l->stream++;
     }
     if (tolower(*l->stream) == 'e') {
@@ -352,7 +355,7 @@ double scanFloat(Lexer *l) {
     return val;
 }
 
-void scanInt(Lexer *l) {
+u64 scanInt(Lexer *l) {
     int base = 10;
     const char *start_digits = l->stream;
     if (*l->stream == '0') {
@@ -392,12 +395,13 @@ void scanInt(Lexer *l) {
             val = 0;
             break;
         }
-        val = val*base + digit;
+        val = val * base + digit;
         l->stream++;
     }
     if (l->stream == start_digits) {
         LEXER_ERROR(l->pos, "Expected base %d digit, got '%c'", base, *l->stream);
     }
+    return val;
 }
 
 #define CASE1(c1, t1) \
@@ -466,6 +470,7 @@ repeat:
         }
 
         case '"': case '`': {
+            token.kind = TK_String;
             token.val.s = scanString(l);
             break;
         }
@@ -491,9 +496,11 @@ repeat:
             char c = *l->stream;
             l->stream = token.start;
             if (c == '.' || tolower(c) == 'e') {
-                scanFloat(l);
+                token.kind = TK_Float;
+                token.val.f = scanFloat(l);
             } else {
-                scanInt(l);
+                token.kind = TK_Int;
+                token.val.i = scanInt(l);
             }
             break;
         }
@@ -566,7 +573,7 @@ repeat:
                 l->stream += cpWidth;
                 cp = DecodeCodePoint(&cpWidth, l->stream);
             }
-            token.val.name = strInternRange(token.start + 1, l->stream);
+            token.val.ident = strInternRange(token.start + 1, l->stream);
             break;
         }
 
@@ -589,8 +596,8 @@ repeat:
                 l->stream += cpWidth;
                 cp = DecodeCodePoint(&cpWidth, l->stream);
             }
-            token.val.name = strInternRange(token.start, l->stream);
-            token.kind = isKeyword(token.val.name) ? TK_Keyword : TK_Ident;
+            token.val.ident = strInternRange(token.start, l->stream);
+            token.kind = isKeyword(token.val.ident) ? TK_Keyword : TK_Ident;
         }
     }
     token.end = l->stream;
@@ -603,3 +610,85 @@ repeat:
 #undef CASE2
 #undef CASE3
 #undef CASE4
+
+#if TEST
+void test_keywords() {
+    initKeywords();
+    ASSERT(isKeyword(firstKeyword));
+    ASSERT(isKeyword(lastKeyword));
+
+    for (const char **it = keywords; it != ArrayEnd(keywords); it++) {
+        ASSERT(isKeyword(*it));
+    }
+    ASSERT(!isKeyword(strIntern("asdf")));
+}
+#endif
+
+
+#if TEST
+void test_lexer() {
+    test_keywords();
+    TEST_ASSERT(strIntern("fn") == fnKeyword);
+
+#define ASSERT_TOKEN_IDENT(x) \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.kind == TK_Ident, "Expected ident token got %s", DescribeTokenKind(tok.kind)); \
+    ASSERT_MSG_VA(tok.val.ident == (x), "Expected ident token with value %s got %s", (x), tok.val.s)
+
+#define ASSERT_TOKEN_INT(x) \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.kind == TK_Int, "Expected integer token got %s", DescribeTokenKind(tok.kind)); \
+    ASSERT_MSG_VA(tok.val.i == (x), "Expected integer token with value %llu got %llu", (x), tok.val.i)
+
+#define ASSERT_TOKEN_FLOAT(x) \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.kind == TK_Float, "Expected float token got %s", DescribeTokenKind(tok.kind)); \
+    ASSERT_MSG_VA(tok.val.f == (x), "Expected float token with value %f got %f", (x), tok.val.f)
+
+#define ASSERT_TOKEN_STRING(x) \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.kind == TK_String, "Expected string token got %s", DescribeTokenKind(tok.kind)); \
+    ASSERT_MSG_VA(strcmp(tok.val.s, (x)) == 0, "Expected string token with value %s got %s", (x), tok.val.s)
+
+#define ASSERT_TOKEN_EOF() \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.kind == TK_Eof, "Expected EOF token got %s", DescribeTokenKind(tok.kind));
+
+#define ASSERT_TOKEN_KIND(x) \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.kind == x, "Expected EOF token got %s", DescribeTokenKind((x)), DescribeTokenKind(tok.kind));
+
+    Token tok;
+    Lexer lex;
+
+    lex = MakeLexer("0 2147483647 0x7fffffff 0b1111", NULL);
+    ASSERT_TOKEN_INT(0);
+    ASSERT_TOKEN_INT(2147483647);
+    ASSERT_TOKEN_INT(0x7fffffff);
+    ASSERT_TOKEN_INT(0xf);
+    ASSERT_TOKEN_EOF();
+
+    lex = MakeLexer("3.14 .123 42. 3e10", NULL);
+    ASSERT_TOKEN_FLOAT(3.14);
+    ASSERT_TOKEN_FLOAT(.123);
+    ASSERT_TOKEN_FLOAT(42.);
+    ASSERT_TOKEN_FLOAT(3e10);
+    ASSERT_TOKEN_EOF();
+
+    lex = MakeLexer("\"Hello, World\\n\"", NULL);
+    ASSERT_TOKEN_STRING("Hello, World\n");
+    ASSERT_TOKEN_EOF();
+
+    lex = MakeLexer(": := + += < <= << <<=", NULL);
+    ASSERT_TOKEN_KIND(TK_Colon);
+    ASSERT_TOKEN_KIND(TK_Colon);
+    ASSERT_TOKEN_KIND(TK_Assign);
+    ASSERT_TOKEN_KIND(TK_Add);
+    ASSERT_TOKEN_KIND(TK_AssignAdd);
+    ASSERT_TOKEN_KIND(TK_Lss);
+    ASSERT_TOKEN_KIND(TK_Leq);
+    ASSERT_TOKEN_KIND(TK_Shl);
+    ASSERT_TOKEN_KIND(TK_AssignShl);
+    ASSERT_TOKEN_EOF();
+}
+#endif
