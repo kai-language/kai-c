@@ -89,7 +89,7 @@ b32 IsNumeric(u32 cp) {
 }
 
 b32 IsValidIdentifierHead(u32 cp) {
-    return IsAlpha(cp);
+    return IsAlpha(cp) || cp == '_';
 }
 
 b32 IsValidIdentifierBody(u32 cp) {
