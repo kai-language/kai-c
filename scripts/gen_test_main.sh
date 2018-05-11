@@ -113,6 +113,7 @@ void _performTestCaseReportingResults(void (*testCase)(), const char *name) {
 
     success ? colorGreen() : colorRed();
     printf("%s\n", success ? "OK" : "FAILED");
+    colorReset();
 
     _fileTestsPassCount += _currentTestAsserted ? 0 : 1;
     _totalTestsPassCount += _currentTestAsserted ? 0 : 1;
