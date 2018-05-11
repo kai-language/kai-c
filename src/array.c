@@ -19,8 +19,8 @@ typedef struct ArrayHdr {
 #define ArrayFit(b, n) ((n) <= ArrayCap(b) ? 0 : ((b) = (typeof b) _arrayGrow((b), (n), sizeof(*(b)))))
 #define ArrayPush(b, ...) (ArrayFit((b), 1 + ArrayLen(b)), (b)[_array_hdr(b)->len++] = (__VA_ARGS__))
 #define ArrayPrintf(b, ...) ((b) = _arrayPrintf((b), __VA_ARGS__))
-#define ArrayClear(b) (_array_hdr(b)->len = 0)
-#define ArrayAllocator(b) (_array_hdr(b)->allocator)
+#define ArrayClear(b) ((b) ? _array_hdr(b)->len = 0 : 0)
+#define ArrayAllocator(b) ((b) ? _array_hdr(b)->allocator : &DefaultAllocator)
 
 void *_arrayFree(void *array, Allocator al) {
     return Free(al, _array_hdr(array));
