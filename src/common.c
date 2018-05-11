@@ -75,6 +75,8 @@
 #define ALIGN_DOWN_PTR(p, a) ((void *)ALIGN_DOWN((uintptr_t)(p), (a)))
 #define ALIGN_UP_PTR(p, a) ((void *)ALIGN_UP((uintptr_t)(p), (a)))
 
+#define CONCAT(x,y) x##y
+
 #define KB(x) (  (x)*1024LL)
 #define MB(x) (KB(x)*1024LL)
 #define GB(x) (MB(x)*1024LL)

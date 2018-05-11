@@ -562,6 +562,11 @@ repeat:
             break;
         }
 
+        case LeftDoubleQuote: { // “
+            // TODO(Brett): report error
+            fprintf(stderr, "NOTE: unsupported unicode character '“' (0x201c). Did you mean `\"`?\n");
+        } break;
+
         case '/': {
             token.kind = TK_Div;
             l->stream++;
