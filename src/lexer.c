@@ -106,16 +106,16 @@ bool shouldInsertSemiAfterKeyword(const char *keyword) {
     TKind(Xor, "^"), \
     TKind(Shl, "<<"), \
     TKind(Shr, ">>"), \
-    TKind(AssignAdd, "+="), \
-    TKind(AssignSub, "-="), \
-    TKind(AssignMul, "*="), \
-    TKind(AssignDiv, "/="), \
-    TKind(AssignRem, "%="), \
-    TKind(AssignAnd, "&="), \
-    TKind(AssignOr, "|="), \
-    TKind(AssignXor, "^="), \
-    TKind(AssignShl, "<<="), \
-    TKind(AssignShr, ">>="), \
+    TKind(AddAssign, "+="), \
+    TKind(SubAssign, "-="), \
+    TKind(MulAssign, "*="), \
+    TKind(DivAssign, "/="), \
+    TKind(RemAssign, "%="), \
+    TKind(AndAssign, "&="), \
+    TKind(OrAssign, "|="), \
+    TKind(XorAssign, "^="), \
+    TKind(ShlAssign, "<<="), \
+    TKind(ShrAssign, ">>="), \
     TKind(Land, "&&"), \
     TKind(Lor, "||"), \
     TKind(Lss, "<"), \
@@ -137,9 +137,9 @@ bool shouldInsertSemiAfterKeyword(const char *keyword) {
     TKind(Rbrack, "]"), \
     TKind(Rbrace, "}"), \
     TKind(Comma, ","), \
-    TKind(Period, "."), \
+    TKind(Dot, "."), \
     TKind(Colon, ":"), \
-    TKind(Semicolon, ";"), \
+    TKind(Terminator, ";"), \
 \
     /* NOTE: all keywords must come after this case and be before "__Meta_KeywordsEnd" */ \
     /* These keywords are roughly-sorted by how common they are */ \
@@ -489,7 +489,7 @@ repeat:
 
     if (*token.start == '\n' && l->insertSemi) {
         l->stream++;
-        token.kind = TK_Semicolon;
+        token.kind = TK_Terminator;
         token.val.ident = newline_name;
 
         token.end = l->stream;
@@ -518,7 +518,7 @@ repeat:
 
         case ';': {
             l->stream++;
-            token.kind = TK_Semicolon;
+            token.kind = TK_Terminator;
             token.val.ident = semicolon_name;
             break;
         }
@@ -539,7 +539,7 @@ repeat:
                 token.kind = TK_Ellipsis;
                 l->stream += 2;
             } else {
-                token.kind = TK_Period;
+                token.kind = TK_Dot;
                 l->stream++;
             }
             break;
@@ -566,7 +566,7 @@ repeat:
             token.kind = TK_Div;
             l->stream++;
             if (*l->stream == '=') {
-                token.kind = TK_AssignDiv;
+                token.kind = TK_DivAssign;
                 l->stream++;
             } else if (*l->stream == '/') {
                 l->stream++;
@@ -608,16 +608,16 @@ repeat:
         CASE1('[', TK_Lbrack);
         CASE1('{', TK_Lbrace);
         CASE2('!', TK_Not, '=', TK_Neq);
-        CASE2('+', TK_Add, '=', TK_AssignAdd);
-        CASE2('*', TK_Mul, '=', TK_AssignMul);
-        CASE2('%', TK_Rem, '=', TK_AssignRem);
-        CASE2('^', TK_Xor, '=', TK_AssignXor);
+        CASE2('+', TK_Add, '=', TK_AddAssign);
+        CASE2('*', TK_Mul, '=', TK_MulAssign);
+        CASE2('%', TK_Rem, '=', TK_RemAssign);
+        CASE2('^', TK_Xor, '=', TK_XorAssign);
         CASE2('=', TK_Assign, '=', TK_Eql);
-        CASE3('|', TK_Or, '=', TK_AssignOr, '|', TK_Lor);
-        CASE3('&', TK_And, '=', TK_AssignAnd, '&', TK_Land);
-        CASE3('-', TK_Sub, '=', TK_AssignSub, '>', TK_RetArrow);
-        CASE_SHIFT('>', TK_Gtr, TK_Shr, TK_Geq, TK_AssignShr);
-        CASE_SHIFT('<', TK_Lss, TK_Shl, TK_Leq, TK_AssignShl);
+        CASE3('|', TK_Or, '=', TK_OrAssign, '|', TK_Lor);
+        CASE3('&', TK_And, '=', TK_AndAssign, '&', TK_Land);
+        CASE3('-', TK_Sub, '=', TK_SubAssign, '>', TK_RetArrow);
+        CASE_SHIFT('>', TK_Gtr, TK_Shr, TK_Geq, TK_ShrAssign);
+        CASE_SHIFT('<', TK_Lss, TK_Shl, TK_Leq, TK_ShlAssign);
 
         case '#': {
             token.kind = TK_Directive;
@@ -761,11 +761,11 @@ void test_lexer() {
     ASSERT_TOKEN_KIND(TK_Colon);
     ASSERT_TOKEN_KIND(TK_Assign);
     ASSERT_TOKEN_KIND(TK_Add);
-    ASSERT_TOKEN_KIND(TK_AssignAdd);
+    ASSERT_TOKEN_KIND(TK_AddAssign);
     ASSERT_TOKEN_KIND(TK_Lss);
     ASSERT_TOKEN_KIND(TK_Leq);
     ASSERT_TOKEN_KIND(TK_Shl);
-    ASSERT_TOKEN_KIND(TK_AssignShl);
+    ASSERT_TOKEN_KIND(TK_ShlAssign);
     ASSERT_TOKEN_EOF();
 
     lex = MakeLexer("\nmain :: fn {\n    print(\"Hello, World\")\n}", NULL);
@@ -779,7 +779,7 @@ void test_lexer() {
     ASSERT_TOKEN_POS(24, 3, 11); // "Hello, World"
     ASSERT_TOKEN_POS(38, 3, 25); // )
     ASSERT_TOKEN_POS(39, 3, 26); // ;
-    ASSERT_MSG(tok.kind == TK_Semicolon, "Expected terminator to be automatically inserted");
+    ASSERT_MSG(tok.kind == TK_Terminator, "Expected terminator to be automatically inserted");
     ASSERT_MSG(tok.val.ident == newline_name, "Expected terminator to set it's value the the character that spawned it");
     ASSERT_TOKEN_POS(40, 4, 1); // }
     ASSERT_TOKEN_EOF();
