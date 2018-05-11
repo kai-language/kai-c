@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <ctype.h>
 #include <math.h>
+#include <unistd.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
@@ -349,16 +350,14 @@ void PrintBits(u64 const size, void const * const ptr) {
 // FIXME: We are mmap()'ing this with no way to munmap it currently
 char *ReadFile(const char *path) {
     i32 fd = open(path, O_RDONLY);
-    if (fd < 0) return NULL;
+    if (fd == -1) return NULL;
 
-    FILE *file = fdopen(fd, "rb");
-    if (!file) return NULL;
-
-    fseek(file, 0, SEEK_END);
-    size_t len = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    struct stat st;
+    if (stat(path, &st) == -1) return NULL;
+    size_t len = st.st_size;
 
     char *address = (char*) mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (close(fd) == -1) perror("close was interupted");
     if (address == MAP_FAILED) return NULL;
 
     return address;
