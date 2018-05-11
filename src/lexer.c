@@ -573,6 +573,7 @@ repeat:
                 while (*l->stream && *l->stream != '\n') {
                     l->stream++;
                 }
+                if (flagParseComments) goto returnComment;
                 goto repeat;
             } else if (*l->stream == '*') {
                 l->stream++;
@@ -591,8 +592,17 @@ repeat:
                         l->stream++;
                     }
                 }
+                if (flagParseComments) goto returnComment;
                 goto repeat;
             }
+            break;
+
+        returnComment:
+            token.kind = TK_Comment;
+            size_t len = l->stream - token.start;
+            char* mem = (char*) Alloc(DefaultAllocator, len);
+            token.val.s = strncpy(mem, token.start, len);
+            mem[len] = 0; // replace newline with NUL terminator
             break;
         }
 

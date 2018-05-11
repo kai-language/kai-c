@@ -35,6 +35,7 @@
 /* Begin PBXFileReference section */
 		5D3CD46420A308C500600F43 /* kai-tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "kai-tests"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D3CD46C20A3099800600F43 /* kai_tests.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kai_tests.cpp; sourceTree = "<group>"; };
+		5D9C729920A5E7C400755A1B /* flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = flags.c; path = src/flags.c; sourceTree = "<group>"; };
 		B219499B209B79E0007BB781 /* kai */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = kai; sourceTree = BUILT_PRODUCTS_DIR; };
 		B249A255209B80CA0016B49E /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = src/main.cpp; sourceTree = "<group>"; };
 		B249A257209B80E00016B49E /* checker.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = checker.c; path = src/checker.c; sourceTree = "<group>"; };
@@ -74,6 +75,7 @@
 				B249A257209B80E00016B49E /* checker.c */,
 				B249A25B209B80E00016B49E /* checker.h */,
 				B249A25C209B80E00016B49E /* common.c */,
+				5D9C729920A5E7C400755A1B /* flags.c */,
 				B249A258209B80E00016B49E /* lexer.c */,
 				B249A25A209B80E00016B49E /* map.c */,
 				B249A259209B80E00016B49E /* parser.c */,
