@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include <strings.h>
+#include <string.h>
 #include <stddef.h>
 
 #if defined(_WIN32) || defined(_WIN64)
