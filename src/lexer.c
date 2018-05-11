@@ -25,6 +25,9 @@ const char *firstKeyword;
 const char *lastKeyword;
 const char **keywords;
 
+const char *newline_name;
+const char *semicolon_name;
+
 const char *import_name;
 const char *foreign_name;
 const char *assert_name;
@@ -61,6 +64,9 @@ void initKeywords(void) {
     firstKeyword = ifKeyword;
     lastKeyword = inKeyword;
 
+    newline_name = strIntern("\n");
+    semicolon_name = strIntern(";");
+
     import_name = strIntern("import");
     foreign_name = strIntern("foreign");
     assert_name = strIntern("assert");
@@ -72,6 +78,14 @@ void initKeywords(void) {
 
 bool isKeyword(const char *name) {
     return firstKeyword <= name && name <= lastKeyword;
+}
+
+bool shouldInsertSemiAfterKeyword(const char *keyword) {
+    if (keyword == breakKeyword) return true;
+    if (keyword == returnKeyword) return true;
+    if (keyword == continueKeyword) return true;
+    if (keyword == fallthroughKeyword) return true;
+    return false;
 }
 
 #define TOKEN_KINDS \
@@ -420,6 +434,13 @@ u64 scanInt(Lexer *l) {
         token.kind = t1; \
         break;
 
+#define CASE1_INSERT_SEMI(c1, t1) \
+    case c1: \
+        l->stream++; \
+        token.kind = t1; \
+        l->insertSemi = true; \
+        break;
+
 #define CASE2(c1, t1, c2, t2) \
     case c1: \
         l->stream++; \
@@ -466,6 +487,21 @@ repeat:
     token.start = l->stream;
     token.pos = l->pos;
 
+    if (*token.start == '\n' && l->insertSemi) {
+        l->stream++;
+        token.kind = TK_Semicolon;
+        token.val.ident = newline_name;
+
+        token.end = l->stream;
+        token.pos.column = (u32)(intptr_t) (token.start - l->startOfLine) + 1;
+        token.pos.offset = (u32)(intptr_t) (token.start - l->startOfFile);
+
+        l->pos.line++;
+        l->startOfLine = l->stream;
+        l->insertSemi = false;
+        return token;
+    }
+
     l->insertSemi = false;
 
     switch (*token.start) {
@@ -473,15 +509,24 @@ repeat:
             // Skips whitespace
             while (isspace(*l->stream)) {
                 if (*l->stream++ == '\n') {
-                    token.pos.line++;
+                    l->pos.line++;
+                    l->startOfLine = l->stream;
                 }
             }
             goto repeat;
         }
 
+        case ';': {
+            l->stream++;
+            token.kind = TK_Semicolon;
+            token.val.ident = semicolon_name;
+            break;
+        }
+
         case '"': case '`': {
             token.kind = TK_String;
             token.val.s = scanString(l);
+            l->insertSemi = true;
             break;
         }
 
@@ -489,6 +534,7 @@ repeat:
             if (isdigit(l->stream[1])) {
                 token.kind = TK_Float;
                 token.val.f = scanFloat(l);
+                l->insertSemi = true;
             } else if (l->stream[1] == '.') {
                 token.kind = TK_Ellipsis;
                 l->stream += 2;
@@ -512,6 +558,7 @@ repeat:
                 token.kind = TK_Int;
                 token.val.i = scanInt(l);
             }
+            l->insertSemi = true;
             break;
         }
 
@@ -549,17 +596,17 @@ repeat:
             break;
         }
 
+        CASE1_INSERT_SEMI(')', TK_Rparen);
+        CASE1_INSERT_SEMI(']', TK_Rbrack);
+        CASE1_INSERT_SEMI('}', TK_Rbrace);
+
         CASE1(':', TK_Colon);
         CASE1('$', TK_Dollar);
         CASE1('?', TK_Question);
         CASE1(',', TK_Comma);
-        CASE1(';', TK_Semicolon);
         CASE1('(', TK_Lparen);
         CASE1('[', TK_Lbrack);
         CASE1('{', TK_Lbrace);
-        CASE1(')', TK_Rparen);
-        CASE1(']', TK_Rbrack);
-        CASE1('}', TK_Rbrace);
         CASE2('!', TK_Not, '=', TK_Neq);
         CASE2('+', TK_Add, '=', TK_AssignAdd);
         CASE2('*', TK_Mul, '=', TK_AssignMul);
@@ -607,12 +654,20 @@ repeat:
                 cp = DecodeCodePoint(&cpWidth, l->stream);
             }
             token.val.ident = strInternRange(token.start, l->stream);
-            token.kind = isKeyword(token.val.ident) ? TK_Keyword : TK_Ident;
+            token.kind = TK_Ident;
+            if (isKeyword(token.val.ident)) {
+                token.kind = TK_Keyword;
+                if (shouldInsertSemiAfterKeyword(token.val.ident)) {
+                    l->insertSemi = true;
+                }
+            } else {
+                l->insertSemi = true;
+            }
         }
     }
     token.end = l->stream;
-    l->pos.column = (u32)(intptr_t) (l->stream - l->startOfLine);
-    l->pos.offset = (u32)(intptr_t) (l->stream - l->startOfFile);
+    token.pos.column = (u32)(intptr_t) (token.start - l->startOfLine) + 1;
+    token.pos.offset = (u32)(intptr_t) (token.start - l->startOfFile);
     return token;
 }
 
@@ -666,7 +721,13 @@ void test_lexer() {
 
 #define ASSERT_TOKEN_KIND(x) \
     tok = NextToken(&lex); \
-    ASSERT_MSG_VA(tok.kind == x, "Expected EOF token got %s", DescribeTokenKind((x)), DescribeTokenKind(tok.kind));
+    ASSERT_MSG_VA(tok.kind == (x), "Expected EOF token got %s", DescribeTokenKind((x)), DescribeTokenKind(tok.kind));
+
+#define ASSERT_TOKEN_POS(OFFSET, LINE, COLUMN) \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.pos.line == LINE && tok.pos.column == COLUMN && tok.pos.offset == OFFSET, \
+        "Expected token at position %d:%d (offset %d) got %d:%d  (offset %d)", \
+        LINE, COLUMN, OFFSET, tok.pos.line, tok.pos.column, tok.pos.offset); \
 
     Token tok;
     Lexer lex;
@@ -705,6 +766,22 @@ void test_lexer() {
     ASSERT_TOKEN_KIND(TK_Leq);
     ASSERT_TOKEN_KIND(TK_Shl);
     ASSERT_TOKEN_KIND(TK_AssignShl);
+    ASSERT_TOKEN_EOF();
+
+    lex = MakeLexer("\nmain :: fn {\n    print(\"Hello, World\")\n}", NULL);
+    ASSERT_TOKEN_POS(1, 2, 1); // main
+    ASSERT_TOKEN_POS(6, 2, 6); // :
+    ASSERT_TOKEN_POS(7, 2, 7); // :
+    ASSERT_TOKEN_POS(9, 2, 9); // fn
+    ASSERT_TOKEN_POS(12, 2, 12); // {
+    ASSERT_TOKEN_POS(18, 3, 5); // print
+    ASSERT_TOKEN_POS(23, 3, 10); // (
+    ASSERT_TOKEN_POS(24, 3, 11); // "Hello, World"
+    ASSERT_TOKEN_POS(38, 3, 25); // )
+    ASSERT_TOKEN_POS(39, 3, 26); // ;
+    ASSERT_MSG(tok.kind == TK_Semicolon, "Expected terminator to be automatically inserted");
+    ASSERT_MSG(tok.val.ident == newline_name, "Expected terminator to set it's value the the character that spawned it");
+    ASSERT_TOKEN_POS(40, 4, 1); // }
     ASSERT_TOKEN_EOF();
 }
 #endif
