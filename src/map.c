@@ -64,7 +64,7 @@ void MapGrow(Map *map, size_t newCap) {
     *map = new_map;
 }
 
-u64 MapGetU64(Map *map, u64 key) {
+void *MapGetU64(Map *map, u64 key) {
     if (map->len == 0) return 0;
 
     ASSERT(IS_POW2(map->cap));
@@ -73,7 +73,7 @@ u64 MapGetU64(Map *map, u64 key) {
     for (;;) {
         i &= map->cap - 1;
         if (map->keys[i] == key) {
-            return map->vals[i];
+            return (void*) map->vals[i];
         } else if (!map->keys[i]) {
             return 0;
         }

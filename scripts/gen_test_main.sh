@@ -72,7 +72,7 @@ if (!(cond)) { \\
     return; \\
 }
 
-#include "src/main.cpp"
+#include "src/main.c"
 
 void setSignalHandlerCheckingError(int sig) {
     struct sigaction sa_new = {0};

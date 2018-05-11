@@ -15,8 +15,8 @@ typedef struct ArrayHdr {
 #define ArrayCap(b) ((b) ? _array_hdr(b)->cap : 0)
 #define ArrayEnd(b) ((b) ? (b) + ArrayLen(b)  : 0)
 
-#define ArrayFree(b) ((b) ? ((b) = (typeof b) Free(*_array_hdr(b)->allocator, _array_hdr(b))) : 0);
-#define ArrayFit(b, n) ((n) <= ArrayCap(b) ? 0 : ((b) = (typeof b) _arrayGrow((b), (n), sizeof(*(b)))))
+#define ArrayFree(b) ((b) ? ((b) = Free(*_array_hdr(b)->allocator, _array_hdr(b))) : 0);
+#define ArrayFit(b, n) ((n) <= ArrayCap(b) ? 0 : ((b) = _arrayGrow((b), (n), sizeof(*(b)))))
 #define ArrayPush(b, ...) (ArrayFit((b), 1 + ArrayLen(b)), (b)[_array_hdr(b)->len++] = (__VA_ARGS__))
 #define ArrayPrintf(b, ...) ((b) = _arrayPrintf((b), __VA_ARGS__))
 #define ArrayClear(b) ((b) ? _array_hdr(b)->len = 0 : 0)
@@ -34,9 +34,9 @@ void *_arrayGrow(const void *array, size_t newLen, size_t elemSize) {
     size_t newSize = offsetof(ArrayHdr, data) + newCap * elemSize;
     ArrayHdr *newHdr;
     if (array) {
-        newHdr = (typeof newHdr) ArrayAllocator(array)->func(ArrayAllocator(array)->payload, AT_Realloc, newSize, ArrayCap(array), _array_hdr(array));
+        newHdr = ArrayAllocator(array)->func(ArrayAllocator(array)->payload, AT_Realloc, newSize, ArrayCap(array), _array_hdr(array));
     } else {
-        newHdr = (typeof newHdr) Alloc(DefaultAllocator, newSize);
+        newHdr = Alloc(DefaultAllocator, newSize);
         newHdr->allocator = &DefaultAllocator;
         newHdr->len = 0;
     }

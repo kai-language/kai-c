@@ -4,6 +4,4 @@ kai
 *.so
 *.dSYM
 test/wip.kai
-kai_tests.log
-kai_tests.cpp
-kai_tests
+kai_tests*

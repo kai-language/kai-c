@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
@@ -278,14 +279,14 @@ struct Arena {
     u8 **blocks;
 };
 
-#include "string.cpp"
+#include "string.c"
 
 #define ARENA_BLOCK_SIZE MB(1)
 #define ARENA_ALIGNMENT 8
 
 void ArenaGrow(Arena *arena, size_t minSize) {
     size_t size = ALIGN_UP(CLAMP_MIN(minSize, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
-    arena->ptr = (typeof arena->ptr) Alloc(DefaultAllocator, size);
+    arena->ptr = Alloc(DefaultAllocator, size);
     ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
     arena->end = arena->ptr + size;
     ArrayPush(arena->blocks, arena->ptr);

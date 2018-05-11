@@ -145,6 +145,7 @@ bool shouldInsertSemiAfterKeyword(const char *keyword) {
     /* These keywords are roughly-sorted by how common they are */ \
     TKind(Keyword, "")
 
+typedef enum TokenKind TokenKind;
 enum TokenKind {
 #define TKind(e, s) TK_##e
     TOKEN_KINDS
@@ -161,6 +162,7 @@ const char *DescribeTokenKind(TokenKind tk) {
     return TokenDescriptions[tk];
 }
 
+typedef struct Position Position;
 struct Position {
     const char *name;
     u32 offset, line, column;
@@ -282,7 +284,7 @@ error:
 
 // thread_local is C11
 // NOTE: We can free this after we are done all lexing
-thread_local static DynamicArray(char) _scanStringTempBuffer;
+_Thread_local static DynamicArray(char) _scanStringTempBuffer;
 const char *scanString(Lexer *l) {
     char quote = *l->stream++;
     ASSERT(quote == '"' || quote == '`');
@@ -482,7 +484,7 @@ u64 scanInt(Lexer *l) {
         break;
 
 Token NextToken(Lexer *l) {
-repeat:
+repeat: ;
     Token token;
     token.start = l->stream;
     token.pos = l->pos;
@@ -562,11 +564,6 @@ repeat:
             break;
         }
 
-        case LeftDoubleQuote: { // “
-            // TODO(Brett): report error
-            fprintf(stderr, "NOTE: unsupported unicode character '“' (0x201c). Did you mean `\"`?\n");
-        } break;
-
         case '/': {
             token.kind = TK_Div;
             l->stream++;
@@ -641,7 +638,7 @@ repeat:
 
             u32 cpWidth;
             u32 cp = DecodeCodePoint(&cpWidth, l->stream);
-            while (IsValidIdentifierBody(cp)) {
+            while (IsIdentifierCharacter(cp)) {
                 l->stream += cpWidth;
                 cp = DecodeCodePoint(&cpWidth, l->stream);
             }
@@ -656,7 +653,10 @@ repeat:
                 break;
             }
 
-            if (!IsValidIdentifierHead(cp)) {
+            if (!IsIdentifierHead(cp)) {
+                // “
+                // TODO(vdka, Brett): Report Error & Refactor a common catch for common unicode errors
+                if (cp == LeftDoubleQuote) fprintf(stderr, "NOTE: unsupported unicode character '“' (0x201c). Did you mean `\"`?\n");
                 LEXER_ERROR(l->pos, "Invalid '%lc' token, skipping", (wint_t) cp);
                 l->stream++;
                 goto repeat;
@@ -664,7 +664,7 @@ repeat:
 
             u32 cpWidth;
             cp = DecodeCodePoint(&cpWidth, l->stream);
-            while (IsValidIdentifierBody(cp)) {
+            while (IsIdentifierCharacter(cp)) {
                 l->stream += cpWidth;
                 cp = DecodeCodePoint(&cpWidth, l->stream);
             }

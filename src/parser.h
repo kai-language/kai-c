@@ -1,6 +1,5 @@
 
-
-
+typedef enum Operator Operator;
 enum Operator {
     OP_Invalid,
     OP_Add,
@@ -505,6 +504,7 @@ enum Operator {
         })
 
 
+typedef enum AstKind AstKind;
 enum AstKind {
     AK_Invalid,
 #define AKind(kindName, ...) CONCAT(AK_, kindName),
@@ -522,6 +522,7 @@ const char *DescribeAstKind(AstKind ak) {
     return AstDescriptions[ak];
 }
 
+typedef struct Ast Ast;
 struct Ast {
     AstKind kind;
 

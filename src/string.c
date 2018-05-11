@@ -14,13 +14,13 @@ const char *strInternRange(const char *start, const char *end) {
     size_t len = end - start;
     u64 hash = HashBytes(start, len);
     u64 key = hash ? hash : 1; // 0 is a sentinal
-    Intern *intern = (Intern *) MapGetU64(&interns, key);
+    Intern *intern = MapGetU64(&interns, key);
     for (Intern *it = intern; it; it = it->next) {
         if (it->len == len && strncmp(it->data, start, len) == 0) {
             return it->data;
         }
     }
-    Intern *newIntern = (typeof newIntern) ArenaAlloc(&internArena, offsetof(Intern, data) + len + 1);
+    Intern *newIntern = ArenaAlloc(&internArena, offsetof(Intern, data) + len + 1);
     newIntern->len = len;
     newIntern->next = intern;
     ASSERT(intern != newIntern);
