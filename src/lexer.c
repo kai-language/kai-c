@@ -250,7 +250,8 @@ u32 scanNumericEscape(Lexer *l, i32 n, u32 max) {
         if (cp == FileEnd || cp > 255) goto error;
         u32 digit = charToDigit[(u8) cp];
         if (digit == 0 && cp != '0') goto error;
-        x *= 16 + digit;
+        x *= 16;
+        x += digit;
     }
 
 
@@ -267,9 +268,9 @@ error:
 
 const char *scanString(Lexer *l) {
     char quote = *l->stream++;
-    ASSERT(quote == '"' || quote == '\'');
+    ASSERT(quote == '"' || quote == '`');
 
-    b8 isMultiline = quote == '\'';
+    b8 isMultiline = quote == '`';
     DynamicArray(char) str = NULL;
     char otherQuote = isMultiline ? '`' : '"';
 
@@ -302,8 +303,8 @@ const char *scanString(Lexer *l) {
                         LEXER_ERROR(l->pos, "Invalid character literal escape '\\%lc'", (wint_t) cp);
                         return NULL;
                     }
-                    cp = val;
             }
+            cp = val;
         }
         // Encode the code point directly to the array
         ArrayFit(str, ArrayLen(str) + 4);
@@ -368,9 +369,14 @@ u64 scanInt(Lexer *l) {
             l->stream++;
             base = 2;
             start_digits = l->stream;
-        } else if (isdigit(*l->stream)) {
+        } else if (*l->stream == 'o') {
+            l->stream++;
             base = 8;
             start_digits = l->stream;
+        } else {
+            // Unlike C we do not use a leading zero to change an integer to octal.
+            base = 10;
+            start_digits = --l->stream;
         }
     }
     u64 val = 0;
@@ -675,8 +681,14 @@ void test_lexer() {
     ASSERT_TOKEN_FLOAT(3e10);
     ASSERT_TOKEN_EOF();
 
-    lex = MakeLexer("\"Hello, World\\n\"", NULL);
-    ASSERT_TOKEN_STRING("Hello, World\n");
+    lex = MakeLexer("\"Hello, \\\"World\\\"\\n\" `\\n` `\\`` \"\\x45\" `\\0` `\u2687` `⚇`", NULL);
+    ASSERT_TOKEN_STRING("Hello, \"World\"\n");
+    ASSERT_TOKEN_STRING("\n");
+    ASSERT_TOKEN_STRING("`");
+    ASSERT_TOKEN_STRING("\x45");
+    ASSERT_TOKEN_STRING("\0");
+    ASSERT_TOKEN_STRING("⚇");
+    ASSERT_TOKEN_STRING("⚇");
     ASSERT_TOKEN_EOF();
 
     lex = MakeLexer(": := + += < <= << <<=", NULL);
