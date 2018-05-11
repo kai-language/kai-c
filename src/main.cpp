@@ -57,10 +57,14 @@ int main(int argc, char **argv) {
         switch (token.kind) {
             case TK_Int:
                 printf("kind: '%s', lit: '%llu'\n", DescribeTokenKind(token.kind), token.val.i);
+                break;
             case TK_Float:
                 printf("kind: '%s', lit: '%f'\n", DescribeTokenKind(token.kind), token.val.f);
+                break;
+            case TK_String: case TK_Ident: case TK_Keyword:
+                printf("kind: '%s', lit '%s'\n", DescribeTokenKind(token.kind), token.val.s);
             default:
-                printf("kind: '%s', lit: '%s'\n", DescribeTokenKind(token.kind), token.val.s);
+                printf("kind: '%s'\n", DescribeTokenKind(token.kind));
         }
         token.val.i = 0;
     }
