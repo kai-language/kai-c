@@ -1,5 +1,6 @@
 
 #include "common.c"
+#include "flags.c"
 #include "lexer.c"
 
 // forward declarations
@@ -44,18 +45,29 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    String path = MakeCString(argv[1]);
-    Lexer _lexer;
-    Lexer *lexer = &_lexer;
-    b32 ok = MakeLexer(lexer, path);
-    if (!ok) {
-        printf("ERROR: failed to open file: %*.s\n", LIT(path));
-        return 2;
+    const char *path = argv[1];
+    const char *data = ReadFile(path);
+    if (!data) {
+        perror("ReadFile");
+        exit(1);
     }
+    Lexer lexer = MakeLexer(data, path);
 
     Token token;
-    while ((token = NextToken(lexer)).kind != TK_Eof) {
-        printf("kind: '%.*s', lit: '%.*s'\n", LIT(DescribeTokenKind(token.kind)), LIT(token.lit));
+    while ((token = NextToken(&lexer)).kind != TK_Eof) {
+        switch (token.kind) {
+            case TK_Int:
+                printf("kind: '%s', lit: '%llu'\n", DescribeTokenKind(token.kind), token.val.i);
+                break;
+            case TK_Float:
+                printf("kind: '%s', lit: '%f'\n", DescribeTokenKind(token.kind), token.val.f);
+                break;
+            case TK_String: case TK_Ident: case TK_Keyword:
+                printf("kind: '%s', lit '%s'\n", DescribeTokenKind(token.kind), token.val.s);
+            default:
+                printf("kind: '%s'\n", DescribeTokenKind(token.kind));
+        }
+        token.val.i = 0;
     }
 
     return 0;

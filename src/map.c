@@ -31,11 +31,6 @@ u64 HashBytes(const void *ptr, size_t len) {
     return x;
 }
 
-Inline
-u64 HashString(String s) {
-    return HashBytes(s.data, s.len);
-}
-
 typedef struct Map Map;
 struct Map {
     Allocator *allocator;
@@ -52,9 +47,9 @@ void *Free(Allocator al, void* ptr);
 void MapSetU64(Map *map, u64 key, u64 val);
 void MapGrow(Map *map, size_t newCap) {
     newCap = CLAMP_MIN(newCap, 16);
-    Allocator al = *(map->allocator ?: &DefaultAllocator);
+    Allocator *al = map->allocator ?: &DefaultAllocator;
     Map new_map = {
-        .allocator = &al,
+        .allocator = al,
         .keys = (u64*) checkedCalloc(newCap, sizeof(u64)),
         .vals = (u64*) checkedMalloc(newCap * sizeof(u64)),
         .cap = newCap,
@@ -64,22 +59,21 @@ void MapGrow(Map *map, size_t newCap) {
             MapSetU64(&new_map, map->keys[i], map->vals[i]);
         }
     }
-    Free(al, (void *)map->keys);
-    Free(al, (void *)map->vals);
+    Free(*al, (void *)map->keys);
+    Free(*al, (void *)map->vals);
     *map = new_map;
 }
 
-u64 MapGetU64(Map *map, u64 key) {
-    if (map->len == 0) {
-        return 0;
-    }
+void *MapGetU64(Map *map, u64 key) {
+    if (map->len == 0) return 0;
+
     ASSERT(IS_POW2(map->cap));
     size_t i = (size_t)HashU64(key);
     ASSERT(map->len < map->cap);
     for (;;) {
         i &= map->cap - 1;
         if (map->keys[i] == key) {
-            return map->vals[i];
+            return (void*) map->vals[i];
         } else if (!map->keys[i]) {
             return 0;
         }

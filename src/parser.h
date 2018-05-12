@@ -1,6 +1,5 @@
 
-
-
+typedef enum Operator Operator;
 enum Operator {
     OP_Invalid,
     OP_Add,
@@ -56,7 +55,7 @@ enum Operator {
         "location directive", \
         { \
             Token  token; \
-            String ident; \
+            const char *ident; \
         })\
     \
     AKind( \
@@ -463,8 +462,8 @@ enum Operator {
             Token  token; \
             Ast    *library; \
             Ast    *decl; \
-            String linkname; \
-            String callconv; \
+            const char *linkname; \
+            const char *callconv; \
         })\
     \
     AKind( \
@@ -505,6 +504,7 @@ enum Operator {
         })
 
 
+typedef enum AstKind AstKind;
 enum AstKind {
     AK_Invalid,
 #define AKind(kindName, ...) CONCAT(AK_, kindName),
@@ -512,16 +512,17 @@ enum AstKind {
 #undef AKind
 };
 
-String const AstDescriptions[] = {
-#define AKind(kindName, s, ...) STR(s),
+const char *AstDescriptions[] = {
+#define AKind(kindName, s, ...) "" s "",
     AST_KINDS
 #undef AKind
 };
 
-String DescribeAstKind(AstKind ak) {
+const char *DescribeAstKind(AstKind ak) {
     return AstDescriptions[ak];
 }
 
+typedef struct Ast Ast;
 struct Ast {
     AstKind kind;
 

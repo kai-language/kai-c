@@ -5,6 +5,11 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stddef.h>
+#include <ctype.h>
+#include <math.h>
+#include <unistd.h>
+#include <stdbool.h>
+#include <wchar.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
@@ -47,8 +52,19 @@
     #include <sys/stat.h>
     #include <sys/mman.h>
     #include <execinfo.h>
+    #include <limits.h>
 #elif SYSTEM_WINDOWS
 
+#endif
+
+#ifndef MAX_PATH
+    #if defined _MAX_PATH
+        #define MAX_PATH _MAX_PATH
+    #elif defined PATH_MAX
+        #define MAX_PATH PATH_MAX
+    #else
+        #error "No suitable MAX_PATH surrogate"
+    #endif
 #endif
 
 #define MIN(x, y) ((x) <= (y) ? (x) : (y))
@@ -146,13 +162,18 @@ void Backtrace() {
 }
 
 void assertHandler(char const *file, i32 line, char const *msg, ...) {
+    va_list args;
+    va_start(args, msg);
     Backtrace();
     
     if (msg) {
-        fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
+        fprintf(stderr, "Assert failure: %s:%d: ", file, line);
+        vfprintf(stderr, msg, args);
+        fprintf(stderr, "\n");
     } else {
         fprintf(stderr, "Assert failure: %s:%d\n", file, line);
     }
+    va_end(args);
 }
 
 
@@ -246,109 +267,73 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
 }
 
+#include "map.c"
+#include "array.c"
+#include "utf.c"
 
 // Arena Allocator
 
 typedef struct Arena Arena;
 struct Arena {
-    Allocator allocator;
-    u8  *raw;
-    u64 cap;
-    u64 len;
+    u8 *ptr;
+    u8 *end;
+    u8 **blocks;
 };
 
-void *arenaAllocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old) {
-    Arena *arena = (Arena *) payload;
+#include "string.c"
 
-    switch (alType) {
-        case AT_Alloc: {
-            if (arena->len + count > arena->cap) return NULL;
-            u8 *ptr = &arena->raw[arena->len];
-            arena->len += count;
-            return ptr;
-        }
-        case AT_Calloc: {
-            size_t bytes = count * size;
-            ASSERT(bytes >= count || size == 0);
-            if (arena->len + bytes > arena->cap) return NULL;
-            u8 *ptr = &arena->raw[arena->len];
-            arena->len += bytes;
-            memset(ptr, 0, bytes);
-            return ptr;
-        }
-        case AT_Free:
-        case AT_FreeAll: {
-            arena->len = 0;
-            break;
-        }
-        case AT_Realloc: {
-            u8 *buff = (u8 *) Realloc(arena->allocator, arena->raw, count, size);
-            arena->raw = buff;
-            arena->cap = size;
-            return buff;
-        }
+#define ARENA_BLOCK_SIZE MB(1)
+#define ARENA_ALIGNMENT 8
+
+void ArenaGrow(Arena *arena, size_t minSize) {
+    size_t size = ALIGN_UP(CLAMP_MIN(minSize, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
+    arena->ptr = Alloc(DefaultAllocator, size);
+    ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
+    arena->end = arena->ptr + size;
+    ArrayPush(arena->blocks, arena->ptr);
+}
+
+void *ArenaAlloc(Arena *arena, size_t size) {
+    if (size > (size_t)(arena->end - arena->ptr)) {
+        ArenaGrow(arena, size);
+        ASSERT(size <= (size_t)(arena->end - arena->ptr));
     }
-    
-    return NULL;
+    void *allocation = arena->ptr;
+    arena->ptr = (u8*) ALIGN_UP_PTR(arena->ptr + size, ARENA_ALIGNMENT);
+    ASSERT(arena->ptr <= arena->end);
+    ASSERT_MSG_VA(allocation == ALIGN_DOWN_PTR(allocation, ARENA_ALIGNMENT), "The pointer %p should be aligned to %d", allocation, ARENA_ALIGNMENT);
+    return allocation;
 }
 
-Allocator MakeArenaAllocator(Arena *arena) {
-    Allocator al;
-    al.func    = arenaAllocFunc;
-    al.payload = arena;
-    return al;
-}
-
-
-void InitArenaCustomAllocator(Arena *arena, Allocator al, u64 size) {
-    arena->allocator = al;
-    arena->raw = (u8 *) Alloc(al, size);
-    arena->cap = size;
-    arena->len = 0;
-}
-
-void InitArena(Arena *arena, u64 size) {
-    InitArenaCustomAllocator(arena, DefaultAllocator, size);
-}
-
-void DestroyArena(Arena *arena) {
-    ASSERT(arena->raw);
-    arena->raw = (typeof arena->raw) Free(arena->allocator, arena->raw);
-    arena->len = 0;
-    arena->cap = 0;
+void ArenaFree(Arena *arena) {
+    arena->ptr = NULL;
+    arena->end = NULL;
+    for (u8 **block = arena->blocks; block != ArrayEnd(arena->blocks); block++) {
+        Free(DefaultAllocator, *block);
+    }
+    ArrayFree(arena->blocks);
 }
 
 #if TEST
 void test_arena() {
     u64 bytes = MB(1);
-    Arena arena;
-    InitArena(&arena, bytes);
-    TEST_ASSERT(arena.cap == bytes);
-
-    Allocator al = MakeArenaAllocator(&arena);
+    Arena arena = {0};
 
     u64 N = 1024;
-    u64* mem = (u64*) Alloc(al, bytes);
-    TEST_ASSERT(arena.len == bytes);
+    u64* mem = (u64*) ArenaAlloc(&arena, bytes);
     for (int i = 0; i < N; i++) {
         mem[i] = i;
     }
 
-    arena.len = 0;
-    u64 *ptr = (u64*) Calloc(al, N, sizeof(u64));
+    ArenaFree(&arena);
 
-    TEST_ASSERT(arena.len == N * sizeof(u64));
-    for (int i = 0; i < N; i++) {
-        TEST_ASSERT(ptr[i] == 0);
-    }
-
-    DestroyArena(&arena);
-
-    TEST_ASSERT(arena.len == 0);
-    TEST_ASSERT(arena.cap == 0);
-    TEST_ASSERT(arena.raw == NULL);
+    TEST_ASSERT(arena.ptr == NULL);
+    TEST_ASSERT(arena.end == NULL);
+    TEST_ASSERT(arena.blocks == NULL);
 }
 #endif
+
+
 
 void PrintBits(u64 const size, void const * const ptr) {
     u8 *b = (u8*) ptr;
@@ -366,40 +351,18 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
-void testAssertHandler(char const *file, i32 line, char const *msg, ...) {
-    Backtrace();
+// FIXME: We are mmap()'ing this with no way to munmap it currently
+char *ReadFile(const char *path) {
+    i32 fd = open(path, O_RDONLY);
+    if (fd == -1) return NULL;
 
-    if (msg) {
-        fprintf(stderr, "Assert failure: %s:%d: %s\n", file, line, msg);
-    } else {
-        fprintf(stderr, "Assert failure: %s:%d\n", file, line);
-    }
-}
+    struct stat st;
+    if (stat(path, &st) == -1) return NULL;
+    size_t len = st.st_size;
 
+    char *address = (char*) mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (close(fd) == -1) perror("close was interupted");
+    if (address == MAP_FAILED) return NULL;
 
-
-#include "string.cpp"
-#include "utf.c"
-#include "array.c"
-#include "map.c"
-
-b32 ReadFile(String *data, String path) {
-    i32 file;
-    if ((file = open((const char *)path.data, O_RDONLY)) < -1) {
-        return false;
-    }
-
-    struct stat buf;
-    if (fstat(file, &buf) < 0 ) {
-        return false;
-    }
-
-    u64 len = buf.st_size;
-    void *address = mmap(NULL, len, PROT_READ, MAP_PRIVATE, file, 0);
-    if (address == MAP_FAILED)
-        return false;
-
-    *data = MakeString((u8 *) address, (u32)len);
-
-    return true;
+    return address;
 }

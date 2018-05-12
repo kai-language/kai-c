@@ -8,7 +8,7 @@ DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch
 
 TARGET = kai
 TEST_TARGET = $(TARGET)_tests
-TEST_MAIN = $(TARGET)_tests.cpp
+TEST_MAIN = $(TARGET)_tests.c
 TEST_LOG = $(TARGET)_tests.log
 
 all: debug
@@ -17,7 +17,7 @@ debug:   clean $(TARGET)
 release: clean $(TARGET)
 
 $(TARGET):
-	$(CC) src/main.cpp -o $(TARGET) $(CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
+	$(CC) src/main.c -o $(TARGET) $(CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
 
 tests:
 	@rm -f $(TEST_TARGET) $(TEST_LOG) $(TEST_MAIN)

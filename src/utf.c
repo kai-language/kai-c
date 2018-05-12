@@ -1,10 +1,11 @@
 
-#define FileEnd 0xFFFFFFFF
+// NOTE: The data passed to the Lexer must be nul terminated
+#define FileEnd 0
 
 // “
 #define LeftDoubleQuote 0x201C
 
-u32 DecodeCodePoint(u32 *cpLen, String buffer) {
+u32 DecodeCodePoint(u32 *cpLen, const char *str) {
     static const u32 FIRST_LEN[] = {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
@@ -28,12 +29,12 @@ u32 DecodeCodePoint(u32 *cpLen, String buffer) {
         0xFF, 0xFF, 0x1F, 0xF, 0x7
     };
 
-    u8 b0 = buffer[0];
+    u8 b0 = str[0];
     i32 l = FIRST_LEN[b0];
     i32 val = (i32)(b0 & MASK[l]);
 
     for (i32 i=1; i < l; i += 1) {
-        val = (val << 6) | (i32)(buffer[i] & 0x3f);
+        val = (val << 6) | (i32)(str[i] & 0x3f);
     }
 
     if (cpLen)
@@ -41,7 +42,7 @@ u32 DecodeCodePoint(u32 *cpLen, String buffer) {
     return val;
 }
 
-u32 EncodeCodePoint(u8 *buffer, const u32 cp) {
+u32 EncodeCodePoint(char *buffer, const u32 cp) {
     if (cp <= 0x7F) {
         buffer[0] = cp;
         return 1;
@@ -136,6 +137,7 @@ b32 IsIdentifierHead(u32 cp) {
 b32 IsNumeric(u32 cp) {
     return cp >= '0' && cp <= '9';
 }
+
 b32 IsIdentifierCharacter(u32 cp) {
     if (IsIdentifierHead(cp) || IsNumeric(cp))
         return true;
@@ -162,4 +164,3 @@ b32 IsAlpha(u32 cp) {
 
     return false;
 }
-
