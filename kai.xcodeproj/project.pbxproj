@@ -182,7 +182,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > kai_tests.cpp";
+			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > kai_tests.c";
 		};
 /* End PBXShellScriptBuildPhase section */
 
