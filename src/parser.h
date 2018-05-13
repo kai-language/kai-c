@@ -575,14 +575,14 @@ Ast *MakeBasicLit(SourceFile *f, Token token) {
     return node;
 }
 
-MakeIdentList(SourceFile *f, Token token, DynamicArray(Ast *) idents) -> Ast * {
+Ast *MakeIdentList(SourceFile *f, Token token, DynamicArray(Ast *) idents) {
     Ast *node = MakeNode(f, AK_IdentList)
     node->IdentList.token = token
     node->IdentList.idents = idents
     return node
 }
 
-MakeFuncLit(SourceFile *f, Token token, type, body: Ast *) -> Ast * {
+Ast *MakeFuncLit(SourceFile *f, Token token, type, body: Ast *) {
     Ast *node = MakeNode(f, AK_FuncLit)
     node->FuncLit.token = token
     node->FuncLit.type = type
@@ -590,7 +590,7 @@ MakeFuncLit(SourceFile *f, Token token, type, body: Ast *) -> Ast * {
     return node
 }
 
-MakeCompositeLit(SourceFile *f, Token begin, Token end, DynamicArray(Ast *) elements) -> Ast * {
+Ast *MakeCompositeLit(SourceFile *f, Token begin, Token end, DynamicArray(Ast *) elements) {
     Ast *node = MakeNode(f, AK_CompositeLit)
     node->CompositeLit.begin = begin
     node->CompositeLit.end = end
@@ -598,7 +598,7 @@ MakeCompositeLit(SourceFile *f, Token begin, Token end, DynamicArray(Ast *) elem
     return node
 }
 
-MakeParen(SourceFile *f, Token begin, Token end, expr: Ast *) -> Ast * {
+Ast *MakeParen(SourceFile *f, Token begin, Token end, expr: Ast *) {
     Ast *node = MakeNode(f, AK_Paren)
     node->Paren.begin = begin
     node->Paren.end = end
@@ -606,7 +606,7 @@ MakeParen(SourceFile *f, Token begin, Token end, expr: Ast *) -> Ast * {
     return node
 }
 
-MakeSelector(SourceFile *f, Token token, rec, sel: Ast *) -> Ast * {
+Ast *MakeSelector(SourceFile *f, Token token, rec, sel: Ast *) {
     Ast *node = MakeNode(f, AK_Selector)
     node->Selector.token = token
     node->Selector.rec = rec
@@ -614,7 +614,7 @@ MakeSelector(SourceFile *f, Token token, rec, sel: Ast *) -> Ast * {
     return node
 }
 
-MakeSubscript(SourceFile *f, Token begin, Token end, rec, index: Ast *) -> Ast * {
+Ast *MakeSubscript(SourceFile *f, Token begin, Token end, rec, index: Ast *) {
     Ast *node = MakeNode(f, AK_Subscript)
     node->Subscript.begin = begin
     node->Subscript.end = end
@@ -623,7 +623,7 @@ MakeSubscript(SourceFile *f, Token begin, Token end, rec, index: Ast *) -> Ast *
     return node
 }
 
-MakeSlice(SourceFile *f, Token begin, Token end, expr, hi, lo: Ast *) -> Ast * {
+Ast *MakeSlice(SourceFile *f, Token begin, Token end, expr, hi, lo: Ast *) {
     Ast *node = MakeNode(f, AK_Slice)
     node->Slice.begin = begin
     node->Slice.end = end
@@ -633,14 +633,14 @@ MakeSlice(SourceFile *f, Token begin, Token end, expr, hi, lo: Ast *) -> Ast * {
     return node
 }
 
-MakeAutocast(SourceFile *f, Token token, expr: Ast *) -> Ast * {
+Ast *MakeAutocast(SourceFile *f, Token token, expr: Ast *) {
     Ast *node = MakeNode(f, AK_Autocast)
     node->Autocast.token = token
     node->Autocast.expr = expr
     return node
 }
 
-MakeCast(SourceFile *f, kind: Token, type, expr: Ast *) -> Ast * {
+Ast *MakeCast(SourceFile *f, kind: Token, type, expr: Ast *) {
     Ast *node = MakeNode(f, AK_Cast)
     node->Cast.kind = kind
     node->Cast.type = type
@@ -648,7 +648,7 @@ MakeCast(SourceFile *f, kind: Token, type, expr: Ast *) -> Ast * {
     return node
 }
 
-MakeCall(SourceFile *f, Token begin, Token end, labels, args: DynamicArray(Ast *)) -> Ast * {
+Ast *MakeCall(SourceFile *f, Token begin, Token end, labels, args: DynamicArray(Ast *)) {
     Ast *node = MakeNode(f, AK_Call)
     node->Call.begin = begin
     node->Call.end = end
@@ -657,7 +657,7 @@ MakeCall(SourceFile *f, Token begin, Token end, labels, args: DynamicArray(Ast *
     return node
 }
 
-MakeUnary(SourceFile *f, op: Token, element: Ast *) -> Ast * {
+Ast *MakeUnary(SourceFile *f, op: Token, element: Ast *) {
     Ast *node = MakeNode(f, AK_Unary)
     node->Unary.op = op
     node->Unary.kind = tokenOperator(op)
@@ -665,7 +665,7 @@ MakeUnary(SourceFile *f, op: Token, element: Ast *) -> Ast * {
     return node
 }
 
-MakeBinary(SourceFile *f, op: Token, lhs, rhs: Ast *) -> Ast * {
+Ast *MakeBinary(SourceFile *f, op: Token, lhs, rhs: Ast *) {
     Ast *node = MakeNode(f, AK_Binary)
     node->Binary.op = op
     node->Binary.kind = tokenOperator(op)
@@ -674,7 +674,7 @@ MakeBinary(SourceFile *f, op: Token, lhs, rhs: Ast *) -> Ast * {
     return node
 }
 
-MakeTernary(SourceFile *f, qmark, colon: Token, cond, then, els: Ast *) -> Ast * {
+Ast *MakeTernary(SourceFile *f, qmark, colon: Token, cond, then, els: Ast *) {
     Ast *node = MakeNode(f, AK_Ternary)
     node->Ternary.qmark = qmark
     node->Ternary.colon = colon
@@ -684,7 +684,7 @@ MakeTernary(SourceFile *f, qmark, colon: Token, cond, then, els: Ast *) -> Ast *
     return node
 }
 
-MakeKeyValue(SourceFile *f, Token token, key, value: Ast *) -> Ast * {
+Ast *MakeKeyValue(SourceFile *f, Token token, key, value: Ast *) {
     Ast *node = MakeNode(f, AK_KeyValue)
     node->KeyValue.token = token
     node->KeyValue.key = key
@@ -692,14 +692,14 @@ MakeKeyValue(SourceFile *f, Token token, key, value: Ast *) -> Ast * {
     return node
 }
 
-MakePointerType(SourceFile *f, Token token, type: Ast *) -> Ast * {
+Ast *MakePointerType(SourceFile *f, Token token, type: Ast *) {
     Ast *node = MakeNode(f, AK_PointerType)
     node->PointerType.token = token
     node->PointerType.type = type
     return node
 }
 
-MakeArrayType(SourceFile *f, Token begin, Token end, length, type: Ast *) -> Ast * {
+Ast *MakeArrayType(SourceFile *f, Token begin, Token end, length, type: Ast *) {
     Ast *node = MakeNode(f, AK_ArrayType)
     node->ArrayType.begin = begin
     node->ArrayType.end = end
@@ -708,7 +708,7 @@ MakeArrayType(SourceFile *f, Token begin, Token end, length, type: Ast *) -> Ast
     return node
 }
 
-MakeSliceType(SourceFile *f, Token begin, Token end, type: Ast *) -> Ast * {
+Ast *MakeSliceType(SourceFile *f, Token begin, Token end, type: Ast *) {
     Ast *node = MakeNode(f, AK_SliceType)
     node->SliceType.begin = begin
     node->SliceType.end = end
@@ -716,7 +716,7 @@ MakeSliceType(SourceFile *f, Token begin, Token end, type: Ast *) -> Ast * {
     return node
 }
 
-MakeVectorType(SourceFile *f, Token begin, Token end, size, type: Ast *) -> Ast * {
+Ast *MakeVectorType(SourceFile *f, Token begin, Token end, size, type: Ast *) {
     Ast *node = MakeNode(f, AK_VectorType)
     node->VectorType.begin = begin
     node->VectorType.end = end
@@ -725,14 +725,14 @@ MakeVectorType(SourceFile *f, Token begin, Token end, size, type: Ast *) -> Ast 
     return node
 }
 
-MakePolyType(SourceFile *f, Token token, type: Ast *) -> Ast * {
+Ast *MakePolyType(SourceFile *f, Token token, type: Ast *) {
     Ast *node = MakeNode(f, AK_PolyType)
     node->PolyType.token = token
     node->PolyType.type = type
     return node
 }
 
-MakeVariadicType(SourceFile *f, Token token, type: Ast *, isCVargs: bool) -> Ast * {
+Ast *MakeVariadicType(SourceFile *f, Token token, type: Ast *, isCVargs: bool) {
     Ast *node = MakeNode(f, AK_VariadicType)
     node->VariadicType.token = token
     node->VariadicType.type = type
@@ -740,33 +740,33 @@ MakeVariadicType(SourceFile *f, Token token, type: Ast *, isCVargs: bool) -> Ast
     return node
 }
 
-MakeBadStmt(SourceFile *f, Token begin, Token end) -> Ast * {
+Ast *MakeBadStmt(SourceFile *f, Token begin, Token end) {
     Ast *node = MakeNode(f, AK_BadStmt)
     node->BadStmt.begin = begin
     node->BadStmt.end = end
     return node
 }
 
-MakeEmpty(SourceFile *f, Token token) -> Ast * {
+Ast *MakeEmpty(SourceFile *f, Token token) {
     Ast *node = MakeNode(f, AK_Empty)
     node->Empty = token
     return node
 }
 
-MakeLabel(SourceFile *f, Token token) -> Ast * {
+Ast *MakeLabel(SourceFile *f, Token token) {
     Ast *node = MakeNode(f, AK_Label)
     node->Label = token
     return node
 }
 
-MakeExprStmt(SourceFile *f, Token token, expr: Ast *) -> Ast * {
+Ast *MakeExprStmt(SourceFile *f, Token token, expr: Ast *) {
     Ast *node = MakeNode(f, AK_ExprStmt)
     node->ExprStmt.token = token
     node->ExprStmt.expr = expr
     return node
 }
 
-MakeAssign(SourceFile *f, Token token, lhs, rhs: DynamicArray(Ast *)) -> Ast * {
+Ast *MakeAssign(SourceFile *f, Token token, lhs, rhs: DynamicArray(Ast *)) {
     Ast *node = MakeNode(f, AK_Assign)
     node->Assign.token = token
     node->Assign.lhs = lhs
@@ -774,35 +774,35 @@ MakeAssign(SourceFile *f, Token token, lhs, rhs: DynamicArray(Ast *)) -> Ast * {
     return node
 }
 
-MakeReturn(SourceFile *f, Token token, stmts: DynamicArray(Ast *)) -> Ast * {
+Ast *MakeReturn(SourceFile *f, Token token, stmts: DynamicArray(Ast *)) {
     Ast *node = MakeNode(f, AK_Return)
     node->Return.token = token
     node->Return.stmts = stmts
     return node
 }
 
-MakeDefer(SourceFile *f, Token token, stmt: Ast *) -> Ast * {
+Ast *MakeDefer(SourceFile *f, Token token, stmt: Ast *) {
     Ast *node = MakeNode(f, AK_Defer)
     node->Defer.token = token
     node->Defer.stmt = stmt
     return node
 }
 
-MakeUsing(SourceFile *f, Token token, expr: Ast *) -> Ast * {
+Ast *MakeUsing(SourceFile *f, Token token, expr: Ast *) {
     Ast *node = MakeNode(f, AK_Using)
     node->Using.token = token
     node->Using.expr = expr
     return node
 }
 
-MakeBranch(SourceFile *f, Token token, label: Ast *) -> Ast * {
+Ast *MakeBranch(SourceFile *f, Token token, label: Ast *) {
     Ast *node = MakeNode(f, AK_Branch)
     node->Branch.token = token
     node->Branch.label = label
     return node
 }
 
-MakeBlock(SourceFile *f, Token begin, Token end, stmts: DynamicArray(Ast *)) -> Ast * {
+Ast *MakeBlock(SourceFile *f, Token begin, Token end, stmts: DynamicArray(Ast *)) {
     Ast *node = MakeNode(f, AK_Block)
     node->Block.begin = begin
     node->Block.end = end
@@ -810,7 +810,7 @@ MakeBlock(SourceFile *f, Token begin, Token end, stmts: DynamicArray(Ast *)) -> 
     return node
 }
 
-MakeIf(SourceFile *f, Token token, cond, body, els: Ast *) -> Ast * {
+Ast *MakeIf(SourceFile *f, Token token, cond, body, els: Ast *) {
     Ast *node = MakeNode(f, AK_If)
     node->If.token = token
     node->If.cond = cond
@@ -819,7 +819,7 @@ MakeIf(SourceFile *f, Token token, cond, body, els: Ast *) -> Ast * {
     return node
 }
 
-MakeCaseClause(SourceFile *f, Token token, match: DynamicArray(Ast *), block: Ast *) -> Ast * {
+Ast *MakeCaseClause(SourceFile *f, Token token, match: DynamicArray(Ast *), block: Ast *) {
     Ast *node = MakeNode(f, AK_CaseClause)
     node->CaseClause.token = token
     node->CaseClause.match = match
@@ -827,7 +827,7 @@ MakeCaseClause(SourceFile *f, Token token, match: DynamicArray(Ast *), block: As
     return node
 }
 
-MakeSwitch(SourceFile *f, Token token, match: Ast *, cases: DynamicArray(Ast *)) -> Ast * {
+Ast *MakeSwitch(SourceFile *f, Token token, match: Ast *, cases: DynamicArray(Ast *)) {
     Ast *node = MakeNode(f, AK_Switch)
     node->Switch.token = token
     node->Switch.match = match
@@ -835,7 +835,7 @@ MakeSwitch(SourceFile *f, Token token, match: Ast *, cases: DynamicArray(Ast *))
     return node
 }
 
-MakeFor(SourceFile *f, Token token, init, cond, step, body: Ast *) -> Ast * {
+Ast *MakeFor(SourceFile *f, Token token, init, cond, step, body: Ast *) {
     Ast *node = MakeNode(f, AK_For)
     node->For.token = token
     node->For.init = init
@@ -845,7 +845,7 @@ MakeFor(SourceFile *f, Token token, init, cond, step, body: Ast *) -> Ast * {
     return node
 }
 
-MakeLibrary(SourceFile *f, Token token, path, alias: Ast *) -> Ast * {
+Ast *MakeLibrary(SourceFile *f, Token token, path, alias: Ast *) {
     Ast *node = MakeNode(f, AK_Library)
     node->Library.token = token
     node->Library.path = path
@@ -853,7 +853,7 @@ MakeLibrary(SourceFile *f, Token token, path, alias: Ast *) -> Ast * {
     return node
 }
 
-MakeForeign(SourceFile *f, Token token, library, decl: Ast *, linkname, callconv: []u8) -> Ast * {
+Ast *MakeForeign(SourceFile *f, Token token, library, decl: Ast *, linkname, callconv: []u8) {
     Ast *node = MakeNode(f, AK_Foreign)
     node->Foreign.token = token
     node->Foreign.library = library
@@ -863,7 +863,7 @@ MakeForeign(SourceFile *f, Token token, library, decl: Ast *, linkname, callconv
     return node
 }
 
-MakeDeclaration(SourceFile *f, Token token, names, values: DynamicArray(Ast *), type: Ast *, isConstant: bool) -> Ast * {
+Ast *MakeDeclaration(SourceFile *f, Token token, names, values: DynamicArray(Ast *), type: Ast *, isConstant: bool) {
     Ast *node = MakeNode(f, AK_Declaration)
     node->Declaration.token = token
     node->Declaration.names = names
@@ -873,7 +873,7 @@ MakeDeclaration(SourceFile *f, Token token, names, values: DynamicArray(Ast *), 
     return node
 }
 
-MakeBadDecl(SourceFile *f, Token begin, Token end) -> Ast * {
+Ast *MakeBadDecl(SourceFile *f, Token begin, Token end) {
     Ast *node = MakeNode(f, AK_BadDecl)
     node->BadDecl.begin = begin
     node->BadDecl.end = end
