@@ -57,23 +57,31 @@ char *errorBuffPrintf(const char *fmt, ...) {
  
 
 void Report(Error error) {
-    fprintf(
-        stderr, 
 #ifndef NO_ERROR_CODES
-        "ERROR(%s:%u:%u, E%04d): %s\n",
-#else
-        "ERROR(%s:%u:%u): %s\n",
+    if (flagShowErrorCodes) {
+        fprintf(
+            stderr, 
+            "ERROR(%s:%u:%u, E%04d): %s\n",
+            error.pos.name, 
+            error.pos.line, 
+            error.pos.column, 
+            error.code, 
+            error.message
+        );
+    } else {
 #endif
-        error.pos.name, 
-        error.pos.line, 
-        error.pos.column, 
 
 #ifndef NO_ERROR_CODES
-        error.code, 
+        fprintf(
+            stderr, 
+            "ERROR(%s:%u:%u): %s\n",
+            error.pos.name, 
+            error.pos.line, 
+            error.pos.column, 
+            error.message
+        );
+    }
 #endif
-
-        error.message
-    );
 
     errorCollector.errorCount += 1;
 }

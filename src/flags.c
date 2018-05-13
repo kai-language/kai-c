@@ -1,2 +1,3 @@
 
 bool flagParseComments;
+bool flagShowErrorCodes;

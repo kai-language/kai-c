@@ -1,6 +1,4 @@
-
 #include "common.c"
-#include "flags.c"
 #include "lexer.c"
 
 // forward declarations
