@@ -199,7 +199,6 @@ typedef void *allocFunc(void *payload, enum AllocType alType, size_t count, size
 
 typedef struct Allocator Allocator;
 struct Allocator {
-
     allocFunc *func;
     void *payload;
 };
