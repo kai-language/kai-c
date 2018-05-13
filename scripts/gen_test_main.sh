@@ -2,9 +2,9 @@
 
 cat <<- EOF
 
-#include "stdio.h"
-#include "setjmp.h"
-#include "signal.h"
+#include <stdio.h>
+#include <setjmp.h>
+#include <signal.h>
 
 int _fileTestsPassCount = 0;
 int _totalTestsPassCount = 0;
