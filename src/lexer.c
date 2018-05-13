@@ -220,6 +220,28 @@ Error WrongDoubleQuote(Position pos) {
     };
 }
 
+Error InvalidUnicodeCodePoint(u32 cp, Position pos) {
+    char buff[4];
+
+    u32 len = EncodeCodePoint(&buff[0], cp);
+    char *msg = errorBuffPrintf("Invalid Unicode codepoint '%.*s'", len, buff);
+
+    return (Error) {
+        .code = InvalidCodePointError,
+        .pos = pos,
+        .message = msg
+    };
+}
+
+Error InvalidIdentifierHead(u32 cp, Position pos) {
+    // TODO(Brett, vdka): catch some more, common, unicode errors
+    switch (cp) {
+    case LeftDoubleQuote: return WrongDoubleQuote(pos);
+    }
+
+    return InvalidUnicodeCodePoint(cp, pos);
+}
+
 typedef struct Token Token;
 struct Token {
     TokenKind kind;
@@ -699,14 +721,7 @@ repeat: ;
             }
 
             if (!IsIdentifierHead(cp)) {
-                // “
-                // TODO(vdka, Brett): Refactor a common catch for common unicode errors
-                if (cp == LeftDoubleQuote) {
-                    Report(WrongDoubleQuote(l->pos));
-                } else {
-                    LEXER_ERROR(l->pos, "Invalid '%lc' token, skipping", (wint_t) cp);
-                }
-
+                Report(InvalidIdentifierHead(cp, l->pos));
                 l->stream++;
                 goto repeat;
             }

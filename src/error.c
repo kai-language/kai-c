@@ -4,6 +4,7 @@
 #define ERROR_CODES \
     ECode(InvalidEscape, "Escape sequence is an invalid Unicode codepoint"), \
     ECode(InvalidNumericEscape, "Escape sequence is an invalid Unicode codepoint"), \
+    ECode(InvalidCodePoint, "An invalid Unicode codepoint"), \
     ECode(StringContainsNewline, "A string literal contains a newline"), \
     ECode(UnexpectedEOF, "An unexpected EOF while parsing a string literal"), \
     ECode(ExpectedDigit, "Expected a digit"), \
@@ -32,6 +33,28 @@ ErrorCollector errorCollector;
 b32 HasErrors() {
     return errorCollector.errorCount > 0;
 }
+
+#define tempErrorBufferLen KB(4)
+char *temporaryErrorBuffer;
+
+void InitErrorBuffers() {
+    temporaryErrorBuffer = malloc(tempErrorBufferLen);
+};
+
+// NOTE: this function is not threadsafe
+char *errorBuffPrintf(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    // NOTE: vsnprintf will always null-terminate the buffer so we don't need to
+    // pass around the length
+    vsnprintf(temporaryErrorBuffer, tempErrorBufferLen, fmt, args);
+
+    va_end(args);
+
+    return temporaryErrorBuffer;
+}
+ 
 
 void Report(Error error) {
     fprintf(

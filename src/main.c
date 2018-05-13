@@ -45,6 +45,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    InitErrorBuffers();
+
     const char *path = argv[1];
     const char *data = ReadFile(path);
     if (!data) {
