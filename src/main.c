@@ -1,6 +1,4 @@
-
 #include "common.c"
-#include "flags.c"
 #include "lexer.c"
 
 // forward declarations
@@ -44,6 +42,8 @@ int main(int argc, char **argv) {
         Usage();
         return 1;
     }
+
+    InitErrorBuffers();
 
     const char *path = argv[1];
     const char *data = ReadFile(path);
