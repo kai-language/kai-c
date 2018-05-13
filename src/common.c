@@ -176,6 +176,11 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
     va_end(args);
 }
 
+typedef struct Position Position;
+struct Position {
+    const char *name;
+    u32 offset, line, column;
+};
 
 /// Allocators
 typedef enum AllocType {
@@ -270,6 +275,7 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
 #include "map.c"
 #include "array.c"
 #include "utf.c"
+#include "error.c"
 
 // Arena Allocator
 

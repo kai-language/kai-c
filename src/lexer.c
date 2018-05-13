@@ -162,12 +162,6 @@ const char *DescribeTokenKind(TokenKind tk) {
     return TokenDescriptions[tk];
 }
 
-typedef struct Position Position;
-struct Position {
-    const char *name;
-    u32 offset, line, column;
-};
-
 // FIXME: Replace when we get diagnostics
 void LEXER_ERROR(Position pos, const char *msg, ...) {
     va_list args;
@@ -176,6 +170,54 @@ void LEXER_ERROR(Position pos, const char *msg, ...) {
     vprintf(msg, args);
     va_end(args);
     printf("\n");
+}
+
+Error InvalidEscape(Position pos) {
+    return (Error) {
+        .code = InvalidEscapeError,
+        .pos = pos,
+        .message = "Escape sequence is an invalid Unicode codepoint"
+    };
+}
+
+Error StringContainsNewline(Position pos) {
+    return (Error) {
+        .code = StringContainsNewlineError,
+        .pos = pos,
+        .message = "String literal cannot contain a newline"
+    };
+}
+
+Error UnexpectedEOF(Position pos) {
+    return (Error) {
+        .code = UnexpectedEOFError,
+        .pos = pos,
+        .message = "Unexpectedly reached end of file while parsing string literal"
+    };
+}
+
+Error FloatOverflow(Position pos) {
+    return (Error) {
+        .code = FloatOverflowError,
+        .pos = pos,
+        .message = "Float literal is larger than maximum allowed value"
+    };
+}
+
+Error IntOverflow(Position pos) {
+    return (Error) {
+        .code = IntOverflowError,
+        .pos = pos,
+        .message = "Integer literal is larger than maximum allowed value"
+    };
+}
+
+Error WrongDoubleQuote(Position pos) {
+    return (Error) {
+        .code = WrongDoubleQuoteError,
+        .pos = pos,
+        .message = "Unsupported unicode character '“' (0x201c). Did you mean `\"`?\n"
+    };
 }
 
 typedef struct Token Token;
@@ -272,13 +314,13 @@ u32 scanNumericEscape(Lexer *l, i32 n, u32 max) {
 
 
     if (x > max || (0xD800 <= x && x < 0xE000)) {
-        LEXER_ERROR(l->pos, "Escape sequence is an invalid Unicode code point");
+        Report(InvalidEscape(l->pos));
         return 0;
     }
     return x;
 
 error:
-    LEXER_ERROR(l->pos, "Invalid escape sequence");
+    Report(InvalidEscape(l->pos));
     return 0;
 }
 
@@ -289,6 +331,8 @@ const char *scanString(Lexer *l) {
     char quote = *l->stream++;
     ASSERT(quote == '"' || quote == '`');
 
+    Position start = l->pos;
+
     b8 isMultiline = quote == '`';
     ArrayClear(_scanStringTempBuffer);
     
@@ -298,7 +342,7 @@ const char *scanString(Lexer *l) {
         u32 cp = NextCodePoint(l);
         u32 val;
         if (cp == '\n' && !isMultiline) {
-            LEXER_ERROR(l->pos, "String literal cannot contain newline");
+            Report(StringContainsNewline(l->pos));
             return NULL;
         } else if (cp == '\\') {
             cp = NextCodePoint(l);
@@ -334,7 +378,7 @@ const char *scanString(Lexer *l) {
 
     u32 closingQuote = NextCodePoint(l);
     if (closingQuote == FileEnd) {
-        LEXER_ERROR(l->pos, "Unexpected end of file within string literal");
+        Report(UnexpectedEOF(start));
         return NULL;
     }
     ASSERT(closingQuote == quote);
@@ -345,6 +389,7 @@ const char *scanString(Lexer *l) {
 }
 
 double scanFloat(Lexer *l) {
+    Report(InvalidEscape(l->pos));
     const char *start = l->stream;
     while (isdigit(*l->stream)) {
         l->stream++;
@@ -370,7 +415,7 @@ double scanFloat(Lexer *l) {
 
     double val = strtod(start, NULL);
     if (val == HUGE_VAL) {
-        LEXER_ERROR(l->pos, "Float literal overflow");
+        Report(FloatOverflow(l->pos));
         return 0.f;
     }
     return val;
@@ -414,7 +459,7 @@ u64 scanInt(Lexer *l) {
             digit = 0;
         }
         if (val > (ULLONG_MAX - digit) / base) {
-            LEXER_ERROR(l->pos, "Integer literal overflow");
+            Report(IntOverflow(l->pos));
             while (isdigit(*l->stream)) {
                 l->stream++;
             }
@@ -655,9 +700,12 @@ repeat: ;
 
             if (!IsIdentifierHead(cp)) {
                 // “
-                // TODO(vdka, Brett): Report Error & Refactor a common catch for common unicode errors
-                if (cp == LeftDoubleQuote) fprintf(stderr, "NOTE: unsupported unicode character '“' (0x201c). Did you mean `\"`?\n");
-                LEXER_ERROR(l->pos, "Invalid '%lc' token, skipping", (wint_t) cp);
+                // TODO(vdka, Brett): Refactor a common catch for common unicode errors
+                if (cp == LeftDoubleQuote) fprintf(stderr, "");
+                    Report(WrongDoubleQuote(l->pos));
+                else
+                    LEXER_ERROR(l->pos, "Invalid '%lc' token, skipping", (wint_t) cp);
+
                 l->stream++;
                 goto repeat;
             }
