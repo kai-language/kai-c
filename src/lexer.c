@@ -701,10 +701,11 @@ repeat: ;
             if (!IsIdentifierHead(cp)) {
                 // “
                 // TODO(vdka, Brett): Refactor a common catch for common unicode errors
-                if (cp == LeftDoubleQuote)
+                if (cp == LeftDoubleQuote) {
                     Report(WrongDoubleQuote(l->pos));
-                else
+                } else {
                     LEXER_ERROR(l->pos, "Invalid '%lc' token, skipping", (wint_t) cp);
+                }
 
                 l->stream++;
                 goto repeat;
