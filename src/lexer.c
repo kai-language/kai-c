@@ -162,16 +162,6 @@ const char *DescribeTokenKind(TokenKind tk) {
     return TokenDescriptions[tk];
 }
 
-// FIXME: Replace when we get diagnostics
-void LEXER_ERROR(Position pos, const char *msg, ...) {
-    va_list args;
-    va_start(args, msg);
-    printf("ERROR: %s:%u:%u ", pos.name, pos.line, pos.column);
-    vprintf(msg, args);
-    va_end(args);
-    printf("\n");
-}
-
 Error InvalidEscape(Position pos) {
     return (Error) {
         .code = InvalidEscapeError,
@@ -220,9 +210,44 @@ Error WrongDoubleQuote(Position pos) {
     };
 }
 
+Error InvalidCharacterEscape(u32 cp, Position pos) {
+    char buff[4];
+    u32 len = EncodeCodePoint(&buff[0], cp);
+    char *msg = errorBuffPrintf("Invalid character literal escape '\\%.*s'", len, buff);
+
+    return (Error) {
+        .code = InvalidCharacterEscapeError,
+        .pos = pos,
+        .message = msg
+    };
+}
+
+Error ExpectedDigit(u32 cp, Position pos) {
+    char buff[4];
+    u32 len = EncodeCodePoint(&buff[0], cp);
+    char *msg = errorBuffPrintf("Expected digit after float literal exponent, found '%c'.", len, buff);
+
+    return (Error) {
+        .code = ExpectedDigitError,
+        .pos = pos,
+        .message = msg
+    };
+}
+
+Error DigitOutOfRange(u32 cp, u32 base, Position pos) {
+    char buff[4];
+    u32 len = EncodeCodePoint(&buff[0], cp);
+    char *msg = errorBuffPrintf("Digit '%.*s' out of range for base %d", len, buff, base);
+
+    return (Error) {
+        .code = DigitOutOfRangeError,
+        .pos = pos,
+        .message = msg
+    };
+}
+
 Error InvalidUnicodeCodePoint(u32 cp, Position pos) {
     char buff[4];
-
     u32 len = EncodeCodePoint(&buff[0], cp);
     char *msg = errorBuffPrintf("Invalid Unicode codepoint '%.*s'", len, buff);
 
@@ -234,7 +259,6 @@ Error InvalidUnicodeCodePoint(u32 cp, Position pos) {
 }
 
 Error InvalidIdentifierHead(u32 cp, Position pos) {
-    // TODO(Brett, vdka): catch some more, common, unicode errors
     switch (cp) {
     case LeftDoubleQuote: return WrongDoubleQuote(pos);
     }
@@ -386,7 +410,7 @@ const char *scanString(Lexer *l) {
                     val = escapeToChar[(u8) cp];
                     if (val == 0 && cp != '0' && cp != otherQuote) {
                     error:
-                        LEXER_ERROR(l->pos, "Invalid character literal escape '\\%lc'", (wint_t) cp);
+                        Report(InvalidCharacterEscape(cp, l->pos));
                         return NULL;
                     }
             }
@@ -428,7 +452,7 @@ double scanFloat(Lexer *l) {
             l->stream++;
         }
         if (!isdigit(*l->stream)) {
-            LEXER_ERROR(l->pos, "Expected digit after float literal exponent, found '%c'.", *l->stream);
+            Report(ExpectedDigit(*l->stream, l->pos));
         }
         while (isdigit(*l->stream)) {
             l->stream++;
@@ -444,7 +468,7 @@ double scanFloat(Lexer *l) {
 }
 
 u64 scanInt(Lexer *l) {
-    int base = 10;
+    u32 base = 10;
     const char *start_digits = l->stream;
     if (*l->stream == '0') {
         l->stream++;
@@ -477,7 +501,7 @@ u64 scanInt(Lexer *l) {
             break;
         }
         if (digit >= base) {
-            LEXER_ERROR(l->pos, "Digit '%c' out of range for base %d, *l->stream, base", *l->stream);
+            Report(DigitOutOfRange(*l->stream, base, l->pos));
             digit = 0;
         }
         if (val > (ULLONG_MAX - digit) / base) {
@@ -492,7 +516,7 @@ u64 scanInt(Lexer *l) {
         l->stream++;
     }
     if (l->stream == start_digits) {
-        LEXER_ERROR(l->pos, "Expected base %d digit, got '%c'", base, *l->stream);
+        Report(DigitOutOfRange(*l->stream, base, l->pos));
     }
     return val;
 }

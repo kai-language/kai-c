@@ -3,11 +3,13 @@
 // in the future.
 #define ERROR_CODES \
     ECode(InvalidEscape, "Escape sequence is an invalid Unicode codepoint"), \
+    ECode(InvalidCharacterEscape, "Escape sequence is a invalid"), \
     ECode(InvalidNumericEscape, "Escape sequence is an invalid Unicode codepoint"), \
     ECode(InvalidCodePoint, "An invalid Unicode codepoint"), \
     ECode(StringContainsNewline, "A string literal contains a newline"), \
     ECode(UnexpectedEOF, "An unexpected EOF while parsing a string literal"), \
     ECode(ExpectedDigit, "Expected a digit"), \
+    ECode(DigitOutOfRange, "Digit is out of range of base"), \
     ECode(FloatOverflow, "Float literal overflow"), \
     ECode(IntOverflow, "Integer literal overflow"), \
     ECode(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
@@ -55,7 +57,6 @@ char *errorBuffPrintf(const char *fmt, ...) {
     return temporaryErrorBuffer;
 }
  
-
 void Report(Error error) {
 #ifndef NO_ERROR_CODES
     if (flagShowErrorCodes) {
