@@ -192,6 +192,7 @@ void processFile(Lexer *l) {
             case '}': {
                 if ( ! l->seenReturn ) {
                     addDeferBlocks(l);
+                    l->seenReturn = false;
                 }
                 l->scopeLevel -= 1;
             } break;
