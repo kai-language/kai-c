@@ -435,7 +435,6 @@ const char *scanString(Lexer *l) {
 }
 
 double scanFloat(Lexer *l) {
-    Report(InvalidEscape(l->pos));
     const char *start = l->stream;
     while (isdigit(*l->stream)) {
         l->stream++;
@@ -886,6 +885,15 @@ void test_lexer() {
     ASSERT_MSG(tok.kind == TK_Terminator, "Expected terminator to be automatically inserted");
     ASSERT_MSG(tok.val.ident == newline_name, "Expected terminator to set it's value the the character that spawned it");
     ASSERT_TOKEN_POS(40, 4, 1); // }
+    ASSERT_TOKEN_EOF();
+
+    lex = MakeLexer("\n#import kai(\"core\")\n", NULL);
+    ASSERT_TOKEN_DIRECTIVE("import");
+    ASSERT_TOKEN_IDENT("kai");
+    ASSERT_TOKEN_KIND(TK_Lparen);
+    ASSERT_TOKEN_STRING("core");
+    ASSERT_TOKEN_KIND(TK_Rparen);
+    ASSERT_TOKEN_KIND(TK_Terminator);
     ASSERT_TOKEN_EOF();
 }
 #endif
