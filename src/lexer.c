@@ -726,6 +726,7 @@ repeat: ;
             token.kind = TK_Directive;
             l->stream++;
             if (*l->stream == FileEnd) break;
+            if (*l->stream == FileEnd) Report(UnexpectedEOF(l->pos));
 
             u32 cpWidth;
             u32 cp = DecodeCodePoint(&cpWidth, l->stream);
