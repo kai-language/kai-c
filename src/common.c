@@ -176,6 +176,11 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
     va_end(args);
 }
 
+typedef struct Position Position;
+struct Position {
+    const char *name;
+    u32 offset, line, column;
+};
 
 /// Allocators
 typedef enum AllocType {
@@ -194,7 +199,6 @@ typedef void *allocFunc(void *payload, enum AllocType alType, size_t count, size
 
 typedef struct Allocator Allocator;
 struct Allocator {
-
     allocFunc *func;
     void *payload;
 };
@@ -267,9 +271,11 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
 }
 
+#include "flags.c"
 #include "map.c"
 #include "array.c"
 #include "utf.c"
+#include "error.c"
 
 // Arena Allocator
 
@@ -285,9 +291,9 @@ struct Arena {
 #define ARENA_BLOCK_SIZE MB(1)
 #define ARENA_ALIGNMENT 8
 
-void ArenaGrow(Arena *arena, size_t minSize) {
+void ArenaGrow(Arena *arena, size_t minSize, b32 clear) {
     size_t size = ALIGN_UP(CLAMP_MIN(minSize, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
-    arena->ptr = Alloc(DefaultAllocator, size);
+    arena->ptr = clear ? Calloc(DefaultAllocator, 1, size) : Alloc(DefaultAllocator, size);
     ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
     arena->end = arena->ptr + size;
     ArrayPush(arena->blocks, arena->ptr);
@@ -295,13 +301,28 @@ void ArenaGrow(Arena *arena, size_t minSize) {
 
 void *ArenaAlloc(Arena *arena, size_t size) {
     if (size > (size_t)(arena->end - arena->ptr)) {
-        ArenaGrow(arena, size);
+        ArenaGrow(arena, size, false);
         ASSERT(size <= (size_t)(arena->end - arena->ptr));
     }
     void *allocation = arena->ptr;
     arena->ptr = (u8*) ALIGN_UP_PTR(arena->ptr + size, ARENA_ALIGNMENT);
     ASSERT(arena->ptr <= arena->end);
     ASSERT_MSG_VA(allocation == ALIGN_DOWN_PTR(allocation, ARENA_ALIGNMENT), "The pointer %p should be aligned to %d", allocation, ARENA_ALIGNMENT);
+    return allocation;
+}
+
+void *ArenaCalloc(Arena *arena, size_t size) {
+    b32 needMemset = true;
+    if (size > (size_t)(arena->end - arena->ptr)) {
+        ArenaGrow(arena, size, true);
+        ASSERT(size <= (size_t)(arena->end - arena->ptr));
+        needMemset = false;
+    }
+    void *allocation = arena->ptr;
+    arena->ptr = (u8*) ALIGN_UP_PTR(arena->ptr + size, ARENA_ALIGNMENT);
+    ASSERT(arena->ptr <= arena->end);
+    ASSERT_MSG_VA(allocation == ALIGN_DOWN_PTR(allocation, ARENA_ALIGNMENT), "The pointer %p should be aligned to %d", allocation, ARENA_ALIGNMENT);
+    if (needMemset) memset(allocation, 0, size);
     return allocation;
 }
 
@@ -351,18 +372,38 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
+char *AbsolutePath(const char *fileName, char *resolved) {
+    return realpath(fileName, resolved);
+}
+
+#define NullWithLoggedReason(msg, ...) \
+    (FlagVerbose ? ((void)printf("return NULL from %s: " msg "\n", __FUNCTION__, __VA_ARGS__), NULL) : NULL)
+
 // FIXME: We are mmap()'ing this with no way to munmap it currently
 char *ReadFile(const char *path) {
     i32 fd = open(path, O_RDONLY);
-    if (fd == -1) return NULL;
+    if (fd == -1) return NullWithLoggedReason("failed to open file %s", path);
 
     struct stat st;
-    if (stat(path, &st) == -1) return NULL;
+    if (stat(path, &st) == -1) return NullWithLoggedReason("Failed to stat already opened file %s with file descriptor %d", path, fd);
     size_t len = st.st_size;
 
     char *address = (char*) mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (close(fd) == -1) perror("close was interupted");
-    if (address == MAP_FAILED) return NULL;
+    if (close(fd) == -1) perror("close was interupted"); // intentionally continue despite the failure, just keep the file open
+    if (address == MAP_FAILED) return NullWithLoggedReason("Failed to mmap opened file %s", path);
 
     return address;
 }
+
+typedef union Val {
+    b32 b32;
+    i8 i8;
+    u8 u8;
+    i16 i16;
+    u16 u16;
+    i32 i32;
+    u32 u32;
+    i64 i64;
+    u64 u64;
+    uintptr_t ptr;
+} Val;

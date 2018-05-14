@@ -10,7 +10,7 @@ Arena internArena;
 Map interns;
 
 void *ArenaAlloc(Arena *arena, size_t size);
-const char *strInternRange(const char *start, const char *end) {
+const char *StrInternRange(const char *start, const char *end) {
     size_t len = end - start;
     u64 hash = HashBytes(start, len);
     u64 key = hash ? hash : 1; // 0 is a sentinal
@@ -30,8 +30,8 @@ const char *strInternRange(const char *start, const char *end) {
     return newIntern->data;
 }
 
-const char *strIntern(const char *str) {
-    return strInternRange(str, str + strlen(str));
+const char *StrIntern(const char *str) {
+    return StrInternRange(str, str + strlen(str));
 }
 
 #if TEST
@@ -45,25 +45,25 @@ void test_stringInterning() {
 
     TEST_ASSERT(strncmp(ALPHA, mem, sizeof(ALPHA)) == 0);
 
-    const char *stored = strIntern(ALPHA);
+    const char *stored = StrIntern(ALPHA);
     TEST_ASSERT(strncmp(stored, mem, sizeof(ALPHA)) == 0);
 
     // Push ourselves over allocated space so we allocate a new block
-    strInternRange(mem + MB(1), mem + MB(2));
+    StrInternRange(mem + MB(1), mem + MB(2));
     TEST_ASSERT(ArrayLen(internArena.blocks) > 1);
 
-    const char *retrieved = strIntern(ALPHA);
+    const char *retrieved = StrIntern(ALPHA);
     TEST_ASSERT(stored == retrieved);
 
-    stored = strIntern(BETA);
-    retrieved = strIntern(BETA);
+    stored = StrIntern(BETA);
+    retrieved = StrIntern(BETA);
     TEST_ASSERT(stored == retrieved);
 
     char stackAlpha[] = ALPHA;
-    ASSERT(strIntern(ALPHA) == strIntern(stackAlpha));
+    ASSERT(StrIntern(ALPHA) == StrIntern(stackAlpha));
 
     char stackBeta[] = BETA;
-    ASSERT(strIntern(BETA) == strIntern(stackBeta));
+    ASSERT(StrIntern(BETA) == StrIntern(stackBeta));
 
 #undef ALPHA
 #undef BETA

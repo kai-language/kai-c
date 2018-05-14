@@ -1,9 +1,9 @@
-
 #include "common.c"
-#include "flags.c"
 #include "lexer.c"
 
 // forward declarations
+#include "compiler.c"
+
 #include "parser.h"
 #include "checker.h"
 
@@ -66,6 +66,8 @@ int main(int argc, char **argv) {
     parseFlag("emit-ir", &emitIR, argc, argv);
     parseFlag("emit-times", &emitTimes, argc, argv);
     
+    InitErrorBuffers();
+
     const char *path = argv[1];
     const char *data = ReadFile(path);
     if (!data) {
@@ -84,7 +86,7 @@ int main(int argc, char **argv) {
             case TK_Float:
                 printf("kind: '%s', lit: '%f'\n", DescribeTokenKind(token.kind), token.val.f);
                 break;
-            case TK_String: case TK_Ident: case TK_Keyword:
+            case TK_String: case TK_Ident: case TK_Keyword: case TK_Directive:
                 printf("kind: '%s', lit '%s'\n", DescribeTokenKind(token.kind), token.val.s);
             default:
                 printf("kind: '%s'\n", DescribeTokenKind(token.kind));
