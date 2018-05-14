@@ -38,22 +38,6 @@ void Usage() {
     printUsage(1, "-emit-times            Emit times for each stage of compilation");
 }
 
-void parseFlag(const char *flagName, bool *out, int argc, char **argv) {
-    for (int i = 1; i < argc; i++) {
-        if (strlen(argv[i]) == 0 || *argv[i] != '-') {
-            perror("Flag was not prefixed with '-'");
-            exit(1);
-        }
-        
-        if (strcmp(argv[i] + 1, flagName) == 0) {
-            *out = true;
-        }
-    }
-}
-
-bool dumpIR = false;
-bool emitIR = false;
-bool emitTimes = false;
 
 #ifndef TEST
 int main(int argc, char **argv) {
@@ -62,9 +46,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    parseFlag("dump-ir", &dumpIR, argc, argv);
-    parseFlag("emit-ir", &emitIR, argc, argv);
-    parseFlag("emit-times", &emitTimes, argc, argv);
+    parseFlag("show-error-codes", &FlagShowErrorCodes, argc, argv);
+    parseFlag("parse-comments", &FlagParseComments, argc, argv);
+    parseFlag("verbose", &FlagVerbose, argc, argv);
     
     InitErrorBuffers();
 
