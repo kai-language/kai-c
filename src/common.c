@@ -291,9 +291,9 @@ struct Arena {
 #define ARENA_BLOCK_SIZE MB(1)
 #define ARENA_ALIGNMENT 8
 
-void ArenaGrow(Arena *arena, size_t minSize) {
+void ArenaGrow(Arena *arena, size_t minSize, b32 clear) {
     size_t size = ALIGN_UP(CLAMP_MIN(minSize, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
-    arena->ptr = Alloc(DefaultAllocator, size);
+    arena->ptr = clear ? Calloc(DefaultAllocator, 1, size) : Alloc(DefaultAllocator, size);
     ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
     arena->end = arena->ptr + size;
     ArrayPush(arena->blocks, arena->ptr);
@@ -301,13 +301,28 @@ void ArenaGrow(Arena *arena, size_t minSize) {
 
 void *ArenaAlloc(Arena *arena, size_t size) {
     if (size > (size_t)(arena->end - arena->ptr)) {
-        ArenaGrow(arena, size);
+        ArenaGrow(arena, size, false);
         ASSERT(size <= (size_t)(arena->end - arena->ptr));
     }
     void *allocation = arena->ptr;
     arena->ptr = (u8*) ALIGN_UP_PTR(arena->ptr + size, ARENA_ALIGNMENT);
     ASSERT(arena->ptr <= arena->end);
     ASSERT_MSG_VA(allocation == ALIGN_DOWN_PTR(allocation, ARENA_ALIGNMENT), "The pointer %p should be aligned to %d", allocation, ARENA_ALIGNMENT);
+    return allocation;
+}
+
+void *ArenaCalloc(Arena *arena, size_t size) {
+    b32 needMemset = true;
+    if (size > (size_t)(arena->end - arena->ptr)) {
+        ArenaGrow(arena, size, true);
+        ASSERT(size <= (size_t)(arena->end - arena->ptr));
+        needMemset = false;
+    }
+    void *allocation = arena->ptr;
+    arena->ptr = (u8*) ALIGN_UP_PTR(arena->ptr + size, ARENA_ALIGNMENT);
+    ASSERT(arena->ptr <= arena->end);
+    ASSERT_MSG_VA(allocation == ALIGN_DOWN_PTR(allocation, ARENA_ALIGNMENT), "The pointer %p should be aligned to %d", allocation, ARENA_ALIGNMENT);
+    if (needMemset) memset(allocation, 0, size);
     return allocation;
 }
 
