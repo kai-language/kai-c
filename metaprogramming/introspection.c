@@ -156,6 +156,7 @@ void parseDefer(Lexer *l) {
 }
 
 
+//TODO(jonas): generate all blocks
 void addDeferBlocks(Lexer *l) {
 
     if ( ! l->block ) {
