@@ -32,7 +32,7 @@ const char *import_name;
 const char *foreign_name;
 const char *assert_name;
 
-#define KEYWORD(name) name##Keyword = strIntern(#name); ArrayPush(keywords, name##Keyword)
+#define KEYWORD(name) name##Keyword = StrIntern(#name); ArrayPush(keywords, name##Keyword)
 
 void initKeywords(void) {
     static bool inited;
@@ -64,12 +64,12 @@ void initKeywords(void) {
     firstKeyword = ifKeyword;
     lastKeyword = inKeyword;
 
-    newline_name = strIntern("\n");
-    semicolon_name = strIntern(";");
+    newline_name = StrIntern("\n");
+    semicolon_name = StrIntern(";");
 
-    import_name = strIntern("import");
-    foreign_name = strIntern("foreign");
-    assert_name = strIntern("assert");
+    import_name = StrIntern("import");
+    foreign_name = StrIntern("foreign");
+    assert_name = StrIntern("assert");
 
     inited = true;
 }
@@ -665,7 +665,7 @@ repeat: ;
                 while (*l->stream && *l->stream != '\n') {
                     l->stream++;
                 }
-                if (flagParseComments) goto returnComment;
+                if (FlagParseComments) goto returnComment;
                 goto repeat;
             } else if (*l->stream == '*') {
                 l->stream++;
@@ -684,7 +684,7 @@ repeat: ;
                         l->stream++;
                     }
                 }
-                if (flagParseComments) goto returnComment;
+                if (FlagParseComments) goto returnComment;
                 goto repeat;
             }
             break;
@@ -724,7 +724,6 @@ repeat: ;
         case '#': {
             token.kind = TK_Directive;
             l->stream++;
-            if (*l->stream == FileEnd) break;
             if (*l->stream == FileEnd) Report(UnexpectedEOF(l->pos));
 
             u32 cpWidth;
@@ -733,7 +732,7 @@ repeat: ;
                 l->stream += cpWidth;
                 cp = DecodeCodePoint(&cpWidth, l->stream);
             }
-            token.val.ident = strInternRange(token.start + 1, l->stream);
+            token.val.ident = StrInternRange(token.start + 1, l->stream);
             break;
         }
 
@@ -756,7 +755,7 @@ repeat: ;
                 l->stream += cpWidth;
                 cp = DecodeCodePoint(&cpWidth, l->stream);
             }
-            token.val.ident = strInternRange(token.start, l->stream);
+            token.val.ident = StrInternRange(token.start, l->stream);
             token.kind = TK_Ident;
             if (isKeyword(token.val.ident)) {
                 token.kind = TK_Keyword;
@@ -788,7 +787,7 @@ void test_keywords() {
     for (const char **it = keywords; it != ArrayEnd(keywords); it++) {
         ASSERT(isKeyword(*it));
     }
-    ASSERT(!isKeyword(strIntern("asdf")));
+    ASSERT(!isKeyword(StrIntern("asdf")));
 }
 #endif
 
@@ -796,12 +795,12 @@ void test_keywords() {
 #if TEST
 void test_lexer() {
     test_keywords();
-    TEST_ASSERT(strIntern("fn") == fnKeyword);
+    TEST_ASSERT(StrIntern("fn") == fnKeyword);
 
 #define ASSERT_TOKEN_IDENT(x) \
     tok = NextToken(&lex); \
     ASSERT_MSG_VA(tok.kind == TK_Ident, "Expected ident token got %s", DescribeTokenKind(tok.kind)); \
-    ASSERT_MSG_VA(tok.val.ident == (x), "Expected ident token with value %s got %s", (x), tok.val.s)
+    ASSERT_MSG_VA(strcmp(tok.val.ident, (x)) == 0, "Expected ident token with value %s got %s", (x), tok.val.s)
 
 #define ASSERT_TOKEN_INT(x) \
     tok = NextToken(&lex); \
@@ -817,6 +816,11 @@ void test_lexer() {
     tok = NextToken(&lex); \
     ASSERT_MSG_VA(tok.kind == TK_String, "Expected string token got %s", DescribeTokenKind(tok.kind)); \
     ASSERT_MSG_VA(strcmp(tok.val.s, (x)) == 0, "Expected string token with value %s got %s", (x), tok.val.s)
+
+#define ASSERT_TOKEN_DIRECTIVE(x) \
+    tok = NextToken(&lex); \
+    ASSERT_MSG_VA(tok.kind == TK_Directive, "Expected directive token got %s", DescribeTokenKind(tok.kind)); \
+    ASSERT_MSG_VA(strcmp(tok.val.s, (x)) == 0, "Expected directive token with value %s got %s", (x), tok.val.s)
 
 #define ASSERT_TOKEN_EOF() \
     tok = NextToken(&lex); \

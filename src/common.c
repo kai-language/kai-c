@@ -372,18 +372,41 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
+char *AbsolutePath(const char *fileName, char *resolved) {
+    return realpath(fileName, resolved);
+}
+
+#define NullWithLoggedReason(msg, ...) \
+    (FlagVerbose ? ((void)printf("return NULL from %s: " msg "\n", __FUNCTION__, __VA_ARGS__), NULL) : NULL)
+
 // FIXME: We are mmap()'ing this with no way to munmap it currently
 char *ReadFile(const char *path) {
     i32 fd = open(path, O_RDONLY);
-    if (fd == -1) return NULL;
+    if (fd == -1) return NullWithLoggedReason("failed to open file %s", path);
 
     struct stat st;
-    if (stat(path, &st) == -1) return NULL;
+    if (stat(path, &st) == -1) return NullWithLoggedReason("Failed to stat already opened file %s with file descriptor %d", path, fd);
     size_t len = st.st_size;
 
     char *address = (char*) mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (close(fd) == -1) perror("close was interupted");
-    if (address == MAP_FAILED) return NULL;
+    if (close(fd) == -1) perror("close was interupted"); // intentionally continue despite the failure, just keep the file open
+    if (address == MAP_FAILED) return NullWithLoggedReason("Failed to mmap opened file %s", path);
 
     return address;
 }
+
+typedef union Val {
+    bool b;
+    char c;
+    unsigned char uc;
+    signed char sc;
+    short s;
+    unsigned short us;
+    int i;
+    unsigned u;
+    long l;
+    unsigned long ul;
+    long long ll;
+    unsigned long long ull;
+    uintptr_t p;
+} Val;

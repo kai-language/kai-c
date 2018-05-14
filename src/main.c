@@ -2,6 +2,8 @@
 #include "lexer.c"
 
 // forward declarations
+#include "compiler.c"
+
 #include "parser.h"
 #include "checker.h"
 
@@ -62,7 +64,7 @@ int main(int argc, char **argv) {
             case TK_Float:
                 printf("kind: '%s', lit: '%f'\n", DescribeTokenKind(token.kind), token.val.f);
                 break;
-            case TK_String: case TK_Ident: case TK_Keyword:
+            case TK_String: case TK_Ident: case TK_Keyword: case TK_Directive:
                 printf("kind: '%s', lit '%s'\n", DescribeTokenKind(token.kind), token.val.s);
             default:
                 printf("kind: '%s'\n", DescribeTokenKind(token.kind));

@@ -444,12 +444,6 @@ struct Decl {
     };
 };
 
-typedef struct Package Package;
-struct Package {
-    // TODO: Fill other things
-    Arena arena;
-};
-
 void *AllocAst(Package *package, size_t size) {
     ASSERT(size != 0);
     void *mem = ArenaCalloc(&package->arena, size);
