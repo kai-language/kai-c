@@ -9,7 +9,6 @@ struct Intern {
 Arena internArena;
 Map interns;
 
-void *ArenaAlloc(Arena *arena, size_t size);
 const char *StrInternRange(const char *start, const char *end) {
     size_t len = end - start;
     u64 hash = HashBytes(start, len);

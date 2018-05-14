@@ -1,4 +1,4 @@
 
 bool FlagParseComments;
 bool FlagShowErrorCodes;
-bool FlagVerbose = true;
+bool FlagVerbose;
