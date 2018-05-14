@@ -36,6 +36,7 @@
 		5D3CD46420A308C500600F43 /* kai-tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "kai-tests"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D3CD46C20A3099800600F43 /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
 		5D9C729920A5E7C400755A1B /* flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = flags.c; path = src/flags.c; sourceTree = "<group>"; };
+		5D9C729A20A844A900755A1B /* ast_unprocessed.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ast_unprocessed.h; path = src/ast_unprocessed.h; sourceTree = "<group>"; };
 		B219499B209B79E0007BB781 /* kai */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = kai; sourceTree = BUILT_PRODUCTS_DIR; };
 		B249A255209B80CA0016B49E /* main.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = main.c; path = src/main.c; sourceTree = "<group>"; };
 		B249A257209B80E00016B49E /* checker.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = checker.c; path = src/checker.c; sourceTree = "<group>"; };
@@ -44,7 +45,7 @@
 		B249A25A209B80E00016B49E /* map.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = map.c; path = src/map.c; sourceTree = "<group>"; };
 		B249A25B209B80E00016B49E /* checker.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = checker.h; path = src/checker.h; sourceTree = "<group>"; };
 		B249A25C209B80E00016B49E /* common.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = common.c; path = src/common.c; sourceTree = "<group>"; };
-		B249A25D209B80E00016B49E /* parser.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = parser.h; path = src/parser.h; sourceTree = "<group>"; };
+		B249A25D209B80E00016B49E /* ast.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ast.h; path = src/ast.h; sourceTree = "<group>"; };
 		B249A25E209B80E00016B49E /* string.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = string.c; path = src/string.c; sourceTree = "<group>"; };
 		B249A25F209B80E00016B49E /* utf.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = utf.c; path = src/utf.c; sourceTree = "<group>"; };
 		B249A260209B80E10016B49E /* array.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = array.c; path = src/array.c; sourceTree = "<group>"; };
@@ -79,7 +80,8 @@
 				B249A258209B80E00016B49E /* lexer.c */,
 				B249A25A209B80E00016B49E /* map.c */,
 				B249A259209B80E00016B49E /* parser.c */,
-				B249A25D209B80E00016B49E /* parser.h */,
+				B249A25D209B80E00016B49E /* ast.h */,
+				5D9C729A20A844A900755A1B /* ast_unprocessed.h */,
 				B249A25E209B80E00016B49E /* string.c */,
 				B249A25F209B80E00016B49E /* utf.c */,
 				B249A255209B80CA0016B49E /* main.c */,
@@ -108,6 +110,7 @@
 				5D3CD46020A308C500600F43 /* Sources */,
 				5D3CD46120A308C500600F43 /* Frameworks */,
 				5D3CD46220A308C500600F43 /* CopyFiles */,
+				5D9C729B20A9100F00755A1B /* Gen Compilation Database */,
 			);
 			buildRules = (
 			);
@@ -184,6 +187,20 @@
 			shellPath = /bin/sh;
 			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > kai_tests.c";
 		};
+		5D9C729B20A9100F00755A1B /* Gen Compilation Database */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Gen Compilation Database";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if type -p clang-compilation-database-tool > /dev/null 2>&1; then\n    echo \"ASDFKJASDFLKJASLFJ\"\n    say \"Hello, We are running!\"\n    clang-compilation-database-tool collect \"${OBJECT_FILE_DIR_normal}\" > \"${SRCROOT}/compile_commands.json\"\nfi";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -209,6 +226,7 @@
 		5D3CD46820A308C500600F43 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CC = "${SRCROOT}/scripts/clang-with-compilation-db";
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
@@ -224,6 +242,7 @@
 		5D3CD46920A308C500600F43 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CC = "${SRCROOT}/scripts/clang-with-compilation-db";
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
