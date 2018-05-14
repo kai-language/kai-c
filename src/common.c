@@ -396,17 +396,14 @@ char *ReadFile(const char *path) {
 }
 
 typedef union Val {
-    bool b;
-    char c;
-    unsigned char uc;
-    signed char sc;
-    short s;
-    unsigned short us;
-    int i;
-    unsigned u;
-    long l;
-    unsigned long ul;
-    long long ll;
-    unsigned long long ull;
-    uintptr_t p;
+    b32 b32;
+    i8 i8;
+    u8 u8;
+    i16 i16;
+    u16 u16;
+    i32 i32;
+    u32 u32;
+    i64 i64;
+    u64 u64;
+    uintptr_t ptr;
 } Val;
