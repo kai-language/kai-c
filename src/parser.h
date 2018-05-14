@@ -254,13 +254,29 @@ struct Expr_TypeSlice {
     Position end;
 };
 
-struct Expr_TypeStruct {
+typedef struct AggregateItem AggregateItem;
+struct AggregateItem {
+    Position start;
+    DynamicArray(const char *) names;
+    Expr *type;
 };
 
-struct Expr_TypeEnum {
+struct Expr_TypeStruct {
+    DynamicArray(AggregateItem) items;
 };
 
 struct Expr_TypeUnion {
+    DynamicArray(AggregateItem) items;
+};
+
+typedef struct EnumItem EnumItem;
+struct EnumItem {
+    Position start;
+    const char *name;
+    Expr *init;
+};
+
+struct Expr_TypeEnum {
 };
 
 struct Expr_TypePolymorphic {
@@ -277,48 +293,56 @@ struct Expr_TypeFunction {
     DynamicArray(Expr_KeyValue*) params;
 };
 
-struct Stmt_Empty {
-    Token token;
-};
+struct Stmt_Empty {};
 
 struct Stmt_Label {
+    const char *name;
 };
 
 struct Stmt_Assign {
-    Token token;
     DynamicArray(Expr*) lhs;
     DynamicArray(Expr*) rhs;
 };
 
 struct Stmt_Return {
-    Token token;
     DynamicArray(Expr*) exprs;
 };
 
 struct Stmt_Defer {
-    Token token;
     Stmt *stmt;
 };
 
 struct Stmt_Using {
+    Expr *expr;
 };
 
 struct Stmt_Branch {
-    Token token;
+    const char *keyword;
     Expr_Ident *label;
 };
 
 struct Stmt_Block {
-    Token begin;
-    Token end;
     DynamicArray(Stmt*) stmts;
+    Position end;
 };
 
 struct Stmt_If {
-    Token token;
     Expr *cond;
-    Stmt *body;
-    Stmt *els;
+    Stmt *pass;
+    Stmt *fail;
+};
+
+struct Stmt_For {
+    Stmt *init;
+    Expr *cond;
+    Stmt *step;
+    Stmt_Block *body;
+};
+
+struct Stmt_ForIn {
+    Expr_Ident *valueName;
+    Expr_Ident *indexName;
+    Expr *aggregate;
 };
 
 typedef struct SwitchCase SwitchCase;
@@ -329,37 +353,25 @@ struct SwitchCase {
 };
 
 struct Stmt_Switch {
-    Token token;
     Expr *match;
     DynamicArray(SwitchCase*) cases;
 };
 
-struct Stmt_For {
-    Token token;
-    Stmt *init;
-    Expr *cond;
-    Stmt *step;
-    Stmt_Block *body;
-};
-
-struct Stmt_ForIn {
-};
-
-struct Decl_Import {
-};
-
 struct Decl_Variable {
-    Token token;
     DynamicArray(Expr_Ident*) names;
-    DynamicArray(Expr*) values;
     Expr *type;
+    DynamicArray(Expr*) values;
 };
 
 struct Decl_Constant {
-    Token token;
     DynamicArray(Expr_Ident*) names;
-    DynamicArray(Expr*) values;
     Expr *type;
+    DynamicArray(Expr*) values;
+};
+
+struct Decl_Import {
+    const char *path;
+    const char *alias;
 };
 
 #define FOR_EACH(kindName, s) Expr_##kindName kindName;
@@ -650,20 +662,94 @@ Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_Ke
     return e;
 }
 
+Stmt *NewStmtEmpty(Package *package, Position start) {
+    return NewStmt(package, StmtKind_Empty, start);
+};
+Stmt *NewStmtLabel(Package *package, Position start, const char *name) {
+    Stmt *s = NewStmt(package, StmtKind_Label, start);
+    s->Label.name = name;
+    return s;
+}
+Stmt *NewStmtAssign(Package *package, Position start, DynamicArray(Expr*) lhs, DynamicArray(Expr*) rhs) {
+    Stmt *s = NewStmt(package, StmtKind_Assign, start);
+    s->Assign.lhs = lhs;
+    s->Assign.rhs = rhs;
+    return s;
+}
+Stmt *NewStmtReturn(Package *package, Position start, DynamicArray(Expr*) exprs) {
+    Stmt *s = NewStmt(package, StmtKind_Return, start);
+    s->Return.exprs = exprs;
+    return s;
+}
+Stmt *NewStmtDefer(Package *package, Position start, Stmt *stmt) {
+    Stmt *s = NewStmt(package, StmtKind_Defer, start);
+    s->Defer.stmt = stmt;
+    return s;
+}
+Stmt *NewStmtUsing(Package *package, Position start, Expr *expr) {
+    Stmt *s = NewStmt(package, StmtKind_Using, start);
+    s->Using.expr = expr;
+    return s;
+}
+Stmt *NewStmtBranch(Package *package, Position start, const char *keyword, Expr_Ident *label) {
+    Stmt *s = NewStmt(package, StmtKind_Branch, start);
+    s->Branch.keyword = keyword;
+    s->Branch.label = label;
+    return s;
+}
+Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt*) stmts, Position end) {
+    Stmt *s = NewStmt(package, StmtKind_Block, start);
+    s->Block.stmts = stmts;
+    s->Block.end = end;
+    return s;
+}
+Stmt *NewStmtIf(Package *package, Position start, Expr *cond, Stmt *pass, Stmt *fail) {
+    Stmt *s = NewStmt(package, StmtKind_If, start);
+    s->If.cond = cond;
+    s->If.pass = pass;
+    s->If.fail = fail;
+    return s;
+}
+Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body) {
+    Stmt *s = NewStmt(package, StmtKind_For, start);
+    s->For.init = init;
+    s->For.cond = cond;
+    s->For.step = step;
+    s->For.body = body;
+    return s;
+}
+Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate) {
+    Stmt *s = NewStmt(package, StmtKind_ForIn, start);
+    s->ForIn.valueName = valueName;
+    s->ForIn.indexName = indexName;
+    s->ForIn.aggregate = aggregate;
+    return s;
+}
+Stmt *NewStmtSwitch(Package *package, Position start, Expr *match, DynamicArray(SwitchCase*) cases) {
+    Stmt *s = NewStmt(package, StmtKind_Switch, start);
+    s->Switch.match = match;
+    s->Switch.cases = cases;
+    return s;
+}
 
-Stmt *NewStmtEmpty(Package *package);
-Stmt *NewStmtLabel(Package *package);
-Stmt *NewStmtAssign(Package *package);
-Stmt *NewStmtReturn(Package *package);
-Stmt *NewStmtDefer(Package *package);
-Stmt *NewStmtUsing(Package *package);
-Stmt *NewStmtBranch(Package *package);
-Stmt *NewStmtBlock(Package *package);
-Stmt *NewStmtIf(Package *package);
-Stmt *NewStmtFor(Package *package);
-Stmt *NewStmtForIn(Package *package);
-Stmt *NewStmtSwitch(Package *package);
+Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident*) names, Expr *type, DynamicArray(Expr*) values) {
+    Decl *d = NewDecl(package, DeclKind_Variable, start);
+    d->Variable.names = names;
+    d->Variable.type = type;
+    d->Variable.values = values;
+    return d;
+}
 
-Decl *NewDeclVariable(Package *package);
-Decl *NewDeclConstant(Package *package);
-Decl *NewDeclImport(Package *package);
+Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident*) names, Expr *type, DynamicArray(Expr*) values) {
+    Decl *d = NewDecl(package, DeclKind_Constant, start);
+    d->Constant.names = names;
+    d->Constant.type = type;
+    d->Constant.values = values;
+    return d;
+}
+Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias) {
+    Decl *d = NewDecl(package, DeclKind_Import, start);
+    d->Import.path = path;
+    d->Import.alias = alias;
+    return d;
+}
