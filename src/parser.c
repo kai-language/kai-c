@@ -46,6 +46,7 @@ Expr *parseAtom(Parser *p) {
            p->tok = NextToken(&p->lexer);
            Expr *expr = parseAtom(p);
            Token end = NextToken(&p->lexer);
+           // TODO: expect and error recovery
            if (end.kind != TK_Rparen) {
                UNIMPLEMENTED();
            }
@@ -64,5 +65,5 @@ Expr *parseAtom(Parser *p) {
 
     Position start = p->tok.pos;
     p->tok = NextToken(&p->lexer);
-    return NewInvalidExpr(&p->package, start, p->tok.pos);
+    return NewExprInvalid(&p->package, start, p->tok.pos);
 }

@@ -485,19 +485,19 @@ Decl *NewDecl(Package *package, DeclKind kind, Position start) {
     return d;
 }
 
-Expr *NewInvalidExpr(Package *package, Position start, Position end) {
+Expr *NewExprInvalid(Package *package, Position start, Position end) {
     Expr *e = NewExpr(package, ExprKind_Invalid, start);
     e->Invalid.end = end;
     return e;
 }
 
-Stmt *NewInvalidStmt(Package *package, Position start, Position end) {
+Stmt *NewStmtInvalid(Package *package, Position start, Position end) {
     Stmt *s = NewStmt(package, StmtKind_Invalid, start);
     s->Invalid.end = end;
     return s;
 }
 
-Decl *NewInvalidDecl(Package *package, Position start, Position end) {
+Decl *NewDeclInvalid(Package *package, Position start, Position end) {
     Decl *d = NewDecl(package, DeclKind_Invalid, start);
     d->Invalid.end = end;
     return d;
