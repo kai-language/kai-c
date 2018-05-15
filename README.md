@@ -1,6 +1,7 @@
 <p align="center">
   <img src="https://user-images.githubusercontent.com/1977704/40034764-627d71d8-5839-11e8-8049-59d932345e21.png" alt="Kai" height="128px"></img>
   <br>
+  <br>
   <span>An expressive low level programming language.</span>
   <br>
   <br>
