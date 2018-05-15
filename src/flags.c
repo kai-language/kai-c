@@ -34,7 +34,7 @@ const char *oses[] = {"Windows", "Linux", "Darwin"};
 const char *arches[] = {"x86", "x86-64", "armv7"};
 
 CLIFlag Flags[] = {
-    { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,       .help = "Prints help information" },
+    { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
     { CLIFlagKind_Bool, "version", .ptr.b = &FlagVersion, .help = "Prints version information" },
 
     { CLIFlagKind_String, "output", "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file" },
@@ -43,10 +43,10 @@ CLIFlag Flags[] = {
     { CLIFlagKind_Bool, "dump-ir", .ptr = NULL,                        .help = "Dump LLVM IR" },
     { CLIFlagKind_Bool, "emit-ir", .ptr = NULL,                        .help = "Emit LLVM IR file(s)" },
     { CLIFlagKind_Bool, "emit-times", .ptr = NULL,                     .help = "Emit times for each stage of compilation" },
-    { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "display error codes along side error location" },
+    { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "Display error codes along side error location" },
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },
 
-    { CLIFlagKind_Enum, "os", .ptr = NULL, .options = oses, .nOptions = 3, .help = "Target operating system (default: <current>)" },
+    { CLIFlagKind_Enum, "os",   .ptr = NULL, .options = oses, .nOptions = 3,   .help = "Target operating system (default: <current>)" },
     { CLIFlagKind_Enum, "arch", .ptr = NULL, .options = arches, .nOptions = 3, .help = "Target architecture (default: <current>)" },
 };
 
@@ -75,17 +75,16 @@ void ParseFlags(int *pargc, const char ***pargv) {
                 inverse = true;
                 name += 3;
             }
-
             CLIFlag *flag = FlagForName(name);
             if (!flag || (inverse && flag->kind != CLIFlagKind_Bool)) {
                 printf("Unknown flag %s\n", arg);
                 continue;
             }
-
             switch (flag->kind) {
                 case CLIFlagKind_Bool:
                     *flag->ptr.b = inverse ? false : true;
                     break;
+
                 case CLIFlagKind_String:
                     if (i + 1 < argc) {
                         i++;
@@ -94,6 +93,7 @@ void ParseFlags(int *pargc, const char ***pargv) {
                         printf("No value argument after -%s\n", arg);
                     }
                     break;
+
                 case CLIFlagKind_Enum: {
                     const char *option;
                     if (i + 1 < argc) {
@@ -121,6 +121,7 @@ void ParseFlags(int *pargc, const char ***pargv) {
                         break;
                     }
                 }
+
                 default:
                     ASSERT(false);
             }
@@ -164,3 +165,15 @@ void PrintUsage() {
         printf(" %-32s %s\n", invokation, flag.help ?: "");
     }
 }
+
+#if TEST
+void test_flagParsing() {
+    const char *args[] = {"kai", "-o", "outputName", "-v", "main.kai"};
+    int argc = sizeof(args) / sizeof(*args);
+    const char **argv = args;
+    ParseFlags(&argc, &(argv));
+    ASSERT(FlagVerbose);
+    ASSERT(strcmp(OutputName, "outputName") == 0);
+    ASSERT(argc == 1);
+}
+#endif
