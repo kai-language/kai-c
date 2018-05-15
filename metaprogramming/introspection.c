@@ -26,7 +26,7 @@ struct DeferBlock {
 
 
 DeferBlock * makeDeferBlock(char *data, DeferBlock *prev, i32 scopeLevel) {
-    DeferBlock *db = (DeferBlock *) Alloc(DefaultAllocator, sizeof(DeferBlock));
+    DeferBlock *db = Alloc(DefaultAllocator, sizeof(DeferBlock));
     db->data = data;
     db->prev = prev;
     db->scopeLevel = scopeLevel;
@@ -63,7 +63,7 @@ Lexer makeLexer(const char *file) {
     l.block = NULL;
     l.scopeLevel = 0;
 
-    l.newFile = (char *) Alloc(DefaultAllocator, cap);
+    l.newFile = Alloc(DefaultAllocator, cap);
     l.len = 0;
     l.cap = cap;
 
@@ -76,7 +76,7 @@ void advance(Lexer *l) {
 
     if ( l->len >= l->cap ) {
         u32 newCap = 1.5 * l->cap;
-        l->newFile = (char *) Realloc(DefaultAllocator, l->newFile, newCap, l->cap);
+        l->newFile = Realloc(DefaultAllocator, l->newFile, newCap, l->cap);
         l->cap     = newCap;
     }
 
@@ -90,7 +90,7 @@ void writeToNewFile(Lexer *l, char *text, u32 len) {
 
     if ( l->len + len >= l->cap ) {
         u32 newCap = 1.5 * (l->cap + len);
-        l->newFile = (char *) Realloc(DefaultAllocator, l->newFile, newCap, l->cap);
+        l->newFile = Realloc(DefaultAllocator, l->newFile, newCap, l->cap);
         l->cap     = newCap;
     }
 
