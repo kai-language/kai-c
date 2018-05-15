@@ -1,7 +1,11 @@
 
 bool FlagParseComments;
-bool FlagShowErrorCodes;
+bool FlagErrorCodes;
 bool FlagVerbose;
+bool FlagVersion;
+bool FlagHelp;
+
+const char *OutputName;
 
 typedef enum CLIFlagKind CLIFlagKind;
 enum CLIFlagKind {
@@ -25,24 +29,24 @@ struct CLIFlag {
     } ptr;
 };
 
-DynamicArray(CLIFlag) flags;
+CLIFlag Flags[] = {
+    { CLIFlagKind_Bool, "help", .ptr.b = &FlagHelp,       .help = "Prints help information" },
+    { CLIFlagKind_Bool, "version", .ptr.b = &FlagVersion, .help = "Prints version information" },
 
-void DeclareFlagBool(const char *name, bool *ptr, const char *help) {
-    ArrayPush(flags, (CLIFlag){ .kind = CLIFlagKind_Bool, .name = name, .help = help, .ptr.b = ptr });
-}
+    { CLIFlagKind_String, "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file" },
 
-void DeclareFlagString(const char *name, const char **ptr, const char *argumentName, const char *help) {
-    ArrayPush(flags, (CLIFlag){ .kind = CLIFlagKind_String, .name = name, .argumentName = argumentName, .help = help, .ptr.s = ptr });
-}
-
-void DeclareFlagEnum(const char *name, int *ptr, const char *help, const char **options, int nOptions) {
-    ArrayPush(flags, (CLIFlag){ .kind = CLIFlagKind_Enum, .name = name, .help = help, .ptr.i = ptr, .options = options, .nOptions = nOptions });
-}
+    { CLIFlagKind_Bool, "verbose", .ptr.b = &FlagVerbose,              .help = "Enable verbose output" },
+    { CLIFlagKind_Bool, "dump-ir", .ptr = NULL,                        .help = "Dump LLVM IR" },
+    { CLIFlagKind_Bool, "emit-ir", .ptr = NULL,                        .help = "Emit LLVM IR file(s)" },
+    { CLIFlagKind_Bool, "emit-times", .ptr = NULL,                     .help = "Emit times for each stage of compilation" },
+    { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "display error codes along side error location" },
+    { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = "display error codes along side error location" },
+};
 
 CLIFlag *FlagForName(const char *name) {
-    size_t nFlags = ArrayLen(flags);
+    size_t nFlags = sizeof(Flags) / sizeof(*Flags);
     for (size_t i = 0; i < nFlags; i++) {
-        if (strcmp(flags[i].name, name) == 0) return &flags[i];
+        if (strcmp(Flags[i].name, name) == 0) return &Flags[i];
     }
     return NULL;
 }
@@ -121,9 +125,12 @@ void ParseFlags(int *pargc, const char ***pargv) {
 }
 
 void PrintUsage() {
-    size_t nFlags = ArrayLen(flags);
+    size_t nFlags = sizeof(Flags) / sizeof(*Flags);
     for (size_t i = 0; i < nFlags; i++) {
-        CLIFlag flag = flags[i];
-        printf(" -%-32s %s\n", flag.name, flag.help ?: "");
+        CLIFlag flag = Flags[i];
+        switch (flag.kind) {
+            default:
+                printf(" -%-32s %s\n", flag.name, flag.help ?: "");
+        }
     }
 }

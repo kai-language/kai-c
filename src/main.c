@@ -9,25 +9,21 @@
 #include "parser.c"
 #include "checker.c"
 
+#define VERSION "0.0.0 (prerelease)"
+
 #ifndef TEST
 int main(int argc, const char **argv) {
 
-    const char *outputName = NULL;
-
-    DeclareFlagString("o", &outputName, "file", "Output file");
-    DeclareFlagBool("show-error-codes", &FlagShowErrorCodes, "display error codes along side error location");
-    DeclareFlagBool("parse-comments", &FlagParseComments, NULL);
-    DeclareFlagBool("verbose", &FlagVerbose, "Print diagnostics");
-    DeclareFlagBool("dump-ir", NULL, "Dump LLVM IR");
-    DeclareFlagBool("emit-ir", NULL, "Emit LLVM IR file(s)");
-    DeclareFlagBool("emit-times", NULL, "Emit times for each stage of compilation");
-
     const char *programName = argv[0];
     ParseFlags(&argc, &argv);
-    if (argc != 1) {
+    if (argc != 1 || FlagHelp) {
         printf("Usage: %s [flags] <input>\n", programName);
         PrintUsage();
-        return 1;
+        exit(!FlagHelp);
+    }
+    if (FlagVersion) {
+        printf(VERSION);
+        exit(0);
     }
 
     const char *packageName = argv[0];
