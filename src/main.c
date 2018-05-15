@@ -38,12 +38,17 @@ void Usage() {
     printUsage(1, "-emit-times            Emit times for each stage of compilation");
 }
 
+
 #ifndef TEST
 int main(int argc, char **argv) {
     if (argc < 2) {
         Usage();
         return 1;
     }
+    
+    parseFlag("show-error-codes", &FlagShowErrorCodes, argc, argv);
+    parseFlag("parse-comments", &FlagParseComments, argc, argv);
+    parseFlag("verbose", &FlagVerbose, argc, argv);
 
     InitCompiler();
 
