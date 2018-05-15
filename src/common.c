@@ -271,12 +271,6 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
 }
 
-#include "flags.c"
-#include "map.c"
-#include "array.c"
-#include "utf.c"
-#include "error.c"
-
 // Arena Allocator
 
 typedef struct Arena Arena;
@@ -286,6 +280,16 @@ struct Arena {
     u8 **blocks;
 };
 
+void *ArenaAlloc(Arena *arena, size_t size);
+void *ArenaCalloc(Arena *arena, size_t size);
+void ArenaFree(Arena *arena);
+
+#include "flags.c"
+#include "map.c"
+#include "array.c"
+#include "queue.c"
+#include "utf.c"
+#include "error.c"
 #include "string.c"
 
 #define ARENA_BLOCK_SIZE MB(1)
@@ -340,9 +344,8 @@ void test_arena() {
     u64 bytes = MB(1);
     Arena arena = {0};
 
-    u64 N = 1024;
     u64* mem = (u64*) ArenaAlloc(&arena, bytes);
-    for (int i = 0; i < N; i++) {
+    for (int i = 0; i < 1024; i++) {
         mem[i] = i;
     }
 

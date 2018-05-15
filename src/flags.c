@@ -1,10 +1,10 @@
 
 bool FlagParseComments;
 bool FlagShowErrorCodes;
-bool FlagVerbose = true;
+bool FlagVerbose;
 
 void parseFlag(const char *flagName, bool *out, int argc, char **argv) {
-    ASSERT(out)
+    ASSERT(out);
     
     for (int i = 1; i < argc; i++) {
         if (strlen(argv[i]) == 0 || *argv[i] != '-') {

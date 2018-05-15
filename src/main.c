@@ -49,34 +49,29 @@ int main(int argc, char **argv) {
     parseFlag("show-error-codes", &FlagShowErrorCodes, argc, argv);
     parseFlag("parse-comments", &FlagParseComments, argc, argv);
     parseFlag("verbose", &FlagVerbose, argc, argv);
-    
-    InitErrorBuffers();
 
-    const char *path = argv[1];
-    const char *data = ReadFile(path);
-    if (!data) {
-        perror("ReadFile");
-        exit(1);
-    }
-    
-    Lexer lexer = MakeLexer(data, path);
+    InitCompiler();
 
-    Token token;
-    while ((token = NextToken(&lexer)).kind != TK_Eof) {
-        switch (token.kind) {
-            case TK_Int:
-                printf("kind: '%s', lit: '%llu'\n", DescribeTokenKind(token.kind), token.val.i);
-                break;
-            case TK_Float:
-                printf("kind: '%s', lit: '%f'\n", DescribeTokenKind(token.kind), token.val.f);
-                break;
-            case TK_String: case TK_Ident: case TK_Keyword: case TK_Directive:
-                printf("kind: '%s', lit '%s'\n", DescribeTokenKind(token.kind), token.val.s);
-            default:
-                printf("kind: '%s'\n", DescribeTokenKind(token.kind));
+    // FIXME: We need to work out what argv refers to the file
+    Package *mainPackage = ImportPackage(argv[1]);
+
+    u64 tokCount = 0;
+    while (QueueDequeue(&parsingQueue)) {
+        void *mem = ReadFile(mainPackage->fullPath);
+        if (!mem) {
+            printf("Failed to open file %s\n", mainPackage->fullPath);
+            exit(1);
         }
-        token.val.i = 0;
+        Lexer lex = MakeLexer(mem, mainPackage->path);
+        Token tok = NextToken(&lex);
+        for (u64 i = 0; tok.kind != TK_Eof; tok = NextToken(&lex), i++) {
+            tokCount = i;
+        }
+        printf("File %s has %llu tokens\n", mainPackage->path, tokCount);
     }
+
+    // Finished parsing
+    ArenaFree(&parsingQueue.arena);
 
     return 0;
 }
