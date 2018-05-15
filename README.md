@@ -1,7 +1,7 @@
 # Kai
 
 [![Build Status](https://travis-ci.org/kai-language/kai-c.svg?branch=master)](https://travis-ci.org/kai-language/kai-c)
-[![Discord](https://img.shields.io/discord/102860784329052160.svg)](https://discord.gg/jevNkRd)
+[![Discord](https://img.shields.io/discord/443582991898378240.svg)](https://discord.gg/jevNkRd)
 
 A C version of Kai
 
