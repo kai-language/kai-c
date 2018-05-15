@@ -2,9 +2,6 @@
   <img src="https://user-images.githubusercontent.com/1977704/40034764-627d71d8-5839-11e8-8049-59d932345e21.png" alt="Kai" height="128px"></img>
   <br>
   <br>
-  <span>An expressive low level programming language.</span>
-  <br>
-  <br>
   <a href="https://travis-ci.org/kai-language/kai-c">
     <img src="https://travis-ci.org/kai-language/kai-c.svg?branch=master"></img>
   </a>
@@ -12,6 +9,8 @@
     <img src="https://img.shields.io/discord/443582991898378240.svg"></img>
   </a>
 </p>
+
+An expressive low level programming language.
 
 ## Community
 Join our community on [Discord](https://discord.gg/jevNkRd).
