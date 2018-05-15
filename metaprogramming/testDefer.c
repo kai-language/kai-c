@@ -9,6 +9,7 @@ int main(int argnum, char **args) {
     int *ptr = (int *) malloc(N * sizeof(int));
 
     defer { if(ptr) free(ptr); }
+    defer { printf("deferred\n"); }
 
     
     if (argnum <  2) {

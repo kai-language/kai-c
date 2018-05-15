@@ -43,7 +43,6 @@ struct Lexer {
 
     DeferBlock *block;
     i32 scopeLevel;
-    b8  seenReturn;
 
     char *newFile;
     u32  len;
@@ -54,7 +53,7 @@ struct Lexer {
 
 Lexer makeLexer(const char *file) {
 
-    u32 cap = KB(1);
+    u32 cap = KB(4);
 
     Lexer l;
 
@@ -63,7 +62,6 @@ Lexer makeLexer(const char *file) {
 
     l.block = NULL;
     l.scopeLevel = 0;
-    l.seenReturn = false;
 
     l.newFile = (char *) Alloc(DefaultAllocator, cap);
     l.len = 0;
@@ -104,9 +102,24 @@ void writeToNewFile(Lexer *l, char *text, u32 len) {
 }
 
 
-void writeDeferBlock(Lexer *l) {
+void saveFile(const char *file, const char *name) {
+
+    FILE *fd = fopen(name, "w");
+    if ( fd == NULL ) {
+        printf("failed to open file %s\n", name);
+        return;
+    }
+
+    while ( file[0] != 0 ) {
+        fputc(file[0], fd);
+        file++;
+    }
+}
+
+
+void writeDeferBlock(Lexer *l, DeferBlock *db) {
     if ( l->block ) {
-        writeToNewFile(l, l->block->data, l->block->len);
+        writeToNewFile(l, db->data, db->len);
     }
 }
 
@@ -148,7 +161,6 @@ void parseDefer(Lexer *l) {
         eatWhiteSpace(l);
         if ( l->at[0] == '{' ) {
             DeferBlock *db = grabDeferBlock(l, l->block, l->scopeLevel);
-            printf("DeferBlock:\n%.*s\n", db->len, db->data);
             db->prev = l->block;
             l->block = db;
         }
@@ -156,18 +168,22 @@ void parseDefer(Lexer *l) {
 }
 
 
-//TODO(jonas): generate all blocks
 void addDeferBlocks(Lexer *l) {
 
     if ( ! l->block ) {
         return;
     }
 
-    if ( l->scopeLevel > l->block->scopeLevel ) {
-        writeDeferBlock(l); 
-    }
-    else {
+    DeferBlock *curBlock = l->block;
 
+    while ( curBlock ) {
+        if ( l->scopeLevel >= curBlock->scopeLevel ) {
+            writeDeferBlock(l, curBlock);
+            curBlock = curBlock->prev;
+        }
+        else {
+            break;
+        }
     }
 
 }
@@ -190,17 +206,12 @@ void processFile(Lexer *l) {
             } break;
 
             case '}': {
-                if ( ! l->seenReturn ) {
-                    addDeferBlocks(l);
-                    l->seenReturn = false;
-                }
                 l->scopeLevel -= 1;
             } break;
 
             case 'r': {
                 i32 isReturn = startsWith(l->at, "return");
                 if ( isReturn > 0 ) {
-                    l->seenReturn = true;
                     addDeferBlocks(l);
                 }
             } break;
@@ -215,7 +226,7 @@ void processFile(Lexer *l) {
 
 int main(int argnum, char **args) {
 
-    if ( argnum < 2 ) {
+    if ( argnum < 3 ) {
         printf("Specify input!\n");
         return 1;
     }
@@ -223,14 +234,14 @@ int main(int argnum, char **args) {
     const char *path = args[1];
     const char *file = ReadFile(path);
 
-    printf("path = %s\n", path);
-    printf("file:\n%s\n", file);
+    const char *tmpName = args[2];
+    saveFile(file, tmpName);
 
     Lexer l = makeLexer(file);
     
     processFile(&l);
 
-    printf("newFile:\n%s\n", l.newFile);
+    saveFile(l.newFile, path);
 
     return 0;
 }
