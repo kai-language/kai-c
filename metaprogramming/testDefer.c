@@ -2,11 +2,22 @@
 #include "stdlib.h"
 
 
+int testFunc(void) {
+
+    int *ptr2 = malloc(N * sizeof(int));
+    
+    defer { if(ptr2) free(ptr2); }
+
+
+    return 0;
+}
+
+
 int main(int argnum, char **args) {
 
     int N = 100;
 
-    int *ptr = (int *) malloc(N * sizeof(int));
+    int *ptr = malloc(N * sizeof(int));
 
     defer { if(ptr) free(ptr); }
     defer { printf("deferred\n"); }
@@ -21,6 +32,7 @@ int main(int argnum, char **args) {
         return 0;
     } 
 
+    testFunc();
 
     return 0;
 }

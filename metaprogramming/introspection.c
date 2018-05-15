@@ -185,7 +185,25 @@ void addDeferBlocks(Lexer *l) {
             break;
         }
     }
+}
 
+
+void popDeferBlocks(Lexer *l) {
+
+    if ( ! l->block ) {
+        return;
+    }
+
+    DeferBlock *curBlock = l->block;
+
+    while ( l->block ) {
+        if ( l->scopeLevel < l->block->scopeLevel ) {
+            l->block = l->block->prev;
+        }
+        else {
+            break;
+        }
+    }
 }
 
 
@@ -207,6 +225,7 @@ void processFile(Lexer *l) {
 
             case '}': {
                 l->scopeLevel -= 1;
+                popDeferBlocks(l);
             } break;
 
             case 'r': {
