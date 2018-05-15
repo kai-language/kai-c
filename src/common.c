@@ -284,10 +284,10 @@ void *ArenaAlloc(Arena *arena, size_t size);
 void *ArenaCalloc(Arena *arena, size_t size);
 void ArenaFree(Arena *arena);
 
-#include "flags.c"
 #include "map.c"
 #include "array.c"
 #include "queue.c"
+#include "flags.c"
 #include "utf.c"
 #include "error.c"
 #include "string.c"
