@@ -39,6 +39,7 @@
 		5DA7CA2720A9653F00E4640D /* parser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = parser.h; path = src/parser.h; sourceTree = "<group>"; };
 		5DA7CA2820A9655F00E4640D /* compiler.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = compiler.c; path = src/compiler.c; sourceTree = "<group>"; };
 		5DA7CA2B20A96F3000E4640D /* error.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = error.c; path = src/error.c; sourceTree = "<group>"; };
+		5DA7CA2C20A9A83D00E4640D /* queue.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = queue.c; path = src/queue.c; sourceTree = "<group>"; };
 		B219499B209B79E0007BB781 /* kai */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = kai; sourceTree = BUILT_PRODUCTS_DIR; };
 		B249A255209B80CA0016B49E /* main.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = main.c; path = src/main.c; sourceTree = "<group>"; };
 		B249A257209B80E00016B49E /* checker.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = checker.c; path = src/checker.c; sourceTree = "<group>"; };
@@ -77,6 +78,7 @@
 				B249A257209B80E00016B49E /* checker.c */,
 				B249A25B209B80E00016B49E /* checker.h */,
 				5DA7CA2820A9655F00E4640D /* compiler.c */,
+				5DA7CA2C20A9A83D00E4640D /* queue.c */,
 				B249A25C209B80E00016B49E /* common.c */,
 				5DA7CA2B20A96F3000E4640D /* error.c */,
 				5D9C729920A5E7C400755A1B /* flags.c */,

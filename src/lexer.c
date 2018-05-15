@@ -34,7 +34,7 @@ const char *assert_name;
 
 #define KEYWORD(name) name##Keyword = StrIntern(#name); ArrayPush(keywords, name##Keyword)
 
-void initKeywords(void) {
+void InitKeywords(void) {
     static bool inited;
     if (inited) {
         return;
@@ -780,7 +780,7 @@ repeat: ;
 
 #if TEST
 void test_keywords() {
-    initKeywords();
+    InitKeywords();
     ASSERT(isKeyword(firstKeyword));
     ASSERT(isKeyword(lastKeyword));
 

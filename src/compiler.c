@@ -38,8 +38,15 @@ struct Package {
     DynamicArray(Symbol*) symbols;
 };
 
+void InitCompiler() {
+    InitErrorBuffers();
+    InitKeywords();
+}
+
 Map packageMap;
 DynamicArray(Package*) packages;
+
+Queue parsingQueue;
 
 void addPackage(Package *package) {
     Package *old = MapGet(&packageMap, package->path);
@@ -56,12 +63,14 @@ Package *ImportPackage(const char *path) {
     if (!package) { // First time we have seen this package
         package = Calloc(DefaultAllocator, 1, sizeof(Package));
         package->path = path;
+        if (FlagVerbose) printf("Importing %s\n", path);
+
         char fullPath[MAX_PATH];
         if (!AbsolutePath(path, fullPath)) return NullWithLoggedReason("Failed to resolve absolute path for %s", path); // Unable to resolve file path
 
         strcpy(package->fullPath, fullPath);
         addPackage(package);
-        // TODO: Queue package work.
+        QueueEnqueue(&parsingQueue, package);
     }
     return package;
 }
