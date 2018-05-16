@@ -26,10 +26,12 @@ int main(int argc, const char **argv) {
         exit(0);
     }
 
-    const char *packageName = argv[0];
-
     InitCompiler();
-    Package *mainPackage = ImportPackage(packageName);
+    Package *mainPackage = ImportPackage(InputName);
+    if (!mainPackage) {
+        printf("error: Failed to compile '%s'\n", InputName);
+        exit(1);
+    }
 
     u64 tokCount = 0;
     while (QueueDequeue(&parsingQueue)) {

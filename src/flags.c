@@ -5,7 +5,10 @@ bool FlagVerbose;
 bool FlagVersion;
 bool FlagHelp;
 
+const char *InputName;
 const char *OutputName;
+int TargetOs;
+int TargetArch;
 
 typedef enum CLIFlagKind CLIFlagKind;
 enum CLIFlagKind {
@@ -30,14 +33,11 @@ struct CLIFlag {
     } ptr;
 };
 
-const char *oses[] = {"Windows", "Linux", "Darwin"};
-const char *arches[] = {"x86", "x86-64", "armv7"};
-
 CLIFlag Flags[] = {
     { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
     { CLIFlagKind_Bool, "version", .ptr.b = &FlagVersion, .help = "Prints version information" },
 
-    { CLIFlagKind_String, "output", "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file" },
+    { CLIFlagKind_String, "output", "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file (default: out_<input>)" },
 
     { CLIFlagKind_Bool, "verbose", "v", .ptr.b = &FlagVerbose,         .help = "Enable verbose output" },
     { CLIFlagKind_Bool, "dump-ir", .ptr = NULL,                        .help = "Dump LLVM IR" },
@@ -46,8 +46,8 @@ CLIFlag Flags[] = {
     { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "Display error codes along side error location" },
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },
 
-    { CLIFlagKind_Enum, "os",   .ptr = NULL, .options = oses, .nOptions = 3,   .help = "Target operating system (default: <current>)" },
-    { CLIFlagKind_Enum, "arch", .ptr = NULL, .options = arches, .nOptions = 3, .help = "Target architecture (default: <current>)" },
+    { CLIFlagKind_Enum, "os", .ptr.i = &TargetOs, .options = OsNames, .nOptions = sizeof(OsNames) / sizeof(*OsNames), .help = "Target operating system (default: current)" },
+    { CLIFlagKind_Enum, "arch", .ptr.i = &TargetArch, .options = ArchNames, .nOptions = sizeof(ArchNames) / sizeof(*ArchNames), .help = "Target architecture (default: current)" },
 };
 
 CLIFlag *FlagForName(const char *name) {
@@ -120,6 +120,7 @@ void ParseFlags(int *pargc, const char ***pargv) {
                         printf(")\n");
                         break;
                     }
+                    break;
                 }
 
                 default:
@@ -131,6 +132,40 @@ void ParseFlags(int *pargc, const char ***pargv) {
     }
     *pargc = argc - i;
     *pargv = argv + i;
+
+    if (argc - i == 1) {
+        InputName = argv[i];
+    }
+}
+
+void InitUnsetFlagsToDefaults() {
+    if (OutputName == NULL) {
+        // TODO: should we use the basename of InputName?
+        size_t len = sizeof("out_") + strlen(InputName) + 1;
+        char *mem = Alloc(DefaultAllocator, len);
+
+        char *filename = mem + sizeof("out_");
+
+        memcpy(filename, InputName, len);
+        RemoveKaiExtension(filename);
+
+        snprintf(mem, len, "out_%s", filename);
+        OutputName = mem;
+    }
+    struct utsname sysinfo;
+    if (TargetOs == Os_Current || TargetArch == Arch_Current) {
+        int res = uname(&sysinfo);
+        if (res != 0) {
+            perror("uname");
+            exit(1);
+        }
+    }
+    if (TargetOs == Os_Current) {
+        TargetOs = OsForName(sysinfo.sysname);
+    }
+    if (TargetArch == Arch_Current) {
+        TargetArch = ArchForName(sysinfo.machine);
+    }
 }
 
 void PrintUsage() {
@@ -167,13 +202,21 @@ void PrintUsage() {
 }
 
 #if TEST
-void test_flagParsing() {
-    const char *args[] = {"kai", "-o", "outputName", "-v", "main.kai"};
+void test_flagParsingAndDefaults() {
+    const char *args[] = {"kai", "-o", "outputName", "-v", "-os", "Darwin", "main.kai"};
     int argc = sizeof(args) / sizeof(*args);
     const char **argv = args;
     ParseFlags(&argc, &(argv));
     ASSERT(FlagVerbose);
     ASSERT(strcmp(OutputName, "outputName") == 0);
+    ASSERT(TargetOs == Os_Darwin);
     ASSERT(argc == 1);
+
+    InitUnsetFlagsToDefaults();
+    ASSERT(TargetArch != Arch_Current);
+    ASSERT(OutputName == "outputName");
+    OutputName = NULL;
+    InitUnsetFlagsToDefaults();
+    ASSERT(strcmp(OutputName, "out_main") == 0);
 }
 #endif

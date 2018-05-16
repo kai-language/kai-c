@@ -41,6 +41,7 @@ struct Package {
 void InitCompiler() {
     InitErrorBuffers();
     InitKeywords();
+    InitUnsetFlagsToDefaults();
 }
 
 Map packageMap;
