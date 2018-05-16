@@ -121,7 +121,7 @@ typedef i32      b32;
         } \
     } while(0)
 
-    #define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, msg, 0)
+    #define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, "(" #cond ") " msg, 0)
 
     #define ASSERT(cond) ASSERT_MSG_VA(cond, 0, 0)
     #define PANIC(msg) ASSERT_MSG_VA(0, msg, 0)
@@ -360,9 +360,9 @@ void test_arena() {
 
     ArenaFree(&arena);
 
-    TEST_ASSERT(arena.ptr == NULL);
-    TEST_ASSERT(arena.end == NULL);
-    TEST_ASSERT(arena.blocks == NULL);
+    ASSERT(arena.ptr == NULL);
+    ASSERT(arena.end == NULL);
+    ASSERT(arena.blocks == NULL);
 }
 #endif
 

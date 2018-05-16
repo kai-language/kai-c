@@ -48,7 +48,7 @@ void test_queue() {
     for (intptr_t i = 0; i < 100; i++) QueueEnqueue(&queue, (void*) i);
     for (intptr_t i = 99; i >= 0; i--) {
         intptr_t val = (intptr_t) QueueDequeue(&queue);
-        TEST_ASSERT(val == i);
+        ASSERT(val == i);
     }
 }
 #endif

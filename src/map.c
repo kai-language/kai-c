@@ -123,7 +123,7 @@ void map_test(void) {
     }
     for (size_t i = 1; i < N; i++) {
         u64 val = (u64) MapGet(&map, (void*) i);
-        TEST_ASSERT(val == (i + 1));
+        ASSERT(val == (i + 1));
     }
     // Override values
 
@@ -132,7 +132,7 @@ void map_test(void) {
     }
     for (size_t i = 2; i < N; i++) {
         u64 val = (u64) MapGet(&map, (void*) i);
-        TEST_ASSERT(val == (i - 1));
+        ASSERT(val == (i - 1));
     }
 }
 #endif

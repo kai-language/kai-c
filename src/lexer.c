@@ -795,7 +795,7 @@ void test_keywords() {
 #if TEST
 void test_lexer() {
     test_keywords();
-    TEST_ASSERT(StrIntern("fn") == fnKeyword);
+    ASSERT(StrIntern("fn") == fnKeyword);
 
 #define ASSERT_TOKEN_IDENT(x) \
     tok = NextToken(&lex); \

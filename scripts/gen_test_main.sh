@@ -9,7 +9,6 @@ cat <<- EOF
 int _fileTestsPassCount = 0;
 int _totalTestsPassCount = 0;
 int _currentTestAsserted = 0;
-int _shouldNoteTestLog = 0;
 const char *_currentTestCaseName;
 
 jmp_buf _returnToPerformTestCase;
@@ -50,27 +49,18 @@ void handleSignal(int sig, siginfo_t *info, void *where) {
 
 #define ASSERT_MSG_VA(cond, msg, ...) do { \\
         if (!(cond)) { \\
-            assertHandler(__FILE__, (i32)__LINE__, msg, __VA_ARGS__); \\
+            assertHandler(__FILE__, (i32)__LINE__, "(" #cond ") " msg, __VA_ARGS__); \\
             fprintf(stderr, "\n"); \\
             _currentTestAsserted = 1; \\
-            _shouldNoteTestLog = 1; \\
             raise(SIGINT); \\
         } \\
     } while(0)
 
 #define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, msg, 0)
 
-#define ASSERT(cond) ASSERT_MSG_VA(cond, 0, 0)
+#define ASSERT(cond) ASSERT_MSG_VA(cond, "", 0)
 #define PANIC(msg) ASSERT_MSG_VA(0, msg, 0)
 #define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented", 0);
-
-#define TEST_ASSERT(cond) \\
-if (!(cond)) { \\
-    fprintf(stderr, "Assert failure: %s:%d: %s\n", __FILE__, (i32)__LINE__, "" #cond ""); \
-    _currentTestAsserted = 1; \\
-    raise(SIGINT); \\
-    return; \\
-}
 
 #include "src/main.c"
 
@@ -85,7 +75,7 @@ void setSignalHandlerCheckingError(int sig) {
     }
 }
 
-void _performTestCaseReportingResults(void (*testCase)(), const char *name) {
+void _performTestCaseReportingResults(void (*testCase)(void), const char *name) {
     _currentTestCaseName = name;
     if (setjmp(_returnToPerformTestCase) == 0)
         testCase();
@@ -165,11 +155,6 @@ done
 cat <<- EOF
 
     // All tests finished executing
-
-    colorGray();
-    if (_shouldNoteTestLog)
-        printf("Note: Some errors occured in called functions for details on these see tests.log\n");
-    colorReset();
 
     colorBold();
     printf("%3.1f%% success (%d out of $totalTests)\n", (double) _totalTestsPassCount / $totalTests.f * 100, _totalTestsPassCount);

@@ -42,21 +42,21 @@ void test_stringInterning() {
     strncpy(mem, ALPHA, sizeof(ALPHA));
     mem[sizeof(ALPHA)] = 0;
 
-    TEST_ASSERT(strncmp(ALPHA, mem, sizeof(ALPHA)) == 0);
+    ASSERT(strncmp(ALPHA, mem, sizeof(ALPHA)) == 0);
 
     const char *stored = StrIntern(ALPHA);
-    TEST_ASSERT(strncmp(stored, mem, sizeof(ALPHA)) == 0);
+    ASSERT(strncmp(stored, mem, sizeof(ALPHA)) == 0);
 
     // Push ourselves over allocated space so we allocate a new block
     StrInternRange(mem + MB(1), mem + MB(2));
-    TEST_ASSERT(ArrayLen(internArena.blocks) > 1);
+    ASSERT(ArrayLen(internArena.blocks) > 1);
 
     const char *retrieved = StrIntern(ALPHA);
-    TEST_ASSERT(stored == retrieved);
+    ASSERT(stored == retrieved);
 
     stored = StrIntern(BETA);
     retrieved = StrIntern(BETA);
-    TEST_ASSERT(stored == retrieved);
+    ASSERT(stored == retrieved);
 
     char stackAlpha[] = ALPHA;
     ASSERT(StrIntern(ALPHA) == StrIntern(stackAlpha));
