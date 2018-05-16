@@ -118,7 +118,6 @@
 				5D3CD46020A308C500600F43 /* Sources */,
 				5D3CD46120A308C500600F43 /* Frameworks */,
 				5D3CD46220A308C500600F43 /* CopyFiles */,
-				5D9C729B20A9100F00755A1B /* Gen Compilation Database */,
 			);
 			buildRules = (
 			);
@@ -195,20 +194,6 @@
 			shellPath = /bin/sh;
 			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > kai_tests.c";
 		};
-		5D9C729B20A9100F00755A1B /* Gen Compilation Database */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Gen Compilation Database";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "if type -p clang-compilation-database-tool > /dev/null 2>&1; then\n    echo \"ASDFKJASDFLKJASLFJ\"\n    say \"Hello, We are running!\"\n    clang-compilation-database-tool collect \"${OBJECT_FILE_DIR_normal}\" > \"${SRCROOT}/compile_commands.json\"\nfi";
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -234,7 +219,6 @@
 		5D3CD46820A308C500600F43 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CC = "${SRCROOT}/scripts/clang-with-compilation-db";
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
@@ -250,7 +234,6 @@
 		5D3CD46920A308C500600F43 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CC = "${SRCROOT}/scripts/clang-with-compilation-db";
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
