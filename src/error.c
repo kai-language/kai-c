@@ -59,7 +59,7 @@ char *errorBuffPrintf(const char *fmt, ...) {
  
 void Report(Error error) {
 #ifndef NO_ERROR_CODES
-    if (FlagShowErrorCodes) {
+    if (FlagErrorCodes) {
         fprintf(
             stderr, 
             "ERROR(%s:%u:%u, E%04d): %s\n",
