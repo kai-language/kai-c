@@ -40,7 +40,7 @@ Error SyntaxErrorMessage(const char *msg, Position pos, ...) {
     };
 }
 
-#define NextToken() \
+#define nextToken() \
 p->prevPos = p->tok.pos; \
 p->tok = NextToken(&p->lexer)
 
@@ -64,7 +64,7 @@ b32 isKeyword(Parser *p, const char *ident) {
 
 b32 matchKeyword(Parser *p, const char *ident) {
     if (isKeyword(p, ident)) {
-        NextToken();
+        nextToken();
         return true;
     }
 
@@ -73,7 +73,7 @@ b32 matchKeyword(Parser *p, const char *ident) {
 
 b32 matchToken(Parser *p, TokenKind kind) {
     if (isToken(p, kind)) {
-        NextToken();
+        nextToken();
         return true;
     }
     return false;
@@ -81,7 +81,7 @@ b32 matchToken(Parser *p, TokenKind kind) {
 
 b32 expectToken(Parser *p, TokenKind kind) {
     if (isToken(p, kind)) {
-        NextToken();
+        nextToken();
         return true;
     }
 
@@ -113,9 +113,9 @@ Expr *parseAtom(Parser *p) {
    switch (p->tok.kind) {
        case TK_Ident: {
            Expr *e = NewExprIdent(&p->package, p->tok.pos, p->tok.val.ident);
-           NextToken();
+           nextToken();
            if (p->tok.kind == TK_Dot) {  // package.Member
-               NextToken();
+               nextToken();
                Position endOfIdent = p->tok.pos;
                const char *ident = parseIdent(p);
                endOfIdent.column += StrInternLen(ident);
@@ -126,19 +126,19 @@ Expr *parseAtom(Parser *p) {
 
        case TK_Int: {
            Expr *e = NewExprLitInt(&p->package, p->tok.pos, p->tok.val.i);
-           NextToken();
+           nextToken();
            return e;
        }
 
        case TK_Float: {
            Expr *e = NewExprLitFloat(&p->package, p->tok.pos, p->tok.val.f);
-           NextToken();
+           nextToken();
            return e;
        }
 
        case TK_Lparen: {
            Position start = p->tok.pos;
-           NextToken();
+           nextToken();
            Expr *expr = parseExpr(p);
            expectToken(p, TK_Rparen);
            return NewExprParen(&p->package, expr, start, p->prevPos);
@@ -147,7 +147,7 @@ Expr *parseAtom(Parser *p) {
        case TK_Directive: {
            if (p->tok.val.ident == internLocation || p->tok.val.ident == internFile || p->tok.val.ident == internLine || p->tok.val.ident == internFunction) {
                Expr *expr = NewExprLocationDirective(&p->package, p->tok.pos, p->tok.val.ident);
-               NextToken();
+               nextToken();
                return expr;
            }
        }
@@ -157,7 +157,7 @@ Expr *parseAtom(Parser *p) {
                return parseFunctionType(p, /* allowFunctionLiteral:*/ true);
            } else if (p->tok.val.ident == Keyword_nil) {
                Expr *expr = NewExprLitNil(&p->package, p->tok.pos);
-               NextToken();
+               nextToken();
                return expr;
            }
            ReportError(SyntaxError, p->tok.pos, "Unexpected keyword '%s'", p->tok.val.ident);
@@ -168,7 +168,7 @@ Expr *parseAtom(Parser *p) {
    }
 
     Position start = p->tok.pos;
-    NextToken();
+    nextToken();
     return NewExprInvalid(&p->package, start, p->tok.pos);
 }
 
@@ -198,7 +198,7 @@ Expr_KeyValue *parseFunctionParam(Parser *p, u32 *nVarargs) {
 
 Expr *parseFunctionType(Parser *p, b32 allowFunctionLiteral) {
     Position start = p->tok.pos;
-    NextToken();
+    nextToken();
     expectToken(p, TK_Lparen);
     DynamicArray(Expr_KeyValue *) params = NULL;
     u32 nVarargs = 0;
@@ -255,7 +255,7 @@ Expr *parseFunctionType(Parser *p, b32 allowFunctionLiteral) {
 
     Expr *type = NewExprTypeFunction(&p->package, start, params, results);
     if (allowFunctionLiteral && isToken(p, TK_Lparen)) {
-        NextToken();
+        nextToken();
 
         Stmt_Block *body = parseBlock(p);
         return NewExprLitFunction(&p->package, start, type, body, 0);
