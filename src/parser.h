@@ -1,17 +1,26 @@
 
-typedef enum Operator Operator;
-enum Operator {
-    OP_Invalid,
-    OP_Add,
-    OP_Sub,
-    OP_Mul,
-    OP_Quo,
-    OP_Rem,
-    OP_And,
-    OP_Or,
-    OP_Xor,
-    OP_Shl,
-    OP_Shr,
+i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
+    0,
+    [TK_Question] = 1,
+    [TK_Lor] = 1,
+    [TK_Land] = 2,
+    [TK_Eql] = 3,
+    [TK_Neq] = 3,
+    [TK_Lss] = 3,
+    [TK_Leq] = 3, 
+    [TK_Gtr] = 3, 
+    [TK_Geq] = 3,
+    [TK_Add] = 4,
+    [TK_Sub] = 4, 
+    [TK_Or]  = 4, 
+    [TK_Xor] = 4,
+    [TK_Mul] = 5,
+    [TK_Div] = 5,
+    [TK_Rem] = 5,
+    [TK_Shl] = 5, 
+    [TK_Shr] = 5, 
+    [TK_And] = 5,
+    [TK_Assign] = 0,
 };
 
 #define EXPR_KIND_START       0x100
@@ -188,14 +197,13 @@ struct Expr_Slice {
 
 struct Expr_Unary {
     Position start;
-    Operator op;
-    Position pos;
+    TokenKind op;
     Expr *expr;
 };
 
 struct Expr_Binary {
     Position start;
-    Operator op;
+    TokenKind op;
     Position pos;
     Expr *lhs;
     Expr *rhs;
@@ -219,11 +227,16 @@ struct Expr_Autocast {
     Expr *expr;
 };
 
+typedef enum KeyValueFlag KeyValueFlag;
+enum KeyValueFlags {
+    KeyValueFlagIndex,
+};
 struct Expr_KeyValue {
     Position start;
     // TODO: We should add support for C style {['0'] = 0; ['1'] = 1; } which may will require a different key type
     Expr *key; 
     Expr *value;
+    u8 flags;
 };
 
 struct Expr_LocationDirective {
@@ -251,6 +264,7 @@ struct Expr_LitString {
 
 struct Expr_LitComposite {
     Position start;
+    Expr *type;
     DynamicArray(Expr_KeyValue *) elements;
     Position end;
 };
@@ -562,8 +576,8 @@ Expr *NewExprParen(Package *package, Expr *expr, Position start, Position end) {
     return e;
 }
 
-Expr *NewExprCall(Package *package, Position start, Expr *expr, DynamicArray(Expr_KeyValue *) args, Position end) {
-    Expr *e = NewExpr(package, ExprKind_Call, start);
+Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args, Position end) {
+    Expr *e = NewExpr(package, ExprKind_Call, expr->start);
     e->Call.expr = expr;
     e->Call.args = args;
     e->Call.end = end;
@@ -595,15 +609,14 @@ Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi, Position en
     return e;
 }
 
-Expr *NewExprUnary(Package *package, Position start, Operator op, Position pos, Expr *expr) {
+Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr) {
     Expr *e = NewExpr(package, ExprKind_Unary, start);
     e->Unary.op = op;
-    e->Unary.pos = pos;
     e->Unary.expr = expr;
     return e;
 }
 
-Expr *NewExprBinary(Package *package, Operator op, Position pos, Expr *lhs, Expr *rhs) {
+Expr *NewExprBinary(Package *package, TokenKind op, Position pos, Expr *lhs, Expr *rhs) {
     Expr *e = NewExpr(package, ExprKind_Binary, lhs->start);
     e->Binary.op = op;
     e->Binary.pos = pos;
@@ -669,14 +682,16 @@ Expr *NewExprLitString(Package *package, Position start, const char *val) {
     return e;
 }
 
-Expr *NewExprLitComposite(Package *package, Position start, DynamicArray(Expr_KeyValue *) elements, Position end) {
-    Expr *e = NewExpr(package, ExprKind_LitComposite, start);
+Expr *NewExprLitComposite(Package *package, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end) {
+    Expr *e = NewExpr(package, ExprKind_LitComposite, type->start);
+    e->LitComposite.type = type;
     e->LitComposite.elements = elements;
+    e->LitComposite.end = end;
     return e;
 }
 
-Expr *NewExprLitFunction(Package *package, Position start, Expr *type, Stmt_Block *body, u8 flags) {
-    Expr *e = NewExpr(package, ExprKind_LitFunction, start);
+Expr *NewExprLitFunction(Package *package, Expr *type, Stmt_Block *body, u8 flags) {
+    Expr *e = NewExpr(package, ExprKind_LitFunction, type->start);
     e->LitFunction.type = type;
     e->LitFunction.body = body;
     e->LitFunction.flags = flags;

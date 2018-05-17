@@ -96,7 +96,6 @@ b32 shouldPrintErrorCode() {
 }
 
 void ReportError(ErrorCode code, Position pos, const char *msg, ...) {
-    errorCollector.errorCount += 1;
     va_list args;
     char buf[1024];
     va_start(args, msg);
@@ -107,5 +106,6 @@ void ReportError(ErrorCode code, Position pos, const char *msg, ...) {
         fprintf(stderr, "ERROR(%s:%u:%u): %s\n", pos.name, pos.line, pos.column, buf);
     }
     va_end(args);
+    errorCollector.errorCount += 1;
 }
 

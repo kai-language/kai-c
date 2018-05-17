@@ -134,6 +134,7 @@ bool shouldInsertSemiAfterKeyword(const char *keyword) {
     TKind(Lss, "<"), \
     TKind(Gtr, ">"), \
     TKind(Not, "!"), \
+    TKind(BNot, "~"), \
     TKind(Eql, "=="), \
     TKind(Neq, "!="), \
     TKind(Leq, "<="), \
@@ -153,13 +154,14 @@ bool shouldInsertSemiAfterKeyword(const char *keyword) {
     TKind(Dot, "."), \
     TKind(Colon, ":"), \
     TKind(Terminator, ";"), \
-    TKind(Keyword, "")
+    TKind(Keyword, ""),
 
 typedef enum TokenKind TokenKind;
 enum TokenKind {
 #define TKind(e, s) TK_##e
     TOKEN_KINDS
 #undef TKind
+    NUM_TOKEN_KINDS,
 };
 
 const char *TokenDescriptions[] = {
@@ -722,6 +724,7 @@ repeat: ;
         CASE1(':', TK_Colon);
         CASE1('$', TK_Dollar);
         CASE1('?', TK_Question);
+        CASE1('~', TK_BNot);
         CASE1(',', TK_Comma);
         CASE1('(', TK_Lparen);
         CASE1('[', TK_Lbrack);
