@@ -306,7 +306,7 @@ Expr *parseExprPrimary(Parser *p) {
                 continue;
             }
 
-            case TK_Rbrace: {
+            case TK_Lbrace: {
                 if (x->kind == ExprKind_TypeFunction) {
                     Stmt_Block *body = parseBlock(p);
                     x = NewExprLitFunction(pkg, x, body, 0);
@@ -318,12 +318,12 @@ Expr *parseExprPrimary(Parser *p) {
                 if (!isToken(p, TK_Rbrace)) {
                     ArrayPush(elements, parseExprCompoundField(p));
                     while (matchToken(p, TK_Comma)) {
-                        if (isToken(p, TK_Rbrack)) break;
+                        if (isToken(p, TK_Rbrace)) break;
                         ArrayPush(elements, parseExprCompoundField(p));
                     }
                 }
                 expectToken(p, TK_Rbrace);
-                x = NewExprLitComposite(pkg, x, elements, p->prevEnd);
+                x = NewExprLitCompound(pkg, x, elements, p->prevEnd);
                 continue;
             }
 
@@ -341,7 +341,7 @@ Expr *parseExprUnary(Parser *p) {
         case TK_Add: case TK_Sub: case TK_Not: case TK_BNot: case TK_Xor: case TK_And: case TK_Lss: {
             TokenKind op = p->tok.kind;
             nextToken();
-            return NewExprUnary(&p->package, p->prevStart, op, parseExpr(p));
+            return NewExprUnary(&p->package, p->prevStart, op, parseExprPrimary(p));
         }
         default:
             return parseExprPrimary(p);
@@ -537,6 +537,97 @@ void test_parseExprPrimary() {
     Parser p = newTestParser("a.a.a.a.a.a.a.a.a.a.a.a");
     ASSERT_EXPR_KIND(ExprKind_Selector);
 
+    p = newTestParser("a[:] a[5:] a[:5] a[5:5] a[5]");
+    ASSERT_EXPR_KIND(ExprKind_Slice);
+    ASSERT_EXPR_KIND(ExprKind_Slice);
+    ASSERT(expr->Slice.lo != NULL);
+    ASSERT_EXPR_KIND(ExprKind_Slice);
+    ASSERT(expr->Slice.hi != NULL);
+    ASSERT_EXPR_KIND(ExprKind_Slice);
+    ASSERT(expr->Slice.lo != NULL && expr->Slice.hi != NULL);
+    ASSERT_EXPR_KIND(ExprKind_Subscript);
+
+    p = newTestParser("a() a(a,\n) a(a, b, c,)");
+    ASSERT_EXPR_KIND(ExprKind_Call);
+    ASSERT_EXPR_KIND(ExprKind_Call);
+    ASSERT(ArrayLen(expr->Call.args) == 1);
+    ASSERT_EXPR_KIND(ExprKind_Call);
+    ASSERT(ArrayLen(expr->Call.args) == 3);
+
+    p = newTestParser("A{} A{1, a: 2, 3,} A{[23]: 1, 2, 3}");
+    ASSERT_EXPR_KIND(ExprKind_LitCompound);
+    ASSERT_EXPR_KIND(ExprKind_LitCompound);
+    ASSERT(ArrayLen(expr->LitCompound.elements) == 3);
+    ASSERT_EXPR_KIND(ExprKind_LitCompound);
+    ASSERT(ArrayLen(expr->LitCompound.elements) == 3);
+    ASSERT(expr->LitCompound.elements[0]->flags & KeyValueFlagIndex);
+
 #undef ASSERT_EXPR_KIND
 }
 #endif
+
+#if TEST
+void test_parseExprUnary() {
+#define ASSERT_EXPR_KIND(expected) \
+expr = parseExprUnary(&p); \
+ASSERT(expr->kind == expected); \
+ASSERT(errorCollector.errorCount == 0)
+
+    InitErrorBuffers();
+    Expr *expr;
+
+    Parser p = newTestParser("+5 -5 ~a ^a !a &a <a");
+    ASSERT_EXPR_KIND(ExprKind_Unary);
+    ASSERT_EXPR_KIND(ExprKind_Unary);
+    ASSERT_EXPR_KIND(ExprKind_Unary);
+    ASSERT_EXPR_KIND(ExprKind_Unary);
+    ASSERT_EXPR_KIND(ExprKind_Unary);
+    ASSERT_EXPR_KIND(ExprKind_Unary);
+    ASSERT_EXPR_KIND(ExprKind_Unary);
+
+#undef ASSERT_EXPR_KIND
+}
+#endif
+
+#if TEST
+void test_parseExprBinary() {
+#define ASSERT_EXPR_KIND(expected) \
+expr = parseExprBinary(&p, 1); \
+ASSERT(expr->kind == expected); \
+ASSERT(errorCollector.errorCount == 0)
+
+    InitErrorBuffers();
+    Expr *expr;
+
+    Parser p = newTestParser("a + b * c");
+    ASSERT_EXPR_KIND(ExprKind_Binary);
+    ASSERT(expr->Binary.op == TK_Add);
+
+    p = newTestParser("(a + b) * c");
+    ASSERT_EXPR_KIND(ExprKind_Binary);
+    ASSERT(expr->Binary.op == TK_Mul);
+
+#undef ASSERT_EXPR_KIND
+}
+#endif
+
+#if TEST
+void test_parseExprTernary() {
+#define ASSERT_EXPR_KIND(expected) \
+expr = parseExprBinary(&p, 1); \
+ASSERT(expr->kind == expected); \
+ASSERT(errorCollector.errorCount == 0)
+
+    InitErrorBuffers();
+    Expr *expr;
+
+    Parser p = newTestParser("a ? b : c");
+    ASSERT_EXPR_KIND(ExprKind_Ternary);
+
+    p = newTestParser("a ?: b");
+    ASSERT_EXPR_KIND(ExprKind_Ternary);
+
+#undef ASSERT_EXPR_KIND
+}
+#endif
+

@@ -46,7 +46,7 @@ i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
     FOR_EACH(LitInt, "integer literal")               \
     FOR_EACH(LitFloat, "float literal")               \
     FOR_EACH(LitString, "string literal")             \
-    FOR_EACH(LitComposite, "composite literal")       \
+    FOR_EACH(LitCompound, "compound literal")       \
     FOR_EACH(LitFunction, "function literal")         \
     FOR_EACH(TypePointer, "pointer type")             \
     FOR_EACH(TypeArray, "array type")                 \
@@ -229,7 +229,7 @@ struct Expr_Autocast {
 
 typedef enum KeyValueFlag KeyValueFlag;
 enum KeyValueFlags {
-    KeyValueFlagIndex,
+    KeyValueFlagIndex = 1,
 };
 struct Expr_KeyValue {
     Position start;
@@ -262,7 +262,7 @@ struct Expr_LitString {
     const char *val;
 };
 
-struct Expr_LitComposite {
+struct Expr_LitCompound {
     Position start;
     Expr *type;
     DynamicArray(Expr_KeyValue *) elements;
@@ -682,11 +682,11 @@ Expr *NewExprLitString(Package *package, Position start, const char *val) {
     return e;
 }
 
-Expr *NewExprLitComposite(Package *package, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end) {
-    Expr *e = NewExpr(package, ExprKind_LitComposite, type->start);
-    e->LitComposite.type = type;
-    e->LitComposite.elements = elements;
-    e->LitComposite.end = end;
+Expr *NewExprLitCompound(Package *package, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end) {
+    Expr *e = NewExpr(package, ExprKind_LitCompound, type->start);
+    e->LitCompound.type = type;
+    e->LitCompound.elements = elements;
+    e->LitCompound.end = end;
     return e;
 }
 
