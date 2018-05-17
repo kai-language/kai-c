@@ -142,37 +142,44 @@ DECL_KINDS
 
 typedef struct AstInvalid AstInvalid;
 struct AstInvalid {
+    Position start;
     Position end;
 };
 
 struct Expr_Ident {
+    Position start;
     const char *name;
 };
 
 struct Expr_Paren {
+    Position start;
     Expr *expr;
     Position end;
 };
 
 struct Expr_Call {
+    Position start;
     Expr *expr;
     DynamicArray(Expr_KeyValue *) args;
     Position end;
 };
 
 struct Expr_Selector {
+    Position start;
     Expr *expr;
     const char *name;
     Position end;
 };
 
 struct Expr_Subscript {
+    Position start;
     Expr *expr;
     Expr *index;
     Position end;
 };
 
 struct Expr_Slice {
+    Position start;
     Expr *expr;
     Expr *lo;
     Expr *hi;
@@ -180,12 +187,14 @@ struct Expr_Slice {
 };
 
 struct Expr_Unary {
+    Position start;
     Operator op;
     Position pos;
     Expr *expr;
 };
 
 struct Expr_Binary {
+    Position start;
     Operator op;
     Position pos;
     Expr *lhs;
@@ -193,66 +202,80 @@ struct Expr_Binary {
 };
 
 struct Expr_Ternary {
+    Position start;
     Expr *cond;
     Expr *pass;
     Expr *fail;
 };
 
 struct Expr_Cast {
+    Position start;
     Expr *type;
     Expr *expr;
 };
 
 struct Expr_Autocast {
+    Position start;
     Expr *expr;
 };
 
 struct Expr_KeyValue {
+    Position start;
     // TODO: We should add support for C style {['0'] = 0; ['1'] = 1; } which may will require a different key type
     Expr *key; 
     Expr *value;
 };
 
 struct Expr_LocationDirective {
+    Position start;
     const char *name;
 };
 
 struct Expr_LitNil {};
+    Position start;
 
 struct Expr_LitInt {
+    Position start;
     u64 val;
 };
 
 struct Expr_LitFloat {
+    Position start;
     f64 val;
 };
 
 struct Expr_LitString {
+    Position start;
     const char *val;
 };
 
 struct Expr_LitComposite {
+    Position start;
     DynamicArray(Expr_KeyValue *) elements;
     Position end;
 };
 
 struct Expr_LitFunction {
+    Position start;
     Expr *type;
     Stmt_Block *body;
     u8 flags;
 };
 
 struct Expr_TypePointer {
+    Position start;
     Expr *type;
 };
 
 struct Expr_TypeArray {
+    Position start;
     Expr *length;
     Expr *type;
     Position end;
 };
 
 struct Expr_TypeSlice {
+    Position start;
     Expr *type;
     Position end;
 };
@@ -265,10 +288,12 @@ struct AggregateItem {
 };
 
 struct Expr_TypeStruct {
+    Position start;
     DynamicArray(AggregateItem) items;
 };
 
 struct Expr_TypeUnion {
+    Position start;
     DynamicArray(AggregateItem) items;
 };
 
@@ -280,62 +305,77 @@ struct EnumItem {
 };
 
 struct Expr_TypeEnum {
+    Position start;
 };
 
 struct Expr_TypePolymorphic {
+    Position start;
     const char *name;
 };
 
 struct Expr_TypeVariadic {
+    Position start;
     Expr *type;
     b8 flags;
 };
 
 struct Expr_TypeFunction {
-    Expr *result;
+    Position start;
+    DynamicArray(Expr *) result;
     DynamicArray(Expr_KeyValue *) params;
 };
 
-struct Stmt_Empty {};
+struct Stmt_Empty {
+    Position start;
+};
 
 struct Stmt_Label {
+    Position start;
     const char *name;
 };
 
 struct Stmt_Assign {
+    Position start;
     DynamicArray(Expr *) lhs;
     DynamicArray(Expr *) rhs;
 };
 
 struct Stmt_Return {
+    Position start;
     DynamicArray(Expr *) exprs;
 };
 
 struct Stmt_Defer {
+    Position start;
     Stmt *stmt;
 };
 
 struct Stmt_Using {
+    Position start;
     Expr *expr;
 };
 
 struct Stmt_Branch {
+    Position start;
     const char *keyword;
     Expr_Ident *label;
 };
 
 struct Stmt_Block {
+    Position start;
     DynamicArray(Stmt *) stmts;
     Position end;
 };
 
 struct Stmt_If {
+    Position start;
     Expr *cond;
     Stmt *pass;
     Stmt *fail;
 };
 
 struct Stmt_For {
+    Position start;
     Stmt *init;
     Expr *cond;
     Stmt *step;
@@ -343,6 +383,7 @@ struct Stmt_For {
 };
 
 struct Stmt_ForIn {
+    Position start;
     Expr_Ident *valueName;
     Expr_Ident *indexName;
     Expr *aggregate;
@@ -356,23 +397,27 @@ struct SwitchCase {
 };
 
 struct Stmt_Switch {
+    Position start;
     Expr *match;
     DynamicArray(SwitchCase *) cases;
 };
 
 struct Decl_Variable {
+    Position start;
     DynamicArray(Expr_Ident *) names;
     Expr *type;
     DynamicArray(Expr *) values;
 };
 
 struct Decl_Constant {
+    Position start;
     DynamicArray(Expr_Ident *) names;
     Expr *type;
     DynamicArray(Expr *) values;
 };
 
 struct Decl_Import {
+    Position start;
     const char *path;
     const char *alias;
 };
@@ -400,8 +445,8 @@ union DeclValue {
 
 struct Stmt {
     StmtKind kind;
-    Position start;
     union {
+        Position start;
         StmtValue stmt;
         ExprValue expr;
         DeclValue decl;
@@ -423,8 +468,8 @@ struct Stmt {
 
 struct Expr {
     ExprKind kind;
-    Position start;
     union {
+        Position start;
         ExprValue expr;
         AstInvalid Invalid;
 
@@ -436,8 +481,8 @@ struct Expr {
 
 struct Decl {
     DeclKind kind;
-    Position start;
     union {
+        Position start;
         DeclValue decl;
         AstInvalid Invalid;
 
@@ -680,7 +725,7 @@ Expr *NewExprTypeVariadic(Package *package, Position start, Expr *type, u8 flags
     return e;
 }
 
-Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_KeyValue *) params, Expr *result) {
+Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result) {
     Expr *e = NewExpr(package, ExprKind_TypeFunction, start);
     e->TypeFunction.params = params;
     e->TypeFunction.result = result;
@@ -783,9 +828,11 @@ Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident 
     d->Constant.values = values;
     return d;
 }
+
 Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias) {
     Decl *d = NewDecl(package, DeclKind_Import, start);
     d->Import.path = path;
     d->Import.alias = alias;
     return d;
 }
+

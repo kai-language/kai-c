@@ -87,7 +87,7 @@ void InitKeywords(void) {
 
 #undef KEYWORD
 
-bool isKeyword(const char *name) {
+bool isStringKeyword(const char *name) {
     return Keyword_first <= name && name <= Keyword_last;
 }
 
@@ -165,10 +165,6 @@ const char *TokenDescriptions[] = {
     TOKEN_KINDS
 #undef TKind
 };
-
-const char *DescribeTokenKind(TokenKind tk) {
-    return TokenDescriptions[tk];
-}
 
 Error InvalidEscape(Position pos) {
     return (Error) {
@@ -287,6 +283,16 @@ struct Token {
         const char *ident;
     } val;
 };
+
+const char *DescribeTokenKind(TokenKind tk) {
+    return TokenDescriptions[tk];
+}
+
+const char *DescribeToken(Token tok) {
+    if (tok.kind == TK_Ident || tok.kind == TK_Keyword) return tok.val.s;
+
+    return DescribeTokenKind(tok.kind);
+}
 
 typedef struct Lexer Lexer;
 struct Lexer {
@@ -765,7 +771,7 @@ repeat: ;
             }
             token.val.ident = StrInternRange(token.start, l->stream);
             token.kind = TK_Ident;
-            if (isKeyword(token.val.ident)) {
+            if (isStringKeyword(token.val.ident)) {
                 token.kind = TK_Keyword;
                 if (shouldInsertSemiAfterKeyword(token.val.ident)) {
                     l->insertSemi = true;
@@ -789,13 +795,13 @@ repeat: ;
 #if TEST
 void test_keywords() {
     InitKeywords();
-    ASSERT(isKeyword(Keyword_first));
-    ASSERT(isKeyword(Keyword_last));
+    ASSERT(isStringKeyword(Keyword_first));
+    ASSERT(isStringKeyword(Keyword_last));
 
     for (const char **it = Keywords; it != ArrayEnd(Keywords); it++) {
-        ASSERT(isKeyword(*it));
+        ASSERT(isStringKeyword(*it));
     }
-    ASSERT(!isKeyword(StrIntern("asdf")));
+    ASSERT(!isStringKeyword(StrIntern("asdf")));
     ASSERT(StrIntern("fn") == Keyword_fn);
 }
 #endif

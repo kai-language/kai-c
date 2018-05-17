@@ -13,7 +13,7 @@
     ECode(FloatOverflow, "Float literal overflow"), \
     ECode(IntOverflow, "Integer literal overflow"), \
     ECode(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
-    ECode(ExpectedToken, "Syntax error") \
+    ECode(Syntax, "Syntax error") \
 
 typedef enum ErrorCode {
 #define ECode(e, s) e##Error
@@ -24,7 +24,7 @@ typedef enum ErrorCode {
 typedef struct Error {
     ErrorCode code;
     Position pos;
-    char *message;
+    const char *message;
 } Error;
 
 typedef struct ErrorCollector {
@@ -86,5 +86,26 @@ void Report(Error error) {
 #endif
 
     errorCollector.errorCount += 1;
+}
+
+b32 shouldPrintErrorCode() {
+#if NO_ERROR_CODES
+    return false;
+#endif
+    return FlagErrorCodes;
+}
+
+void ReportError(ErrorCode code, Position pos, const char *msg, ...) {
+    errorCollector.errorCount += 1;
+    va_list args;
+    char buf[1024];
+    va_start(args, msg);
+    vsnprintf(buf, sizeof(buf), msg, args);
+    if (shouldPrintErrorCode()) {
+        fprintf(stderr, "ERROR(%s:%u:%u, E%04d): %s\n", pos.name, pos.line, pos.column, code, buf);
+    } else {
+        fprintf(stderr, "ERROR(%s:%u:%u): %s\n", pos.name, pos.line, pos.column, buf);
+    }
+    va_end(args);
 }
 
