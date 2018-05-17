@@ -52,7 +52,7 @@ void handleSignal(int sig, siginfo_t *info, void *where) {
             assertHandler(__FILE__, (i32)__LINE__, "(" #cond ") " msg, __VA_ARGS__); \\
             fprintf(stderr, "\n"); \\
             _currentTestAsserted = 1; \\
-            raise(SIGINT); \\
+            longjmp(_returnToPerformTestCase, 1); \\
         } \\
     } while(0)
 
