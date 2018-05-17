@@ -13,6 +13,7 @@
     ECode(FloatOverflow, "Float literal overflow"), \
     ECode(IntOverflow, "Integer literal overflow"), \
     ECode(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
+    ECode(ExpectedToken, "Syntax error") \
 
 typedef enum ErrorCode {
 #define ECode(e, s) e##Error
