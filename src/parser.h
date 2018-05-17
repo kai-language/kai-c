@@ -271,13 +271,11 @@ struct Expr_TypeArray {
     Position start;
     Expr *length;
     Expr *type;
-    Position end;
 };
 
 struct Expr_TypeSlice {
     Position start;
     Expr *type;
-    Position end;
 };
 
 typedef struct AggregateItem AggregateItem;
@@ -691,18 +689,16 @@ Expr *NewExprTypePointer(Package *package, Position start, Expr *type) {
     return e;
 }
 
-Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *type, Position end) {
+Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *type) {
     Expr *e = NewExpr(package, ExprKind_TypeArray, start);
     e->TypeArray.length = length;
     e->TypeArray.type = type;
-    e->TypeArray.end = end;
     return e;
 }
 
-Expr *NewExprTypeSlice(Package *package, Position start, Expr *type, Position end) {
+Expr *NewExprTypeSlice(Package *package, Position start, Expr *type) {
     Expr *e = NewExpr(package, ExprKind_TypeSlice, start);
     e->TypeSlice.type = type;
-    e->TypeSlice.end = end;
     return e;
 }
 

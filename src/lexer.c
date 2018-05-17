@@ -30,13 +30,14 @@ const char *internSemicolon;
 const char *internIn;
 
 // Directive names
-const char *internImport;
-const char *internAssert;
-const char *internForeign;
-const char *internLocation;
 const char *internLine;
 const char *internFile;
+const char *internAssert;
+const char *internImport;
+const char *internCVargs;
+const char *internForeign;
 const char *internFunction;
+const char *internLocation;
 
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
@@ -74,13 +75,14 @@ void InitKeywords(void) {
 
     internIn = StrIntern("in");
 
-    internImport = StrIntern("import");
-    internAssert = StrIntern("assert");
-    internForeign = StrIntern("foreign");
-    internLocation = StrIntern("location");
     internLine = StrIntern("line");
     internFile = StrIntern("file");
+    internAssert = StrIntern("assert");
+    internImport = StrIntern("import");
+    internCVargs = StrIntern("cvargs");
+    internForeign = StrIntern("foreign");
     internFunction = StrIntern("function");
+    internLocation = StrIntern("location");
 
     inited = true;
 }
@@ -289,8 +291,9 @@ const char *DescribeTokenKind(TokenKind tk) {
 }
 
 const char *DescribeToken(Token tok) {
-    if (tok.kind == TK_Ident || tok.kind == TK_Keyword) return tok.val.s;
-
+    if (tok.kind == TK_Ident || tok.kind == TK_Keyword || tok.kind == TK_Directive) {
+        return tok.val.s;
+    }
     return DescribeTokenKind(tok.kind);
 }
 

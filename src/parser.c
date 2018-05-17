@@ -109,6 +109,8 @@ Stmt_Block *parseBlock(Parser *p) {
     return NULL;
 }
 
+Expr *parseType(Parser *p);
+
 Expr *parseAtom(Parser *p) {
    switch (p->tok.kind) {
        case TK_Ident: {
@@ -144,24 +146,84 @@ Expr *parseAtom(Parser *p) {
            return NewExprParen(&p->package, expr, start, p->prevPos);
        }
 
+       case TK_Lbrack: {
+           Position start = p->tok.pos;
+           nextToken();
+           Expr *length = NULL;
+           if (matchToken(p, TK_Rbrack)) {
+               Expr *type = parseType(p);
+               return NewExprTypeSlice(&p->package, start, type);
+           }
+           expectToken(p, TK_Rbrack);
+           Expr *type = parseType(p);
+           return NewExprTypeArray(&p->package, start, length, type);
+       }
+
+       case TK_Dollar: {
+           Position start = p->tok.pos;
+           nextToken();
+           const char *name = parseIdent(p);
+           return NewExprTypePolymorphic(&p->package, start, name);
+       }
+
+       caseEllipsis:
+       case TK_Ellipsis: {
+           Position start = p->tok.pos;
+           nextToken();
+           return NewExprTypeVariadic(&p->package, start, parseType(p), 0);
+       }
+
+       case TK_Mul: {
+           Position start = p->tok.pos;
+           nextToken();
+           Expr *type = parseType(p);
+           return NewExprTypePointer(&p->package, start, type);
+       }
+
        case TK_Directive: {
            if (p->tok.val.ident == internLocation || p->tok.val.ident == internFile || p->tok.val.ident == internLine || p->tok.val.ident == internFunction) {
                Expr *expr = NewExprLocationDirective(&p->package, p->tok.pos, p->tok.val.ident);
                nextToken();
                return expr;
+           } else if (p->tok.val.ident == internCVargs) {
+               goto caseEllipsis;
            }
+           ReportError(SyntaxError, p->tok.pos, "Unexpected directive '%s'", p->tok.val.ident);
+           break;
        }
 
-       case TK_Keyword:
+       case TK_Keyword: {
            if (p->tok.val.ident == Keyword_fn) {
                return parseFunctionType(p, /* allowFunctionLiteral:*/ true);
            } else if (p->tok.val.ident == Keyword_nil) {
                Expr *expr = NewExprLitNil(&p->package, p->tok.pos);
                nextToken();
                return expr;
+           } else if (p->tok.val.ident == Keyword_struct) {
+               goto caseStruct;
+           } else if (p->tok.val.ident == Keyword_union) {
+               goto caseUnion;
+           } else if (p->tok.val.ident == Keyword_enum) {
+               goto caseEnum;
            }
            ReportError(SyntaxError, p->tok.pos, "Unexpected keyword '%s'", p->tok.val.ident);
            break;
+       }
+
+       caseStruct: {
+           UNIMPLEMENTED();
+           break;
+       }
+
+       caseUnion: {
+           UNIMPLEMENTED();
+           break;
+       }
+
+       caseEnum: {
+           UNIMPLEMENTED();
+           break;
+       }
 
        default:
            ReportError(SyntaxError, p->tok.pos, "Unexpected token '%s'", DescribeToken(p->tok));
