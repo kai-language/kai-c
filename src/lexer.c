@@ -19,7 +19,6 @@ const char *Keyword_break;
 const char *Keyword_continue;
 const char *Keyword_fallthrough;
 const char *Keyword_defer;
-const char *Keyword_in;
 
 const char *Keyword_first;
 const char *Keyword_last;
@@ -27,6 +26,8 @@ const char **Keywords;
 
 const char *internNewline;
 const char *internSemicolon;
+
+const char *internIn;
 
 // Directive names
 const char *internImport;
@@ -65,12 +66,13 @@ void InitKeywords(void) {
     KEYWORD(continue);
     KEYWORD(fallthrough);
     KEYWORD(defer);
-    KEYWORD(in);
     Keyword_first = Keyword_if;
-    Keyword_last = Keyword_in;
+    Keyword_last = Keyword_defer;
 
     internNewline = StrIntern("\n");
     internSemicolon = StrIntern(";");
+
+    internIn = StrIntern("in");
 
     internImport = StrIntern("import");
     internAssert = StrIntern("assert");
@@ -149,9 +151,6 @@ bool shouldInsertSemiAfterKeyword(const char *keyword) {
     TKind(Dot, "."), \
     TKind(Colon, ":"), \
     TKind(Terminator, ";"), \
-\
-    /* NOTE: all keywords must come after this case and be before "__Meta_KeywordsEnd" */ \
-    /* These keywords are roughly-sorted by how common they are */ \
     TKind(Keyword, "")
 
 typedef enum TokenKind TokenKind;
