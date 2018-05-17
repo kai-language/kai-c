@@ -213,7 +213,9 @@ struct Expr_KeyValue {
     Expr *value;
 };
 
-struct Expr_LocationDirective {};
+struct Expr_LocationDirective {
+    const char *name;
+};
 
 struct Expr_LitNil {};
 
@@ -595,8 +597,9 @@ Expr *NewExprKeyValue(Package *package, Expr *key, Expr *value) {
     return e;
 }
 
-Expr *NewExprLocationDirective(Package *package, Position start) {
+Expr *NewExprLocationDirective(Package *package, Position start, const char *name) {
     Expr *e = NewExpr(package, ExprKind_LocationDirective, start);
+    e->LocationDirective.name = name;
     return e;
 }
 

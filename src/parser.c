@@ -55,8 +55,24 @@ Expr *parseAtom(Parser *p) {
            return e;
        }
 
+       case TK_Directive: {
+           if (p->tok.val.ident == internLocation || p->tok.val.ident == internFile || p->tok.val.ident == internLine || p->tok.val.ident == internFunction) {
+               Expr *expr = NewExprLocationDirective(&p->package, p->tok.pos, p->tok.val.ident);
+               p->tok = NextToken(&p->lexer);
+               return expr;
+           }
+       }
+
        case TK_Keyword:
-           if (p->tok.val.ident == fnKeyword) return parseFunctionLiteral(p);
+           if (p->tok.val.ident == Keyword_fn) {
+               return parseFunctionLiteral(p);
+           } else if (p->tok.val.ident == Keyword_nil) {
+               Expr *expr = NewExprLitNil(&p->package, p->tok.pos);
+               p->tok = NextToken(&p->lexer);
+               return expr;
+           }
+
+           // fallthrough
 
        default:
            PARSER_ERROR(p->tok.pos, "Unexpected '%s'", DescribeTokenKind(p->tok.kind));

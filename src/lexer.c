@@ -1,38 +1,43 @@
 
-const char *ifKeyword;
-const char *forKeyword;
-const char *fnKeyword;
-const char *returnKeyword;
-const char *nilKeyword;
-const char *structKeyword;
-const char *enumKeyword;
-const char *unionKeyword;
-const char *elseKeyword;
-const char *switchKeyword;
-const char *caseKeyword;
-const char *castKeyword;
-const char *bitcastKeyword;
-const char *autocastKeyword;
-const char *usingKeyword;
-const char *gotoKeyword;
-const char *breakKeyword;
-const char *continueKeyword;
-const char *fallthroughKeyword;
-const char *deferKeyword;
-const char *inKeyword;
+const char *Keyword_if;
+const char *Keyword_for;
+const char *Keyword_fn;
+const char *Keyword_return;
+const char *Keyword_nil;
+const char *Keyword_struct;
+const char *Keyword_enum;
+const char *Keyword_union;
+const char *Keyword_else;
+const char *Keyword_switch;
+const char *Keyword_case;
+const char *Keyword_cast;
+const char *Keyword_bitcast;
+const char *Keyword_autocast;
+const char *Keyword_using;
+const char *Keyword_goto;
+const char *Keyword_break;
+const char *Keyword_continue;
+const char *Keyword_fallthrough;
+const char *Keyword_defer;
+const char *Keyword_in;
 
-const char *firstKeyword;
-const char *lastKeyword;
-const char **keywords;
+const char *Keyword_first;
+const char *Keyword_last;
+const char **Keywords;
 
-const char *newline_name;
-const char *semicolon_name;
+const char *internNewline;
+const char *internSemicolon;
 
-const char *import_name;
-const char *foreign_name;
-const char *assert_name;
+// Directive names
+const char *internImport;
+const char *internAssert;
+const char *internForeign;
+const char *internLocation;
+const char *internLine;
+const char *internFile;
+const char *internFunction;
 
-#define KEYWORD(name) name##Keyword = StrIntern(#name); ArrayPush(keywords, name##Keyword)
+#define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
 void InitKeywords(void) {
     static bool inited;
@@ -61,15 +66,19 @@ void InitKeywords(void) {
     KEYWORD(fallthrough);
     KEYWORD(defer);
     KEYWORD(in);
-    firstKeyword = ifKeyword;
-    lastKeyword = inKeyword;
+    Keyword_first = Keyword_if;
+    Keyword_last = Keyword_in;
 
-    newline_name = StrIntern("\n");
-    semicolon_name = StrIntern(";");
+    internNewline = StrIntern("\n");
+    internSemicolon = StrIntern(";");
 
-    import_name = StrIntern("import");
-    foreign_name = StrIntern("foreign");
-    assert_name = StrIntern("assert");
+    internImport = StrIntern("import");
+    internAssert = StrIntern("assert");
+    internForeign = StrIntern("foreign");
+    internLocation = StrIntern("location");
+    internLine = StrIntern("line");
+    internFile = StrIntern("file");
+    internFunction = StrIntern("function");
 
     inited = true;
 }
@@ -77,14 +86,14 @@ void InitKeywords(void) {
 #undef KEYWORD
 
 bool isKeyword(const char *name) {
-    return firstKeyword <= name && name <= lastKeyword;
+    return Keyword_first <= name && name <= Keyword_last;
 }
 
 bool shouldInsertSemiAfterKeyword(const char *keyword) {
-    if (keyword == breakKeyword) return true;
-    if (keyword == returnKeyword) return true;
-    if (keyword == continueKeyword) return true;
-    if (keyword == fallthroughKeyword) return true;
+    if (keyword == Keyword_break) return true;
+    if (keyword == Keyword_return) return true;
+    if (keyword == Keyword_continue) return true;
+    if (keyword == Keyword_fallthrough) return true;
     return false;
 }
 
@@ -582,7 +591,7 @@ repeat: ;
     if (*token.start == '\n' && l->insertSemi) {
         l->stream++;
         token.kind = TK_Terminator;
-        token.val.ident = newline_name;
+        token.val.ident = internNewline;
 
         token.end = l->stream;
         token.pos.column = (u32)(intptr_t) (token.start - l->startOfLine) + 1;
@@ -611,7 +620,7 @@ repeat: ;
         case ';': {
             l->stream++;
             token.kind = TK_Terminator;
-            token.val.ident = semicolon_name;
+            token.val.ident = internSemicolon;
             break;
         }
 
@@ -781,13 +790,14 @@ repeat: ;
 #if TEST
 void test_keywords() {
     InitKeywords();
-    ASSERT(isKeyword(firstKeyword));
-    ASSERT(isKeyword(lastKeyword));
+    ASSERT(isKeyword(Keyword_first));
+    ASSERT(isKeyword(Keyword_last));
 
-    for (const char **it = keywords; it != ArrayEnd(keywords); it++) {
+    for (const char **it = Keywords; it != ArrayEnd(Keywords); it++) {
         ASSERT(isKeyword(*it));
     }
     ASSERT(!isKeyword(StrIntern("asdf")));
+    ASSERT(StrIntern("fn") == Keyword_fn);
 }
 #endif
 
@@ -795,7 +805,6 @@ void test_keywords() {
 #if TEST
 void test_lexer() {
     test_keywords();
-    ASSERT(StrIntern("fn") == fnKeyword);
 
 #define ASSERT_TOKEN_IDENT(x) \
     tok = NextToken(&lex); \
@@ -887,7 +896,7 @@ void test_lexer() {
     ASSERT_TOKEN_POS(38, 3, 25); // )
     ASSERT_TOKEN_POS(39, 3, 26); // ;
     ASSERT_MSG(tok.kind == TK_Terminator, "Expected terminator to be automatically inserted");
-    ASSERT_MSG(tok.val.ident == newline_name, "Expected terminator to set it's value the the character that spawned it");
+    ASSERT_MSG(tok.val.ident == internNewline, "Expected terminator to set it's value the the character that spawned it");
     ASSERT_TOKEN_POS(40, 4, 1); // }
     ASSERT_TOKEN_EOF();
 
