@@ -141,15 +141,16 @@ void ParseFlags(int *pargc, const char ***pargv) {
 void InitUnsetFlagsToDefaults() {
     if (OutputName == NULL) {
         // TODO: should we use the basename of InputName?
-        size_t len = sizeof("out_") + strlen(InputName) + 1;
+        size_t prefixLen = sizeof("out_") - 1;
+        size_t len = prefixLen + strlen(InputName) + 1;
         char *mem = Alloc(DefaultAllocator, len);
+        memcpy(mem, "out_", prefixLen);
 
-        char *filename = mem + sizeof("out_");
+        char *filename = mem + prefixLen;
 
-        memcpy(filename, InputName, len);
+        memcpy(filename, InputName, len - prefixLen);
         RemoveKaiExtension(filename);
 
-        snprintf(mem, len, "out_%s", filename);
         OutputName = mem;
     }
     struct utsname sysinfo;
