@@ -173,6 +173,8 @@ Expr *parseExprAtom(Parser *p) {
        caseEllipsis:
        case TK_Ellipsis: {
            Position start = p->tok.pos;
+           nextToken();
+           return NewExprTypeVariadic(&p->package, start, parseType(p), 0);
        }
 
        case TK_Mul: {
