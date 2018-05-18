@@ -173,8 +173,6 @@ Expr *parseExprAtom(Parser *p) {
        caseEllipsis:
        case TK_Ellipsis: {
            Position start = p->tok.pos;
-           nextToken();
-           return NewExprTypeVariadic(&p->package, start, parseType(p), 0);
        }
 
        case TK_Mul: {
@@ -214,10 +212,26 @@ Expr *parseExprAtom(Parser *p) {
            break;
        }
 
-       caseStruct: {
-           UNIMPLEMENTED();
-           break;
-       }
+        caseStruct: {
+            Position start = p->tok.pos;
+            nextToken();
+
+            // TODO(Brett, vdka): directives
+
+            if (isToken(p, TK_Lparen)) {
+                // TODO(Brett, vdka): polymorphic structs
+                UNIMPLEMENTED();
+            }
+
+            expectToken(p, TK_Lbrace);
+
+            DynamicArray(AggregateItem) items = NULL;
+            while (true) {
+                UNIMPLEMENTED();
+            }
+
+            return NewExprTypeStruct(&p->package, start, items);
+        }
 
        caseUnion: {
            UNIMPLEMENTED();

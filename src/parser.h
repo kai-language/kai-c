@@ -717,7 +717,11 @@ Expr *NewExprTypeSlice(Package *package, Position start, Expr *type) {
     return e;
 }
 
-Expr *NewExprTypeStruct(Package *package);
+Expr *NewExprTypeStruct(Package *package, Position start, DynamicArray(AggregateItem) items) {
+    Expr *e = NewExpr(package, ExprKind_TypeStruct, start);
+    e->TypeStruct.items = items;
+    return e;
+}
 
 Expr *NewExprTypeEnum(Package *package);
 
