@@ -7,10 +7,8 @@
 #include <stddef.h>
 #include <ctype.h>
 #include <math.h>
-#include <unistd.h>
 #include <stdbool.h>
 #include <wchar.h>
-#include <sys/utsname.h> // uname to default arch & os to current
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
@@ -54,6 +52,8 @@
     #include <sys/mman.h>
     #include <execinfo.h>
     #include <limits.h>
+    #include <unistd.h>
+    #include <sys/utsname.h> // uname to default arch & os to current
 #elif SYSTEM_WINDOWS
 
 #endif
