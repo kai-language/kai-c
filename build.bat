@@ -1,5 +1,3 @@
-@echo off
-
 set TARGET=kai.exe
 
 set CFLAGS= -nologo -Oi -TP -Gm -MP -FC -GC- -EHsc -GR-
