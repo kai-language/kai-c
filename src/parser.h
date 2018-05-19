@@ -65,7 +65,7 @@ i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
     FOR_EACH(Return, "return")     \
     FOR_EACH(Defer, "defer")       \
     FOR_EACH(Using, "using")       \
-    FOR_EACH(Branch, "branch")     \
+    FOR_EACH(Goto, "goto")         \
     FOR_EACH(Block, "block")       \
     FOR_EACH(If, "if")             \
     FOR_EACH(For, "for")           \
@@ -125,9 +125,15 @@ enum DeclKind {
 
 const char *AstDescriptions[] = {
 #define FOR_EACH(kindName, s) "" s "",
+    [EXPR_KIND_START] = "invalid",
     EXPR_KINDS
+    "invalid",
+    [STMT_KIND_START] = "invalid",
     STMT_KINDS
+    "invalid",
+    [DECL_KIND_START] = "invalid",
     DECL_KINDS
+    "invalid",
 #undef FOR_EACH
 };
 
@@ -325,6 +331,10 @@ struct Expr_TypePolymorphic {
     const char *name;
 };
 
+typedef enum TypeVariadicFlag TypeVariadicFlag;
+enum TypeVariadicFlags {
+    TypeVariadicFlagCVargs = 1,
+};
 struct Expr_TypeVariadic {
     Position start;
     Expr *type;
@@ -367,7 +377,7 @@ struct Stmt_Using {
     Expr *expr;
 };
 
-struct Stmt_Branch {
+struct Stmt_Goto {
     Position start;
     const char *keyword;
     Expr_Ident *label;
@@ -399,6 +409,7 @@ struct Stmt_ForIn {
     Expr_Ident *valueName;
     Expr_Ident *indexName;
     Expr *aggregate;
+    Stmt_Block *body;
 };
 
 typedef struct SwitchCase SwitchCase;
@@ -503,6 +514,14 @@ struct Decl {
 #undef FOR_EACH
     };
 };
+
+b32 isExpr(Stmt *stmt) {
+    return stmt->kind > _ExprKind_Start && stmt->kind < _ExprKind_End;
+}
+
+b32 isDecl(Stmt *stmt) {
+    return stmt->kind > _DeclKind_Start && stmt->kind < _DeclKind_End;
+}
 
 void *AllocAst(Package *package, size_t size) {
     ASSERT(size != 0);
@@ -682,8 +701,8 @@ Expr *NewExprLitString(Package *package, Position start, const char *val) {
     return e;
 }
 
-Expr *NewExprLitCompound(Package *package, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end) {
-    Expr *e = NewExpr(package, ExprKind_LitCompound, type->start);
+Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end) {
+    Expr *e = NewExpr(package, ExprKind_LitCompound, start);
     e->LitCompound.type = type;
     e->LitCompound.elements = elements;
     e->LitCompound.end = end;
@@ -782,10 +801,10 @@ Stmt *NewStmtUsing(Package *package, Position start, Expr *expr) {
     return s;
 }
 
-Stmt *NewStmtBranch(Package *package, Position start, const char *keyword, Expr_Ident *label) {
-    Stmt *s = NewStmt(package, StmtKind_Branch, start);
-    s->Branch.keyword = keyword;
-    s->Branch.label = label;
+Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr_Ident *label) {
+    Stmt *s = NewStmt(package, StmtKind_Goto, start);
+    s->Goto.keyword = keyword;
+    s->Goto.label = label;
     return s;
 }
 
@@ -813,11 +832,12 @@ Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt 
     return s;
 }
 
-Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate) {
+Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body) {
     Stmt *s = NewStmt(package, StmtKind_ForIn, start);
     s->ForIn.valueName = valueName;
     s->ForIn.indexName = indexName;
     s->ForIn.aggregate = aggregate;
+    s->ForIn.body = body;
     return s;
 }
 
@@ -851,3 +871,14 @@ Decl *NewDeclImport(Package *package, Position start, const char *path, const ch
     return d;
 }
 
+#if TEST
+void test_isExpr_and_isDecl() {
+    Package pkg = {0};
+    Position pos = {0};
+    Stmt *expr = (Stmt *) NewExprIdent(&pkg, pos, NULL);
+    ASSERT(isExpr(expr));
+
+    Stmt *decl = (Stmt *) NewDeclVariable(&pkg, pos, NULL, NULL, NULL);
+    ASSERT(isDecl(decl));
+}
+#endif

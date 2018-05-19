@@ -108,4 +108,3 @@ void ReportError(ErrorCode code, Position pos, const char *msg, ...) {
     va_end(args);
     errorCollector.errorCount += 1;
 }
-

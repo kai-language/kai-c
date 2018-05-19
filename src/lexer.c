@@ -164,11 +164,13 @@ enum TokenKind {
     NUM_TOKEN_KINDS,
 };
 
-const char *TokenDescriptions[] = {
-#define FOR_EACH(e, s) "" #s ""
+const char *TokenDescriptions[NUM_TOKEN_KINDS] = {
+#define FOR_EACH(e, s) "" #s "",
     TOKEN_KINDS
 #undef FOR_EACH
 };
+
+#define TokenAssignOffset(Kind) Kind - (TK_AddAssign - TK_Add)
 
 Error InvalidEscape(Position pos) {
     return (Error) {
@@ -919,5 +921,11 @@ void test_lexer() {
     ASSERT_TOKEN_KIND(TK_Rparen);
     ASSERT_TOKEN_KIND(TK_Terminator);
     ASSERT_TOKEN_EOF();
+}
+#endif
+
+#if TEST
+void test_assumptions() {
+
 }
 #endif
