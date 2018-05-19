@@ -5,7 +5,7 @@ struct Parser {
     Position prevStart;
     Position prevEnd;
     Token tok;
-    Package package;
+    Package *package;
 };
 
 Error SyntaxErrorToken(TokenKind kind, Token actual) {
@@ -116,7 +116,7 @@ Stmt_Block *parseBlock(Parser *p);
 Stmt *parseStmt(Parser *p);
 
 Expr *parseExprAtom(Parser *p) {
-    Package *pkg = &p->package;
+    Package *pkg = p->package;
     switch (p->tok.kind) {
         case TK_Ident: {
             Expr *e = NewExprIdent(pkg, p->tok.pos, p->tok.val.ident);
@@ -281,7 +281,7 @@ Expr *parseExprAtom(Parser *p) {
 }
 
 Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
-    Package *pkg = &p->package;
+    Package *pkg = p->package;
     Expr *x = parseExprAtom(p);
     for (;;) {
         switch (p->tok.kind) {
@@ -377,13 +377,13 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
 
 Expr *parseExprUnary(Parser *p, b32 noCompoundLiteral) {
     if (matchToken(p, TK_Mul)) {
-        return NewExprTypePointer(&p->package, p->prevStart, parseType(p));
+        return NewExprTypePointer(p->package, p->prevStart, parseType(p));
     }
     switch (p->tok.kind) {
         case TK_Add: case TK_Sub: case TK_Not: case TK_BNot: case TK_Xor: case TK_And: case TK_Lss: {
             TokenKind op = p->tok.kind;
             nextToken();
-            return NewExprUnary(&p->package, p->prevStart, op, parseExprPrimary(p, noCompoundLiteral));
+            return NewExprUnary(p->package, p->prevStart, op, parseExprPrimary(p, noCompoundLiteral));
         }
         default:
             return parseExprPrimary(p, noCompoundLiteral);
@@ -405,10 +405,10 @@ Expr *parseExprBinary(Parser *p, i32 prec1, b32 noCompoundLiteral) {
             }
             expectToken(p, TK_Colon);
             Expr *fail = parseExpr(p, noCompoundLiteral);
-            return NewExprTernary(&p->package, lhs, pass, fail);
+            return NewExprTernary(p->package, lhs, pass, fail);
         }
         Expr *rhs = parseExprBinary(p, precedence + 1, noCompoundLiteral);
-        lhs = NewExprBinary(&p->package, op, pos, lhs, rhs);
+        lhs = NewExprBinary(p->package, op, pos, lhs, rhs);
     }
 }
 
@@ -417,7 +417,7 @@ Expr *parseExpr(Parser *p, b32 noCompoundLiteral) {
 }
 
 Expr_KeyValue *parseExprCompoundField(Parser *p) {
-    Expr_KeyValue *field = AllocAst(&p->package, sizeof(Expr_KeyValue));
+    Expr_KeyValue *field = AllocAst(p->package, sizeof(Expr_KeyValue));
     field->start = p->tok.pos;
     if (matchToken(p, TK_Lbrack)) {
         field->flags = KeyValueFlagIndex;
@@ -448,12 +448,12 @@ Expr *parseType(Parser *p) {
 }
 
 Expr_KeyValue *parseFunctionParam(Parser *p, u32 *nVarargs) {
-    Expr_KeyValue *kv = AllocAst(&p->package, sizeof(Expr_KeyValue));
+    Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
     kv->start = p->tok.pos;
     if (isToken(p, TK_Ident)) {
         const char *name = parseIdent(p);
         expectToken(p, TK_Colon);
-        kv->key = NewExprIdent(&p->package, start, name);
+        kv->key = NewExprIdent(p->package, start, name);
     }
     kv->value = parseType(p);
     if (kv->value->kind == ExprKind_TypeVariadic) {
@@ -496,12 +496,12 @@ Expr *parseFunctionType(Parser *p) {
     if (matchToken(p, TK_Lparen)) {
         nVarargs = 0;
         Expr_KeyValue *kv = parseFunctionParam(p, &nVarargs);
-        ArrayPush(results, NewExpr(&p->package, ExprKind_KeyValue, kv->start));
+        ArrayPush(results, NewExpr(p->package, ExprKind_KeyValue, kv->start));
         while (matchToken(p, TK_Comma)) {
             if (isToken(p, TK_Rparen)) break; // allow trailing ',' in return list
 
             kv = parseFunctionParam(p, &nVarargs);
-            ArrayPush(results, NewExpr(&p->package, ExprKind_KeyValue, kv->start));
+            ArrayPush(results, NewExpr(p->package, ExprKind_KeyValue, kv->start));
         }
         expectToken(p, TK_Rparen);
         if (nVarargs > 0) {
@@ -518,7 +518,7 @@ Expr *parseFunctionType(Parser *p) {
             ArrayPush(results, parseType(p));
         }
     }
-    return NewExprTypeFunction(&p->package, start, params, results);
+    return NewExprTypeFunction(p->package, start, params, results);
 }
 
 DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral) {
@@ -538,7 +538,7 @@ Stmt_Block *parseBlock(Parser *p) {
         ArrayPush(stmts, parseStmt(p));
     }
     expectToken(p, TK_Rbrace);
-    Stmt_Block *block = AllocAst(&p->package, sizeof(Stmt_Block));
+    Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
     block->start = start;
     block->stmts = stmts;
     block->end = p->prevEnd;
@@ -547,7 +547,7 @@ Stmt_Block *parseBlock(Parser *p) {
 
 // isIdentList being non NULL indicates that an ident list is permitted (for ... in)
 Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
-    Package *pkg = &p->package;
+    Package *pkg = p->package;
 
     DynamicArray(Expr *) exprs = parseExprList(p, noCompoundLiteral);
     switch (p->tok.kind) {
@@ -627,7 +627,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
 }
 
 Stmt *parseStmt(Parser *p) {
-    Package *pkg = &p->package;
+    Package *pkg = p->package;
     Position start = p->tok.pos;
 
     switch (p->tok.kind) {
@@ -742,6 +742,8 @@ Stmt *parseStmt(Parser *p) {
             if (matchKeyword(p, Keyword_switch)) UNIMPLEMENTED();
             if (matchKeyword(p, Keyword_using)) UNIMPLEMENTED();
 
+
+            // Report an error
             return NULL;
         }
         default:
@@ -749,20 +751,38 @@ Stmt *parseStmt(Parser *p) {
             return NULL;
     }
 
-
     return NewStmtInvalid(pkg, start, start);
 }
 
+DynamicArray(Stmt *) parseStmts(Parser *p) {
+    DynamicArray(Stmt *) stmts = NULL;
+    while (!isTokenEof(p)) {
+        ArrayPush(stmts, parseStmt(p));
+    }
+    return stmts;
+}
+
+void parsePackage(Package *package) {
+    const char *code = ReadFile(package->fullPath);
+    if (!code) {
+        ReportError(FatalError, (Position){ .name = package->path }, "Failed to read source file");
+        return;
+    }
+    Lexer lexer = MakeLexer(code, package->path);
+    Token tok = NextToken(&lexer);
+    Parser parser = {lexer, .tok = tok, package};
+    package->stmts = parseStmts(&parser);
+}
 
 #undef NextToken
 
 #if TEST
 
+Package testPackage = {0};
 Parser newTestParser(const char *stream) {
     Lexer lex = MakeLexer(stream, NULL);
-    Package test = {0};
     Token tok = NextToken(&lex);
-    Parser p = {lex, .tok = tok, test};
+    Parser p = {lex, .tok = tok, &testPackage};
     return p;
 }
 #endif
