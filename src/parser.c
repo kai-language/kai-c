@@ -125,6 +125,7 @@ Expr *parseType(Parser *p);
 Expr *parseExpr(Parser *p, b32 noCompoundLiteral);
 Expr *parseFunctionType(Parser *p);
 Expr_KeyValue *parseExprCompoundField(Parser *p);
+DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral);
 Stmt_Block *parseBlock(Parser *p);
 Stmt *parseStmt(Parser *p);
 
@@ -499,50 +500,74 @@ Expr *parseFunctionType(Parser *p) {
     expectToken(p, TK_Lparen);
     DynamicArray(Expr_KeyValue *) params = NULL;
     u32 nVarargs = 0;
-    if (!isToken(p, TK_Rparen)) {
-        ArrayPush(params, parseFunctionParam(p, &nVarargs));
-        while (matchToken(p, TK_Comma)) {
-            if (isToken(p, TK_Rparen)) break; // allow trailing ',' in parameter list
-
-            Expr_KeyValue *param = parseFunctionParam(p, &nVarargs);
-            ArrayPush(params, param);
-        }
-        if (nVarargs > 0) {
-            b32 warnAboutPosition = nVarargs == 1 && params[ArrayLen(params) - 1]->value->kind != ExprKind_TypeVariadic;
-            size_t len = ArrayLen(params);
-            for (size_t i = 0; i < len; i++) {
-                if (params[i]->value->kind == ExprKind_TypeVariadic) {
-                    if (warnAboutPosition) {
-                        ReportError(SyntaxError, params[i]->value->start, "Variadics must be the last parameter to a function");
-                    } else {
-                        ReportError(SyntaxError, params[i]->value->start, "Multiple variadic parameters in function type");
+    b32 namedParameters = false;
+    do {
+        if (isToken(p, TK_Rparen)) break; // allow trailing ',' in parameter list
+        DynamicArray(Expr *) exprs = parseExprList(p, false);
+        Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
+        if (matchToken(p, TK_Colon)) {
+            namedParameters = true;
+            Expr *type = parseType(p);
+            for (size_t i = 0; i < ArrayLen(exprs); i++) {
+                if (exprs[i]->kind != ExprKind_Ident) {
+                    ReportError(SyntaxError, exprs[i]->start, "Expected identifier");
+                    continue;
+                }
+                kv->key = exprs[i];
+                kv->value = type;
+                ArrayPush(params, kv);
+            }
+        } else if (nVarargs <= 1) {
+            if (namedParameters) {
+                ReportError(SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
+            }
+            // The parameters are unnamed and the user may have entered a second variadic
+            for (size_t i = 0; i < ArrayLen(exprs); i++) {
+                if (exprs[i]->kind == ExprKind_TypeVariadic) {
+                    nVarargs += 1;
+                    if (nVarargs == 2) {
+                        ReportError(SyntaxError, exprs[i]->start, "Expected at most 1 Variadic as the final parameter");
                     }
                 }
+                kv->value = exprs[i];
+                ArrayPush(params, kv);
             }
         }
-    }
+    } while (matchToken(p, TK_Comma));
     expectToken(p, TK_Rparen);
     expectToken(p, TK_RetArrow);
     DynamicArray(Expr *) results = NULL;
     if (matchToken(p, TK_Lparen)) {
         nVarargs = 0;
-        Expr_KeyValue *kv = parseFunctionParam(p, &nVarargs);
-        ArrayPush(results, NewExpr(p->package, ExprKind_KeyValue, kv->start));
-        while (matchToken(p, TK_Comma)) {
-            if (isToken(p, TK_Rparen)) break; // allow trailing ',' in return list
-
-            kv = parseFunctionParam(p, &nVarargs);
-            ArrayPush(results, NewExpr(p->package, ExprKind_KeyValue, kv->start));
-        }
-        expectToken(p, TK_Rparen);
-        if (nVarargs > 0) {
-            size_t len = ArrayLen(results);
-            for (size_t i = 0; i < len; i++) {
-                if (results[i]->KeyValue.value->kind == ExprKind_TypeVariadic) {
-                    ReportError(SyntaxError, results[i]->start, "Variadics are only valid in a functions parameters");
+        namedParameters = false;
+        do {
+            if (isToken(p, TK_Rparen) && results != NULL) break; // allow trailing ',' in parameter list
+            DynamicArray(Expr *) exprs = parseExprList(p, false);
+            if (matchToken(p, TK_Colon)) {
+                namedParameters = true;
+                Expr *type = parseType(p);
+                for (size_t i = 0; i < ArrayLen(exprs); i++) {
+                    if (exprs[i]->kind != ExprKind_Ident) {
+                        ReportError(SyntaxError, exprs[i]->start, "Expected identifier");
+                        continue;
+                    }
+                    ArrayPush(results, type);
+                }
+            } else if (nVarargs <= 1) {
+                if (namedParameters) {
+                    ReportError(SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
+                }
+                for (size_t i = 0; i < ArrayLen(exprs); i++) {
+                    if (exprs[i]->kind == ExprKind_TypeVariadic) {
+                        nVarargs += 1;
+                        if (nVarargs == 1) {
+                            ReportError(SyntaxError, exprs[i]->start, "Variadics are only valid in a functions parameters");
+                        }
+                    }
+                    ArrayPush(results, exprs[i]);
                 }
             }
-        }
+        } while (matchToken(p, TK_Comma));
     } else {
         ArrayPush(results, parseType(p));
         while (matchToken(p, TK_Comma)) {
@@ -813,6 +838,8 @@ Package testPackage = {0};
 Parser newTestParser(const char *stream) {
     Lexer lex = MakeLexer(stream, NULL);
     Token tok = NextToken(&lex);
+    ArenaFree(&testPackage.arena);
+    errorCollector.errorCount = 0;
     Parser p = {lex, .tok = tok, &testPackage};
     return p;
 }
@@ -843,6 +870,10 @@ void test_parseExprAtom() {
     ASSERT_EXPR_KIND(ExprKind_TypeVariadic);
     ASSERT_EXPR_KIND(ExprKind_TypePolymorphic);
     ASSERT_EXPR_KIND(ExprKind_TypeStruct);
+
+    p = newTestParser("fn (a, b: u32, c: $T, d: #cvargs ..any) -> (a: u32, b: u32)"
+                      "fn (a, b: $T) -> (b, a: T)");
+    ASSERT_EXPR_KIND(ExprKind_TypeFunction);
 
 #undef ASSERT_EXPR_KIND
 }
