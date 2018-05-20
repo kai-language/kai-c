@@ -108,6 +108,20 @@ const char *parseIdent(Parser *p) {
     return ident;
 }
 
+DynamicArray(const char *) parseIdentList(Parser *p) {
+    DynamicArray(const char *) names = NULL;
+
+    const char *name = parseIdent(p);
+    ArrayPush(names, name);
+
+    while (isToken(p, TK_Comma)) {
+        nextToken();
+        ArrayPush(names, parseIdent(p));
+    }
+
+    return names;
+}
+
 Expr *parseType(Parser *p);
 Expr *parseExpr(Parser *p, b32 noCompoundLiteral);
 Expr *parseFunctionType(Parser *p);
@@ -256,21 +270,14 @@ Expr *parseExprAtom(Parser *p) {
             DynamicArray(AggregateItem) items = NULL;
 
             while (!isToken(p, TK_Rbrace)) {
-                DynamicArray(const char *) names = NULL;
-
                 Position start = p->tok.pos;
 
-                const char *name = parseIdent(p);
-                ArrayPush(names, name);
-
-                while (isToken(p, TK_Comma)) {
-                    nextToken();
-                    ArrayPush(names, parseIdent(p));
-                }
+                DynamicArray(const char *) names = parseIdentList(p);
 
                 expectToken(p, TK_Colon);
 
                 Expr *type = parseType(p);
+
                 AggregateItem item = {.start = start, .names = names, .type = type};
                 ArrayPush(items, item);
 
