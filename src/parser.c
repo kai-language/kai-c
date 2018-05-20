@@ -114,8 +114,7 @@ DynamicArray(const char *) parseIdentList(Parser *p) {
     const char *name = parseIdent(p);
     ArrayPush(names, name);
 
-    while (isToken(p, TK_Comma)) {
-        nextToken();
+    while (matchToken(p, TK_Comma)) {
         ArrayPush(names, parseIdent(p));
     }
 
