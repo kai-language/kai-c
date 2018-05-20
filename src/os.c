@@ -1,10 +1,14 @@
 
 char *AbsolutePath(const char *filename, char *resolved) {
+#ifdef SYSTEM_POSIX
     return realpath(filename, resolved);
+#else
+    return GetFullPathName((LPSTR)filename, MAX_PATH, (LPSTR)resolved, NULL);
+#endif
 }
 
 char *RemoveKaiExtension(char *filename) {
-    char *dot = rindex(filename, '.');
+    char *dot = strrchr(filename, '.');
     if (!dot) return filename;
 
     if (strcmp(dot, ".kai") == 0) {
