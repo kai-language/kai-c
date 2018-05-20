@@ -3,7 +3,7 @@ char *AbsolutePath(const char *filename, char *resolved) {
 #ifdef SYSTEM_POSIX
     return realpath(filename, resolved);
 #else
-    return GetFullPathName((LPCTSTR)filename, MAX_PATH, (LPTSTR)resolved, NULL);
+    return GetFullPathName(filename, MAX_PATH, resolved, NULL);
 #endif
 }
 
