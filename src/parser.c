@@ -254,8 +254,25 @@ Expr *parseExprAtom(Parser *p) {
             expectToken(p, TK_Lbrace);
 
             DynamicArray(AggregateItem) items = NULL;
-            while (true) {
-                UNIMPLEMENTED();
+
+            while (!isToken(p, TK_Rbrace)) {
+                DynamicArray(const char *) names = NULL;
+
+                Position start = p->tok.pos;
+
+                const char *name = parseIdent(p);
+                ArrayPush(names, name);
+
+                while (isToken(p, TK_Comma)) {
+                    nextToken();
+                    ArrayPush(names, parseIdent(p));
+                }
+
+                expectToken(p, TK_Colon);
+
+                Expr *type = parseType(p);
+                AggregateItem item = {.start = start, .names = names, .type = type};
+                ArrayPush(items, item);
             }
 
             return NewExprTypeStruct(pkg, start, items);
