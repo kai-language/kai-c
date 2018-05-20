@@ -273,7 +273,15 @@ Expr *parseExprAtom(Parser *p) {
                 Expr *type = parseType(p);
                 AggregateItem item = {.start = start, .names = names, .type = type};
                 ArrayPush(items, item);
+
+                if (isToken(p, TK_Rbrace)) {
+                    break;
+                }
+
+                expectTerminator(p);
             }
+
+            expectToken(p, TK_Rbrace);
 
             return NewExprTypeStruct(pkg, start, items);
         }
