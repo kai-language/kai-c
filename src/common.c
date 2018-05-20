@@ -55,7 +55,7 @@
     #include <unistd.h>
     #include <sys/utsname.h> // uname to default arch & os to current
 #elif SYSTEM_WINDOWS
-
+    #include <windows.h>
 #endif
 
 #ifndef MAX_PATH
