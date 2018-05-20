@@ -836,13 +836,14 @@ void test_parseExprAtom() {
     ASSERT_EXPR_KIND(ExprKind_LocationDirective);
     ASSERT_EXPR_KIND(ExprKind_LitNil);
 
-    p = newTestParser("fn () -> a []a [2]a *a ..a $a");
+    p = newTestParser("fn () -> a []a [2]a *a ..a $a struct { anA: a }");
     ASSERT_EXPR_KIND(ExprKind_TypeFunction);
     ASSERT_EXPR_KIND(ExprKind_TypeSlice);
     ASSERT_EXPR_KIND(ExprKind_TypeArray);
     ASSERT_EXPR_KIND(ExprKind_TypePointer);
     ASSERT_EXPR_KIND(ExprKind_TypeVariadic);
     ASSERT_EXPR_KIND(ExprKind_TypePolymorphic);
+    ASSERT_EXPR_KIND(ExprKind_TypeStruct);
 
 #undef ASSERT_EXPR_KIND
 }
@@ -1002,3 +1003,22 @@ ASSERT(errorCollector.errorCount == 0)
 }
 #endif
 
+#if TEST
+void test_parseStruct() {
+#define ASSERT_EXPR_KIND(expected) \
+    expr = parseExprAtom(&p); \
+    ASSERT(expr->kind == expected); \
+    ASSERT(errorCollector.errorCount == 0)
+
+    InitErrorBuffers();
+    Expr *expr;
+    Parser p;
+
+    /*
+     *  A mini-test-suite for structs
+     */
+
+    p = newTestParser("struct { a, b, c: u32 }");
+    ASSERT_EXPR_KIND(ExprKind_TypeStruct);
+}
+#endif
