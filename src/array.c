@@ -51,7 +51,7 @@ u8 *_arrayPrintf(u8 *array, const char *fmt, ...) {
     size_t n = 1 + vsnprintf((char*) ArrayEnd(array), cap, fmt, args);
     va_end(args);
     if (n > cap) {
-        ArrayFit((void *)array, n + ArrayLen(array));
+        ArrayFit(array, n + ArrayLen(array));
         va_start(args, fmt);
         size_t new_cap = ArrayCap(array) - ArrayLen(array);
         n = 1 + vsnprintf((char*) ArrayEnd(array), new_cap, fmt, args);
