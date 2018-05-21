@@ -7,10 +7,8 @@
 #include <stddef.h>
 #include <ctype.h>
 #include <math.h>
-#include <unistd.h>
 #include <stdbool.h>
 #include <wchar.h>
-#include <sys/utsname.h> // uname to default arch & os to current
 
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
@@ -54,8 +52,10 @@
     #include <sys/mman.h>
     #include <execinfo.h>
     #include <limits.h>
+    #include <unistd.h>
+    #include <sys/utsname.h> // uname to default arch & os to current
 #elif SYSTEM_WINDOWS
-
+    #include <windows.h>
 #endif
 
 #ifndef MAX_PATH
@@ -101,6 +101,7 @@ typedef double   f64;
 typedef i8       b8;
 typedef i32      b32;
 
+void assertHandler(char const *file, i32 line, char const *msg, ...);
 
 #if defined(_MSC_VER)
     #if _MSC_VER < 1300
@@ -253,7 +254,7 @@ void *heapAllocFunc(void *payload, enum AllocType alType, size_t count, size_t s
     return NULL;
 }
 
-Allocator DefaultAllocator = { .func = heapAllocFunc, .payload = 0 };
+Allocator DefaultAllocator = { heapAllocFunc, 0 };
 
 void *Alloc(Allocator al, size_t count) {
     return al.func(al.payload, AT_Alloc, count, 0, NULL);
@@ -291,11 +292,11 @@ void *ArenaAlloc(Arena *arena, size_t size);
 void *ArenaCalloc(Arena *arena, size_t size);
 void ArenaFree(Arena *arena);
 
+#include "targets.c"
 #include "os.c"
 #include "map.c"
 #include "array.c"
 #include "queue.c"
-#include "targets.c"
 #include "flags.c"
 #include "utf.c"
 #include "error.c"
@@ -306,7 +307,7 @@ void ArenaFree(Arena *arena);
 
 void ArenaGrow(Arena *arena, size_t minSize, b32 clear) {
     size_t size = ALIGN_UP(CLAMP_MIN(minSize, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
-    arena->ptr = clear ? Calloc(DefaultAllocator, 1, size) : Alloc(DefaultAllocator, size);
+    arena->ptr = (u8 *)(clear ? Calloc(DefaultAllocator, 1, size) : Alloc(DefaultAllocator, size));
     ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
     arena->end = arena->ptr + size;
     ArrayPush(arena->blocks, arena->ptr);

@@ -34,9 +34,9 @@ void *_arrayGrow(const void *array, size_t newLen, size_t elemSize) {
     size_t newSize = offsetof(ArrayHdr, data) + newCap * elemSize;
     ArrayHdr *newHdr;
     if (array) {
-        newHdr = ArrayAllocator(array)->func(ArrayAllocator(array)->payload, AT_Realloc, newSize, ArrayCap(array), _array_hdr(array));
+        newHdr = (ArrayHdr *)ArrayAllocator(array)->func(ArrayAllocator(array)->payload, AT_Realloc, newSize, ArrayCap(array), _array_hdr(array));
     } else {
-        newHdr = Alloc(DefaultAllocator, newSize);
+        newHdr = (ArrayHdr *)Alloc(DefaultAllocator, newSize);
         newHdr->allocator = &DefaultAllocator;
         newHdr->len = 0;
     }

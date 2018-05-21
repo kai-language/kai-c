@@ -1,17 +1,26 @@
 
-typedef enum Operator Operator;
-enum Operator {
-    OP_Invalid,
-    OP_Add,
-    OP_Sub,
-    OP_Mul,
-    OP_Quo,
-    OP_Rem,
-    OP_And,
-    OP_Or,
-    OP_Xor,
-    OP_Shl,
-    OP_Shr,
+i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
+    0,
+    [TK_Question] = 1,
+    [TK_Lor] = 1,
+    [TK_Land] = 2,
+    [TK_Eql] = 3,
+    [TK_Neq] = 3,
+    [TK_Lss] = 3,
+    [TK_Leq] = 3, 
+    [TK_Gtr] = 3, 
+    [TK_Geq] = 3,
+    [TK_Add] = 4,
+    [TK_Sub] = 4, 
+    [TK_Or]  = 4, 
+    [TK_Xor] = 4,
+    [TK_Mul] = 5,
+    [TK_Div] = 5,
+    [TK_Rem] = 5,
+    [TK_Shl] = 5, 
+    [TK_Shr] = 5, 
+    [TK_And] = 5,
+    [TK_Assign] = 0,
 };
 
 #define EXPR_KIND_START       0x100
@@ -37,7 +46,7 @@ enum Operator {
     FOR_EACH(LitInt, "integer literal")               \
     FOR_EACH(LitFloat, "float literal")               \
     FOR_EACH(LitString, "string literal")             \
-    FOR_EACH(LitComposite, "composite literal")       \
+    FOR_EACH(LitCompound, "compound literal")       \
     FOR_EACH(LitFunction, "function literal")         \
     FOR_EACH(TypePointer, "pointer type")             \
     FOR_EACH(TypeArray, "array type")                 \
@@ -56,7 +65,7 @@ enum Operator {
     FOR_EACH(Return, "return")     \
     FOR_EACH(Defer, "defer")       \
     FOR_EACH(Using, "using")       \
-    FOR_EACH(Branch, "branch")     \
+    FOR_EACH(Goto, "goto")         \
     FOR_EACH(Block, "block")       \
     FOR_EACH(If, "if")             \
     FOR_EACH(For, "for")           \
@@ -116,9 +125,15 @@ enum DeclKind {
 
 const char *AstDescriptions[] = {
 #define FOR_EACH(kindName, s) "" s "",
+    [EXPR_KIND_START] = "invalid",
     EXPR_KINDS
+    "invalid",
+    [STMT_KIND_START] = "invalid",
     STMT_KINDS
+    "invalid",
+    [DECL_KIND_START] = "invalid",
     DECL_KINDS
+    "invalid",
 #undef FOR_EACH
 };
 
@@ -142,37 +157,44 @@ DECL_KINDS
 
 typedef struct AstInvalid AstInvalid;
 struct AstInvalid {
+    Position start;
     Position end;
 };
 
 struct Expr_Ident {
+    Position start;
     const char *name;
 };
 
 struct Expr_Paren {
+    Position start;
     Expr *expr;
     Position end;
 };
 
 struct Expr_Call {
+    Position start;
     Expr *expr;
     DynamicArray(Expr_KeyValue *) args;
     Position end;
 };
 
 struct Expr_Selector {
+    Position start;
     Expr *expr;
     const char *name;
     Position end;
 };
 
 struct Expr_Subscript {
+    Position start;
     Expr *expr;
     Expr *index;
     Position end;
 };
 
 struct Expr_Slice {
+    Position start;
     Expr *expr;
     Expr *lo;
     Expr *hi;
@@ -180,81 +202,101 @@ struct Expr_Slice {
 };
 
 struct Expr_Unary {
-    Operator op;
-    Position pos;
+    Position start;
+    TokenKind op;
     Expr *expr;
 };
 
 struct Expr_Binary {
-    Operator op;
+    Position start;
+    TokenKind op;
     Position pos;
     Expr *lhs;
     Expr *rhs;
 };
 
 struct Expr_Ternary {
+    Position start;
     Expr *cond;
     Expr *pass;
     Expr *fail;
 };
 
 struct Expr_Cast {
+    Position start;
     Expr *type;
     Expr *expr;
 };
 
 struct Expr_Autocast {
+    Position start;
     Expr *expr;
 };
 
+typedef enum KeyValueFlag KeyValueFlag;
+enum KeyValueFlags {
+    KeyValueFlagIndex = 1,
+};
 struct Expr_KeyValue {
+    Position start;
     // TODO: We should add support for C style {['0'] = 0; ['1'] = 1; } which may will require a different key type
     Expr *key; 
     Expr *value;
+    u8 flags;
 };
 
 struct Expr_LocationDirective {
+    Position start;
     const char *name;
 };
 
-struct Expr_LitNil {};
+struct Expr_LitNil {
+    Position start;
+};
 
 struct Expr_LitInt {
+    Position start;
     u64 val;
 };
 
 struct Expr_LitFloat {
+    Position start;
     f64 val;
 };
 
 struct Expr_LitString {
+    Position start;
     const char *val;
 };
 
-struct Expr_LitComposite {
+struct Expr_LitCompound {
+    Position start;
+    Expr *type;
     DynamicArray(Expr_KeyValue *) elements;
     Position end;
 };
 
 struct Expr_LitFunction {
+    Position start;
     Expr *type;
     Stmt_Block *body;
     u8 flags;
 };
 
 struct Expr_TypePointer {
+    Position start;
     Expr *type;
 };
 
 struct Expr_TypeArray {
+    Position start;
     Expr *length;
     Expr *type;
-    Position end;
 };
 
 struct Expr_TypeSlice {
+    Position start;
     Expr *type;
-    Position end;
 };
 
 typedef struct AggregateItem AggregateItem;
@@ -265,10 +307,12 @@ struct AggregateItem {
 };
 
 struct Expr_TypeStruct {
+    Position start;
     DynamicArray(AggregateItem) items;
 };
 
 struct Expr_TypeUnion {
+    Position start;
     DynamicArray(AggregateItem) items;
 };
 
@@ -280,62 +324,81 @@ struct EnumItem {
 };
 
 struct Expr_TypeEnum {
+    Position start;
 };
 
 struct Expr_TypePolymorphic {
+    Position start;
     const char *name;
 };
 
+typedef enum TypeVariadicFlag TypeVariadicFlag;
+enum TypeVariadicFlags {
+    TypeVariadicFlagCVargs = 1,
+};
 struct Expr_TypeVariadic {
+    Position start;
     Expr *type;
     b8 flags;
 };
 
 struct Expr_TypeFunction {
-    Expr *result;
+    Position start;
+    DynamicArray(Expr *) result;
     DynamicArray(Expr_KeyValue *) params;
 };
 
-struct Stmt_Empty {};
+struct Stmt_Empty {
+    Position start;
+};
 
 struct Stmt_Label {
+    Position start;
     const char *name;
 };
 
 struct Stmt_Assign {
+    Position start;
     DynamicArray(Expr *) lhs;
     DynamicArray(Expr *) rhs;
 };
 
 struct Stmt_Return {
+    Position start;
     DynamicArray(Expr *) exprs;
 };
 
 struct Stmt_Defer {
+    Position start;
     Stmt *stmt;
 };
 
 struct Stmt_Using {
+    Position start;
     Expr *expr;
 };
 
-struct Stmt_Branch {
+struct Stmt_Goto {
+    Position start;
     const char *keyword;
     Expr_Ident *label;
 };
 
 struct Stmt_Block {
+    Position start;
     DynamicArray(Stmt *) stmts;
     Position end;
 };
 
 struct Stmt_If {
+    Position start;
     Expr *cond;
     Stmt *pass;
     Stmt *fail;
 };
 
 struct Stmt_For {
+    Position start;
     Stmt *init;
     Expr *cond;
     Stmt *step;
@@ -343,9 +406,11 @@ struct Stmt_For {
 };
 
 struct Stmt_ForIn {
+    Position start;
     Expr_Ident *valueName;
     Expr_Ident *indexName;
     Expr *aggregate;
+    Stmt_Block *body;
 };
 
 typedef struct SwitchCase SwitchCase;
@@ -356,23 +421,27 @@ struct SwitchCase {
 };
 
 struct Stmt_Switch {
+    Position start;
     Expr *match;
     DynamicArray(SwitchCase *) cases;
 };
 
 struct Decl_Variable {
+    Position start;
     DynamicArray(Expr_Ident *) names;
     Expr *type;
     DynamicArray(Expr *) values;
 };
 
 struct Decl_Constant {
+    Position start;
     DynamicArray(Expr_Ident *) names;
     Expr *type;
     DynamicArray(Expr *) values;
 };
 
 struct Decl_Import {
+    Position start;
     const char *path;
     const char *alias;
 };
@@ -400,8 +469,8 @@ union DeclValue {
 
 struct Stmt {
     StmtKind kind;
-    Position start;
     union {
+        Position start;
         StmtValue stmt;
         ExprValue expr;
         DeclValue decl;
@@ -423,8 +492,8 @@ struct Stmt {
 
 struct Expr {
     ExprKind kind;
-    Position start;
     union {
+        Position start;
         ExprValue expr;
         AstInvalid Invalid;
 
@@ -436,8 +505,8 @@ struct Expr {
 
 struct Decl {
     DeclKind kind;
-    Position start;
     union {
+        Position start;
         DeclValue decl;
         AstInvalid Invalid;
 
@@ -446,6 +515,14 @@ struct Decl {
 #undef FOR_EACH
     };
 };
+
+b32 isExpr(Stmt *stmt) {
+    return stmt->kind > _ExprKind_Start && stmt->kind < _ExprKind_End;
+}
+
+b32 isDecl(Stmt *stmt) {
+    return stmt->kind > _DeclKind_Start && stmt->kind < _DeclKind_End;
+}
 
 void *AllocAst(Package *package, size_t size) {
     ASSERT(size != 0);
@@ -519,8 +596,8 @@ Expr *NewExprParen(Package *package, Expr *expr, Position start, Position end) {
     return e;
 }
 
-Expr *NewExprCall(Package *package, Position start, Expr *expr, DynamicArray(Expr_KeyValue *) args, Position end) {
-    Expr *e = NewExpr(package, ExprKind_Call, start);
+Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args, Position end) {
+    Expr *e = NewExpr(package, ExprKind_Call, expr->start);
     e->Call.expr = expr;
     e->Call.args = args;
     e->Call.end = end;
@@ -552,15 +629,14 @@ Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi, Position en
     return e;
 }
 
-Expr *NewExprUnary(Package *package, Position start, Operator op, Position pos, Expr *expr) {
+Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr) {
     Expr *e = NewExpr(package, ExprKind_Unary, start);
     e->Unary.op = op;
-    e->Unary.pos = pos;
     e->Unary.expr = expr;
     return e;
 }
 
-Expr *NewExprBinary(Package *package, Operator op, Position pos, Expr *lhs, Expr *rhs) {
+Expr *NewExprBinary(Package *package, TokenKind op, Position pos, Expr *lhs, Expr *rhs) {
     Expr *e = NewExpr(package, ExprKind_Binary, lhs->start);
     e->Binary.op = op;
     e->Binary.pos = pos;
@@ -626,14 +702,16 @@ Expr *NewExprLitString(Package *package, Position start, const char *val) {
     return e;
 }
 
-Expr *NewExprLitComposite(Package *package, Position start, DynamicArray(Expr_KeyValue *) elements, Position end) {
-    Expr *e = NewExpr(package, ExprKind_LitComposite, start);
-    e->LitComposite.elements = elements;
+Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end) {
+    Expr *e = NewExpr(package, ExprKind_LitCompound, start);
+    e->LitCompound.type = type;
+    e->LitCompound.elements = elements;
+    e->LitCompound.end = end;
     return e;
 }
 
-Expr *NewExprLitFunction(Package *package, Position start, Expr *type, Stmt_Block *body, u8 flags) {
-    Expr *e = NewExpr(package, ExprKind_LitFunction, start);
+Expr *NewExprLitFunction(Package *package, Expr *type, Stmt_Block *body, u8 flags) {
+    Expr *e = NewExpr(package, ExprKind_LitFunction, type->start);
     e->LitFunction.type = type;
     e->LitFunction.body = body;
     e->LitFunction.flags = flags;
@@ -646,22 +724,24 @@ Expr *NewExprTypePointer(Package *package, Position start, Expr *type) {
     return e;
 }
 
-Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *type, Position end) {
+Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *type) {
     Expr *e = NewExpr(package, ExprKind_TypeArray, start);
     e->TypeArray.length = length;
     e->TypeArray.type = type;
-    e->TypeArray.end = end;
     return e;
 }
 
-Expr *NewExprTypeSlice(Package *package, Position start, Expr *type, Position end) {
+Expr *NewExprTypeSlice(Package *package, Position start, Expr *type) {
     Expr *e = NewExpr(package, ExprKind_TypeSlice, start);
     e->TypeSlice.type = type;
-    e->TypeSlice.end = end;
     return e;
 }
 
-Expr *NewExprTypeStruct(Package *package);
+Expr *NewExprTypeStruct(Package *package, Position start, DynamicArray(AggregateItem) items) {
+    Expr *e = NewExpr(package, ExprKind_TypeStruct, start);
+    e->TypeStruct.items = items;
+    return e;
+}
 
 Expr *NewExprTypeEnum(Package *package);
 
@@ -680,7 +760,7 @@ Expr *NewExprTypeVariadic(Package *package, Position start, Expr *type, u8 flags
     return e;
 }
 
-Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_KeyValue *) params, Expr *result) {
+Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result) {
     Expr *e = NewExpr(package, ExprKind_TypeFunction, start);
     e->TypeFunction.params = params;
     e->TypeFunction.result = result;
@@ -722,10 +802,10 @@ Stmt *NewStmtUsing(Package *package, Position start, Expr *expr) {
     return s;
 }
 
-Stmt *NewStmtBranch(Package *package, Position start, const char *keyword, Expr_Ident *label) {
-    Stmt *s = NewStmt(package, StmtKind_Branch, start);
-    s->Branch.keyword = keyword;
-    s->Branch.label = label;
+Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr_Ident *label) {
+    Stmt *s = NewStmt(package, StmtKind_Goto, start);
+    s->Goto.keyword = keyword;
+    s->Goto.label = label;
     return s;
 }
 
@@ -753,11 +833,12 @@ Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt 
     return s;
 }
 
-Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate) {
+Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body) {
     Stmt *s = NewStmt(package, StmtKind_ForIn, start);
     s->ForIn.valueName = valueName;
     s->ForIn.indexName = indexName;
     s->ForIn.aggregate = aggregate;
+    s->ForIn.body = body;
     return s;
 }
 
@@ -783,9 +864,22 @@ Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident 
     d->Constant.values = values;
     return d;
 }
+
 Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias) {
     Decl *d = NewDecl(package, DeclKind_Import, start);
     d->Import.path = path;
     d->Import.alias = alias;
     return d;
 }
+
+#if TEST
+void test_isExpr_and_isDecl() {
+    Package pkg = {0};
+    Position pos = {0};
+    Stmt *expr = (Stmt *) NewExprIdent(&pkg, pos, NULL);
+    ASSERT(isExpr(expr));
+
+    Stmt *decl = (Stmt *) NewDeclVariable(&pkg, pos, NULL, NULL, NULL);
+    ASSERT(isDecl(decl));
+}
+#endif

@@ -33,20 +33,10 @@ int main(int argc, const char **argv) {
         exit(1);
     }
 
-    u64 tokCount = 0;
     while (QueueDequeue(&parsingQueue)) {
-        void *mem = ReadFile(mainPackage->fullPath);
-        if (!mem) {
-            printf("Failed to open file %s\n", mainPackage->fullPath);
-            exit(1);
-        }
-        Lexer lex = MakeLexer(mem, mainPackage->path);
-        Token tok = NextToken(&lex);
-        for (u64 i = 0; tok.kind != TK_Eof; tok = NextToken(&lex), i++) {
-            tokCount = i;
-        }
-        printf("File %s has %llu tokens\n", mainPackage->path, tokCount);
+        parsePackage(mainPackage);
     }
+    printf("File %s has %llu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
 
     // Finished parsing
     ArenaFree(&parsingQueue.arena);

@@ -13,6 +13,8 @@
     ECode(FloatOverflow, "Float literal overflow"), \
     ECode(IntOverflow, "Integer literal overflow"), \
     ECode(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
+    ECode(Syntax, "Syntax error"), \
+    ECode(Fatal, "Fatal error"), \
 
 typedef enum ErrorCode {
 #define ECode(e, s) e##Error
@@ -23,7 +25,7 @@ typedef enum ErrorCode {
 typedef struct Error {
     ErrorCode code;
     Position pos;
-    char *message;
+    const char *message;
 } Error;
 
 typedef struct ErrorCollector {
@@ -37,7 +39,7 @@ b32 HasErrors() {
 }
 
 #define tempErrorBufferLen KB(4)
-_Thread_local char *temporaryErrorBuffer;
+char *temporaryErrorBuffer;
 
 void InitErrorBuffers() {
     temporaryErrorBuffer = malloc(tempErrorBufferLen);
@@ -87,3 +89,23 @@ void Report(Error error) {
     errorCollector.errorCount += 1;
 }
 
+b32 shouldPrintErrorCode() {
+#if NO_ERROR_CODES
+    return false;
+#endif
+    return FlagErrorCodes;
+}
+
+void ReportError(ErrorCode code, Position pos, const char *msg, ...) {
+    va_list args;
+    char buf[1024];
+    va_start(args, msg);
+    vsnprintf(buf, sizeof(buf), msg, args);
+    if (shouldPrintErrorCode()) {
+        fprintf(stderr, "ERROR(%s:%u:%u, E%04d): %s\n", pos.name, pos.line, pos.column, code, buf);
+    } else {
+        fprintf(stderr, "ERROR(%s:%u:%u): %s\n", pos.name, pos.line, pos.column, buf);
+    }
+    va_end(args);
+    errorCollector.errorCount += 1;
+}

@@ -153,19 +153,12 @@ void InitUnsetFlagsToDefaults() {
 
         OutputName = mem;
     }
-    struct utsname sysinfo;
-    if (TargetOs == Os_Current || TargetArch == Arch_Current) {
-        int res = uname(&sysinfo);
-        if (res != 0) {
-            perror("uname");
-            exit(1);
-        }
-    }
+
     if (TargetOs == Os_Current) {
-        TargetOs = OsForName(sysinfo.sysname);
+        TargetOs = OsForName(CurrentSystem.name);
     }
     if (TargetArch == Arch_Current) {
-        TargetArch = ArchForName(sysinfo.machine);
+        TargetArch = ArchForName(CurrentSystem.machine);
     }
 }
 
@@ -173,7 +166,7 @@ void PrintUsage() {
     size_t nFlags = sizeof(Flags) / sizeof(*Flags);
     for (size_t i = 0; i < nFlags; i++) {
 
-        char invokation[32];
+        char invokation[40];
         int k = 0;
         CLIFlag flag = Flags[i];
 
@@ -198,7 +191,7 @@ void PrintUsage() {
             case CLIFlagKind_Bool:
                 break;
         }
-        printf(" %-32s %s\n", invokation, flag.help ?: "");
+        printf(" %-40s %s\n", invokation, flag.help ? flag.help : "");
     }
 }
 
@@ -212,6 +205,8 @@ void test_flagParsingAndDefaults() {
     ASSERT(strcmp(OutputName, "outputName") == 0);
     ASSERT(TargetOs == Os_Darwin);
     ASSERT(argc == 1);
+
+    InitDetailsForCurrentSystem();
 
     InitUnsetFlagsToDefaults();
     ASSERT(TargetArch != Arch_Current);

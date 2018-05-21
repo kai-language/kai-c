@@ -24,6 +24,7 @@ struct TypeKind_Void {
 };
 
 struct TypeKind_Bool {
+    b8 flags;
 };
 
 struct TypeKind_Int {
@@ -31,6 +32,7 @@ struct TypeKind_Int {
 };
 
 struct TypeKind_Float {
+    b8 flags;
 };
 
 struct TypeKind_Pointer {
@@ -48,7 +50,7 @@ struct TypeKind_Slice {
 };
 
 struct TypeKind_Any {
-
+    b8 flags;
 };
 
 struct TypeKind_Struct {

@@ -30,13 +30,14 @@ const char *internSemicolon;
 const char *internIn;
 
 // Directive names
-const char *internImport;
-const char *internAssert;
-const char *internForeign;
-const char *internLocation;
 const char *internLine;
 const char *internFile;
+const char *internAssert;
+const char *internImport;
+const char *internCVargs;
+const char *internForeign;
 const char *internFunction;
+const char *internLocation;
 
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
@@ -74,20 +75,21 @@ void InitKeywords(void) {
 
     internIn = StrIntern("in");
 
-    internImport = StrIntern("import");
-    internAssert = StrIntern("assert");
-    internForeign = StrIntern("foreign");
-    internLocation = StrIntern("location");
     internLine = StrIntern("line");
     internFile = StrIntern("file");
+    internAssert = StrIntern("assert");
+    internImport = StrIntern("import");
+    internCVargs = StrIntern("cvargs");
+    internForeign = StrIntern("foreign");
     internFunction = StrIntern("function");
+    internLocation = StrIntern("location");
 
     inited = true;
 }
 
 #undef KEYWORD
 
-bool isKeyword(const char *name) {
+bool isStringKeyword(const char *name) {
     return Keyword_first <= name && name <= Keyword_last;
 }
 
@@ -162,15 +164,13 @@ enum TokenKind {
     NUM_TOKEN_KINDS,
 };
 
-const char *TokenDescriptions[] = {
-#define FOR_EACH(e, s) "" #s ""
+const char *TokenDescriptions[NUM_TOKEN_KINDS] = {
+#define FOR_EACH(e, s) "" #s "",
     TOKEN_KINDS
 #undef FOR_EACH
 };
 
-const char *DescribeTokenKind(TokenKind tk) {
-    return TokenDescriptions[tk];
-}
+#define TokenAssignOffset(Kind) Kind - (TK_AddAssign - TK_Add)
 
 Error InvalidEscape(Position pos) {
     return (Error) {
@@ -290,6 +290,17 @@ struct Token {
     } val;
 };
 
+const char *DescribeTokenKind(TokenKind tk) {
+    return TokenDescriptions[tk];
+}
+
+const char *DescribeToken(Token tok) {
+    if (tok.kind == TK_Ident || tok.kind == TK_Keyword || tok.kind == TK_Directive) {
+        return tok.val.s;
+    }
+    return DescribeTokenKind(tok.kind);
+}
+
 typedef struct Lexer Lexer;
 struct Lexer {
     const char *stream;
@@ -380,9 +391,8 @@ error:
     return 0;
 }
 
-// thread_local is C11
 // NOTE: We can free this after we are done all lexing
-_Thread_local static DynamicArray(char) _scanStringTempBuffer;
+static DynamicArray(char) _scanStringTempBuffer;
 const char *scanString(Lexer *l) {
     char quote = *l->stream++;
     ASSERT(quote == '"' || quote == '`');
@@ -715,6 +725,7 @@ repeat: ;
         CASE1(':', TK_Colon);
         CASE1('$', TK_Dollar);
         CASE1('?', TK_Question);
+        CASE1('~', TK_BNot);
         CASE1(',', TK_Comma);
         CASE1('(', TK_Lparen);
         CASE1('[', TK_Lbrack);
@@ -767,7 +778,7 @@ repeat: ;
             }
             token.val.ident = StrInternRange(token.start, l->stream);
             token.kind = TK_Ident;
-            if (isKeyword(token.val.ident)) {
+            if (isStringKeyword(token.val.ident)) {
                 token.kind = TK_Keyword;
                 if (shouldInsertSemiAfterKeyword(token.val.ident)) {
                     l->insertSemi = true;
@@ -791,13 +802,13 @@ repeat: ;
 #if TEST
 void test_keywords() {
     InitKeywords();
-    ASSERT(isKeyword(Keyword_first));
-    ASSERT(isKeyword(Keyword_last));
+    ASSERT(isStringKeyword(Keyword_first));
+    ASSERT(isStringKeyword(Keyword_last));
 
     for (const char **it = Keywords; it != ArrayEnd(Keywords); it++) {
-        ASSERT(isKeyword(*it));
+        ASSERT(isStringKeyword(*it));
     }
-    ASSERT(!isKeyword(StrIntern("asdf")));
+    ASSERT(!isStringKeyword(StrIntern("asdf")));
     ASSERT(StrIntern("fn") == Keyword_fn);
 }
 #endif
@@ -909,5 +920,11 @@ void test_lexer() {
     ASSERT_TOKEN_KIND(TK_Rparen);
     ASSERT_TOKEN_KIND(TK_Terminator);
     ASSERT_TOKEN_EOF();
+}
+#endif
+
+#if TEST
+void test_assumptions() {
+
 }
 #endif
