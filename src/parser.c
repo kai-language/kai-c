@@ -485,7 +485,7 @@ Expr_KeyValue *parseFunctionParam(Parser *p, u32 *nVarargs) {
     if (isToken(p, TK_Ident)) {
         const char *name = parseIdent(p);
         expectToken(p, TK_Colon);
-        kv->key = NewExprIdent(p->package, start, name);
+        kv->key = NewExprIdent(p->package, kv->start, name);
     }
     kv->value = parseType(p);
     if (kv->value->kind == ExprKind_TypeVariadic) {
@@ -604,6 +604,7 @@ Stmt_Block *parseBlock(Parser *p) {
 // isIdentList being non NULL indicates that an ident list is permitted (for ... in)
 Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
     Package *pkg = p->package;
+    Position start = p->tok.pos;
 
     DynamicArray(Expr *) exprs = parseExprList(p, noCompoundLiteral);
     switch (p->tok.kind) {

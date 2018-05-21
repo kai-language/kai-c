@@ -250,8 +250,9 @@ struct Expr_LocationDirective {
     const char *name;
 };
 
-struct Expr_LitNil {};
+struct Expr_LitNil {
     Position start;
+};
 
 struct Expr_LitInt {
     Position start;
