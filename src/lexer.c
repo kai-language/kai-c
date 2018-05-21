@@ -380,9 +380,8 @@ error:
     return 0;
 }
 
-// thread_local is C11
 // NOTE: We can free this after we are done all lexing
-_Thread_local static DynamicArray(char) _scanStringTempBuffer;
+static DynamicArray(char) _scanStringTempBuffer;
 const char *scanString(Lexer *l) {
     char quote = *l->stream++;
     ASSERT(quote == '"' || quote == '`');

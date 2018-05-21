@@ -37,7 +37,7 @@ b32 HasErrors() {
 }
 
 #define tempErrorBufferLen KB(4)
-_Thread_local char *temporaryErrorBuffer;
+char *temporaryErrorBuffer;
 
 void InitErrorBuffers() {
     temporaryErrorBuffer = malloc(tempErrorBufferLen);
