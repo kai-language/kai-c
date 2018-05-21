@@ -56,3 +56,37 @@ char *ReadEntireFile(const char *path) {
     return address;
 }
 
+typedef struct SysInfo SysInfo;
+struct SysInfo {
+    const char *name;
+    const char *machine;
+};
+
+SysInfo CurrentSystem = {0};
+
+void InitDetailsForCurrentSystem() {
+#if SYSTEM_POSIX
+    struct utsname *sysinfo = malloc(sizeof(struct utsname));
+    int res = uname(sysinfo);
+    if (res != 0) {
+        perror("uname");
+        exit(1);
+    }
+    CurrentSystem.name = sysinfo->sysname;
+    CurrentSystem.machine = sysinfo->machine;
+#elif SYSTEM_WINDOWS
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+    CurrentSystem.name = OsNames[Os_Windows];
+	switch (sysinfo.wProcessorArchitecture) {
+        case PROCESSOR_ARCHITECTURE_INTEL: CurrentSystem.machine = ArchNames[Arch_x86];
+        case PROCESSOR_ARCHITECTURE_AMD64: CurrentSystem.machine = ArchNames[Arch_x86_64];
+        case PROCESSOR_ARCHITECTURE_ARM:   CurrentSystem.machine = ArchNames[Arch_arm];
+        case 12:						   CurrentSystem.machine = ArchNames[Arch_arm64]; // MSDN has 12 as PROCESSOR_ARCHITECTURE_ARM64 but it isn't in our headers
+        default:                           CurrentSystem.machine = ArchNames[Arch_Current]; // should we have an Arch_Unknown?
+	}
+#else
+    CurrentSystem.name = "unknown";
+    CurrentSystem.machine = "unknown";
+#endif
+}

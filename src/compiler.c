@@ -42,6 +42,7 @@ void InitCompiler() {
     InitErrorBuffers();
     InitKeywords();
     InitUnsetFlagsToDefaults();
+    InitDetailsForCurrentSystem();
 }
 
 Map packageMap;
