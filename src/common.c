@@ -101,6 +101,7 @@ typedef double   f64;
 typedef i8       b8;
 typedef i32      b32;
 
+void assertHandler(char const *file, i32 line, char const *msg, ...);
 
 #if defined(_MSC_VER)
     #if _MSC_VER < 1300
