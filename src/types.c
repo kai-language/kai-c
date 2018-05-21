@@ -1,3 +1,4 @@
+
 #define TYPE_KINDS \
     FOR_EACH(Void, "void")       \
     FOR_EACH(Bool, "bool")       \
@@ -17,7 +18,7 @@ enum TypeKind {
 #undef FOR_EACH
 };
 
-struct Type;
+typedef struct Type Type;
 
 struct TypeKind_Void {
     b8 isNoReturn;

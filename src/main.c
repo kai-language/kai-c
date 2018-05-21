@@ -3,8 +3,9 @@
 
 #include "lexer.c"
 #include "compiler.c"
-#include "parser.h"
-#include "checker.h"
+#include "ast.c"
+#include "symbols.c"
+#include "types.c"
 
 #include "parser.c"
 #include "checker.c"
@@ -36,7 +37,7 @@ int main(int argc, const char **argv) {
     while (QueueDequeue(&parsingQueue)) {
         parsePackage(mainPackage);
     }
-    printf("File %s has %llu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
+    printf("File %s has %zu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
 
     // Finished parsing
     ArenaFree(&parsingQueue.arena);
