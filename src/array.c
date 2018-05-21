@@ -34,9 +34,9 @@ void *_arrayGrow(const void *array, size_t newLen, size_t elemSize) {
     size_t newSize = offsetof(ArrayHdr, data) + newCap * elemSize;
     ArrayHdr *newHdr;
     if (array) {
-        newHdr = ArrayAllocator(array)->func(ArrayAllocator(array)->payload, AT_Realloc, newSize, ArrayCap(array), _array_hdr(array));
+        newHdr = (ArrayHdr *)ArrayAllocator(array)->func(ArrayAllocator(array)->payload, AT_Realloc, newSize, ArrayCap(array), _array_hdr(array));
     } else {
-        newHdr = Alloc(DefaultAllocator, newSize);
+        newHdr = (ArrayHdr *)Alloc(DefaultAllocator, newSize);
         newHdr->allocator = &DefaultAllocator;
         newHdr->len = 0;
     }
@@ -51,7 +51,7 @@ u8 *_arrayPrintf(u8 *array, const char *fmt, ...) {
     size_t n = 1 + vsnprintf((char*) ArrayEnd(array), cap, fmt, args);
     va_end(args);
     if (n > cap) {
-        ArrayFit(array, n + ArrayLen(array));
+        ArrayFit((void *)array, n + ArrayLen(array));
         va_start(args, fmt);
         size_t new_cap = ArrayCap(array) - ArrayLen(array);
         n = 1 + vsnprintf((char*) ArrayEnd(array), new_cap, fmt, args);
