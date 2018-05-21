@@ -33,6 +33,13 @@ const char *StrIntern(const char *str) {
     return StrInternRange(str, str + strlen(str));
 }
 
+size_t StrInternLen(const char *str) {
+    if (!str) return 0;
+    
+    Intern *intern = (Intern*) (str - offsetof(Intern, data));
+    return intern->len;
+}
+
 #if TEST
 void test_stringInterning() {
     char *mem = (char*) Alloc(DefaultAllocator, MB(4));

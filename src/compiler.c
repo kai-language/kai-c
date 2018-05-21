@@ -29,11 +29,13 @@ struct Symbol {
     Val val;
 };
 
+typedef struct Stmt Stmt;
 struct Package {
     const char *path;
     char fullPath[MAX_PATH];
     const char *externalName;
     Arena arena;
+    DynamicArray(Stmt *) stmts;
     Map symbolMap;
     DynamicArray(Symbol*) symbols;
 };
@@ -41,8 +43,8 @@ struct Package {
 void InitCompiler() {
     InitErrorBuffers();
     InitKeywords();
-    InitUnsetFlagsToDefaults();
     InitDetailsForCurrentSystem();
+    InitUnsetFlagsToDefaults();
 }
 
 Map packageMap;

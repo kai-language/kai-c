@@ -166,7 +166,7 @@ void PrintUsage() {
     size_t nFlags = sizeof(Flags) / sizeof(*Flags);
     for (size_t i = 0; i < nFlags; i++) {
 
-        char invokation[32];
+        char invokation[40];
         int k = 0;
         CLIFlag flag = Flags[i];
 
@@ -191,7 +191,7 @@ void PrintUsage() {
             case CLIFlagKind_Bool:
                 break;
         }
-        printf(" %-32s %s\n", invokation, flag.help ? flag.help : "");
+        printf(" %-40s %s\n", invokation, flag.help ? flag.help : "");
     }
 }
 

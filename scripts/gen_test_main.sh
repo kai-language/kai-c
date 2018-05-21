@@ -123,8 +123,8 @@ EOF
 
 totalTests=0
 for file in src/*; do
-    nTests=$(grep -c '#if TEST' $file)
-    matches=$(awk '/^#if TEST/ {getline; print}' $file)
+    matches=$(awk '/^#if TEST/ {getline; print $2}' $file | grep 'test_' | cut -d '(' -f 1)
+    nTests=$(echo $matches | wc -w | sed -e 's/^ *//')
     if [ -z "$matches" ]; then
         continue
     fi
@@ -132,9 +132,6 @@ cat <<- EOF
     printf("$file:\\n");
 EOF
     for testCase in $matches; do
-        if [[ "$testCase" = "void" ]] || [[ "$testCase" = "{" ]]; then
-            continue
-        fi
         testCase=$(echo "$testCase" | awk -F"({|void|\\\()" '{if($1) print $1}')
 cat <<- EOF
     _performTestCaseReportingResults($testCase, "$testCase");
