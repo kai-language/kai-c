@@ -254,7 +254,7 @@ void *heapAllocFunc(void *payload, enum AllocType alType, size_t count, size_t s
     return NULL;
 }
 
-Allocator DefaultAllocator = { .func = heapAllocFunc, .payload = 0 };
+Allocator DefaultAllocator = { heapAllocFunc, 0 };
 
 void *Alloc(Allocator al, size_t count) {
     return al.func(al.payload, AT_Alloc, count, 0, NULL);
