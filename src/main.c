@@ -35,7 +35,7 @@ int main(int argc, const char **argv) {
 
     u64 tokCount = 0;
     while (QueueDequeue(&parsingQueue)) {
-        void *mem = ReadFile(mainPackage->fullPath);
+        void *mem = ReadEntireFile(mainPackage->fullPath);
         if (!mem) {
             printf("Failed to open file %s\n", mainPackage->fullPath);
             exit(1);

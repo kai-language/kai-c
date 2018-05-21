@@ -22,7 +22,7 @@ char *RemoveKaiExtension(char *filename) {
 }
 
 // FIXME: We are mmap()'ing this with no way to munmap it currently
-char *ReadFile(const char *path) {
+char *ReadEntireFile(const char *path) {
     char *address = NULL;
 
 #ifdef SYSTEM_POSIX
