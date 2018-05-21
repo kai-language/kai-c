@@ -47,7 +47,7 @@ char *ReadEntireFile(const char *path) {
         if (fseek(fd, 0, SEEK_SET) != 0) return (char *)NullWithLoggedReason("Failed to reset file cursor");
         size_t read = fread(address, 1, size, fd);
         if (read == 0) return (char *)NullWithLoggedReason("Failed to read file");
-        address[++read] = NULL;
+        address[++read] = '\0';
     }
 
     fclose(fd);
