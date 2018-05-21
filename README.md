@@ -5,6 +5,9 @@
   <a href="https://travis-ci.org/kai-language/kai-c">
     <img src="https://travis-ci.org/kai-language/kai-c.svg?branch=master"></img>
   </a>
+  <a href="https://ci.appveyor.com/project/BrettRToomey/kai-c">
+    <img src="https://ci.appveyor.com/api/projects/status/github/kai-language/kai-c?branch=master&svg=true"></img>
+  </a>
   <a href="https://discord.gg/jevNkRd">
     <img src="https://img.shields.io/discord/443582991898378240.svg"></img>
   </a>
