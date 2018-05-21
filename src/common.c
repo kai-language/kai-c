@@ -307,7 +307,7 @@ void ArenaFree(Arena *arena);
 
 void ArenaGrow(Arena *arena, size_t minSize, b32 clear) {
     size_t size = ALIGN_UP(CLAMP_MIN(minSize, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
-    arena->ptr = clear ? Calloc(DefaultAllocator, 1, size) : Alloc(DefaultAllocator, size);
+    arena->ptr = (u8 *)(clear ? Calloc(DefaultAllocator, 1, size) : Alloc(DefaultAllocator, size));
     ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
     arena->end = arena->ptr + size;
     ArrayPush(arena->blocks, arena->ptr);
