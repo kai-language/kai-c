@@ -1,37 +1,4 @@
-
-bool FlagParseComments;
-bool FlagErrorCodes;
-bool FlagVerbose;
-bool FlagVersion;
-bool FlagHelp;
-
-const char *InputName;
-const char *OutputName;
-int TargetOs;
-int TargetArch;
-
-typedef enum CLIFlagKind CLIFlagKind;
-enum CLIFlagKind {
-    CLIFlagKind_Bool,
-    CLIFlagKind_String,
-    CLIFlagKind_Enum,
-};
-
-typedef struct CLIFlag CLIFlag;
-struct CLIFlag {
-    CLIFlagKind kind;
-    const char *name;
-    const char *alias;
-    const char **options;
-    const char *argumentName;
-    const char *help;
-    int nOptions;
-    union {
-        int *i;
-        bool *b;
-        const char **s;
-    } ptr;
-};
+#include "flags.h"
 
 CLIFlag Flags[] = {
     { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
@@ -40,8 +7,8 @@ CLIFlag Flags[] = {
     { CLIFlagKind_String, "output", "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file (default: out_<input>)" },
 
     { CLIFlagKind_Bool, "verbose", "v", .ptr.b = &FlagVerbose,         .help = "Enable verbose output" },
-    { CLIFlagKind_Bool, "dump-ir", .ptr = NULL,                        .help = "Dump LLVM IR" },
-    { CLIFlagKind_Bool, "emit-ir", .ptr = NULL,                        .help = "Emit LLVM IR file(s)" },
+    { CLIFlagKind_Bool, "dump-ir", .ptr.b = &FlagDumpIR,               .help = "Dump LLVM IR" },
+    { CLIFlagKind_Bool, "emit-ir", .ptr.b = &FlagEmitIR,               .help = "Emit LLVM IR file(s)" },
     { CLIFlagKind_Bool, "emit-times", .ptr = NULL,                     .help = "Emit times for each stage of compilation" },
     { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "Display error codes along side error location" },
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },

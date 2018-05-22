@@ -3,6 +3,7 @@
 #include "map.h"
 #include "symbols.h"
 #include "compiler.h"
+#include "flags.h"
 #include "lexer.h"
 #include "ast.h"
 #include "types.h"
@@ -26,7 +27,9 @@ void CodegenLLVM(Package *p) {
     LLVMContext context;
     Module *module = new Module("Test", context);
 
-    module->print(errs(), nullptr);
+    if (FlagDumpIR) {
+        module->print(errs(), nullptr);
+    }
 
     delete module;
 }
