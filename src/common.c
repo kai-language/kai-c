@@ -295,7 +295,7 @@ void ArenaFree(Arena *arena);
 #include "targets.c"
 #include "os.c"
 #include "map.c"
-#include "array.c"
+#include "array.h"
 #include "queue.c"
 #include "flags.c"
 #include "utf.c"

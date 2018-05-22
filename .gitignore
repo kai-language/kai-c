@@ -1,4 +1,6 @@
 kai
+core.o
+llvm.o
 */xcuserdata/*
 .DS_Store
 *.xcuserstate

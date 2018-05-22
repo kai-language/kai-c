@@ -1,4 +1,3 @@
-
 #include "common.c"
 
 #include "lexer.c"
@@ -9,6 +8,8 @@
 
 #include "parser.c"
 #include "checker.c"
+
+#include "array.c"
 
 #define VERSION "0.0.0 (prerelease)"
 
