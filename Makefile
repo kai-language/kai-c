@@ -5,7 +5,7 @@ debug:   CFLAGS = -g -O0 -DDEBUG -DDIAGNOSTICS -DSLOW
 release: CFLAGS = -O3 -march=native -DRELEASE -DFAST
 
 LLVM_CXXFLAGS = $(shell llvm-config --cxxflags)
-LLVM_CXXLFLAGS = $(shell llvm-config --ldflags --link-static --system-libs --libs core)
+LLVM_CXXLFLAGS = $(shell llvm-config --ldflags --link-static --system-libs --libs)
 
 LFLAGS =
 DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch

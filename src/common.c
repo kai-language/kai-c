@@ -101,7 +101,7 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
 #include "targets.c"
 #include "os.c"
 #include "map.c"
-#include "array.h"
+#include "array.c"
 #include "queue.c"
 #include "flags.c"
 #include "utf.c"

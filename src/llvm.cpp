@@ -18,7 +18,14 @@
 #include "llvm/IR/Verifier.h"
 
 void CodegenLLVM(Package *p) {
+    using namespace llvm;
 
+    LLVMContext context;
+    Module *module = new Module("Test", context);
+
+    module->print(errs(), nullptr);
+
+    delete module;
 }
 
 

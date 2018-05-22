@@ -11,8 +11,6 @@
 
 #include "llvm.h"
 
-#include "array.c"
-
 #define VERSION "0.0.0 (prerelease)"
 
 #ifndef TEST
@@ -39,6 +37,7 @@ int main(int argc, const char **argv) {
 
     while (QueueDequeue(&parsingQueue)) {
         parsePackage(mainPackage);
+        CodegenLLVM(mainPackage);
     }
     printf("File %s has %zu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
 
