@@ -26,9 +26,9 @@ Error SyntaxErrorMessage(const char *msg, Position pos, ...) {
 }
 
 #define nextToken() \
-p->prevStart = p->tok.pos; \
-p->prevEnd = p->lexer.pos; \
-p->tok = NextToken(&p->lexer)
+    p->prevStart = p->tok.pos; \
+    p->prevEnd = p->lexer.pos; \
+    p->tok = NextToken(&p->lexer)
 
 #define CurrentToken p->tok
 
@@ -111,12 +111,9 @@ const char *parseIdent(Parser *p) {
 DynamicArray(const char *) parseIdentList(Parser *p) {
     DynamicArray(const char *) names = NULL;
 
-    const char *name = parseIdent(p);
-    ArrayPush(names, name);
-
-    while (matchToken(p, TK_Comma)) {
+    do  {
         ArrayPush(names, parseIdent(p));
-    }
+    } while (matchToken(p, TK_Comma));
 
     return names;
 }
@@ -299,8 +296,48 @@ Expr *parseExprAtom(Parser *p) {
         }
 
         caseEnum: {
-            UNIMPLEMENTED();
-            break;
+            Position start = p->tok.pos;
+            Expr *explicitType = NULL;
+
+            nextToken();
+
+            if (!isToken(p, TK_Lbrace) && !isToken(p, TK_Directive)) {
+                explicitType = parseType(p);
+            }
+
+            expectToken(p, TK_Lbrace);
+
+            DynamicArray(EnumItem) items = NULL;
+            while (!isToken(p, TK_Rbrace)) {
+                Position start = p->tok.pos;
+                const char *name = parseIdent(p);
+                Expr *init = NULL;
+
+                if (matchToken(p, TK_Assign)) {
+                    ReportError(SyntaxError, p->tok.pos, "Enum values are established at compile time and declared using '::'");
+
+                    // TODO(Brett): discard remaining stmt
+                    continue;
+                }
+
+                if (matchToken(p, TK_Colon)) {
+                    expectToken(p, TK_Colon);
+                    init = parseExpr(p, true);
+                }
+
+                EnumItem item = {.start = start, .name = name, .init = init};
+                ArrayPush(items, item);
+
+                if (isToken(p, TK_Rbrace)) {
+                    break;
+                }
+
+                expectTerminator(p);
+            }
+
+            expectToken(p, TK_Rbrace);
+
+            return NewExprTypeEnum(pkg, start, explicitType, items);
         }
 
         default:
@@ -863,7 +900,7 @@ void test_parseExprAtom() {
     ASSERT_EXPR_KIND(ExprKind_LocationDirective);
     ASSERT_EXPR_KIND(ExprKind_LitNil);
 
-    p = newTestParser("fn () -> a []a [2]a *a ..a $a struct { anA: a }");
+    p = newTestParser("fn () -> a []a [2]a *a ..a $a struct { anA: a } enum { A }");
     ASSERT_EXPR_KIND(ExprKind_TypeFunction);
     ASSERT_EXPR_KIND(ExprKind_TypeSlice);
     ASSERT_EXPR_KIND(ExprKind_TypeArray);
@@ -871,6 +908,7 @@ void test_parseExprAtom() {
     ASSERT_EXPR_KIND(ExprKind_TypeVariadic);
     ASSERT_EXPR_KIND(ExprKind_TypePolymorphic);
     ASSERT_EXPR_KIND(ExprKind_TypeStruct);
+    ASSERT_EXPR_KIND(ExprKind_TypeEnum);
 
     p = newTestParser("fn (a, b: u32, c: $T, d: #cvargs ..any) -> (a: u32, b: u32)"
                       "fn (a, b: $T) -> (b, a: T)");

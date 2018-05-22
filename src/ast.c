@@ -325,6 +325,8 @@ struct EnumItem {
 
 struct Expr_TypeEnum {
     Position start;
+    Expr *explicitType;
+    DynamicArray(EnumItem) items;
 };
 
 struct Expr_TypePolymorphic {
@@ -743,7 +745,12 @@ Expr *NewExprTypeStruct(Package *package, Position start, DynamicArray(Aggregate
     return e;
 }
 
-Expr *NewExprTypeEnum(Package *package);
+Expr *NewExprTypeEnum(Package *package, Position start, Expr *explicitType, DynamicArray(EnumItem) items) {
+    Expr *e = NewExpr(package, ExprKind_TypeEnum, start);
+    e->TypeEnum.explicitType = explicitType;
+    e->TypeEnum.items = items;
+    return e;
+}
 
 Expr *NewExprTypeUnion(Package *package);
 
