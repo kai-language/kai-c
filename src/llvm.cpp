@@ -21,18 +21,27 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Verifier.h>
 
-void CodegenLLVM(Package *p) {
-    using namespace llvm;
+typedef struct LLVMGen {
+    llvm::Module *module;
+} LLVMGen;
 
-    LLVMContext context;
-    Module *module = new Module(p->path, context);
+void CodegenLLVM(Package *p) {
+    llvm::LLVMContext context;
+    llvm::Module *module = new llvm::Module(p->path, context);
+
+    LLVMGen _gen = {
+        module 
+    };
+    LLVMGen *gen = &_gen;
 
     if (FlagDumpIR) {
-        module->print(errs(), nullptr);
+        module->print(llvm::errs(), nullptr);
     }
 
     delete module;
 }
 
-
+LLVMTypeRef canonicalize(LLVMGen *gen, Type *type) {
+    return NULL;
+}
 
