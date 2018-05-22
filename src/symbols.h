@@ -1,19 +1,17 @@
 
-typedef enum SymbolKind SymbolKind;
-enum SymbolKind {
+typedef enum SymbolKind {
     SymbolKind_Invalid,
     SymbolKind_Type,
     SymbolKind_Package,
     SymbolKind_Variable,
     SymbolKind_Constant,
-};
+} SymbolKind;
 
-typedef enum SymbolState SymbolState;
-enum SymbolState {
+typedef enum SymbolState {
     SymbolState_Unresolved,
     SymbolState_Resolving,
     SymbolState_Resolved,
-};
+} SymbolState;
 
 typedef struct Decl Decl;
 typedef struct Type Type;

@@ -3,11 +3,13 @@
 #include "lexer.c"
 #include "compiler.c"
 #include "ast.c"
-#include "symbols.c"
+#include "symbols.h"
 #include "types.c"
 
 #include "parser.c"
 #include "checker.c"
+
+#include "llvm.h"
 
 #include "array.c"
 

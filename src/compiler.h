@@ -9,7 +9,7 @@ struct Package {
     Arena arena;
     DynamicArray(Stmt *) stmts;
     Map symbolMap;
-    DynamicArray(Symbol*) symbols;
+    DynamicArray(Symbol *) symbols;
 };
 
 void InitCompiler();
