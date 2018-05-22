@@ -1,8 +1,9 @@
 
 #include "common.c"
 
-#include "lexer.c"
+#include "error.c"
 #include "compiler.c"
+#include "lexer.c"
 #include "ast.c"
 #include "symbols.c"
 #include "types.c"

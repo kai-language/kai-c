@@ -299,7 +299,6 @@ void ArenaFree(Arena *arena);
 #include "queue.c"
 #include "flags.c"
 #include "utf.c"
-#include "error.c"
 #include "string.c"
 
 #define ARENA_BLOCK_SIZE MB(1)
@@ -385,7 +384,30 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
-typedef union Val {
+typedef struct DiagnosticError DiagnosticError;
+typedef struct DiagnosticEngine DiagnosticEngine;
+struct DiagnosticEngine {
+    Arena arena;
+    DynamicArray(DiagnosticError) errors;
+};
+
+typedef struct Symbol Symbol;
+typedef struct Stmt Stmt;
+
+typedef struct Package Package;
+struct Package {
+    const char *path;
+    char fullPath[MAX_PATH];
+    const char *externalName;
+    DiagnosticEngine diagnostics;
+    Arena arena;
+    DynamicArray(Stmt *) stmts;
+    Map symbolMap;
+    DynamicArray(Symbol *) symbols;
+};
+
+typedef union Val Val;
+union Val {
     b32 b32;
     i8 i8;
     u8 u8;
@@ -396,4 +418,4 @@ typedef union Val {
     i64 i64;
     u64 u64;
     uintptr_t ptr;
-} Val;
+};

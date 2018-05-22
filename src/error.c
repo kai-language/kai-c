@@ -15,6 +15,7 @@
     ECode(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
     ECode(Syntax, "Syntax error"), \
     ECode(Fatal, "Fatal error"), \
+    ECode(Redefinition, "Redefinition"), \
 
 typedef enum ErrorCode {
 #define ECode(e, s) e##Error
@@ -22,72 +23,17 @@ typedef enum ErrorCode {
 #undef ECode
 } ErrorCode;
 
-typedef struct Error {
-    ErrorCode code;
-    Position pos;
-    const char *message;
-} Error;
-
-typedef struct ErrorCollector {
-    u32 errorCount;
-} ErrorCollector;
-
-ErrorCollector errorCollector;
-
-b32 HasErrors() {
-    return errorCollector.errorCount > 0;
-}
-
-#define tempErrorBufferLen KB(4)
-char *temporaryErrorBuffer;
-
-void InitErrorBuffers() {
-    temporaryErrorBuffer = malloc(tempErrorBufferLen);
+typedef struct DiagnosticNote DiagnosticNote;
+struct DiagnosticNote {
+    const char *msg;
+    DiagnosticNote *next;
 };
 
-// NOTE: this function is not threadsafe
-char *errorBuffPrintf(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-
-    // NOTE: vsnprintf will always null-terminate the buffer so we don't need to
-    // pass around the length
-    vsnprintf(temporaryErrorBuffer, tempErrorBufferLen, fmt, args);
-
-    va_end(args);
-
-    return temporaryErrorBuffer;
-}
- 
-void Report(Error error) {
-#ifndef NO_ERROR_CODES
-    if (FlagErrorCodes) {
-        fprintf(
-            stderr, 
-            "ERROR(%s:%u:%u, E%04d): %s\n",
-            error.pos.name, 
-            error.pos.line, 
-            error.pos.column, 
-            error.code, 
-            error.message
-        );
-    } else {
-#endif
-
-#ifndef NO_ERROR_CODES
-        fprintf(
-            stderr, 
-            "ERROR(%s:%u:%u): %s\n",
-            error.pos.name, 
-            error.pos.line, 
-            error.pos.column, 
-            error.message
-        );
-    }
-#endif
-
-    errorCollector.errorCount += 1;
-}
+typedef struct DiagnosticError DiagnosticError;
+struct DiagnosticError {
+    const char *msg;
+    DiagnosticNote *note;
+};
 
 b32 shouldPrintErrorCode() {
 #if NO_ERROR_CODES
@@ -96,16 +42,75 @@ b32 shouldPrintErrorCode() {
     return FlagErrorCodes;
 }
 
-void ReportError(ErrorCode code, Position pos, const char *msg, ...) {
+void ReportError(Package *p, ErrorCode code, Position pos, const char *msg, ...) {
     va_list args;
-    char buf[1024];
+    char msgBuffer[512]; // TODO: Static & Thread Local?
     va_start(args, msg);
-    vsnprintf(buf, sizeof(buf), msg, args);
-    if (shouldPrintErrorCode()) {
-        fprintf(stderr, "ERROR(%s:%u:%u, E%04d): %s\n", pos.name, pos.line, pos.column, code, buf);
-    } else {
-        fprintf(stderr, "ERROR(%s:%u:%u): %s\n", pos.name, pos.line, pos.column, buf);
-    }
+    vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
+    char errorBuffer[512];
+    int errlen = shouldPrintErrorCode() ?
+        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u, E%04d): %s\n", pos.name, pos.line, pos.column, code, msgBuffer) :
+        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u): %s\n",        pos.name, pos.line, pos.column,       msgBuffer);
+    char *errorMsg = ArenaAlloc(&p->diagnostics.arena, errlen + 1);
+    memcpy(errorMsg, errorBuffer, errlen + 1);
     va_end(args);
-    errorCollector.errorCount += 1;
+
+    DiagnosticError error = { .msg = errorMsg, .note = NULL };
+    ArrayPush(p->diagnostics.errors, error);
 }
+
+void ReportNote(Package *p, Position pos, const char *msg, ...) {
+    ASSERT(p->diagnostics.errors);
+    va_list args;
+    char msgBuffer[512]; // TODO: Static & Thread Local?
+    va_start(args, msg);
+    vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
+    char noteBuffer[512];
+    int notelen = snprintf(noteBuffer, sizeof(noteBuffer), "NOTE(%s:%u:%u): %s\n", pos.name, pos.line, pos.column, msgBuffer);
+    char *noteMsg = ArenaAlloc(&p->diagnostics.arena, notelen + 1);
+    noteMsg = memcpy(noteMsg, noteBuffer, notelen + 1);
+    va_end(args);
+
+    DiagnosticNote *note = ArenaAlloc(&p->diagnostics.arena, sizeof(DiagnosticNote));
+    note->msg = noteMsg;
+    note->next = NULL;
+
+    DiagnosticNote **indirect = &p->diagnostics.errors[ArrayLen(p->diagnostics.errors) - 1].note;
+    while ((*indirect) != NULL)
+        indirect = &(*indirect)->next;
+
+    *indirect = note;
+}
+
+#if TEST
+char outputErrorBuffer[8096];
+#define outputDiagnostic(fmt, __VA_ARGS__) snprintf(outputErrorBuffer, sizeof(outputErrorBuffer), fmt, __VA_ARGS__)
+#else
+#define outputDiagnostic(fmt, __VA_ARGS__) fprintf(stderr, fmt, __VA_ARGS__)
+#endif
+
+void OutputReportedErrors(Package *p) {
+    for (size_t i = 0; i < ArrayLen(p->diagnostics.errors); i++) {
+        outputDiagnostic("%s", p->diagnostics.errors[i].msg);
+        for (DiagnosticNote *note = p->diagnostics.errors[i].note; note; note = note->next) {
+            outputDiagnostic("%s", note->msg);
+        }
+    }
+    ArrayFree(p->diagnostics.errors);
+    ArenaFree(&p->diagnostics.arena);
+}
+#undef OutputReportedErrorsPrinter
+
+#if TEST
+void test_errorReporting() {
+
+    Position builtinPosition = {0};
+    Package mainPackage = {0};
+    ReportError(&mainPackage, SyntaxError, builtinPosition, "Error Reporting value of five %d", 5);
+    ReportNote(&mainPackage, builtinPosition, "Note Reporting value of six %d", 6);
+    ASSERT(mainPackage.diagnostics.errors != NULL);
+    OutputReportedErrors(&mainPackage);
+    ASSERT(mainPackage.diagnostics.errors == NULL);
+    ASSERT(mainPackage.diagnostics.arena.blocks == NULL);
+}
+#endif
