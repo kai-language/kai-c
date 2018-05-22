@@ -25,7 +25,7 @@ void CodegenLLVM(Package *p) {
     using namespace llvm;
 
     LLVMContext context;
-    Module *module = new Module("Test", context);
+    Module *module = new Module(p->path, context);
 
     if (FlagDumpIR) {
         module->print(errs(), nullptr);
