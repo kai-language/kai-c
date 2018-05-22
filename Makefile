@@ -1,11 +1,11 @@
 CC = clang
-CXX = clang
+CXX = clang++
 
 debug:   CFLAGS = -g -O0 -DDEBUG -DDIAGNOSTICS -DSLOW
 release: CFLAGS = -O3 -march=native -DRELEASE -DFAST
 
 LLVM_CXXFLAGS = $(shell llvm-config --cxxflags)
-LLVM_CXXLFLAGS = $(shell llvm-config --ldflags --link-static --libs)
+LLVM_CXXLFLAGS = $(shell llvm-config --ldflags --link-static --system-libs --libs core)
 
 LFLAGS =
 DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch
@@ -21,7 +21,7 @@ debug:   clean $(TARGET)
 release: clean $(TARGET)
 
 $(TARGET): core.o llvm.o
-	$(CC) -o $(TARGET) $(LLVM_CXXLFLAGS) core.o llvm.o
+	$(CXX) -o $(TARGET) $(LLVM_CXXLFLAGS) core.o llvm.o
 core.o:
 	$(CC) src/main.c -c -o core.o $(CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
 llvm.o:
