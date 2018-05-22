@@ -223,7 +223,7 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				DEVELOPMENT_TEAM = 95L6HL9G76;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				OTHER_CFLAGS = (
 					"-DTEST",
@@ -238,7 +238,7 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				DEVELOPMENT_TEAM = 95L6HL9G76;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				OTHER_CFLAGS = (
 					"-DTEST",

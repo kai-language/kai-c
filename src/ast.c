@@ -1,28 +1,3 @@
-
-i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
-    0,
-    [TK_Question] = 1,
-    [TK_Lor] = 1,
-    [TK_Land] = 2,
-    [TK_Eql] = 3,
-    [TK_Neq] = 3,
-    [TK_Lss] = 3,
-    [TK_Leq] = 3, 
-    [TK_Gtr] = 3, 
-    [TK_Geq] = 3,
-    [TK_Add] = 4,
-    [TK_Sub] = 4, 
-    [TK_Or]  = 4, 
-    [TK_Xor] = 4,
-    [TK_Mul] = 5,
-    [TK_Div] = 5,
-    [TK_Rem] = 5,
-    [TK_Shl] = 5, 
-    [TK_Shr] = 5, 
-    [TK_And] = 5,
-    [TK_Assign] = 0,
-};
-
 #define EXPR_KIND_START       0x100
 #define STMT_KIND_START       0x200
 #define DECL_KIND_START       0x300
