@@ -2,24 +2,24 @@
 // The description isn't used by the compiler itself but is there for tools to utilize
 // in the future.
 #define ERROR_CODES \
-    ECode(InvalidEscape, "Escape sequence is an invalid Unicode codepoint"), \
-    ECode(InvalidCharacterEscape, "Escape sequence is a invalid"), \
-    ECode(InvalidNumericEscape, "Escape sequence is an invalid Unicode codepoint"), \
-    ECode(InvalidCodePoint, "An invalid Unicode codepoint"), \
-    ECode(StringContainsNewline, "A string literal contains a newline"), \
-    ECode(UnexpectedEOF, "An unexpected EOF while parsing a string literal"), \
-    ECode(ExpectedDigit, "Expected a digit"), \
-    ECode(DigitOutOfRange, "Digit is out of range of base"), \
-    ECode(FloatOverflow, "Float literal overflow"), \
-    ECode(IntOverflow, "Integer literal overflow"), \
-    ECode(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
-    ECode(Syntax, "Syntax error"), \
-    ECode(Fatal, "Fatal error"), \
+    FOR_EACH(InvalidEscape, "Escape sequence is an invalid Unicode codepoint"), \
+    FOR_EACH(InvalidCharacterEscape, "Escape sequence is a invalid"), \
+    FOR_EACH(InvalidNumericEscape, "Escape sequence is an invalid Unicode codepoint"), \
+    FOR_EACH(InvalidCodePoint, "An invalid Unicode codepoint"), \
+    FOR_EACH(StringContainsNewline, "A string literal contains a newline"), \
+    FOR_EACH(UnexpectedEOF, "An unexpected EOF while parsing a string literal"), \
+    FOR_EACH(ExpectedDigit, "Expected a digit"), \
+    FOR_EACH(DigitOutOfRange, "Digit is out of range of base"), \
+    FOR_EACH(FloatOverflow, "Float literal overflow"), \
+    FOR_EACH(IntOverflow, "Integer literal overflow"), \
+    FOR_EACH(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
+    FOR_EACH(Syntax, "Syntax error"), \
+    FOR_EACH(Fatal, "Fatal error"), \
 
 typedef enum ErrorCode {
-#define ECode(e, s) e##Error
+#define FOR_EACH(e, s) e##Error
     ERROR_CODES
-#undef ECode
+#undef FOR_EACH
 } ErrorCode;
 
 typedef struct Error {
