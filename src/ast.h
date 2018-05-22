@@ -53,8 +53,7 @@
     FOR_EACH(Constant, "constant") \
     FOR_EACH(Import, "import")
 
-typedef enum ExprKind ExprKind;
-enum ExprKind {
+typedef enum ExprKind {
     ExprKind_Invalid = 0,
 
     _ExprKind_Start = EXPR_KIND_START,
@@ -62,10 +61,9 @@ enum ExprKind {
     EXPR_KINDS
 #undef FOR_EACH
     _ExprKind_End,
-};
+} ExprKind;
 
-typedef enum StmtKind StmtKind;
-enum StmtKind {
+typedef enum StmtKind {
     StmtKind_Invalid = 0,
 
     _StmtKind_Start = STMT_KIND_START,
@@ -85,10 +83,9 @@ enum StmtKind {
     DECL_KINDS
 #undef FOR_EACH
     _StmtDeclKind_End
-};
+} StmtKind;
 
-typedef enum DeclKind DeclKind;
-enum DeclKind {
+typedef enum DeclKind {
     DeclKind_Invalid = 0,
 
     _DeclKind_Start = DECL_KIND_START,
@@ -96,21 +93,7 @@ enum DeclKind {
     DECL_KINDS
 #undef FOR_EACH
     _DeclKind_End,
-};
-
-const char *AstDescriptions[] = {
-#define FOR_EACH(kindName, s) "" s "",
-    [EXPR_KIND_START] = "invalid",
-    EXPR_KINDS
-    "invalid",
-    [STMT_KIND_START] = "invalid",
-    STMT_KINDS
-    "invalid",
-    [DECL_KIND_START] = "invalid",
-    DECL_KINDS
-    "invalid",
-#undef FOR_EACH
-};
+} DeclKind;
 
 
 typedef struct Expr Expr;
@@ -208,10 +191,9 @@ struct Expr_Autocast {
     Expr *expr;
 };
 
-typedef enum KeyValueFlag KeyValueFlag;
-enum KeyValueFlags {
+typedef enum KeyValueFlags {
     KeyValueFlagIndex = 1,
-};
+} KeyValueFlags;
 struct Expr_KeyValue {
     Position start;
     // TODO: We should add support for C style {['0'] = 0; ['1'] = 1; } which may will require a different key type
@@ -309,10 +291,9 @@ struct Expr_TypePolymorphic {
     const char *name;
 };
 
-typedef enum TypeVariadicFlag TypeVariadicFlag;
-enum TypeVariadicFlags {
+typedef enum TypeVariadicFlags {
     TypeVariadicFlagCVargs = 1,
-};
+} TypeVariadicFlags;
 struct Expr_TypeVariadic {
     Position start;
     Expr *type;

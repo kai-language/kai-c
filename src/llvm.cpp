@@ -3,6 +3,9 @@
 #include "map.h"
 #include "symbols.h"
 #include "compiler.h"
+#include "lexer.h"
+#include "ast.h"
+#include "types.h"
 #include "llvm.h"
 
 #include "llvm/ADT/APFloat.h"

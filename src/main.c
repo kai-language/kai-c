@@ -4,7 +4,7 @@
 #include "compiler.c"
 #include "ast.c"
 #include "symbols.h"
-#include "types.c"
+#include "types.h"
 
 #include "parser.c"
 #include "checker.c"
