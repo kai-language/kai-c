@@ -1,3 +1,4 @@
+
 i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
     0,
     [TK_Question] = 1,
@@ -30,23 +31,6 @@ struct Parser {
     Token tok;
     Package *package;
 };
-
-Error SyntaxErrorToken(TokenKind kind, Token actual) {
-    char *msg = errorBuffPrintf("Expected '%s' but got '%s'", DescribeTokenKind(kind), DescribeTokenKind(actual.kind));
-    return (Error) {
-        .code = SyntaxError,
-        .pos = actual.pos,
-        .message = msg,
-    };
-}
-
-Error SyntaxErrorMessage(const char *msg, Position pos, ...) {
-    return (Error) {
-        .code = SyntaxError,
-        .pos = pos,
-        .message = msg,
-    };
-}
 
 #define nextToken() \
     p->prevStart = p->tok.pos; \
@@ -115,13 +99,13 @@ b32 matchToken(Parser *p, TokenKind kind) {
 
 b32 expectToken(Parser *p, TokenKind kind) {
     if (matchToken(p, kind)) return true;
-    ReportError(SyntaxError, p->tok.pos, "Expected token %s, got %s", DescribeTokenKind(kind), DescribeToken(p->tok));
+    ReportError(p->package, SyntaxError, p->tok.pos, "Expected token %s, got %s", DescribeTokenKind(kind), DescribeToken(p->tok));
     return false;
 }
 
 b32 expectTerminator(Parser *p) {
     if (matchToken(p, TK_Terminator) || isToken(p, TK_Eof)) return true;
-    ReportError(SyntaxError, p->tok.pos, "Expected terminator, got %s", DescribeToken(p->tok));
+    ReportError(p->package, SyntaxError, p->tok.pos, "Expected terminator, got %s", DescribeToken(p->tok));
     return false;
 }
 
@@ -252,7 +236,7 @@ Expr *parseExprAtom(Parser *p) {
             } else if (p->tok.val.ident == internCVargs) {
                 goto caseEllipsis;
             }
-            ReportError(SyntaxError, p->tok.pos, "Unexpected directive '%s'", p->tok.val.ident);
+            ReportError(p->package, SyntaxError, p->tok.pos, "Unexpected directive '%s'", p->tok.val.ident);
             break;
         }
 
@@ -270,7 +254,7 @@ Expr *parseExprAtom(Parser *p) {
             } else if (p->tok.val.ident == Keyword_enum) {
                 goto caseEnum;
             }
-            ReportError(SyntaxError, p->tok.pos, "Unexpected keyword '%s'", p->tok.val.ident);
+            ReportError(p->package, SyntaxError, p->tok.pos, "Unexpected keyword '%s'", p->tok.val.ident);
             break;
         }
 
@@ -337,7 +321,7 @@ Expr *parseExprAtom(Parser *p) {
                 Expr *init = NULL;
 
                 if (matchToken(p, TK_Assign)) {
-                    ReportError(SyntaxError, p->tok.pos, "Enum values are established at compile time and declared using '::'");
+                    ReportError(p->package, SyntaxError, p->tok.pos, "Enum values are established at compile time and declared using '::'");
 
                     // TODO(Brett): discard remaining stmt
                     continue;
@@ -364,7 +348,7 @@ Expr *parseExprAtom(Parser *p) {
         }
 
         default:
-            ReportError(SyntaxError, p->tok.pos, "Unexpected token '%s'", DescribeToken(p->tok));
+            ReportError(p->package, SyntaxError, p->tok.pos, "Unexpected token '%s'", DescribeToken(p->tok));
     }
 
     Position start = p->tok.pos;
@@ -523,7 +507,7 @@ Expr_KeyValue *parseExprCompoundField(Parser *p) {
         if (matchToken(p, TK_Colon)) {
             field->key = field->value;
             if (field->key->kind != ExprKind_Ident) {
-                ReportError(SyntaxError, p->prevStart, "Named initializer value must be an identifier or surrounded in '[]'");
+                ReportError(p->package, SyntaxError, p->prevStart, "Named initializer value must be an identifier or surrounded in '[]'");
             }
             field->value = parseExpr(p, false);
             return field;
@@ -570,7 +554,7 @@ Expr *parseFunctionType(Parser *p) {
             Expr *type = parseType(p);
             for (size_t i = 0; i < ArrayLen(exprs); i++) {
                 if (exprs[i]->kind != ExprKind_Ident) {
-                    ReportError(SyntaxError, exprs[i]->start, "Expected identifier");
+                    ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
                     continue;
                 }
                 kv->key = exprs[i];
@@ -579,14 +563,14 @@ Expr *parseFunctionType(Parser *p) {
             }
         } else if (nVarargs <= 1) {
             if (namedParameters) {
-                ReportError(SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
+                ReportError(p->package, SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
             }
             // The parameters are unnamed and the user may have entered a second variadic
             for (size_t i = 0; i < ArrayLen(exprs); i++) {
                 if (exprs[i]->kind == ExprKind_TypeVariadic) {
                     nVarargs += 1;
                     if (nVarargs == 2) {
-                        ReportError(SyntaxError, exprs[i]->start, "Expected at most 1 Variadic as the final parameter");
+                        ReportError(p->package, SyntaxError, exprs[i]->start, "Expected at most 1 Variadic as the final parameter");
                     }
                 }
                 kv->value = exprs[i];
@@ -608,20 +592,20 @@ Expr *parseFunctionType(Parser *p) {
                 Expr *type = parseType(p);
                 for (size_t i = 0; i < ArrayLen(exprs); i++) {
                     if (exprs[i]->kind != ExprKind_Ident) {
-                        ReportError(SyntaxError, exprs[i]->start, "Expected identifier");
+                        ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
                         continue;
                     }
                     ArrayPush(results, type);
                 }
             } else if (nVarargs <= 1) {
                 if (namedParameters) {
-                    ReportError(SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
+                    ReportError(p->package, SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
                 }
                 for (size_t i = 0; i < ArrayLen(exprs); i++) {
                     if (exprs[i]->kind == ExprKind_TypeVariadic) {
                         nVarargs += 1;
                         if (nVarargs == 1) {
-                            ReportError(SyntaxError, exprs[i]->start, "Variadics are only valid in a functions parameters");
+                            ReportError(p->package, SyntaxError, exprs[i]->start, "Variadics are only valid in a functions parameters");
                         }
                     }
                     ArrayPush(results, exprs[i]);
@@ -682,7 +666,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             nextToken();
             DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
             if (ArrayLen(rhs) > 1) {
-                ReportError(SyntaxError, pos, "Only regular assignment may have multiple left or right values");
+                ReportError(p->package, SyntaxError, pos, "Only regular assignment may have multiple left or right values");
             }
             rhs[0] = NewExprBinary(pkg, op, pos, exprs[0], rhs[0]);
             return NewStmtAssign(pkg, start, exprs, rhs);
@@ -696,7 +680,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             DynamicArray(Expr_Ident *) idents = NULL;
             for (size_t i = 0; i < ArrayLen(exprs); i++) {
                 if (exprs[i]->kind != ExprKind_Ident) {
-                    ReportError(SyntaxError, exprs[i]->start, "Expected identifier");
+                    ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
                 }
                 ArrayPush(idents, &exprs[i]->Ident);
             }
@@ -730,14 +714,14 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
         DynamicArray(Expr_Ident *) idents = NULL;
         for (size_t i = 0; i < ArrayLen(exprs); i++) {
             if (exprs[i]->kind != ExprKind_Ident) {
-                ReportError(SyntaxError, exprs[i]->start, "Expected identifier");
+                ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
             }
             ArrayPush(idents, &exprs[i]->Ident);
         }
         ArrayFree(exprs);
         return (Stmt *) idents;
     } else if (ArrayLen(exprs) > 1) {
-        ReportError(SyntaxError, exprs[1]->start, "Expected single expression");
+        ReportError(p->package, SyntaxError, exprs[1]->start, "Expected single expression");
     }
 
     return (Stmt *) exprs[0];
@@ -820,13 +804,13 @@ Stmt *parseStmt(Parser *p) {
                             if (ArrayLen(idents) > 0) valueName = idents[0];
                             if (ArrayLen(idents) > 1) indexName = idents[1];
                             if (ArrayLen(idents) > 2) {
-                                ReportError(SyntaxError, idents[2]->start, "For in iteration must provide at most 2 names to assign (value, index)");
+                                ReportError(p->package, SyntaxError, idents[2]->start, "For in iteration must provide at most 2 names to assign (value, index)");
                             }
                             aggregate = parseExpr(p, true);
                             Stmt_Block *body = parseBlock(p);
                             return NewStmtForIn(pkg, start, valueName, indexName, aggregate, body);
                         } else {
-                            ReportError(SyntaxError, p->tok.pos, "Expected single expression or 'in' for iterator");
+                            ReportError(p->package, SyntaxError, p->tok.pos, "Expected single expression or 'in' for iterator");
                         }
                     }
                 }
@@ -842,7 +826,7 @@ Stmt *parseStmt(Parser *p) {
                     }
                 }
                 if (!isExpr(s2)) {
-                    ReportError(SyntaxError, s2->start, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
+                    ReportError(p->package, SyntaxError, s2->start, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
                 }
 
                 Stmt_Block *body = parseBlock(p);
@@ -882,7 +866,7 @@ DynamicArray(Stmt *) parseStmts(Parser *p) {
 void parsePackage(Package *package) {
     const char *code = ReadEntireFile(package->fullPath);
     if (!code) {
-        ReportError(FatalError, (Position){ .name = package->path }, "Failed to read source file");
+        ReportError(package, FatalError, (Position){ .name = package->path }, "Failed to read source file");
         return;
     }
     Lexer lexer = MakeLexer(code, package->path);
@@ -900,7 +884,8 @@ Parser newTestParser(const char *stream) {
     Lexer lex = MakeLexer(stream, NULL);
     Token tok = NextToken(&lex);
     ArenaFree(&testPackage.arena);
-    errorCollector.errorCount = 0;
+    ArrayFree(testPackage.diagnostics.errors);
+    ArenaFree(&testPackage.diagnostics.arena);
     Parser p = {lex, .tok = tok, &testPackage};
     return p;
 }
@@ -911,9 +896,8 @@ void test_parseExprAtom() {
 #define ASSERT_EXPR_KIND(expected) \
     expr = parseExprAtom(&p); \
     ASSERT(expr->kind == expected); \
-    ASSERT(errorCollector.errorCount == 0)
+    ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Expr *expr;
 
     Parser p = newTestParser("a 1 1.0 #line nil");
@@ -946,9 +930,8 @@ void test_parseExprPrimary() {
 #define ASSERT_EXPR_KIND(expected) \
     expr = parseExprPrimary(&p, false); \
     ASSERT(expr->kind == expected); \
-    ASSERT(errorCollector.errorCount == 0)
+    ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Expr *expr;
 
     Parser p = newTestParser("a.a.a.a.a.a.a.a.a.a.a.a");
@@ -988,9 +971,8 @@ void test_parseExprUnary() {
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprUnary(&p, false); \
 ASSERT(expr->kind == expected); \
-ASSERT(errorCollector.errorCount == 0)
+ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Expr *expr;
 
     Parser p = newTestParser("+5 -5 ~a ^a !a &a <a");
@@ -1011,9 +993,8 @@ void test_parseExprBinary() {
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
 ASSERT(expr->kind == expected); \
-ASSERT(errorCollector.errorCount == 0)
+ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Expr *expr;
 
     Parser p = newTestParser("a + b * c");
@@ -1033,9 +1014,8 @@ void test_parseExprTernary() {
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
 ASSERT(expr->kind == expected); \
-ASSERT(errorCollector.errorCount == 0)
+ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Expr *expr;
 
     Parser p = newTestParser("a ? b : c");
@@ -1053,9 +1033,8 @@ void test_parseSimpleStmt() {
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseSimpleStmt(&p, false, NULL); \
 ASSERT(stmt->kind == expected); \
-ASSERT(errorCollector.errorCount == 0)
+ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Stmt *stmt;
 
     Parser p = newTestParser("a := b");
@@ -1070,9 +1049,8 @@ void test_parseStmt() {
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseStmt(&p); \
 ASSERT(stmt->kind == expected); \
-ASSERT(errorCollector.errorCount == 0)
+ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Stmt *stmt;
     Parser p;
     
@@ -1100,9 +1078,8 @@ void test_parseStruct() {
 #define ASSERT_EXPR_KIND(expected) \
     expr = parseExprAtom(&p); \
     ASSERT(expr->kind == expected); \
-    ASSERT(errorCollector.errorCount == 0)
+    ASSERT(!testPackage.diagnostics.errors)
 
-    InitErrorBuffers();
     Expr *expr;
     Parser p;
 
