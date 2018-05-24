@@ -2,11 +2,9 @@ version: 2
 jobs:
   build:
     docker:
-      - image: kailanguage/linux-ci:0.0.1
+      - image: kailanguage/linux-ci:0.0.2
     steps:
       - checkout
-      - run: apt-get install -y libz-dev
-      - run: ln -s `which llvm-config-6.0` /bin/llvm-config
       - run: make
       - run: make tests
 
