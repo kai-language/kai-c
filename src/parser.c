@@ -265,7 +265,6 @@ Expr *parseExprAtom(Parser *p) {
             // TODO(Brett, vdka): directives
 
             if (isToken(p, TK_Lparen)) {
-                // TODO(Brett, vdka): polymorphic structs
                 UNIMPLEMENTED();
             }
 
