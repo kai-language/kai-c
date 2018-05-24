@@ -265,6 +265,7 @@ Expr *parseExprAtom(Parser *p) {
             // TODO(Brett, vdka): directives
 
             if (isToken(p, TK_Lparen)) {
+                // TODO(Brett, vdka): polymorphic structs
                 UNIMPLEMENTED();
             }
 
@@ -301,11 +302,6 @@ Expr *parseExprAtom(Parser *p) {
             nextToken();
 
             // TODO(Brett, vdka): directives
-
-            if (isToken(p, TK_Lparen)) {
-                // TODO(Brett, vdka): polymorphic structs
-                UNIMPLEMENTED();
-            }
 
             expectToken(p, TK_Lbrace);
 
