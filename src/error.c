@@ -48,9 +48,15 @@ void ReportError(Package *p, ErrorCode code, Position pos, const char *msg, ...)
     va_start(args, msg);
     vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
     char errorBuffer[512];
+
     int errlen = shouldPrintErrorCode() ?
         snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u, E%04d): %s\n", pos.name, pos.line, pos.column, code, msgBuffer) :
         snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u): %s\n",        pos.name, pos.line, pos.column,       msgBuffer);
+
+    // NOTE: snprintf returns how long the string would have been instead of its truncated length
+    // We're clamping it here to prevent an overrun.
+    errlen = MIN(errlen, sizeof(errorBuffer));
+
     char *errorMsg = ArenaAlloc(&p->diagnostics.arena, errlen + 1);
     memcpy(errorMsg, errorBuffer, errlen + 1);
     va_end(args);
@@ -66,7 +72,13 @@ void ReportNote(Package *p, Position pos, const char *msg, ...) {
     va_start(args, msg);
     vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
     char noteBuffer[512];
+
     int notelen = snprintf(noteBuffer, sizeof(noteBuffer), "NOTE(%s:%u:%u): %s\n", pos.name, pos.line, pos.column, msgBuffer);
+
+    // NOTE: snprintf returns how long the string would have been instead of its truncated length
+    // We're clamping it here to prevent an overrun.
+    notelen = MIN(notelen, sizeof(noteBuffer));
+
     char *noteMsg = ArenaAlloc(&p->diagnostics.arena, notelen + 1);
     noteMsg = memcpy(noteMsg, noteBuffer, notelen + 1);
     va_end(args);
