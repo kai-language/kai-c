@@ -9,6 +9,7 @@ compiler:
 
 before_install:
     - brew install llvm@6
+    - brew link llvm --force
 
 script:
     - make
