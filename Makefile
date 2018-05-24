@@ -6,10 +6,10 @@ release: CFLAGS = -O3 -march=native -DRELEASE -DFAST
 
 LLVM_VERSION := 6.0
 
-ifeq ($(shell uname), Darwin)
-	LLVM_CONFIG := llvm-config
-else
+ifeq ($(shell which llvm-config),)
 	LLVM_CONFIG := llvm-config-$(LLVM_VERSION)
+else
+	LLVM_CONFIG := llvm-config
 endif
 
 LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
