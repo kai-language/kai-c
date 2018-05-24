@@ -3,55 +3,55 @@
 #define DECL_KIND_START       0x300
 #define AST_KIND_START        0x400
 
-#define EXPR_KINDS                                    \
-    FOR_EACH(Ident, "identifier")                     \
-    FOR_EACH(Paren, "parenthesis")                    \
-    FOR_EACH(Call, "call")                            \
-    FOR_EACH(Selector, "selector")                    \
-    FOR_EACH(Subscript, "subscript")                  \
-    FOR_EACH(Slice, "slice")                          \
-    FOR_EACH(Unary, "unary")                          \
-    FOR_EACH(Binary, "binary")                        \
-    FOR_EACH(Ternary, "ternary")                      \
-    FOR_EACH(Cast, "cast")                            \
-    FOR_EACH(Autocast, "autocast")                    \
-    FOR_EACH(KeyValue, "key value")                   \
-    FOR_EACH(LocationDirective, "location directive") \
-    FOR_EACH(LitNil, "nil literal")                   \
-    FOR_EACH(LitInt, "integer literal")               \
-    FOR_EACH(LitFloat, "float literal")               \
-    FOR_EACH(LitString, "string literal")             \
-    FOR_EACH(LitCompound, "compound literal")       \
-    FOR_EACH(LitFunction, "function literal")         \
-    FOR_EACH(TypePointer, "pointer type")             \
-    FOR_EACH(TypeArray, "array type")                 \
-    FOR_EACH(TypeSlice, "slice type")                 \
-    FOR_EACH(TypeStruct, "struct type")               \
-    FOR_EACH(TypeEnum, "enum type")                   \
-    FOR_EACH(TypeUnion, "union type")                 \
-    FOR_EACH(TypePolymorphic, "polymorphic type")     \
-    FOR_EACH(TypeVariadic, "variadic type")           \
-    FOR_EACH(TypeFunction, "function type")
+#define EXPR_KINDS                                           \
+    FOR_EACH(Ident, "identifier", true)                      \
+    FOR_EACH(Paren, "parenthesis", false)                    \
+    FOR_EACH(Call, "call", false)                            \
+    FOR_EACH(Selector, "selector", false)                    \
+    FOR_EACH(Subscript, "subscript", false)                  \
+    FOR_EACH(Slice, "slice", false)                          \
+    FOR_EACH(Unary, "unary", false)                          \
+    FOR_EACH(Binary, "binary", false)                        \
+    FOR_EACH(Ternary, "ternary", false)                      \
+    FOR_EACH(Cast, "cast", false)                            \
+    FOR_EACH(Autocast, "autocast", false)                    \
+    FOR_EACH(KeyValue, "key value", false)                   \
+    FOR_EACH(LocationDirective, "location directive", false) \
+    FOR_EACH(LitNil, "nil literal", false)                   \
+    FOR_EACH(LitInt, "integer literal", false)               \
+    FOR_EACH(LitFloat, "float literal", false)               \
+    FOR_EACH(LitString, "string literal", false)             \
+    FOR_EACH(LitCompound, "compound literal", false)         \
+    FOR_EACH(LitFunction, "function literal", false)         \
+    FOR_EACH(TypePointer, "pointer type", false)             \
+    FOR_EACH(TypeArray, "array type", false)                 \
+    FOR_EACH(TypeSlice, "slice type", false)                 \
+    FOR_EACH(TypeStruct, "struct type", false)               \
+    FOR_EACH(TypeEnum, "enum type", false)                   \
+    FOR_EACH(TypeUnion, "union type", false)                 \
+    FOR_EACH(TypePolymorphic, "polymorphic type", false)     \
+    FOR_EACH(TypeVariadic, "variadic type", false)           \
+    FOR_EACH(TypeFunction, "function type", false)
 
-#define STMT_KINDS                 \
-    FOR_EACH(Empty, "empty")       \
-    FOR_EACH(Label, "label")       \
-    FOR_EACH(Assign, "assignment") \
-    FOR_EACH(Return, "return")     \
-    FOR_EACH(Defer, "defer")       \
-    FOR_EACH(Using, "using")       \
-    FOR_EACH(Goto, "goto")         \
-    FOR_EACH(Block, "block")       \
-    FOR_EACH(If, "if")             \
-    FOR_EACH(For, "for")           \
-    FOR_EACH(ForIn, "for in")      \
-    FOR_EACH(Switch, "switch")
+#define STMT_KINDS                        \
+    FOR_EACH(Empty, "empty", false)       \
+    FOR_EACH(Label, "label", false)       \
+    FOR_EACH(Assign, "assignment", false) \
+    FOR_EACH(Return, "return", false)     \
+    FOR_EACH(Defer, "defer", false)       \
+    FOR_EACH(Using, "using", false)       \
+    FOR_EACH(Goto, "goto", false)         \
+    FOR_EACH(Block, "block", false)       \
+    FOR_EACH(If, "if", false)             \
+    FOR_EACH(For, "for", false)           \
+    FOR_EACH(ForIn, "for in", false)      \
+    FOR_EACH(Switch, "switch", false)
 
 // TODO: This needs to include some more directives (for example static asserts `#assert` should be supported at top level)
-#define DECL_KINDS                 \
-    FOR_EACH(Variable, "variable") \
-    FOR_EACH(Constant, "constant") \
-    FOR_EACH(Import, "import")
+#define DECL_KINDS                        \
+    FOR_EACH(Variable, "variable", false) \
+    FOR_EACH(Constant, "constant", false) \
+    FOR_EACH(Import, "import", false)
 
 typedef enum ExprKind {
     ExprKind_Invalid = 0,
@@ -101,15 +101,15 @@ typedef struct Stmt Stmt;
 typedef struct Decl Decl;
 
 // predefine all Ast Structs
-#define FOR_EACH(kindName, s) typedef struct Expr_##kindName Expr_##kindName;
+#define FOR_EACH(kindName, s, ...) typedef struct Expr_##kindName Expr_##kindName;
 EXPR_KINDS
 #undef FOR_EACH
 
-#define FOR_EACH(kindName, s) typedef struct Stmt_##kindName Stmt_##kindName;
+#define FOR_EACH(kindName, s, ...) typedef struct Stmt_##kindName Stmt_##kindName;
 STMT_KINDS
 #undef FOR_EACH
 
-#define FOR_EACH(kindName, s) typedef struct Decl_##kindName Decl_##kindName;
+#define FOR_EACH(kindName, s, ...) typedef struct Decl_##kindName Decl_##kindName;
 DECL_KINDS
 #undef FOR_EACH
 
@@ -404,21 +404,21 @@ struct Decl_Import {
     const char *alias;
 };
 
-#define FOR_EACH(kindName, s) Expr_##kindName kindName;
+#define FOR_EACH(kindName, s, ...) Expr_##kindName kindName;
 typedef union ExprValue ExprValue;
 union ExprValue {
     EXPR_KINDS
 };
 #undef FOR_EACH
 
-#define FOR_EACH(kindName, s) Stmt_##kindName kindName;
+#define FOR_EACH(kindName, s, ...) Stmt_##kindName kindName;
 typedef union StmtValue StmtValue;
 union StmtValue {
     STMT_KINDS
 };
 #undef FOR_EACH
 
-#define FOR_EACH(kindName, s) Decl_##kindName kindName;
+#define FOR_EACH(kindName, s, ...) Decl_##kindName kindName;
 typedef union DeclValue DeclValue;
 union DeclValue {
     DECL_KINDS
@@ -426,6 +426,7 @@ union DeclValue {
 #undef FOR_EACH
 
 struct Stmt {
+    u64 id;
     StmtKind kind;
     union {
         Position start;
@@ -449,6 +450,7 @@ struct Stmt {
 };
 
 struct Expr {
+    u64 id;
     ExprKind kind;
     union {
         Position start;
@@ -462,6 +464,7 @@ struct Expr {
 };
 
 struct Decl {
+    u64 id;
     DeclKind kind;
     union {
         Position start;

@@ -216,6 +216,7 @@ struct Package {
     DynamicArray(Stmt *) stmts;
     Map symbolMap;
     DynamicArray(Symbol *) symbols;
+    u64 astIdCount;
 };
 
 typedef union Val {
