@@ -1,4 +1,5 @@
-dir C:\Program Files\
+echo %Path%
+dir C:\Program Files(x86)
 dir C:\Libraries
 dir C:\Libraries\llvm-6.0.0
 dir C:\Program Files\LLVM\bin
