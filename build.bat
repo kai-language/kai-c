@@ -1,3 +1,4 @@
+dir C:\Program Files\
 dir C:\Libraries
 dir C:\Libraries\llvm-6.0.0
 dir C:\Program Files\LLVM\bin
