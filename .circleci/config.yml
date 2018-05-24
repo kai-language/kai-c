@@ -5,7 +5,8 @@ jobs:
       - image: kailanguage/linux-ci:0.0.1
     steps:
       - checkout
-      - run: alias llvm-config='llvm-config-6.0'
+      - run: llvm-config-6.0
+      - run: ln -s `which llvm-config-6.0` /bin/llvm-config
       - run: make
       - run: make tests
 
