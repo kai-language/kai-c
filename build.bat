@@ -1,6 +1,9 @@
 dir "C:\Program Files\LLVM\bin"
 
-llvm-config-5.0
+dir "C:\Libraries\llvm-5.0.0"
+dir "C:\Libraries\llvm-5.0.0\bin"
+
+llvm-config.exe
 
 set TARGET=kai.exe
 
