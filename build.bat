@@ -1,4 +1,5 @@
-@echo off
+llvm-config
+llvm-config-6.0
 
 set TARGET=kai.exe
 
