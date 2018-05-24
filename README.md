@@ -2,6 +2,9 @@
   <img src="https://user-images.githubusercontent.com/1977704/40034764-627d71d8-5839-11e8-8049-59d932345e21.png" alt="Kai" height="128px"></img>
   <br>
   <br>
+  <a href="https://circleci.com/gh/kai-language/kai-c/tree/master">
+    <img src="https://circleci.com/gh/kai-language/kai-c/tree/master.svg?style=shield"></img>
+  </a>
   <a href="https://travis-ci.org/kai-language/kai-c">
     <img src="https://travis-ci.org/kai-language/kai-c.svg?branch=master"></img>
   </a>
