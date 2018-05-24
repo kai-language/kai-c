@@ -21,7 +21,7 @@ debug:   clean $(TARGET)
 release: clean $(TARGET)
 
 $(TARGET): core.o llvm.o
-	$(CXX) -o $(TARGET) $(LLVM_CXXLFLAGS) core.o llvm.o
+	$(CXX) -o $(TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
 core.o:
 	$(CC) src/main.c -c -o core.o $(CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
 llvm.o:
