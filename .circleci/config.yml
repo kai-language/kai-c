@@ -1,17 +1,14 @@
 version: 2
 jobs:
-  Linux:
-    build:
-      docker:
-        - image: kailanguage/linux-ci:0.0.1
-      steps:
-        - checkout
-        - run:
-            name: Build and Run Tests
-            command: make tests
+  build:
+    docker:
+      - image: kailanguage/linux-ci:0.0.1
+    steps:
+      - checkout
+      - run: make tests
 
 workflows:
   version: 2
   build-and-test:
     jobs:
-      - Linux
+      - build
