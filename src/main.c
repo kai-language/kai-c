@@ -1,10 +1,10 @@
 #include "common.c"
 
 #include "error.c"
-#include "compiler.c"
 #include "lexer.c"
+#include "compiler.c"
 #include "ast.c"
-#include "symbols.h"
+#include "symbols.c"
 #include "types.h"
 
 #include "parser.c"

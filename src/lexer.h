@@ -76,18 +76,20 @@ struct Token {
     } val;
 };
 
-const char *DescribeTokenKind(TokenKind tk);
-const char *DescribeToken(Token tok);
-
 typedef struct Lexer Lexer;
 struct Lexer {
     const char *stream;
     const char *startOfLine;
     const char *startOfFile;
 
+    Package *package;
+
     Position pos;
 
     b8 insertSemi;
     b8 insertSemiBeforeLBrace;
 };
+
+const char *DescribeTokenKind(TokenKind tk);
+const char *DescribeToken(Token tok);
 

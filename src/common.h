@@ -193,6 +193,9 @@ void *ArenaAlloc(Arena *arena, size_t size);
 void *ArenaCalloc(Arena *arena, size_t size);
 void ArenaFree(Arena *arena);
 
+#include "array.h"
+#include "map.h"
+
 typedef struct DiagnosticError DiagnosticError;
 typedef struct DiagnosticEngine DiagnosticEngine;
 struct DiagnosticEngine {

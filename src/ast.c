@@ -249,7 +249,7 @@ Expr *NewExprTypeEnum(Package *package, Position start, Expr *explicitType, Dyna
     return e;
 }
 
-Expr *NewExprTypeUnion(Package *package, Position start, DynamicArray(AggregateItem) items)  {
+Expr *NewExprTypeUnion(Package *package, Position start, DynamicArray(AggregateItem) items) {
     Expr *e = NewExpr(package, ExprKind_TypeUnion, start);
     e->TypeUnion.items = items;
     return e;

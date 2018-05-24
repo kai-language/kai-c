@@ -516,7 +516,7 @@ Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *typ
 Expr *NewExprTypeSlice(Package *package, Position start, Expr *type);
 Expr *NewExprTypeStruct(Package *package, Position start, DynamicArray(AggregateItem) items);
 Expr *NewExprTypeEnum(Package *package, Position start, Expr *explicitType, DynamicArray(EnumItem) items);
-Expr *NewExprTypeUnion(Package *package);
+Expr *NewExprTypeUnion(Package *package, Position start, DynamicArray(AggregateItem) items);
 Expr *NewExprTypePolymorphic(Package *package, Position start, const char *name);
 Expr *NewExprTypeVariadic(Package *package, Position start, Expr *type, u8 flags);
 Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result);

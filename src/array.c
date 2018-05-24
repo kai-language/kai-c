@@ -1,4 +1,3 @@
-#include "array.h"
 
 void *_arrayFree(void *array, Allocator al) {
     return Free(al, _array_hdr(array));

@@ -90,24 +90,6 @@ void InitKeywords(void) {
 
 #undef KEYWORD
 
-const char *TokenDescriptions[NUM_TOKEN_KINDS] = {
-#define FOR_EACH(e, s) "" #s "",
-    TOKEN_KINDS
-#undef FOR_EACH
-};
-
-const char *DescribeTokenKind(TokenKind tk) {
-    return TokenDescriptions[tk];
-}
-
-const char *DescribeToken(Token tok) {
-    if (tok.kind == TK_Ident || tok.kind == TK_Keyword || tok.kind == TK_Directive) {
-        return tok.val.s;
-    }
-    return DescribeTokenKind(tok.kind);
-}
-
-
 bool isStringKeyword(const char *name) {
     return Keyword_first <= name && name <= Keyword_last;
 }
@@ -126,22 +108,6 @@ const char *TokenDescriptions[NUM_TOKEN_KINDS] = {
 #undef FOR_EACH
 };
 
-#define TokenAssignOffset(Kind) Kind - (TK_AddAssign - TK_Add)
-
-typedef struct Token Token;
-struct Token {
-    TokenKind kind;
-    const char *start;
-    const char *end;
-    Position pos;
-    union val {
-        unsigned long long i;
-        double f;
-        const char *s;
-        const char *ident;
-    } val;
-};
-
 const char *DescribeTokenKind(TokenKind tk) {
     return TokenDescriptions[tk];
 }
@@ -152,20 +118,6 @@ const char *DescribeToken(Token tok) {
     }
     return DescribeTokenKind(tok.kind);
 }
-
-typedef struct Lexer Lexer;
-struct Lexer {
-    const char *stream;
-    const char *startOfLine;
-    const char *startOfFile;
-
-    Package *package;
-
-    Position pos;
-
-    b8 insertSemi;
-    b8 insertSemiBeforeLBrace;
-};
 
 Lexer MakeLexer(const char *data, const char *name) {
     Lexer l = {0};

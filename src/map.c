@@ -1,5 +1,3 @@
-#include "map.h"
-
 Inline
 u64 HashU64(u64 x) {
     x *= 0xff51afd7ed558ccd;
