@@ -7,9 +7,8 @@ jobs:
       steps:
         - checkout
         - run:
-          name: Build and Run Tests
-          command: |
-            make tests
+            name: Build and Run Tests
+            command: make tests
 
 workflows:
   version: 2
