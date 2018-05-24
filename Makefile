@@ -13,7 +13,7 @@ else
 endif
 
 LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
-LLVM_CXXLFLAGS = $(shell llvm-config --ldflags --link-static --system-libs --libs)
+LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs)
 
 LFLAGS =
 DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch
