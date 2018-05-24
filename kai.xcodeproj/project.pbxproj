@@ -33,6 +33,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		243E19A220AAC1B2001C815E /* arguments.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = arguments.h; path = src/arguments.h; sourceTree = "<group>"; };
+		243E19A320AAC1B2001C815E /* arguments.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = arguments.c; path = src/arguments.c; sourceTree = "<group>"; };
 		5D3CD46420A308C500600F43 /* kai-tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "kai-tests"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D3CD46C20A3099800600F43 /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
 		5D5612AD20ABA02E00E2F4E8 /* targets.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = targets.c; path = src/targets.c; sourceTree = "<group>"; };
