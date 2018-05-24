@@ -298,8 +298,37 @@ Expr *parseExprAtom(Parser *p) {
         }
 
         caseUnion: {
-            UNIMPLEMENTED();
-            break;
+            Position start = p->tok.pos;
+            nextToken();
+
+            // TODO(Brett, vdka): directives
+
+            expectToken(p, TK_Lbrace);
+
+            DynamicArray(AggregateItem) items = NULL;
+
+            while (!isToken(p, TK_Rbrace)) {
+                Position start = p->tok.pos;
+
+                DynamicArray(const char *) names = parseIdentList(p);
+
+                expectToken(p, TK_Colon);
+
+                Expr *type = parseType(p);
+
+                AggregateItem item = {.start = start, .names = names, .type = type};
+                ArrayPush(items, item);
+
+                if (isToken(p, TK_Rbrace)) {
+                    break;
+                }
+
+                expectTerminator(p);
+            }
+
+            expectToken(p, TK_Rbrace);
+
+            return NewExprTypeUnion(pkg, start, items);
         }
 
         caseEnum: {
@@ -1089,5 +1118,24 @@ void test_parseStruct() {
 
     p = newTestParser("struct { a, b, c: u32 }");
     ASSERT_EXPR_KIND(ExprKind_TypeStruct);
+}
+#endif
+
+#if TEST
+void test_parseUnion() {
+#define ASSERT_EXPR_KIND(expected) \
+expr = parseExprAtom(&p); \
+ASSERT(expr->kind == expected); \
+ASSERT(!testPackage.diagnostics.errors)
+
+    Expr *expr;
+    Parser p;
+
+    /*
+     *  A mini-test-suite for unions
+     */
+
+    p = newTestParser("union { a, b, c: u32 }");
+    ASSERT_EXPR_KIND(ExprKind_TypeUnion);
 }
 #endif
