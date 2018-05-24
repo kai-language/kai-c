@@ -193,6 +193,28 @@ void *ArenaAlloc(Arena *arena, size_t size);
 void *ArenaCalloc(Arena *arena, size_t size);
 void ArenaFree(Arena *arena);
 
+typedef struct DiagnosticError DiagnosticError;
+typedef struct DiagnosticEngine DiagnosticEngine;
+struct DiagnosticEngine {
+    Arena arena;
+    DynamicArray(DiagnosticError) errors;
+};
+
+typedef struct Symbol Symbol;
+typedef struct Stmt Stmt;
+
+typedef struct Package Package;
+struct Package {
+    const char *path;
+    char fullPath[MAX_PATH];
+    const char *externalName;
+    DiagnosticEngine diagnostics;
+    Arena arena;
+    DynamicArray(Stmt *) stmts;
+    Map symbolMap;
+    DynamicArray(Symbol *) symbols;
+};
+
 typedef union Val {
     b32 b32;
     i8 i8;

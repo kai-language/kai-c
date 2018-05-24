@@ -225,6 +225,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				GCC_C_LANGUAGE_STANDARD = c11;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				OTHER_CFLAGS = (
 					"-DTEST",
 					"-DNO_COLOR",
@@ -240,6 +241,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				GCC_C_LANGUAGE_STANDARD = c11;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				OTHER_CFLAGS = (
 					"-DTEST",
 					"-DNO_COLOR",
@@ -362,6 +364,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				OTHER_CFLAGS = (
 					"-g",
 					"-O0",
@@ -383,6 +386,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				OTHER_CFLAGS = (
 					"-O3",
 					"-march=native",

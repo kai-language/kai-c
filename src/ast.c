@@ -249,7 +249,11 @@ Expr *NewExprTypeEnum(Package *package, Position start, Expr *explicitType, Dyna
     return e;
 }
 
-Expr *NewExprTypeUnion(Package *package);
+Expr *NewExprTypeUnion(Package *package, Position start, DynamicArray(AggregateItem) items)  {
+    Expr *e = NewExpr(package, ExprKind_TypeUnion, start);
+    e->TypeUnion.items = items;
+    return e;
+}
 
 Expr *NewExprTypePolymorphic(Package *package, Position start, const char *name) {
     Expr *e = NewExpr(package, ExprKind_TypePolymorphic, start);

@@ -10,3 +10,4 @@ test/wip.kai
 kai_tests*
 scripts/clang-with-compilation-db
 compile_commands.json
+DerivedData

@@ -1,7 +1,6 @@
 #include "compiler.h"
 
 void InitCompiler() {
-    InitErrorBuffers();
     InitKeywords();
     InitDetailsForCurrentSystem();
     InitUnsetFlagsToDefaults();

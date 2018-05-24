@@ -1,7 +1,8 @@
 #include "common.c"
 
-#include "lexer.c"
+#include "error.c"
 #include "compiler.c"
+#include "lexer.c"
 #include "ast.c"
 #include "symbols.h"
 #include "types.h"
@@ -35,9 +36,14 @@ int main(int argc, const char **argv) {
         exit(1);
     }
 
-    while (QueueDequeue(&parsingQueue)) {
-        parsePackage(mainPackage);
-        CodegenLLVM(mainPackage);
+    while (true) {
+        Package *package = QueueDequeue(&parsingQueue);
+        if (package) {
+            parsePackage(package);
+            continue;
+        }
+
+        break;
     }
     printf("File %s has %zu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
 

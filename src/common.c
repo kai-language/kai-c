@@ -105,7 +105,6 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
 #include "queue.c"
 #include "flags.c"
 #include "utf.c"
-#include "error.c"
 #include "string.c"
 
 #define ARENA_BLOCK_SIZE MB(1)
