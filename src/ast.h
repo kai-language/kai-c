@@ -7,7 +7,7 @@
     FOR_EACH(Ident, "identifier", true)                      \
     FOR_EACH(Paren, "parenthesis", false)                    \
     FOR_EACH(Call, "call", false)                            \
-    FOR_EACH(Selector, "selector", false)                    \
+    FOR_EACH(Selector, "selector", true)                     \
     FOR_EACH(Subscript, "subscript", false)                  \
     FOR_EACH(Slice, "slice", false)                          \
     FOR_EACH(Unary, "unary", false)                          \

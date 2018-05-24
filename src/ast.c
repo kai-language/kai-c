@@ -420,6 +420,7 @@ void test_isExpr_and_isDecl() {
 #if TEST
 void test_doesExprAllocate() {
     ASSERT(DoesStmtKindAllocateTypeInfo[StmtExprKind_Ident]);
+    ASSERT(DoesStmtKindAllocateTypeInfo[StmtExprKind_Selector]);
     ASSERT(DoesStmtKindAllocateTypeInfo[StmtKind_Defer] == false);
 }
 #endif
