@@ -1,5 +1,20 @@
 #include "ast.h"
 
+const char *AstDescriptions[] = {
+#define FOR_EACH(kindName, s) "" s "",
+    [EXPR_KIND_START] = "invalid",
+    EXPR_KINDS
+    "invalid",
+    [STMT_KIND_START] = "invalid",
+    STMT_KINDS
+    "invalid",
+    [DECL_KIND_START] = "invalid",
+    DECL_KINDS
+    "invalid",
+#undef FOR_EACH
+};
+
+
 b32 isExpr(Stmt *stmt) {
     return stmt->kind > _ExprKind_Start && stmt->kind < _ExprKind_End;
 }

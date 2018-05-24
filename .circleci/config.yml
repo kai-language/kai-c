@@ -1,0 +1,15 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: kailanguage/linux-ci:0.0.2
+    steps:
+      - checkout
+      - run: make
+      - run: make tests
+
+workflows:
+  version: 2
+  build-and-test:
+    jobs:
+      - build

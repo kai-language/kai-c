@@ -3,13 +3,13 @@
 #include "lexer.c"
 #include "compiler.c"
 #include "ast.c"
-#include "symbols.c"
-#include "types.c"
+#include "symbols.h"
+#include "types.h"
 
 #include "parser.c"
 #include "checker.c"
 
-#include "array.c"
+#include "llvm.h"
 
 #define VERSION "0.0.0 (prerelease)"
 
@@ -37,6 +37,7 @@ int main(int argc, const char **argv) {
 
     while (QueueDequeue(&parsingQueue)) {
         parsePackage(mainPackage);
+        CodegenLLVM(mainPackage);
     }
     printf("File %s has %zu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
 

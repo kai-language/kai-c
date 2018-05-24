@@ -1,4 +1,3 @@
-
 #define TYPE_KINDS \
     FOR_EACH(Void, "void")       \
     FOR_EACH(Bool, "bool")       \
@@ -11,12 +10,11 @@
     FOR_EACH(Struct, "struct")   \
     FOR_EACH(Union, "union")     \
 
-typedef enum TypeKind TypeKind;
-enum TypeKind {
+typedef enum TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
     TYPE_KINDS
 #undef FOR_EACH
-};
+} TypeKind;
 
 typedef struct Type Type;
 
@@ -77,3 +75,4 @@ struct Type {
     #undef FOR_EACH
     };
 };
+

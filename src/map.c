@@ -1,3 +1,4 @@
+#include "map.h"
 
 Inline
 u64 HashU64(u64 x) {
@@ -31,20 +32,6 @@ u64 HashBytes(const void *ptr, size_t len) {
     return x;
 }
 
-typedef struct Map Map;
-struct Map {
-    Allocator *allocator;
-    u64 *keys;
-    u64 *vals;
-    size_t len;
-    size_t cap;
-};
-
-void MapSet(Map *map, const void* key, const void* val);
-struct Allocator;
-void *Free(Allocator al, void* ptr);
-
-void MapSetU64(Map *map, u64 key, u64 val);
 void MapGrow(Map *map, size_t newCap) {
     newCap = CLAMP_MIN(newCap, 16);
     Allocator *al = map->allocator ? map->allocator : &DefaultAllocator;

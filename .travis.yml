@@ -1,5 +1,4 @@
 os: 
-    - linux
     - osx
 
 language: c
@@ -8,5 +7,11 @@ compiler:
     - gcc
     - clang
 
+before_install:
+    - brew install llvm@6
+    - brew link llvm --overwrite
+    - export PATH="/usr/local/opt/llvm/bin:$PATH"
+
 script:
+    - make
     - make tests
