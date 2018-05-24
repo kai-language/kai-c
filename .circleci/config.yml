@@ -1,0 +1,10 @@
+jobs:
+    build:
+        docker:
+            - image: kailanguage/linux-ci:0.0.1
+        steps:
+            - checkout
+            - run:
+                name: Build and Run Tests
+                command: |
+                    make tests
