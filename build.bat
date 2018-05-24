@@ -1,6 +1,4 @@
-llvm-config
-llvm-config-6.0
-
+dir C:\Program Files\LLVM\bin
 set TARGET=kai.exe
 
 set CFLAGS= -nologo -Oi -MP -FC -GS- -EHsc- -GR-
