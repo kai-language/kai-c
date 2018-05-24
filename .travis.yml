@@ -7,5 +7,9 @@ compiler:
     - gcc
     - clang
 
+before_install:
+    - brew install llvm@6
+
 script:
+    - make
     - make tests
