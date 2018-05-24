@@ -35,8 +35,14 @@ int main(int argc, const char **argv) {
         exit(1);
     }
 
-    while (QueueDequeue(&parsingQueue)) {
-        parsePackage(mainPackage);
+    while (true) {
+        Package *package = QueueDequeue(&parsingQueue);
+        if (package) {
+            parsePackage(package);
+            continue;
+        }
+
+        break;
     }
     printf("File %s has %zu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
 
