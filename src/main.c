@@ -16,7 +16,7 @@
 
 #ifndef TEST
 int main(int argc, const char **argv) {
-
+    
     const char *programName = argv[0];
     ParseFlags(&argc, &argv);
     if (argc != 1 || FlagHelp) {
@@ -28,28 +28,35 @@ int main(int argc, const char **argv) {
         printf(VERSION);
         exit(0);
     }
-
+    
     InitCompiler();
     Package *mainPackage = ImportPackage(InputName);
     if (!mainPackage) {
         printf("error: Failed to compile '%s'\n", InputName);
         exit(1);
     }
-
+    
     while (true) {
         Package *package = QueueDequeue(&parsingQueue);
         if (package) {
             parsePackage(package);
             continue;
         }
-
+        
+        CheckerWork *work = QueueDequeue(&checkingQueue);
+        if (work) {
+            check(work->package, work->stmt);
+            continue;
+        }
+        
         break;
     }
     printf("File %s has %zu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
-
+    
     // Finished parsing
     ArenaFree(&parsingQueue.arena);
-
+    ArenaFree(&checkingQueue.arena);
+    
     return 0;
 }
 #endif

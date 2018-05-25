@@ -1,28 +1,32 @@
-#define TYPE_INFO_KINDS \
+#define CHECKER_INFO_KINDS \
     FOR_EACH(Decl)      \
     FOR_EACH(Selector)  \
 
-typedef enum TypeInfoKind {
-#define FOR_EACH(kind) TypeInfoKind_##kind,
-    TYPE_INFO_KINDS
+typedef enum CheckerInfoKind {
+#define FOR_EACH(kind) CheckerInfoKind_##kind,
+    CHECKER_INFO_KINDS
 #undef FOR_EACH
-} TypeInfoKind;
+} CheckerInfoKind;
 
-
-typedef struct TypeInfo_Decl TypeInfo_Decl;
-struct TypeInfo_Decl {
+struct CheckerInfo_Decl {
     Symbol *symbol;
 };
 
-typedef struct TypeInfo_Selector TypeInfo_Selector;
-struct TypeInfo_Selector {
-
+struct CheckerInfo_Selector {
+    u32 levelsOfIndirection;
+    Val constant;
 };
 
-typedef struct TypeInfo TypeInfo;
-struct TypeInfo {
-    TypeInfoKind kind;
+#define FOR_EACH(kind) typedef struct CheckerInfo_##kind CheckerInfo_##kind;
+    CHECKER_INFO_KINDS
+#undef  FOR_EACH
+
+typedef struct CheckerInfo CheckerInfo;
+struct CheckerInfo {
+    CheckerInfoKind kind;
     union {
-        TypeInfo_Decl Decl;
+#define FOR_EACH(kind) CheckerInfo_##kind kind;
+        CHECKER_INFO_KINDS
+#undef FOR_EACH
     };
 };

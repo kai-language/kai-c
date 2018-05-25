@@ -16,6 +16,8 @@
     FOR_EACH(Syntax, "Syntax error"), \
     FOR_EACH(Fatal, "Fatal error"), \
     FOR_EACH(Redefinition, "Redefinition"), \
+    FOR_EACH(MultipleConstantDecl, "Defined more than one constant item at a time"), \
+    FOR_EACH(ArityMismatch, "The amount of declarations doesn't match the amount of values"), \
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error

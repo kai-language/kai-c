@@ -902,6 +902,13 @@ void parsePackage(Package *package) {
     Token tok = NextToken(&lexer);
     Parser parser = {lexer, .tok = tok, package};
     package->stmts = parseStmts(&parser);
+
+    for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
+        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
+        work->package = package;
+        work->stmt = package->stmts[i];
+        QueueEnqueue(&checkingQueue, work);
+    }
 }
 
 #undef NextToken

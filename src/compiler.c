@@ -10,6 +10,7 @@ Map packageMap;
 DynamicArray(Package*) packages;
 
 Queue parsingQueue;
+Queue checkingQueue;
 
 void addPackage(Package *package) {
     Package *old = MapGet(&packageMap, package->path);
