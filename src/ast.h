@@ -4,54 +4,54 @@
 #define AST_KIND_START        0x400
 
 #define EXPR_KINDS                                           \
-FOR_EACH(Ident, "identifier", true)                      \
-FOR_EACH(Paren, "parenthesis", false)                    \
-FOR_EACH(Call, "call", false)                            \
-FOR_EACH(Selector, "selector", true)                     \
-FOR_EACH(Subscript, "subscript", false)                  \
-FOR_EACH(Slice, "slice", false)                          \
-FOR_EACH(Unary, "unary", false)                          \
-FOR_EACH(Binary, "binary", false)                        \
-FOR_EACH(Ternary, "ternary", false)                      \
-FOR_EACH(Cast, "cast", false)                            \
-FOR_EACH(Autocast, "autocast", false)                    \
-FOR_EACH(KeyValue, "key value", false)                   \
-FOR_EACH(LocationDirective, "location directive", false) \
-FOR_EACH(LitNil, "nil literal", false)                   \
-FOR_EACH(LitInt, "integer literal", false)               \
-FOR_EACH(LitFloat, "float literal", false)               \
-FOR_EACH(LitString, "string literal", false)             \
-FOR_EACH(LitCompound, "compound literal", false)         \
-FOR_EACH(LitFunction, "function literal", false)         \
-FOR_EACH(TypePointer, "pointer type", false)             \
-FOR_EACH(TypeArray, "array type", false)                 \
-FOR_EACH(TypeSlice, "slice type", false)                 \
-FOR_EACH(TypeStruct, "struct type", false)               \
-FOR_EACH(TypeEnum, "enum type", false)                   \
-FOR_EACH(TypeUnion, "union type", false)                 \
-FOR_EACH(TypePolymorphic, "polymorphic type", false)     \
-FOR_EACH(TypeVariadic, "variadic type", false)           \
-FOR_EACH(TypeFunction, "function type", false)
+    FOR_EACH(Ident, "identifier", true)                      \
+    FOR_EACH(Paren, "parenthesis", false)                    \
+    FOR_EACH(Call, "call", false)                            \
+    FOR_EACH(Selector, "selector", true)                     \
+    FOR_EACH(Subscript, "subscript", false)                  \
+    FOR_EACH(Slice, "slice", false)                          \
+    FOR_EACH(Unary, "unary", false)                          \
+    FOR_EACH(Binary, "binary", false)                        \
+    FOR_EACH(Ternary, "ternary", false)                      \
+    FOR_EACH(Cast, "cast", false)                            \
+    FOR_EACH(Autocast, "autocast", false)                    \
+    FOR_EACH(KeyValue, "key value", false)                   \
+    FOR_EACH(LocationDirective, "location directive", false) \
+    FOR_EACH(LitNil, "nil literal", false)                   \
+    FOR_EACH(LitInt, "integer literal", false)               \
+    FOR_EACH(LitFloat, "float literal", false)               \
+    FOR_EACH(LitString, "string literal", false)             \
+    FOR_EACH(LitCompound, "compound literal", false)         \
+    FOR_EACH(LitFunction, "function literal", false)         \
+    FOR_EACH(TypePointer, "pointer type", false)             \
+    FOR_EACH(TypeArray, "array type", false)                 \
+    FOR_EACH(TypeSlice, "slice type", false)                 \
+    FOR_EACH(TypeStruct, "struct type", false)               \
+    FOR_EACH(TypeEnum, "enum type", false)                   \
+    FOR_EACH(TypeUnion, "union type", false)                 \
+    FOR_EACH(TypePolymorphic, "polymorphic type", false)     \
+    FOR_EACH(TypeVariadic, "variadic type", false)           \
+    FOR_EACH(TypeFunction, "function type", false)
 
 #define STMT_KINDS                        \
-FOR_EACH(Empty, "empty", false)       \
-FOR_EACH(Label, "label", false)       \
-FOR_EACH(Assign, "assignment", false) \
-FOR_EACH(Return, "return", false)     \
-FOR_EACH(Defer, "defer", false)       \
-FOR_EACH(Using, "using", false)       \
-FOR_EACH(Goto, "goto", false)         \
-FOR_EACH(Block, "block", false)       \
-FOR_EACH(If, "if", false)             \
-FOR_EACH(For, "for", false)           \
-FOR_EACH(ForIn, "for in", false)      \
-FOR_EACH(Switch, "switch", false)
+    FOR_EACH(Empty, "empty", false)       \
+    FOR_EACH(Label, "label", false)       \
+    FOR_EACH(Assign, "assignment", false) \
+    FOR_EACH(Return, "return", false)     \
+    FOR_EACH(Defer, "defer", false)       \
+    FOR_EACH(Using, "using", false)       \
+    FOR_EACH(Goto, "goto", false)         \
+    FOR_EACH(Block, "block", false)       \
+    FOR_EACH(If, "if", false)             \
+    FOR_EACH(For, "for", false)           \
+    FOR_EACH(ForIn, "for in", false)      \
+    FOR_EACH(Switch, "switch", false)
 
 // TODO: This needs to include some more directives (for example static asserts `#assert` should be supported at top level)
 #define DECL_KINDS                        \
-FOR_EACH(Variable, "variable", false) \
-FOR_EACH(Constant, "constant", false) \
-FOR_EACH(Import, "import", false)
+    FOR_EACH(Variable, "variable", false) \
+    FOR_EACH(Constant, "constant", false) \
+    FOR_EACH(Import, "import", false)
 
 typedef enum ExprKind {
     ExprKind_Invalid = 0,

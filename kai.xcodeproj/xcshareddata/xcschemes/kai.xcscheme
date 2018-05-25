@@ -74,6 +74,10 @@
          </CommandLineArgument>
          <CommandLineArgument
             argument = "$SRCROOT/test/tmp.kai"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "$SRCROOT/test/wip.kai"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
