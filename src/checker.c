@@ -76,6 +76,6 @@ void check(Package *package, Stmt *stmt) {
         checkImportDecl(package, decl);
     CaseEnd()
 
-    default: ASSERT(false);
+    default: ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
 }
