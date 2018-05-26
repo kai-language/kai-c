@@ -3,7 +3,6 @@ typedef struct Type Type;
 Type *InvalidType;
 Type *AnyType;
 Type *VoidType;
-Type *MetaType;
 
 Type *BoolType;
 

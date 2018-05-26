@@ -1,7 +1,10 @@
 #include "compiler.h"
 
+void InitBuiltinTypes();
+
 void InitCompiler() {
     InitKeywords();
+    InitBuiltinTypes();
     InitDetailsForCurrentSystem();
     InitUnsetFlagsToDefaults();
 }
