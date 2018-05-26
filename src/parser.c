@@ -940,9 +940,16 @@ Package testPackage = {0};
 Parser newTestParser(const char *stream) {
     Lexer lex = MakeLexer(stream, NULL);
     Token tok = NextToken(&lex);
-    ArenaFree(&testPackage.arena);
+
+    MapFree(&testPackage.symbolMap);
     ArrayFree(testPackage.diagnostics.errors);
+    ArrayFree(testPackage.stmts);
+    ArrayFree(testPackage.symbols);
+
+    ArenaFree(&testPackage.arena);
     ArenaFree(&testPackage.diagnostics.arena);
+
+
     Parser p = {lex, .tok = tok, &testPackage};
     return p;
 }

@@ -28,6 +28,8 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
         fprintf(stderr, "Assert failure: %s:%d\n", file, line);
     }
     va_end(args);
+
+    fflush(stderr);
 }
 
 void *checkedCalloc(size_t num_elems, size_t elem_size) {

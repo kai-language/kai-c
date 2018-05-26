@@ -7,9 +7,7 @@ struct Map {
     size_t cap;
 };
 
-struct Allocator;
-void *Free(Allocator al, void* ptr);
-
+void MapFree(Map *map);
 void MapGrow(Map *map, size_t newCap);
 
 void *MapGetU64(Map *map, u64 key);

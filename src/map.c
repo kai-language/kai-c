@@ -30,13 +30,24 @@ u64 HashBytes(const void *ptr, size_t len) {
     return x;
 }
 
+void MapFree(Map *map) {
+    // TODO(Brett): figure out who's being naughty here
+//    if (map->allocator) {
+//        Free(*map->allocator, map->keys);
+//        Free(*map->allocator, map->vals);
+//    }
+
+    map->len = 0;
+    map->cap = 0;
+}
+
 void MapGrow(Map *map, size_t newCap) {
     newCap = CLAMP_MIN(newCap, 16);
     Allocator *al = map->allocator ? map->allocator : &DefaultAllocator;
     Map new_map = {
         al,
-        (u64*) checkedCalloc(newCap, sizeof(u64)),
-        (u64*) checkedMalloc(newCap * sizeof(u64)),
+        checkedCalloc(newCap, sizeof(u64)),
+        checkedMalloc(newCap * sizeof(u64)),
         0,
         newCap,
     };
@@ -45,8 +56,10 @@ void MapGrow(Map *map, size_t newCap) {
             MapSetU64(&new_map, map->keys[i], map->vals[i]);
         }
     }
+
     Free(*al, (void *)map->keys);
     Free(*al, (void *)map->vals);
+
     *map = new_map;
 }
 

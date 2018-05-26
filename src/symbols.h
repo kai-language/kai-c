@@ -1,4 +1,3 @@
-
 typedef enum SymbolKind {
     SymbolKind_Invalid,
     SymbolKind_Type,
