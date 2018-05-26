@@ -18,6 +18,8 @@
     FOR_EACH(Redefinition, "Redefinition"), \
     FOR_EACH(MultipleConstantDecl, "Defined more than one constant item at a time"), \
     FOR_EACH(ArityMismatch, "The amount of declarations doesn't match the amount of values"), \
+    FOR_EACH(InvalidMetatype, "The type provided was not a metatype"), \
+    FOR_EACH(UndefinedIdent, "Use of an undefined identifier"), \
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error

@@ -5,7 +5,7 @@
 #include "compiler.c"
 #include "ast.c"
 #include "symbols.c"
-#include "types.h"
+#include "types.c"
 
 #include "parser.c"
 #include "checker.c"
@@ -45,7 +45,10 @@ int main(int argc, const char **argv) {
         
         CheckerWork *work = QueueDequeue(&checkingQueue);
         if (work) {
-            check(work->package, work->stmt);
+            b32 shouldRequeue = check(work->package, work->stmt);
+            if (shouldRequeue) {
+                QueueEnqueue(&checkingQueue, work);
+            }
             continue;
         }
         

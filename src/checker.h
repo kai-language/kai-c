@@ -1,6 +1,7 @@
 #define CHECKER_INFO_KINDS \
-    FOR_EACH(Decl)      \
-    FOR_EACH(Selector)  \
+    FOR_EACH(Decl)         \
+    FOR_EACH(Selector)     \
+    FOR_EACH(Ident)        \
 
 typedef enum CheckerInfoKind {
 #define FOR_EACH(kind) CheckerInfoKind_##kind,
@@ -9,6 +10,10 @@ typedef enum CheckerInfoKind {
 } CheckerInfoKind;
 
 struct CheckerInfo_Decl {
+    Symbol *symbol;
+};
+
+struct CheckerInfo_Ident {
     Symbol *symbol;
 };
 
@@ -30,3 +35,5 @@ struct CheckerInfo {
 #undef FOR_EACH
     };
 };
+
+Symbol *Lookup(Scope *scope, const char *name);

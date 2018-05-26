@@ -922,7 +922,9 @@ void parsePackage(Package *package) {
     Parser parser = {lexer, .tok = tok, package};
     package->stmts = parseStmts(&parser);
 
-    // TODO(Brett): allocate space for checker info
+    DynamicArray(CheckerInfo *) checkerInfo = NULL;
+    ArrayFit(checkerInfo, package->astIdCount+1);
+    package->checkerInfo = checkerInfo;
 
     for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
         CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));

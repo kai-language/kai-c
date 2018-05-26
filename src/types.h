@@ -1,4 +1,27 @@
+typedef struct Type Type;
+
+Type *InvalidType;
+Type *AnyType;
+Type *VoidType;
+Type *MetaType;
+
+Type *BoolType;
+
+Type *I8Type;
+Type *I16Type;
+Type *I32Type;
+Type *I64Type;
+
+Type *U8Type;
+Type *U16Type;
+Type *U32Type;
+Type *U64Type;
+
+Type *F32Type;
+Type *F64Type;
+
 #define TYPE_KINDS \
+    FOR_EACH(Invalid, "invalid") \
     FOR_EACH(Void, "void")       \
     FOR_EACH(Bool, "bool")       \
     FOR_EACH(Int, "int")         \
@@ -9,6 +32,7 @@
     FOR_EACH(Any, "any")         \
     FOR_EACH(Struct, "struct")   \
     FOR_EACH(Union, "union")     \
+    FOR_EACH(Metatype, "meta")
 
 typedef enum TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
@@ -16,7 +40,9 @@ typedef enum TypeKind {
 #undef FOR_EACH
 } TypeKind;
 
-typedef struct Type Type;
+struct TypeKind_Invalid {
+
+};
 
 struct TypeKind_Void {
     b8 isNoReturn;
@@ -64,7 +90,10 @@ struct TypeKind_Union {
     DynamicArray(Type *) cases;
 };
 
-typedef struct Type Type;
+struct TypeKind_Metatype {
+    Type *instanceType;
+};
+
 struct Type {
     TypeKind kind;
     u32 width;

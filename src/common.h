@@ -205,6 +205,8 @@ struct DiagnosticEngine {
 
 typedef struct Symbol Symbol;
 typedef struct Stmt Stmt;
+typedef struct CheckerInfo CheckerInfo;
+typedef struct Scope Scope;
 
 typedef struct Package Package;
 struct Package {
@@ -216,7 +218,11 @@ struct Package {
     DynamicArray(Stmt *) stmts;
     Map symbolMap;
     DynamicArray(Symbol *) symbols;
+
     u64 astIdCount;
+    DynamicArray(CheckerInfo *) checkerInfo;
+
+    Scope *globalScope;
 };
 
 typedef union Val {
