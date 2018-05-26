@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		5D3CD46D20A3099800600F43 /* kai_tests.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D3CD46C20A3099800600F43 /* kai_tests.c */; };
 		B249A256209B80CA0016B49E /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = B249A255209B80CA0016B49E /* main.c */; };
+		B25AB23A20B994C4002E1440 /* llvm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B25AB22E20B987D1002E1440 /* llvm.cpp */; settings = {COMPILER_FLAGS = "$(LLVM_CXXFLAGS)"; }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -66,7 +67,6 @@
 		B25AB22E20B987D1002E1440 /* llvm.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = llvm.cpp; path = src/llvm.cpp; sourceTree = "<group>"; };
 		B25AB22F20B987D1002E1440 /* llvm.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = llvm.h; path = src/llvm.h; sourceTree = "<group>"; };
 		B25AB23020B987D2002E1440 /* compiler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = compiler.h; path = src/compiler.h; sourceTree = "<group>"; };
-		B25AB23620B98DC5002E1440 /* libllvm.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libllvm.a; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,13 +78,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		B2194998209B79E0007BB781 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B25AB23320B98DC5002E1440 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -137,22 +130,11 @@
 			children = (
 				B219499B209B79E0007BB781 /* kai */,
 				5D3CD46420A308C500600F43 /* kai-tests */,
-				B25AB23620B98DC5002E1440 /* libllvm.a */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXHeadersBuildPhase section */
-		B25AB23420B98DC5002E1440 /* Headers */ = {
-			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		5D3CD46320A308C500600F43 /* kai-tests */ = {
@@ -177,6 +159,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = B21949A2209B79E0007BB781 /* Build configuration list for PBXNativeTarget "kai" */;
 			buildPhases = (
+				B25AB23B20B9952F002E1440 /* ShellScript */,
 				B2194997209B79E0007BB781 /* Sources */,
 				B2194998209B79E0007BB781 /* Frameworks */,
 				B2194999209B79E0007BB781 /* CopyFiles */,
@@ -189,23 +172,6 @@
 			productName = KaiC;
 			productReference = B219499B209B79E0007BB781 /* kai */;
 			productType = "com.apple.product-type.tool";
-		};
-		B25AB23520B98DC5002E1440 /* llvm */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B25AB23720B98DC5002E1440 /* Build configuration list for PBXNativeTarget "llvm" */;
-			buildPhases = (
-				B25AB23220B98DC5002E1440 /* Sources */,
-				B25AB23320B98DC5002E1440 /* Frameworks */,
-				B25AB23420B98DC5002E1440 /* Headers */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = llvm;
-			productName = llvm;
-			productReference = B25AB23620B98DC5002E1440 /* libllvm.a */;
-			productType = "com.apple.product-type.library.static";
 		};
 /* End PBXNativeTarget section */
 
@@ -221,9 +187,6 @@
 					};
 					B219499A209B79E0007BB781 = {
 						CreatedOnToolsVersion = 9.3;
-					};
-					B25AB23520B98DC5002E1440 = {
-						CreatedOnToolsVersion = 9.3.1;
 					};
 				};
 			};
@@ -241,7 +204,6 @@
 			targets = (
 				B219499A209B79E0007BB781 /* kai */,
 				5D3CD46320A308C500600F43 /* kai-tests */,
-				B25AB23520B98DC5002E1440 /* llvm */,
 			);
 		};
 /* End PBXProject section */
@@ -260,6 +222,19 @@
 			shellPath = /bin/sh;
 			shellScript = "cd $SRCROOT\n./scripts/gen_test_main.sh > kai_tests.c";
 		};
+		B25AB23B20B9952F002E1440 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "PATH=${PATH}:/usr/local/opt/llvm/bin\nLLVM_CXXFLAGS=`llvm-config --cxxflags`\nLLVM_CXXLDFLAGS=`llvm-config --cxxflags --ldflags --link-static --system-libs --libs`";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -275,14 +250,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B25AB23A20B994C4002E1440 /* llvm.cpp in Sources */,
 				B249A256209B80CA0016B49E /* main.c in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B25AB23220B98DC5002E1440 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,6 +417,7 @@
 					"-Wno-writable-strings",
 					"-Wno-switch",
 				);
+				OTHER_LDFLAGS = "$(LLVM_CXXLDFLAGS)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -469,27 +439,8 @@
 					"-Wno-writable-strings",
 					"-Wno-switch",
 				);
+				OTHER_LDFLAGS = "$(LLVM_CXXLDFLAGS)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Release;
-		};
-		B25AB23820B98DC5002E1440 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				EXECUTABLE_PREFIX = lib;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-			};
-			name = Debug;
-		};
-		B25AB23920B98DC5002E1440 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				EXECUTABLE_PREFIX = lib;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
 			};
 			name = Release;
 		};
@@ -519,15 +470,6 @@
 			buildConfigurations = (
 				B21949A3209B79E0007BB781 /* Debug */,
 				B21949A4209B79E0007BB781 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		B25AB23720B98DC5002E1440 /* Build configuration list for PBXNativeTarget "llvm" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				B25AB23820B98DC5002E1440 /* Debug */,
-				B25AB23920B98DC5002E1440 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

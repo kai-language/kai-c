@@ -35,7 +35,7 @@ void checkConstDecl(Package *pkg, Decl *declStmt) {
         return;
     }
 
-    Type *explicitType;
+    Type *explicitType = NULL;
 
     if (decl.type) {
         ExprInfo info = {0};
