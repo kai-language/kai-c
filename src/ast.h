@@ -6,13 +6,13 @@
 #define EXPR_KINDS                                           \
     FOR_EACH(Ident, "identifier", true)                      \
     FOR_EACH(Paren, "parenthesis", false)                    \
-    FOR_EACH(Call, "call", false)                            \
+    FOR_EACH(Call, "call", true)                             \
     FOR_EACH(Selector, "selector", true)                     \
-    FOR_EACH(Subscript, "subscript", false)                  \
-    FOR_EACH(Slice, "slice", false)                          \
-    FOR_EACH(Unary, "unary", false)                          \
-    FOR_EACH(Binary, "binary", false)                        \
-    FOR_EACH(Ternary, "ternary", false)                      \
+    FOR_EACH(Subscript, "subscript", true)                   \
+    FOR_EACH(Slice, "slice", true)                           \
+    FOR_EACH(Unary, "unary", true)                           \
+    FOR_EACH(Binary, "binary", true)                         \
+    FOR_EACH(Ternary, "ternary", true)                       \
     FOR_EACH(Cast, "cast", false)                            \
     FOR_EACH(Autocast, "autocast", false)                    \
     FOR_EACH(KeyValue, "key value", false)                   \
@@ -24,14 +24,14 @@
     FOR_EACH(LitCompound, "compound literal", false)         \
     FOR_EACH(LitFunction, "function literal", false)         \
     FOR_EACH(TypePointer, "pointer type", false)             \
-    FOR_EACH(TypeArray, "array type", false)                 \
-    FOR_EACH(TypeSlice, "slice type", false)                 \
-    FOR_EACH(TypeStruct, "struct type", false)               \
-    FOR_EACH(TypeEnum, "enum type", false)                   \
-    FOR_EACH(TypeUnion, "union type", false)                 \
-    FOR_EACH(TypePolymorphic, "polymorphic type", false)     \
-    FOR_EACH(TypeVariadic, "variadic type", false)           \
-    FOR_EACH(TypeFunction, "function type", false)
+    FOR_EACH(TypeArray, "array type", true)                  \
+    FOR_EACH(TypeSlice, "slice type", true)                  \
+    FOR_EACH(TypeStruct, "struct type", true)                \
+    FOR_EACH(TypeEnum, "enum type", true)                    \
+    FOR_EACH(TypeUnion, "union type", true)                  \
+    FOR_EACH(TypePolymorphic, "polymorphic type", true)      \
+    FOR_EACH(TypeVariadic, "variadic type", true)            \
+    FOR_EACH(TypeFunction, "function type", true)
 
 #define STMT_KINDS                        \
     FOR_EACH(Empty, "empty", false)       \
@@ -49,9 +49,9 @@
 
 // TODO: This needs to include some more directives (for example static asserts `#assert` should be supported at top level)
 #define DECL_KINDS                        \
-    FOR_EACH(Variable, "variable", false) \
-    FOR_EACH(Constant, "constant", false) \
-    FOR_EACH(Import, "import", false)
+    FOR_EACH(Variable, "variable", true) \
+    FOR_EACH(Constant, "constant", true) \
+    FOR_EACH(Import, "import", true)
 
 typedef enum ExprKind {
     ExprKind_Invalid = 0,

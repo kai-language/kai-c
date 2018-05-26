@@ -69,7 +69,7 @@ Expr *NewExpr(Package *package, ExprKind kind, Position start) {
     Expr *e = AllocAst(package, sizeof(Expr));
     e->kind = kind;
     e->start = start;
-    e->id = DoesStmtKindAllocateTypeInfo[kind] ? package->astIdCount++ : 0;
+    e->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
     return e;
 }
 
@@ -77,7 +77,7 @@ Stmt *NewStmt(Package *package, StmtKind kind, Position start) {
     Stmt *s = AllocAst(package, sizeof(Stmt));
     s->kind = kind;
     s->start = start;
-    s->id = DoesStmtKindAllocateTypeInfo[kind] ? package->astIdCount++ : 0;
+    s->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
     return s;
 }
 
@@ -85,7 +85,7 @@ Decl *NewDecl(Package *package, DeclKind kind, Position start) {
     Decl *d = AllocAst(package, sizeof(Decl));
     d->kind = kind;
     d->start = start;
-    d->id = DoesStmtKindAllocateTypeInfo[kind] ? package->astIdCount++ : 0;
+    d->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
     return d;
 }
 
