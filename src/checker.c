@@ -22,26 +22,29 @@ Type *checkFuncType(Expr_TypeFunction *func, ExprInfo *exprInfo) {
     return NULL;
 }
 
-void checkConstDecl(Package *package, Decl_Constant *decl) {
-    if (ArrayLen(decl->names) != 1) {
-        ReportError(package, MultipleConstantDeclError, decl->start, "Constant declarations must declare at most one item");
+void checkConstDecl(Package *pkg, Decl *declStmt) {
+    Decl_Constant decl = declStmt->Constant;
+
+    if (ArrayLen(decl.names) != 1) {
+        ReportError(pkg, MultipleConstantDeclError, decl.start, "Constant declarations must declare at most one item");
         return;
     }
 
-    if (ArrayLen(decl->values) > 1) {
-        ReportError(package, ArityMismatchError, decl->start, "Constant declarations only allow for a single value, but got %zu", ArrayLen(decl->values));
+    if (ArrayLen(decl.values) > 1) {
+        ReportError(pkg, ArityMismatchError, decl.start, "Constant declarations only allow for a single value, but got %zu", ArrayLen(decl.values));
         return;
     }
 
     Type *explicitType;
 
-    if (decl->type) {
+    if (decl.type) {
         ExprInfo info = {0};
-        explicitType = checkExpr(decl->type, &info);
+        explicitType = checkExpr(decl.type, &info);
     }
 
-    Expr_Ident *name = decl->names[0];
-    Expr *value = decl->values[0];
+    Expr_Ident *name = decl.names[0];
+    Expr *value = decl.values[0];
+    Symbol *symbol = MapGet(&pkg->symbolMap, name->name);
 
     switch (value->kind) {
     ExprCase(TypeFunction, value)
@@ -54,27 +57,27 @@ void checkConstDecl(Package *package, Decl_Constant *decl) {
 
 }
 
-void checkVarDecl(Package *package, Decl_Variable *var) {
-
+void checkVarDecl(Package *pkg, Decl *declStmt) {
+    Decl_Variable var = declStmt->Variable;
 }
 
-void checkImportDecl(Package *package, Decl_Import *import) {
-
+void checkImportDecl(Package *pkg, Decl *declStmt) {
+    Decl_Import import = declStmt->Import;
 }
 
-void check(Package *package, Stmt *stmt) {
+void check(Package *pkg, Stmt *stmt) {
     switch (stmt->kind) {
-    DeclCase(Constant, stmt)
-        checkConstDecl(package, decl);
-    CaseEnd()
+    case StmtDeclKind_Constant: {
+        checkConstDecl(pkg, (Decl *)stmt);
+    } break;
 
-    DeclCase(Variable, stmt)
-        checkVarDecl(package, decl);
-    CaseEnd()
+    case StmtDeclKind_Variable: {
+        checkVarDecl(pkg, (Decl *)stmt);
+    } break;
 
-    DeclCase(Import, stmt)
-        checkImportDecl(package, decl);
-    CaseEnd()
+    case StmtDeclKind_Import: {
+        checkImportDecl(pkg, (Decl *)stmt);
+    } break;
 
     default: ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
