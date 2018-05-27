@@ -17,6 +17,11 @@ struct ExprInfo {
     ExprMode mode;
 };
 
+struct Scope {
+    Scope *parent;
+    Map members;
+};
+
 #define DeclCase(kind, node) case StmtDeclKind_##kind: { \
     Decl_##kind *decl = &node->kind;
     
@@ -43,6 +48,15 @@ Type *lowerMeta(Package *pkg, Type *type, Position pos) {
 }
 
 Symbol *Lookup(Scope *scope, const char *name) {
+    do {
+        Symbol *symbol = MapGet(&scope->members, name);
+        if (symbol) {
+            return symbol;
+        }
+
+        scope = scope->parent;
+    } while (scope);
+
     return NULL;
 }
 

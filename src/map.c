@@ -41,6 +41,31 @@ void MapFree(Map *map) {
     map->cap = 0;
 }
 
+void MapCopy(Allocator *alloc, Map *dest, Map *source) {
+    Allocator *a = alloc ? alloc : source->allocator;
+    Map map;
+
+    map.allocator = a;
+    map.len = source->len;
+    map.cap = source->cap;
+
+    u64 *keys = Alloc(*a, sizeof(u64) * map.cap);
+    if (!keys) return;
+
+    u64 *vals = Alloc(*a, sizeof(u64) * map.cap);
+    if (!vals) {
+        Free(*a, keys);
+    }
+
+    memcpy(keys, source->keys, sizeof(u64) * map.cap);
+    memcpy(vals, source->vals, sizeof(u64) * map.cap);
+
+    map.keys = keys;
+    map.vals = vals;
+
+    *dest = map;
+}
+
 void MapGrow(Map *map, size_t newCap) {
     newCap = CLAMP_MIN(newCap, 16);
     Allocator *al = map->allocator ? map->allocator : &DefaultAllocator;
@@ -114,7 +139,7 @@ void MapSet(Map *map, const void *key, const void *val) {
 }
 
 #if TEST
-void map_test(void) {
+void test_map(void) {
     Map map = {0};
     enum { N = 1024 };
     for (size_t i = 1; i < N; i++) {
@@ -132,6 +157,29 @@ void map_test(void) {
     for (size_t i = 2; i < N; i++) {
         u64 val = (u64) MapGet(&map, (void*) i);
         ASSERT(val == (i - 1));
+    }
+}
+#endif
+
+#if TEST
+void test_mapCopy() {
+    Map map = {0};
+    enum { N = 1024 };
+    for (size_t i = 1; i < N; i++) {
+        MapSet(&map, (void*) i, (void*) (i + 1));
+    }
+
+    Map mapCopy;
+    MapCopy(NULL, &mapCopy, &map);
+
+    ASSERT(mapCopy.len == map.len);
+    ASSERT(mapCopy.cap == map.cap);
+    ASSERT(mapCopy.keys != map.keys);
+    ASSERT(mapCopy.vals != map.vals);
+
+    for (size_t i = 1; i < N; i++) {
+        u64 val = (u64) MapGet(&mapCopy, (void*) i);
+        ASSERT(val == (i + 1));
     }
 }
 #endif

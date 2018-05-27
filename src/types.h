@@ -1,5 +1,3 @@
-typedef struct Type Type;
-
 Type *InvalidType;
 Type *AnyType;
 Type *VoidType;
@@ -104,4 +102,3 @@ struct Type {
     #undef FOR_EACH
     };
 };
-
