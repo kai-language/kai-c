@@ -96,8 +96,9 @@ void test_TypeIntern() {
 void test_TypeInternMap() {
     InitBuiltinTypes();
 
-    Type *type = MapGet(&TypesMap, "i32");
-    ASSERT(type);
-    ASSERT(type == I32Type);
+    Symbol *symbol = MapGet(&TypesMap, "i32");
+    ASSERT(symbol);
+    ASSERT(symbol->kind == SymbolKind_Type);
+    ASSERT(symbol->type == I32Type);
 }
 #endif

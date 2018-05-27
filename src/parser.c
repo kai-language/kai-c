@@ -717,40 +717,30 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             }
             ArrayFree(exprs);
 
-//            Symbol *symbol = ArenaAlloc(&pkg->arena, sizeof(Symbol));
-
             DynamicArray(Expr *) rhs = NULL;
-            Decl *decl;
 
             if (matchToken(p, TK_Assign)) {
                 rhs = parseExprList(p, noCompoundLiteral);
-                decl =  NewDeclVariable(pkg, start, idents, NULL, rhs);
-            } else if (matchToken(p, TK_Colon)) {
+                return (Stmt *) NewDeclVariable(pkg, start, idents, NULL, rhs);
+            } 
+            
+            if (matchToken(p, TK_Colon)) {
                 rhs = parseExprList(p, noCompoundLiteral);
-                decl = NewDeclConstant(pkg, start, idents, NULL, rhs);
-            } else {
-                Expr *type = parseExpr(p, noCompoundLiteral);
-                if (matchToken(p, TK_Assign)) {
-                    rhs = parseExprList(p, noCompoundLiteral);
-                    decl = NewDeclVariable(pkg, start, idents, type, rhs);
-                } else if (matchToken(p, TK_Colon)) {
-                    rhs = parseExprList(p, noCompoundLiteral);
-                    decl = NewDeclConstant(pkg, start, idents, type, rhs);
-                } else {
-                    decl = NewDeclVariable(pkg, start, idents, type, NULL);
-                }
+                return (Stmt *) NewDeclConstant(pkg, start, idents, NULL, rhs);
             }
 
-            for (size_t i = 0; i < ArrayLen(rhs) && i < ArrayLen(idents); i++) {
-                Symbol *symbol = ArenaAlloc(&pkg->arena, sizeof(Symbol));
-                symbol->decl = decl;
-                symbol->name = idents[i]->name;
-                symbol->kind = decl->kind == DeclKind_Variable ? SymbolKind_Variable : SymbolKind_Constant;
-                symbol->state = SymbolState_Unresolved;
-                DeclarePackageSymbol(pkg, symbol->name, symbol);
+            Expr *type = parseExpr(p, noCompoundLiteral);
+            if (matchToken(p, TK_Assign)) {
+                rhs = parseExprList(p, noCompoundLiteral);
+                return (Stmt *) NewDeclVariable(pkg, start, idents, type, rhs);
+            } 
+            
+            if (matchToken(p, TK_Colon)) {
+                rhs = parseExprList(p, noCompoundLiteral);
+                return (Stmt *) NewDeclConstant(pkg, start, idents, type, rhs);
             }
 
-            return (Stmt *)decl;
+            return (Stmt *) NewDeclVariable(pkg, start, idents, type, NULL);
         }
 
         default:
@@ -929,6 +919,15 @@ void parsePackage(Package *package) {
     // Copy builtins into the package's global scope
     package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
     MapCopy(&DefaultAllocator, &package->globalScope->members, &TypesMap);
+
+    /*for (size_t i = 0; i < ArrayLen(rhs) && i < ArrayLen(idents); i++) {
+        Symbol *symbol = ArenaAlloc(&pkg->arena, sizeof(Symbol));
+        symbol->decl = decl;
+        symbol->name = idents[i]->name;
+        symbol->kind = decl->kind == DeclKind_Variable ? SymbolKind_Variable : SymbolKind_Constant;
+        symbol->state = SymbolState_Unresolved;
+        DeclarePackageSymbol(pkg, symbol->name, symbol);
+    }*/
 
     for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
         CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));

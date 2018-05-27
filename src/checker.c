@@ -42,6 +42,17 @@ Type *lowerMeta(Package *pkg, Type *type, Position pos) {
     return type->Metatype.instanceType;
 }
 
+Scope *pushScope(Package *pkg, Scope *parent) {
+    Scope *scope = ArenaCalloc(&pkg->arena, sizeof(Scope));
+    scope->parent = parent;
+    return scope;
+}
+
+Scope *popScope(Package *pkg, Scope *scope) {
+    ASSERT(scope->parent);
+    return scope->parent;
+}
+
 Symbol *Lookup(Scope *scope, const char *name) {
     do {
         Symbol *symbol = MapGet(&scope->members, name);
