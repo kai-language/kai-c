@@ -40,7 +40,8 @@ typedef enum TypeKind {
 } TypeKind;
 
 struct TypeKind_Invalid {
-
+    // NOTE: this is for VC++ that doesn't support empty structs
+    b8 __PADDING__;
 };
 
 struct TypeKind_Void {
