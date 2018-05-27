@@ -13,7 +13,7 @@ const char *DescribeTypeKind(TypeKind kind) {
 DynamicArray(const Type *) Types;
 Map TypesMap;
 
-#define TYPE(_kind, name, _type, _width) _kind##Type = TypeIntern((Type){.kind = TypeKind_##_type, .width = _width}); ArrayPush(Types, _kind##Type); MapSet(&TypesMap, name, _kind##Type)
+#define TYPE(_kind, name, _type, _width) _kind##Type = TypeIntern((Type){.kind = TypeKind_##_type, .width = _width}); ArrayPush(Types, _kind##Type); MapSet(&TypesMap, name, buildTypeSymbol(name, _kind##Type))
 
 Arena typeInternArena;
 
@@ -21,6 +21,15 @@ Type *TypeIntern(Type type) {
     Type *intern = ArenaAlloc(&typeInternArena, sizeof(Type));
     memcpy(intern, &type, sizeof(Type));
     return intern;
+}
+
+Symbol *buildTypeSymbol(const char *name, Type *type) {
+    Symbol *symbol = ArenaAlloc(&typeInternArena, sizeof(Symbol));
+    symbol->name = name;
+    symbol->kind = SymbolKind_Type;
+    symbol->state = SymbolState_Resolved;;
+    symbol->type = type;
+    return symbol;
 }
 
 void InitBuiltinTypes() {

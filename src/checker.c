@@ -137,6 +137,8 @@ b32 checkImportDecl(Package *pkg, Decl *declStmt) {
 b32 check(Package *pkg, Stmt *stmt) {
     b32 shouldRequeue;
 
+    Symbol *test = Lookup(pkg->globalScope, "i32");
+
     switch (stmt->kind) {
     case StmtDeclKind_Constant: {
         shouldRequeue = checkConstDecl(pkg, (Decl *)stmt);

@@ -927,6 +927,7 @@ void parsePackage(Package *package) {
     package->checkerInfo = checkerInfo;
 
     // Copy builtins into the package's global scope
+    package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
     MapCopy(&DefaultAllocator, &package->globalScope->members, &TypesMap);
 
     for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
