@@ -912,7 +912,7 @@ void parsePackage(Package *package) {
     Parser parser = {lexer, .tok = tok, package};
     package->stmts = parseStmts(&parser);
 
-    DynamicArray(CheckerInfo *) checkerInfo = NULL;
+    DynamicArray(CheckerInfo) checkerInfo = NULL;
     ArrayFit(checkerInfo, package->astIdCount+1);
     package->checkerInfo = checkerInfo;
 
@@ -920,14 +920,30 @@ void parsePackage(Package *package) {
     package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
     MapCopy(&DefaultAllocator, &package->globalScope->members, &TypesMap);
 
-    /*for (size_t i = 0; i < ArrayLen(rhs) && i < ArrayLen(idents); i++) {
-        Symbol *symbol = ArenaAlloc(&pkg->arena, sizeof(Symbol));
-        symbol->decl = decl;
-        symbol->name = idents[i]->name;
-        symbol->kind = decl->kind == DeclKind_Variable ? SymbolKind_Variable : SymbolKind_Constant;
-        symbol->state = SymbolState_Unresolved;
-        DeclarePackageSymbol(pkg, symbol->name, symbol);
-    }*/
+
+    for(size_t i = 0; i < ArrayLen(package->stmts); i++) {
+        Stmt *stmt = package->stmts[i];
+
+        switch (stmt->kind) {
+        case StmtDeclKind_Constant:
+        case StmtDeclKind_Variable: {
+            Decl_Constant decl = stmt->Constant;
+            SymbolKind kind = stmt->kind == StmtDeclKind_Constant ? SymbolKind_Constant : SymbolKind_Variable;
+            for (size_t j = 0; j < ArrayLen(decl.names); j++) {
+                Symbol *symbol = ArenaAlloc(&package->arena, sizeof(Symbol));
+                symbol->decl = (Decl *) stmt;
+                symbol->name = decl.names[j]->name;
+                symbol->kind = kind;
+                symbol->state = SymbolState_Unresolved;
+                DeclarePackageSymbol(package, symbol->name, symbol);
+            }
+        } break;
+
+        case StmtDeclKind_Import:
+            // TODO(Brett): collect import
+            UNIMPLEMENTED();
+        }
+    }
 
     for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
         CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));

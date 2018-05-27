@@ -1,5 +1,3 @@
-#include "checker.h"
-
 typedef enum ExprMode {
     ExprMode_Invalid,
     ExprMode_Computed,
@@ -14,6 +12,7 @@ typedef enum ExprMode {
 typedef struct ExprInfo ExprInfo;
 struct ExprInfo {
     Type *desiredType;
+    Scope *scope;
     ExprMode mode;
 };
 
@@ -31,6 +30,12 @@ void invalidateSymbol(Symbol *symbol) {
         symbol->state = SymbolState_Resolved;
         symbol->kind = SymbolKind_Invalid;
     }
+}
+
+Inline
+void resolveSymbol(Symbol *symbol, Type *type) {
+    symbol->state = SymbolState_Resolved;
+    symbol->type = type;
 }
 
 Type *lowerMeta(Package *pkg, Type *type, Position pos) {
@@ -55,7 +60,7 @@ Scope *popScope(Package *pkg, Scope *scope) {
 
 Symbol *Lookup(Scope *scope, const char *name) {
     do {
-        Symbol *symbol = MapGet(&scope->members, name);
+        Symbol *symbol = MapGetU64(&scope->members, HashBytes(name, strlen(name)));
         if (symbol) {
             return symbol;
         }
@@ -70,14 +75,26 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
     switch (expr->kind) {
     case ExprKind_Ident: {
         Expr_Ident ident = expr->Ident; 
-        // FIXME(Brett): just use global scope as an example. Update with context-specific scope
-        Symbol *symbol = Lookup(pkg->globalScope, ident.name);
+        Symbol *symbol = Lookup(exprInfo->scope, ident.name);
         if (!symbol) {
             ReportError(pkg, UndefinedIdentError, expr->start, "Use of undefined identifier '%s'", ident.name);
             exprInfo->mode = ExprMode_Invalid;
             return InvalidType;
         }
 
+        symbol->used = true;
+        if (symbol->state != SymbolState_Resolved) {
+            // TODO(Brett): requeue stmt and try again later
+            UNIMPLEMENTED();
+        }
+
+        CheckerInfo_Ident identInfo = {.symbol = symbol};
+        CheckerInfo info;
+        info.kind = CheckerInfoKind_Ident;
+        info.Ident = identInfo;
+        pkg->checkerInfo[expr->id] = info;
+
+        return symbol->type;
     } break;
     }
 
@@ -96,7 +113,8 @@ b32 checkConstDecl(Package *pkg, Decl *declStmt) {
 
         if (ArrayLen(decl.names) > 0) {
             for (size_t i = 0; i < ArrayLen(decl.names); i++) {
-                Symbol *symbol = MapGet(&pkg->symbolMap, decl.names[0]->name);
+                const char *name = decl.names[i]->name;
+                Symbol *symbol = MapGetU64(&pkg->symbolMap, HashBytes(name, strlen(name)));
                 invalidateSymbol(symbol);
             }
         }
@@ -112,7 +130,8 @@ b32 checkConstDecl(Package *pkg, Decl *declStmt) {
     Type *expectedType = NULL;
 
     if (decl.type) {
-        ExprInfo info = {0};
+        // FIXME: check if we need to use the global scope
+        ExprInfo info = {.scope = pkg->globalScope};
         expectedType = lowerMeta(pkg, checkExpr(pkg, decl.type, &info), decl.type->start);
     }
 
@@ -122,12 +141,13 @@ b32 checkConstDecl(Package *pkg, Decl *declStmt) {
     symbol->state = SymbolState_Resolving;
 
     switch (value->kind) {
-    ExprCase(TypeFunction, value)
-        ExprInfo info = {.desiredType = expectedType};
-
+    case ExprKind_TypeFunction: {
+        Expr_TypeFunction *expr = &value->TypeFunction;
+        // FIXME: check if we need to use the global scope
+        ExprInfo info = {.desiredType = expectedType, .scope = pkg->globalScope};
         Type *type = checkFuncType(expr, &info);
-        // TODO(Brett): store this info and update context
-    CaseEnd()
+        resolveSymbol(symbol, type);
+    } break;
     }
 
     return false;
@@ -147,8 +167,6 @@ b32 checkImportDecl(Package *pkg, Decl *declStmt) {
 
 b32 check(Package *pkg, Stmt *stmt) {
     b32 shouldRequeue;
-
-    Symbol *test = Lookup(pkg->globalScope, "i32");
 
     switch (stmt->kind) {
     case StmtDeclKind_Constant: {

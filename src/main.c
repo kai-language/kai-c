@@ -7,6 +7,7 @@
 #include "symbols.c"
 #include "types.c"
 
+#include "checker.h"
 #include "parser.c"
 #include "checker.c"
 

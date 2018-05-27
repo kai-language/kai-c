@@ -13,7 +13,7 @@ const char *DescribeTypeKind(TypeKind kind) {
 DynamicArray(const Type *) Types;
 Map TypesMap;
 
-#define TYPE(_kind, name, _type, _width) _kind##Type = TypeIntern((Type){.kind = TypeKind_##_type, .width = _width}); ArrayPush(Types, _kind##Type); MapSet(&TypesMap, name, buildTypeSymbol(name, _kind##Type))
+#define TYPE(_kind, name, _type, _width) _kind##Type = TypeIntern((Type){.kind = TypeKind_##_type, .width = _width}); ArrayPush(Types, _kind##Type); MapSetU64(&TypesMap, HashBytes(name, strlen(name)), (u64)buildTypeSymbol(name, _kind##Type))
 
 Arena typeInternArena;
 
@@ -96,7 +96,7 @@ void test_TypeIntern() {
 void test_TypeInternMap() {
     InitBuiltinTypes();
 
-    Symbol *symbol = MapGet(&TypesMap, "i32");
+    Symbol *symbol = MapGetU64(&TypesMap, HashBytes("i32", strlen("i32")));
     ASSERT(symbol);
     ASSERT(symbol->kind == SymbolKind_Type);
     ASSERT(symbol->type == I32Type);

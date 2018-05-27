@@ -225,7 +225,7 @@ struct Package {
     DynamicArray(Symbol *) symbols;
 
     u64 astIdCount;
-    DynamicArray(CheckerInfo *) checkerInfo;
+    DynamicArray(CheckerInfo) checkerInfo;
 
     Scope *globalScope;
 };

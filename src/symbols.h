@@ -23,6 +23,7 @@ struct Symbol {
     SymbolState state;
     Decl *decl;
     Type *type;
+    b8 used;
     Val val;
 };
 
