@@ -97,7 +97,7 @@ void *MapGetU64(Map *map, u64 key) {
     for (;;) {
         i &= map->cap - 1;
         if (map->keys[i] == key) {
-            return (void*) map->vals[i];
+            return (void *) map->vals[i];
         } else if (!map->keys[i]) {
             return 0;
         }
@@ -143,19 +143,19 @@ void test_map(void) {
     Map map = {0};
     enum { N = 1024 };
     for (size_t i = 1; i < N; i++) {
-        MapSet(&map, (void*) i, (void*) (i + 1));
+        MapSet(&map, (void *) i, (void *) (i + 1));
     }
     for (size_t i = 1; i < N; i++) {
-        u64 val = (u64) MapGet(&map, (void*) i);
+        u64 val = (u64) MapGet(&map, (void *) i);
         ASSERT(val == (i + 1));
     }
     // Override values
 
     for (size_t i = 2; i < N; i++) {
-        MapSet(&map, (void*) i, (void*) (i - 1));
+        MapSet(&map, (void *) i, (void *) (i - 1));
     }
     for (size_t i = 2; i < N; i++) {
-        u64 val = (u64) MapGet(&map, (void*) i);
+        u64 val = (u64) MapGet(&map, (void *) i);
         ASSERT(val == (i - 1));
     }
 }
@@ -166,7 +166,7 @@ void test_mapCopy() {
     Map map = {0};
     enum { N = 1024 };
     for (size_t i = 1; i < N; i++) {
-        MapSet(&map, (void*) i, (void*) (i + 1));
+        MapSet(&map, (void *) i, (void *) (i + 1));
     }
 
     Map mapCopy;
@@ -178,7 +178,7 @@ void test_mapCopy() {
     ASSERT(mapCopy.vals != map.vals);
 
     for (size_t i = 1; i < N; i++) {
-        u64 val = (u64) MapGet(&mapCopy, (void*) i);
+        u64 val = (u64) MapGet(&mapCopy, (void *) i);
         ASSERT(val == (i + 1));
     }
 }

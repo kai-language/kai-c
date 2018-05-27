@@ -206,7 +206,12 @@ struct DiagnosticEngine {
 typedef struct Symbol Symbol;
 typedef struct Stmt Stmt;
 typedef struct CheckerInfo CheckerInfo;
+
 typedef struct Scope Scope;
+struct Scope {
+    Scope *parent;
+    Map members;
+};
 
 typedef struct Package Package;
 struct Package {

@@ -926,6 +926,9 @@ void parsePackage(Package *package) {
     ArrayFit(checkerInfo, package->astIdCount+1);
     package->checkerInfo = checkerInfo;
 
+    // Copy builtins into the package's global scope
+    MapCopy(&DefaultAllocator, &package->globalScope->members, &TypesMap);
+
     for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
         CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
         work->package = package;

@@ -17,11 +17,6 @@ struct ExprInfo {
     ExprMode mode;
 };
 
-struct Scope {
-    Scope *parent;
-    Map members;
-};
-
 #define DeclCase(kind, node) case StmtDeclKind_##kind: { \
     Decl_##kind *decl = &node->kind;
     
