@@ -76,7 +76,7 @@ make tests
 The `Makefile` has an assortment of build flags that allow for extensive customization. Just override `CFLAGS` to enable/disable them:
 
 ```
-make release CFLAGS=-DNO_ERROR_CODES -DASSERTS
+make release CFLAGS="-DNO_ERROR_CODES -DASSERTS"
 ```
 
 #### Supported Flags

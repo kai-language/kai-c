@@ -951,7 +951,7 @@ void parsePackage(Package *package) {
     package->globalScope->parent = universalScope;
     package->globalScope->members = package->symbolMap;
 
-    for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
+    for (int i = (int)(ArrayLen(package->stmts)) - 1; i >= 0; i--) {
         CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
         work->package = package;
         work->stmt = package->stmts[i];

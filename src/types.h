@@ -18,20 +18,22 @@ extern Type *U64Type;
 extern Type *F32Type;
 extern Type *F64Type;
 
-#define TYPE_KINDS               \
-    FOR_EACH(Invalid, "invalid") \
-    FOR_EACH(Void, "void")       \
-    FOR_EACH(Bool, "bool")       \
-    FOR_EACH(Int, "int")         \
-    FOR_EACH(Float, "float")     \
-    FOR_EACH(Pointer, "pointer") \
-    FOR_EACH(Array, "array")     \
-    FOR_EACH(Slice, "slice")     \
-    FOR_EACH(Any, "any")         \
-    FOR_EACH(Struct, "struct")   \
-    FOR_EACH(Union, "union")     \
-    FOR_EACH(Metatype, "meta")   \
-    FOR_EACH(Alias, "alias")     \
+#define TYPE_KINDS                  \
+    FOR_EACH(Invalid, "invalid")    \
+    FOR_EACH(Void, "void")          \
+    FOR_EACH(Bool, "bool")          \
+    FOR_EACH(UntypedInt, "int")     \
+    FOR_EACH(Int, "int")            \
+    FOR_EACH(UntypedFloat, "float") \
+    FOR_EACH(Float, "float")        \
+    FOR_EACH(Pointer, "pointer")    \
+    FOR_EACH(Array, "array")        \
+    FOR_EACH(Slice, "slice")        \
+    FOR_EACH(Any, "any")            \
+    FOR_EACH(Struct, "struct")      \
+    FOR_EACH(Union, "union")        \
+    FOR_EACH(Metatype, "meta")      \
+    FOR_EACH(Alias, "alias")        \
 
 typedef enum TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
@@ -52,8 +54,17 @@ struct TypeKind_Bool {
     b8 flags;
 };
 
+struct TypeKind_UntypedInt {
+    b8 __PADDING__;
+};
+
 struct TypeKind_Int {
     b8 isSigned;
+};
+
+
+struct TypeKind_UntypedFloat {
+
 };
 
 struct TypeKind_Float {

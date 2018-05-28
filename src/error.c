@@ -20,6 +20,7 @@
     FOR_EACH(ArityMismatch, "The amount of declarations doesn't match the amount of values"), \
     FOR_EACH(InvalidMetatype, "The type provided was not a metatype"), \
     FOR_EACH(UndefinedIdent, "Use of an undefined identifier"), \
+    FOR_EACH(InvalidConversion, "Unable to convert type to target type"), \
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error

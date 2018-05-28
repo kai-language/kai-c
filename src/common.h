@@ -240,5 +240,7 @@ typedef union Val {
     u32 u32;
     i64 i64;
     u64 u64;
+    f32 f32;
+    f64 f64;
     uintptr_t ptr;
 } Val;

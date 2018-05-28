@@ -14,6 +14,7 @@ struct ExprInfo {
     Type *desiredType;
     Scope *scope;
     ExprMode mode;
+    Val val;
 };
 
 #define DeclCase(kind, node) case StmtDeclKind_##kind: { \
@@ -45,6 +46,39 @@ Type *lowerMeta(Package *pkg, Type *type, Position pos) {
     }
 
     return type->Metatype.instanceType;
+}
+
+Type *baseType(Type *type) {
+repeat:
+    if (type->kind == TypeKind_Alias) {
+        type = type->Alias.symbol->type;
+        goto repeat;
+    }
+
+    return type;
+}
+
+b32 isInteger(Type *type) {
+    type = baseType(type);
+    if (type->kind == TypeKind_Int || type->kind == TypeKind_UntypedInt) {
+        return true;
+    }
+
+    return false;
+}
+
+b32 isFloat(Type *type) {
+    type = baseType(type);
+    if (type->kind == TypeKind_Float || type->kind == TypeKind_UntypedFloat) {
+        return true;
+    }
+
+    return false;
+}
+
+b32 convert(Type *type, Type *target) {
+    // FIXME: Brett, this doesn't work for aliased types
+    return type == target;
 }
 
 Scope *pushScope(Package *pkg, Scope *parent) {
@@ -96,12 +130,80 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
         return symbol->type;
     } break;
+
+    case ExprKind_LitInt: {
+        Expr_LitInt lit = expr->LitInt;
+
+        Type *type = InvalidType;
+
+        if (exprInfo->desiredType) {
+            if (isInteger(exprInfo->desiredType)) {
+                exprInfo->val.u64 = lit.val;
+            }
+
+            else if (isFloat(exprInfo->desiredType)) {
+                exprInfo->val.f64 = (f64)lit.val;
+            }
+
+            else {
+                ReportError(
+                    pkg, InvalidConversionError, expr->start,
+                    "Unable to convert type %s to expected type type %s",
+                    DescribeType(UntypedIntType), DescribeType(exprInfo->desiredType)
+                );
+
+                return InvalidType;
+            }
+
+            type = exprInfo->desiredType;
+        } else {
+            type = UntypedIntType;
+        }
+        
+        exprInfo->mode = ExprMode_Computed;
+        return type;
+    };
+
+    case ExprKind_LitFloat: {
+        Expr_LitFloat lit = expr->LitFloat;
+
+        Type *type = InvalidType;
+
+        if (exprInfo->desiredType) {
+            if (isInteger(exprInfo->desiredType)) {
+                exprInfo->val.u64 = (u64)lit.val;
+            }
+
+            else if (isFloat(exprInfo->desiredType)) {
+                exprInfo->val.f64 = lit.val;
+            }
+
+            else {
+                ReportError(
+                    pkg, InvalidConversionError, expr->start,
+                    "Unable to convert type %s to expected type type %s",
+                    DescribeType(UntypedFloatType), DescribeType(exprInfo->desiredType)
+                );
+
+                return InvalidType;
+            }
+
+            type = exprInfo->desiredType;
+        } else {
+
+        }
+
+        exprInfo->mode = ExprMode_Computed;
+        return type;
+    } break;
     }
 
-    return NULL;
+    return InvalidType;
 }
 
-Type *checkFuncType(Expr_TypeFunction *func, ExprInfo *exprInfo) {
+Type *checkFuncType(Expr *funcExpr, ExprInfo *exprInfo) {
+    Expr_TypeFunction func = funcExpr->TypeFunction;
+
     return NULL;
 }
 
@@ -142,20 +244,42 @@ b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
     symbol->state = SymbolState_Resolving;
 
     switch (value->kind) {
-    case ExprKind_TypeFunction: {
-        Expr_TypeFunction *expr = &value->TypeFunction;
-        ExprInfo info = {.desiredType = expectedType, .scope = scope};
-        Type *type = checkFuncType(expr, &info);
+    case ExprKind_LitFunction: {
+        Expr_LitFunction func = value->LitFunction;
+        ExprInfo info = {.scope = scope};
+        Type *type = checkFuncType(func.type, &info);
         resolveSymbol(symbol, type);
     } break;
 
     case ExprKind_TypeStruct:
     case ExprKind_TypeUnion:
     case ExprKind_TypeEnum: {
-
+        UNIMPLEMENTED();
     } break;
     }
 
+    ExprInfo info = {.scope = scope, .desiredType = expectedType};
+    Type *type = checkExpr(pkg, value, &info);
+
+    if (expectedType) {
+        if (!convert(type, expectedType)) {
+            ReportError(
+                pkg, InvalidConversionError, value->start,
+                "Unable to convert type %s to expected type type %s",
+                DescribeType(type), DescribeType(expectedType)
+            );
+            invalidateSymbol(symbol);
+        }
+    }
+
+    // TODO: check for tuple
+    
+    if (type->kind == TypeKind_Metatype) {
+        // TODO: update metatypes
+    }
+
+    symbol->type = type;
+    symbol->state = SymbolState_Resolved;
     return false;
 }
 

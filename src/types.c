@@ -20,6 +20,11 @@ Type *U64Type;
 Type *F32Type;
 Type *F64Type;
 
+
+// TODO(Brett): figure out how I want to handle instance vs metatypes
+Type *UntypedIntType;
+Type *UntypedFloatType;
+
 const char *TypeKindDescriptions[] = {
 #define FOR_EACH(kind, text) [TypeKind_##kind] = "" #text "",
     TYPE_KINDS
@@ -87,8 +92,20 @@ void InitBuiltinTypes() {
 
     TYPE(F32, "f32", Float, 32);
     TYPE(F64, "f64", Float, 64);
+    
+    UntypedIntType = TypeIntern((Type){.kind = TypeKind_UntypedInt});
+    UntypedFloatType = TypeIntern((Type){.kind = TypeKind_UntypedFloat});
 
     init = true;
+}
+
+const char *DescribeType(Type *type) {
+    // FIXME(Brett): just temp output
+    if (type) {
+        return DescribeTypeKind(type->kind);
+    }
+
+    return DescribeTypeKind(TypeKind_Invalid);
 }
 
 #undef TYPE
