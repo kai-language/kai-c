@@ -1,6 +1,6 @@
 #include "compiler.h"
 
-void InitBuiltinTypes();
+void InitBuiltinTypes(void);
 
 void InitCompiler() {
     InitKeywords();

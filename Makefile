@@ -36,7 +36,7 @@ llvm.o:
 	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 
 tests: clean
-	@./scripts/gen_test_main.sh > $(TEST_MAIN)
+	@./tools/gen_test_main.sh > $(TEST_MAIN)
 	@$(CC) $(TEST_MAIN) -c -o core.o $(CFLAGS) -DTEST $(LFLAGS) $(DISABLED_WARNINGS)
 	@$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)

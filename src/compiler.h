@@ -4,5 +4,5 @@ struct CheckerWork {
     Stmt *stmt;
 };
 
-void InitCompiler();
+void InitCompiler(void);
 Package *ImportPackage(const char *path);

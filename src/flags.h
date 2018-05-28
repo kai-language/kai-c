@@ -36,6 +36,6 @@ struct CLIFlag {
 
 CLIFlag *FlagForName(const char *name);
 void ParseFlags(int *pargc, const char ***pargv);
-void InitUnsetFlagsToDefaults();
-void PrintUsage();
+void InitUnsetFlagsToDefaults(void);
+void PrintUsage(void);
 
