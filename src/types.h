@@ -1,21 +1,22 @@
-Type *InvalidType;
-Type *AnyType;
-Type *VoidType;
 
-Type *BoolType;
+extern Type *InvalidType;
+extern Type *AnyType;
+extern Type *VoidType;
 
-Type *I8Type;
-Type *I16Type;
-Type *I32Type;
-Type *I64Type;
+extern Type *BoolType;
 
-Type *U8Type;
-Type *U16Type;
-Type *U32Type;
-Type *U64Type;
+extern Type *I8Type;
+extern Type *I16Type;
+extern Type *I32Type;
+extern Type *I64Type;
 
-Type *F32Type;
-Type *F64Type;
+extern Type *U8Type;
+extern Type *U16Type;
+extern Type *U32Type;
+extern Type *U64Type;
+
+extern Type *F32Type;
+extern Type *F64Type;
 
 #define TYPE_KINDS \
     FOR_EACH(Invalid, "invalid") \

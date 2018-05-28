@@ -1,4 +1,18 @@
+
 #include "flags.h"
+
+bool FlagParseComments;
+bool FlagErrorCodes;
+bool FlagVerbose;
+bool FlagVersion;
+bool FlagHelp;
+bool FlagEmitIR;
+bool FlagDumpIR;
+
+const char *InputName;
+const char *OutputName;
+int TargetOs;
+int TargetArch;
 
 CLIFlag Flags[] = {
     { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },

@@ -1,4 +1,24 @@
+
 #include "types.h"
+
+Type *InvalidType;
+Type *AnyType;
+Type *VoidType;
+
+Type *BoolType;
+
+Type *I8Type;
+Type *I16Type;
+Type *I32Type;
+Type *I64Type;
+
+Type *U8Type;
+Type *U16Type;
+Type *U32Type;
+Type *U64Type;
+
+Type *F32Type;
+Type *F64Type;
 
 const char *TypeKindDescriptions[] = {
 #define FOR_EACH(kind, text) [TypeKind_##kind] = "" #text "",

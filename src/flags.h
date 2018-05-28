@@ -1,15 +1,16 @@
-bool FlagParseComments;
-bool FlagErrorCodes;
-bool FlagVerbose;
-bool FlagVersion;
-bool FlagHelp;
-bool FlagEmitIR;
-bool FlagDumpIR;
 
-const char *InputName;
-const char *OutputName;
-int TargetOs;
-int TargetArch;
+extern bool FlagParseComments;
+extern bool FlagErrorCodes;
+extern bool FlagVerbose;
+extern bool FlagVersion;
+extern bool FlagHelp;
+extern bool FlagEmitIR;
+extern bool FlagDumpIR;
+
+extern const char *InputName;
+extern const char *OutputName;
+extern int TargetOs;
+extern int TargetArch;
 
 typedef enum CLIFlagKind {
     CLIFlagKind_Bool,
