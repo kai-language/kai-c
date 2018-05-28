@@ -105,8 +105,10 @@ Type *checkFuncType(Expr_TypeFunction *func, ExprInfo *exprInfo) {
     return NULL;
 }
 
-b32 checkConstDecl(Package *pkg, Decl *declStmt) {
+b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
     Decl_Constant decl = declStmt->Constant;
+
+    ASSERT(scope);
 
     if (ArrayLen(decl.names) != 1) {
         ReportError(pkg, MultipleConstantDeclError, decl.start, "Constant declarations must declare at most one item");
@@ -130,8 +132,7 @@ b32 checkConstDecl(Package *pkg, Decl *declStmt) {
     Type *expectedType = NULL;
 
     if (decl.type) {
-        // FIXME: check if we need to use the global scope
-        ExprInfo info = {.scope = pkg->globalScope};
+        ExprInfo info = {.scope = scope};
         expectedType = lowerMeta(pkg, checkExpr(pkg, decl.type, &info), decl.type->start);
     }
 
@@ -143,17 +144,22 @@ b32 checkConstDecl(Package *pkg, Decl *declStmt) {
     switch (value->kind) {
     case ExprKind_TypeFunction: {
         Expr_TypeFunction *expr = &value->TypeFunction;
-        // FIXME: check if we need to use the global scope
-        ExprInfo info = {.desiredType = expectedType, .scope = pkg->globalScope};
+        ExprInfo info = {.desiredType = expectedType, .scope = scope};
         Type *type = checkFuncType(expr, &info);
         resolveSymbol(symbol, type);
+    } break;
+
+    case ExprKind_TypeStruct:
+    case ExprKind_TypeUnion:
+    case ExprKind_TypeEnum: {
+
     } break;
     }
 
     return false;
 }
 
-b32 checkVarDecl(Package *pkg, Decl *declStmt) {
+b32 checkVarDecl(Package *pkg, Scope *scope, Decl *declStmt) {
     Decl_Variable var = declStmt->Variable;
 
     return false;
@@ -168,13 +174,15 @@ b32 checkImportDecl(Package *pkg, Decl *declStmt) {
 b32 check(Package *pkg, Stmt *stmt) {
     b32 shouldRequeue;
 
+    Scope *scope = pkg->globalScope;
+
     switch (stmt->kind) {
     case StmtDeclKind_Constant: {
-        shouldRequeue = checkConstDecl(pkg, (Decl *)stmt);
+        shouldRequeue = checkConstDecl(pkg, scope, (Decl *)stmt);
     } break;
 
     case StmtDeclKind_Variable: {
-        shouldRequeue = checkVarDecl(pkg, (Decl *)stmt);
+        shouldRequeue = checkVarDecl(pkg, scope, (Decl *)stmt);
     } break;
 
     case StmtDeclKind_Import: {

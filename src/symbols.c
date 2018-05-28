@@ -10,9 +10,6 @@ void DeclarePackageSymbol(Package *package, const char *name, Symbol *sym) {
         }
     }
 
-    // TODO(Brett, vdka): Should we be hashing the string here or does the intern
-    // system cover that for us? This function uses the pointer and not the
-    // content of the string
     MapSet(&package->symbolMap, name, sym);
     ArrayPush(package->symbols, sym);
 }

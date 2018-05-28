@@ -33,11 +33,11 @@ const char *DescribeTypeKind(TypeKind kind) {
 DynamicArray(const Type *) Types;
 Map TypesMap;
 
-#define TYPE(_kind, name, _type, _width) \
-    _kind##Type = TypeIntern((Type){.kind = TypeKind_##_type, .width = _width}); \
-    const char *intern##_kind = StrIntern(name); \
-    ArrayPush(Types, _kind##Type); \
-    MapSet(&TypesMap, intern##_kind, buildTypeSymbol(intern##_kind, _kind##Type))
+#define TYPE(_kind, name, _type, _width)                                                 \
+    _kind##Type = buildBuiltinIntern((Type){.kind = TypeKind_##_type, .width = _width}); \
+    const char *intern##_kind = StrIntern(name);                                         \
+    ArrayPush(Types, _kind##Type);                                                       \
+    MapSet(&TypesMap, intern##_kind, buildTypeSymbol(intern##_kind, _kind##Type))        \
 
 Arena typeInternArena;
 
@@ -45,6 +45,15 @@ Type *TypeIntern(Type type) {
     Type *intern = ArenaAlloc(&typeInternArena, sizeof(Type));
     memcpy(intern, &type, sizeof(Type));
     return intern;
+}
+
+Type *buildBuiltinIntern(Type type) {
+    Type *t = ArenaAlloc(&typeInternArena, sizeof(Type));
+    memcpy(t, &type, sizeof(Type));
+
+    Type metatype = {.kind = TypeKind_Metatype};
+    metatype.Metatype.instanceType = t;
+    return TypeIntern(metatype);
 }
 
 Symbol *buildTypeSymbol(const char *name, Type *type) {
@@ -102,25 +111,26 @@ void test_TypeIntern() {
     ASSERT(U32Type);
     ASSERT(U64Type);
 
-    ASSERT(I8Type->width == 8);
-    ASSERT(I16Type->width == 16);
-    ASSERT(I32Type->width == 32);
-    ASSERT(I64Type->width == 64);
-    ASSERT(U8Type->width == 8);
-    ASSERT(U16Type->width == 16);
-    ASSERT(U32Type->width == 32);
-    ASSERT(U64Type->width == 64);
+    ASSERT(I8Type->Metatype.instanceType->width  ==  8);
+    ASSERT(I16Type->Metatype.instanceType->width == 16);
+    ASSERT(I32Type->Metatype.instanceType->width == 32);
+    ASSERT(I64Type->Metatype.instanceType->width == 64);
+    ASSERT(U8Type->Metatype.instanceType->width  ==  8);
+    ASSERT(U16Type->Metatype.instanceType->width == 16);
+    ASSERT(U32Type->Metatype.instanceType->width == 32);
+    ASSERT(U64Type->Metatype.instanceType->width == 64);
 
-    ASSERT(F32Type->width == 32);
-    ASSERT(F64Type->width == 64);
+    ASSERT(F32Type->Metatype.instanceType->width == 32);
+    ASSERT(F64Type->Metatype.instanceType->width == 64);
 }
 #endif
 
 #if TEST
 void test_TypeInternMap() {
+    InitKeywords();
     InitBuiltinTypes();
 
-    Symbol *symbol = MapGetU64(&TypesMap, HashBytes("i32", strlen("i32")));
+    Symbol *symbol = MapGet(&TypesMap, StrIntern("i32"));
     ASSERT(symbol);
     ASSERT(symbol->kind == SymbolKind_Type);
     ASSERT(symbol->type == I32Type);

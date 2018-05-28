@@ -2,7 +2,7 @@
 #include "flags.h"
 
 bool FlagParseComments;
-bool FlagErrorCodes;
+bool FlagErrorCodes = true;
 bool FlagVerbose;
 bool FlagVersion;
 bool FlagHelp;

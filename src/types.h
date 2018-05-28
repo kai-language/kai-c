@@ -18,7 +18,7 @@ extern Type *U64Type;
 extern Type *F32Type;
 extern Type *F64Type;
 
-#define TYPE_KINDS \
+#define TYPE_KINDS               \
     FOR_EACH(Invalid, "invalid") \
     FOR_EACH(Void, "void")       \
     FOR_EACH(Bool, "bool")       \
@@ -30,7 +30,8 @@ extern Type *F64Type;
     FOR_EACH(Any, "any")         \
     FOR_EACH(Struct, "struct")   \
     FOR_EACH(Union, "union")     \
-    FOR_EACH(Metatype, "meta")
+    FOR_EACH(Metatype, "meta")   \
+    FOR_EACH(Alias, "alias")     \
 
 typedef enum TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
@@ -91,6 +92,10 @@ struct TypeKind_Union {
 
 struct TypeKind_Metatype {
     Type *instanceType;
+};
+
+struct TypeKind_Alias {
+    Symbol *symbol;
 };
 
 struct Type {

@@ -9,6 +9,7 @@ struct Map {
 
 void MapFree(Map *map);
 void MapCopy(Allocator *alloc, Map *dest, Map *source);
+void MapCombine(Map *dest, Map *source);
 void MapGrow(Map *map, size_t newCap);
 
 void *MapGetU64(Map *map, u64 key);

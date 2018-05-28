@@ -15,21 +15,58 @@
 
 #define VERSION "0.0.0 (prerelease)"
 
+#ifdef DEBUG
+b8 _debugEnabled = true;
+#else
+b8 _debugEnabled = false;
+#endif
+
+#if defined(ASSERTS) || defined(DEBUG)
+b8 _assertsEnabled = true;
+#else
+b8 _assertsEnabled = false;
+#endif
+
+#ifndef NO_ERROR_CODES
+b8 _errorCodesEnabled = true;
+#else
+b8 _errorCodesEnabled = false;
+#endif
+
+#ifdef DIAGNOSTICS
+b8 _diagnosticsEnabled = true;
+#else
+b8 _diagnosticsEnabled = false;
+#endif
+
+
+void outputVersionAndBuildInfo() {
+    printf("%s\n\n", VERSION);
+
+#define checkOrCross(info) \
+    printf("%-11s %s\n", "" #info "", _##info##Enabled ? "✅" : "❌")
+
+    checkOrCross(asserts);
+    checkOrCross(debug);
+    checkOrCross(errorCodes);
+    checkOrCross(diagnostics);
+}
+
 #ifndef TEST
 int main(int argc, const char **argv) {
     
     const char *programName = argv[0];
     ParseFlags(&argc, &argv);
+    if (FlagVersion) {
+        outputVersionAndBuildInfo();
+        exit(0);
+    }
     if (argc != 1 || FlagHelp) {
         printf("Usage: %s [flags] <input>\n", programName);
         PrintUsage();
         exit(!FlagHelp);
     }
-    if (FlagVersion) {
-        printf(VERSION);
-        exit(0);
-    }
-    
+        
     InitCompiler();
     Package *mainPackage = ImportPackage(InputName);
     if (!mainPackage) {
@@ -55,9 +92,13 @@ int main(int argc, const char **argv) {
         
         break;
     }
-    printf("File %s has %zu top level statements\n", mainPackage->path, ArrayLen(mainPackage->stmts));
-    
-    // Finished parsing
+
+    for (size_t i = 0; i < ArrayLen(packages); i++) {
+        if (HasErrors(packages[i])) {
+            OutputReportedErrors(packages[i]);
+        }
+    }
+
     ArenaFree(&parsingQueue.arena);
     ArenaFree(&checkingQueue.arena);
     

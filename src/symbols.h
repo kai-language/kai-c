@@ -15,7 +15,6 @@ typedef enum SymbolState {
 typedef struct Decl Decl;
 typedef struct Type Type;
 
-typedef struct Symbol Symbol;
 struct Symbol {
     const char *name;
     const char *externalName;

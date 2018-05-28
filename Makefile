@@ -1,8 +1,8 @@
 CC = clang
 CXX = clang++
 
-debug:   CFLAGS = -g -O0 -DDEBUG -DDIAGNOSTICS -DSLOW
-release: CFLAGS = -O3 -march=native -DRELEASE -DFAST
+debug:   local_CFLAGS = -g -O0 -DDEBUG -DDIAGNOSTICS -DSLOW $(CFLAGS)
+release: local_CFLAGS = -O3 -march=native -DRELEASE -DFAST $(CFLAGS)
 
 LLVM_VERSION := 6.0
 
@@ -31,13 +31,13 @@ release: clean $(TARGET)
 $(TARGET): core.o llvm.o
 	$(CXX) -o $(TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
 core.o:
-	$(CC) src/main.c -c -o core.o $(CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
+	$(CC) src/main.c -c -o core.o $(local_CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
 llvm.o:
 	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 
 tests: clean
 	@./scripts/gen_test_main.sh > $(TEST_MAIN)
-	@$(CC) $(TEST_MAIN) -c -o core.o $(CFLAGS) -DTEST $(LFLAGS) $(DISABLED_WARNINGS)
+	@$(CC) $(TEST_MAIN) -c -o core.o $(local_CFLAGS) -DTEST $(LFLAGS) $(DISABLED_WARNINGS) $(local_CFLAGS)
 	@$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
 	@./$(TEST_TARGET) 2> $(TEST_LOG)

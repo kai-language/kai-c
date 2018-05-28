@@ -912,15 +912,6 @@ void parsePackage(Package *package) {
     Parser parser = {lexer, .tok = tok, package};
     package->stmts = parseStmts(&parser);
 
-    DynamicArray(CheckerInfo) checkerInfo = NULL;
-    ArrayFit(checkerInfo, package->astIdCount+1);
-    package->checkerInfo = checkerInfo;
-
-    // Copy builtins into the package's global scope
-    package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
-    MapCopy(&DefaultAllocator, &package->globalScope->members, &TypesMap);
-
-
     for(size_t i = 0; i < ArrayLen(package->stmts); i++) {
         Stmt *stmt = package->stmts[i];
 
@@ -944,6 +935,21 @@ void parsePackage(Package *package) {
             UNIMPLEMENTED();
         }
     }
+
+    if (HasErrors(package)) {
+        return;
+    }
+
+    DynamicArray(CheckerInfo) checkerInfo = NULL;
+    ArrayFit(checkerInfo, package->astIdCount+1);
+    package->checkerInfo = checkerInfo;
+    
+    // Copy builtins into the package's global scope
+    Scope *universalScope = ArenaAlloc(&package->arena, sizeof(Scope));
+    universalScope->members = TypesMap;
+    package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
+    package->globalScope->parent = universalScope;
+    package->globalScope->members = package->symbolMap;
 
     for (size_t i = 0; i < ArrayLen(package->stmts); i++) {
         CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));

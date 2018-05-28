@@ -46,6 +46,8 @@ b32 shouldPrintErrorCode() {
     return FlagErrorCodes;
 }
 
+#define HasErrors(p) (p)->diagnostics.errors
+
 void ReportError(Package *p, ErrorCode code, Position pos, const char *msg, ...) {
     va_list args;
     char msgBuffer[512]; // TODO: Static & Thread Local?

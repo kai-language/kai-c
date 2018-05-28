@@ -82,10 +82,22 @@ void MapGrow(Map *map, size_t newCap) {
         }
     }
 
-    Free(*al, (void *)map->keys);
-    Free(*al, (void *)map->vals);
+    Free(*al, map->keys);
+    Free(*al, map->vals);
 
     *map = new_map;
+}
+
+void MapCombine(Map *dest, Map *source) {
+    if (2*(dest->len+source->len) >= dest->cap) {
+        MapGrow(dest, 2 * dest->cap);
+    }
+
+    for (size_t i = 0; i < source->cap; i++) {
+        if (source->keys[i]) {
+            MapSetU64(dest, source->keys[i], source->vals[i]);
+        }
+    }
 }
 
 void *MapGetU64(Map *map, u64 key) {
