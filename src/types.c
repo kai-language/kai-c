@@ -33,7 +33,11 @@ const char *DescribeTypeKind(TypeKind kind) {
 DynamicArray(const Type *) Types;
 Map TypesMap;
 
-#define TYPE(_kind, name, _type, _width) _kind##Type = TypeIntern((Type){.kind = TypeKind_##_type, .width = _width}); ArrayPush(Types, _kind##Type); MapSetU64(&TypesMap, HashBytes(name, strlen(name)), (u64)buildTypeSymbol(name, _kind##Type))
+#define TYPE(_kind, name, _type, _width) \
+    _kind##Type = TypeIntern((Type){.kind = TypeKind_##_type, .width = _width}); \
+    const char *intern##_kind = StrIntern(name); \
+    ArrayPush(Types, _kind##Type); \
+    MapSet(&TypesMap, intern##_kind, buildTypeSymbol(intern##_kind, _kind##Type))
 
 Arena typeInternArena;
 

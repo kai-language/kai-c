@@ -92,7 +92,7 @@ void *MapGetU64(Map *map, u64 key) {
     if (map->len == 0) return 0;
 
     ASSERT(IS_POW2(map->cap));
-    size_t i = (size_t)key;
+    size_t i = (size_t)HashU64(key);
     ASSERT(map->len < map->cap);
     for (;;) {
         i &= map->cap - 1;
@@ -114,7 +114,7 @@ void MapSetU64(Map *map, u64 key, u64 val) {
     }
     ASSERT(2*map->len < map->cap);
     ASSERT(IS_POW2(map->cap));
-    size_t i = (size_t)key;
+    size_t i = (size_t)HashU64(key);
     for (;;) {
         i &= map->cap - 1;
         if (!map->keys[i]) {

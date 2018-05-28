@@ -60,7 +60,7 @@ Scope *popScope(Package *pkg, Scope *scope) {
 
 Symbol *Lookup(Scope *scope, const char *name) {
     do {
-        Symbol *symbol = MapGetU64(&scope->members, HashBytes(name, strlen(name)));
+        Symbol *symbol = MapGet(&scope->members, name);
         if (symbol) {
             return symbol;
         }
@@ -114,7 +114,7 @@ b32 checkConstDecl(Package *pkg, Decl *declStmt) {
         if (ArrayLen(decl.names) > 0) {
             for (size_t i = 0; i < ArrayLen(decl.names); i++) {
                 const char *name = decl.names[i]->name;
-                Symbol *symbol = MapGetU64(&pkg->symbolMap, HashBytes(name, strlen(name)));
+                Symbol *symbol = MapGet(&pkg->symbolMap, name);
                 invalidateSymbol(symbol);
             }
         }
