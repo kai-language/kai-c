@@ -20,10 +20,12 @@ Type *U64Type;
 Type *F32Type;
 Type *F64Type;
 
-
 // TODO(Brett): figure out how I want to handle instance vs metatypes
 Type *UntypedIntType;
 Type *UntypedFloatType;
+
+Symbol *FalseSymbol;
+Symbol *TrueSymbol;
 
 const char *TypeKindDescriptions[] = {
 #define FOR_EACH(kind, text) [TypeKind_##kind] = "" #text "",
@@ -70,6 +72,12 @@ Symbol *buildTypeSymbol(const char *name, Type *type) {
     return symbol;
 }
 
+Symbol *symbolIntern(Symbol symbol) {
+    Symbol *intern = ArenaAlloc(&typeInternArena, sizeof(Symbol));
+    memcpy(intern, &symbol, sizeof(Symbol));
+    return intern;
+}
+
 void InitBuiltinTypes() {
     static b32 init;
     if (init) return;
@@ -95,6 +103,20 @@ void InitBuiltinTypes() {
     
     UntypedIntType = TypeIntern((Type){.kind = TypeKind_UntypedInt});
     UntypedFloatType = TypeIntern((Type){.kind = TypeKind_UntypedFloat});
+
+    FalseSymbol = symbolIntern((Symbol){
+        .name = StrIntern("false"),
+        .kind = SymbolKind_Constant,
+        .state = SymbolState_Resolved,
+        .type = BoolType
+    });
+
+    TrueSymbol = symbolIntern((Symbol){
+        .name = StrIntern("true"),
+        .kind = SymbolKind_Constant,
+        .state = SymbolState_Resolved,
+        .type = BoolType
+    });
 
     init = true;
 }

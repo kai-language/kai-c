@@ -62,9 +62,8 @@ struct TypeKind_Int {
     b8 isSigned;
 };
 
-
 struct TypeKind_UntypedFloat {
-
+    b8 __PADDING__;
 };
 
 struct TypeKind_Float {

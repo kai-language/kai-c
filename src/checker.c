@@ -1,5 +1,6 @@
 typedef enum ExprMode {
     ExprMode_Invalid,
+    ExprMode_Unresolved,
     ExprMode_Computed,
     ExprMode_Assignable,
     ExprMode_Addressable,
@@ -77,6 +78,14 @@ b32 isFloat(Type *type) {
 }
 
 b32 convert(Type *type, Type *target) {
+    if (type == UntypedIntType) {
+        return target == UntypedIntType || target->kind == TypeKind_Int;
+    }
+
+    if (type == UntypedFloatType) {
+        return target == UntypedFloatType || target->kind == TypeKind_Float;
+    }
+
     // FIXME: Brett, this doesn't work for aliased types
     return type == target;
 }
@@ -118,16 +127,30 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
         symbol->used = true;
         if (symbol->state != SymbolState_Resolved) {
-            // TODO(Brett): requeue stmt and try again later
-            UNIMPLEMENTED();
+            exprInfo->mode = ExprMode_Unresolved;
+            return InvalidType;
         }
 
-        CheckerInfo_Ident identInfo = {.symbol = symbol};
-        CheckerInfo info;
-        info.kind = CheckerInfoKind_Ident;
-        info.Ident = identInfo;
-        pkg->checkerInfo[expr->id] = info;
+        CheckerInfo *solve = &pkg->checkerInfo[expr->id];
+        solve->kind = CheckerInfoKind_Ident;
+        solve->Ident.symbol = symbol;
 
+        switch (symbol->kind) {
+        case SymbolKind_Type: {
+            exprInfo->mode = ExprMode_Type;
+        } break;
+
+        case SymbolKind_Constant: {
+            if (symbol == TrueSymbol || symbol == FalseSymbol) {
+                exprInfo->mode = ExprMode_Computed;
+                break;
+            }
+        }
+        default:
+            exprInfo->mode = ExprMode_Addressable;
+        }
+
+        exprInfo->val = symbol->val;
         return symbol->type;
     } break;
 
@@ -274,12 +297,13 @@ b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
 
     // TODO: check for tuple
     
-    if (type->kind == TypeKind_Metatype) {
-        // TODO: update metatypes
-    }
-
     symbol->type = type;
     symbol->state = SymbolState_Resolved;
+
+    CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
+    solve->kind = CheckerInfoKind_Decl;
+    solve->Decl.symbol = symbol;
+
     return false;
 }
 
