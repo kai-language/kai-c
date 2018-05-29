@@ -93,10 +93,16 @@ int main(int argc, const char **argv) {
         break;
     }
 
+    b32 sawErrors = false;
     for (size_t i = 0; i < ArrayLen(packages); i++) {
         if (HasErrors(packages[i])) {
             OutputReportedErrors(packages[i]);
+            sawErrors = true;
         }
+    }
+
+    if (!sawErrors) {
+        CodegenLLVM(mainPackage);
     }
 
     ArenaFree(&parsingQueue.arena);
