@@ -88,6 +88,8 @@ extern "C" {
 #define GB(x) (MB(x)*1024LL)
 #define TB(x) (GB(x)*1024LL)
 
+#define For(agg) for (size_t i = 0; i < ArrayLen(agg); i++)
+
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -229,6 +231,7 @@ struct Package {
     DynamicArray(Symbol *) symbols;
 
     u64 astIdCount;
+    u64 declCount;
     DynamicArray(CheckerInfo) checkerInfo;
 
     Scope *globalScope;

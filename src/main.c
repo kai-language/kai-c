@@ -94,7 +94,7 @@ int main(int argc, const char **argv) {
     }
 
     b32 sawErrors = false;
-    for (size_t i = 0; i < ArrayLen(packages); i++) {
+    For (packages) {
         if (HasErrors(packages[i])) {
             OutputReportedErrors(packages[i]);
             sawErrors = true;

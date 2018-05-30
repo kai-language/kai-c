@@ -21,6 +21,9 @@
     FOR_EACH(InvalidMetatype, "The type provided was not a metatype"), \
     FOR_EACH(UndefinedIdent, "Use of an undefined identifier"), \
     FOR_EACH(InvalidConversion, "Unable to convert type to target type"), \
+    FOR_EACH(UninitImplicitArray, "Implicit-length array was provided without an initial value"), \
+    FOR_EACH(UninitFunctionType, "A function type wasn't provided a body"), \
+    FOR_EACH(MetatypeNotAnExpr, "A metatype is not a valid expression"), \
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error
@@ -109,7 +112,7 @@ char outputErrorBuffer[8096];
 #endif
 
 void OutputReportedErrors(Package *p) {
-    for (size_t i = 0; i < ArrayLen(p->diagnostics.errors); i++) {
+    For (p->diagnostics.errors) {
         outputDiagnostic("%s", p->diagnostics.errors[i].msg);
         for (DiagnosticNote *note = p->diagnostics.errors[i].note; note; note = note->next) {
             outputDiagnostic("%s", note->msg);

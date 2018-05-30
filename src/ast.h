@@ -18,8 +18,8 @@
     FOR_EACH(KeyValue, "key value", false)                   \
     FOR_EACH(LocationDirective, "location directive", false) \
     FOR_EACH(LitNil, "nil literal", false)                   \
-    FOR_EACH(LitInt, "integer literal", false)               \
-    FOR_EACH(LitFloat, "float literal", false)               \
+    FOR_EACH(LitInt, "integer literal", true)                \
+    FOR_EACH(LitFloat, "float literal", true)                \
     FOR_EACH(LitString, "string literal", false)             \
     FOR_EACH(LitCompound, "compound literal", true)          \
     FOR_EACH(LitFunction, "function literal", true)          \
@@ -475,6 +475,7 @@ struct Decl {
         DECL_KINDS
 #undef FOR_EACH
     };
+    u64 declId;
 };
 
 b32 isExpr(Stmt *stmt);

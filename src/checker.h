@@ -1,9 +1,9 @@
 #define CHECKER_INFO_KINDS \
     FOR_EACH(Decl)         \
+    FOR_EACH(DeclList)     \
     FOR_EACH(Selector)     \
     FOR_EACH(Ident)        \
-    FOR_EACH(LitInt)       \
-    FOR_EACH(LitFloat)     \
+    FOR_EACH(BasicLit)     \
 
 typedef enum CheckerInfoKind {
 #define FOR_EACH(kind) CheckerInfoKind_##kind,
@@ -15,6 +15,10 @@ struct CheckerInfo_Decl {
     Symbol *symbol;
 };
 
+struct CheckerInfo_DeclList {
+    DynamicArray(Symbol *) symbols;
+};
+
 struct CheckerInfo_Ident {
     Symbol *symbol;
 };
@@ -24,11 +28,7 @@ struct CheckerInfo_Selector {
     Val constant;
 };
 
-struct CheckerInfo_LitInt {
-    Type *type;
-};
-
-struct CheckerInfo_LitFloat {
+struct CheckerInfo_BasicLit {
     Type *type;
 };
 

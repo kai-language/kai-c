@@ -18,6 +18,12 @@ extern Type *U64Type;
 extern Type *F32Type;
 extern Type *F64Type;
 
+extern Type *UntypedIntType;
+extern Type *UntypedFloatType;
+
+extern Symbol *FalseSymbol;
+extern Symbol *TrueSymbol;
+
 #define TYPE_KINDS                  \
     FOR_EACH(Invalid, "invalid")    \
     FOR_EACH(Void, "void")          \
@@ -34,6 +40,7 @@ extern Type *F64Type;
     FOR_EACH(Union, "union")        \
     FOR_EACH(Metatype, "meta")      \
     FOR_EACH(Alias, "alias")        \
+    FOR_EACH(Function, "function")  \
 
 typedef enum TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
@@ -75,7 +82,7 @@ struct TypeKind_Pointer {
 };
 
 struct TypeKind_Array {
-    u32 length;
+    i64 length;
     Type *elementType;
 };
 
@@ -100,6 +107,11 @@ struct TypeKind_Union {
     DynamicArray(Type *) cases;
 };
 
+struct TypeKind_Function {
+    DynamicArray(Type *) args;
+    DynamicArray(Type *) results;
+};
+
 struct TypeKind_Metatype {
     Type *instanceType;
 };
@@ -118,3 +130,10 @@ struct Type {
     #undef FOR_EACH
     };
 };
+
+#ifdef __cplusplus
+extern "C" {
+const char *DescribeType(Type *type);
+const char *DescribeTypeKind(TypeKind kind);
+}
+#endif

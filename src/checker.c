@@ -40,6 +40,25 @@ void resolveSymbol(Symbol *symbol, Type *type) {
     symbol->type = type;
 }
 
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
+    Symbol *old = Lookup(scope, name);
+    if (old) {
+        ReportError(pkg, RedefinitionError, decl->start, "Duplication definition of symbol %s", name);
+        ReportNote(pkg, old->decl->start, "Previous definition of %s", name);
+        *symbol = old;
+        return true;
+    }
+
+    Symbol *sym = ArenaAlloc(&pkg->arena, sizeof(Symbol));
+    sym->kind = SymbolKind_Invalid;
+    sym->state = SymbolState_Resolving;
+    sym->decl = decl;
+
+    *symbol = sym;
+    
+    return false;
+}
+
 Type *lowerMeta(Package *pkg, Type *type, Position pos) {
     if (type->kind != TypeKind_Metatype) {
         ReportError(pkg, InvalidMetatypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
@@ -185,7 +204,7 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         
         exprInfo->mode = ExprMode_Computed;
         CheckerInfo *info = &pkg->checkerInfo[expr->id];
-        info->LitInt.type = type;
+        info->BasicLit.type = type;
         return type;
     };
 
@@ -215,12 +234,12 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
             type = exprInfo->desiredType;
         } else {
-
+            type = UntypedFloatType;
         }
 
         exprInfo->mode = ExprMode_Computed;
         CheckerInfo *info = &pkg->checkerInfo[expr->id];
-        info->LitInt.type = type;
+        info->BasicLit.type = type;
         return type;
     } break;
     }
@@ -234,7 +253,7 @@ Type *checkFuncType(Expr *funcExpr, ExprInfo *exprInfo) {
     return NULL;
 }
 
-b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
+b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     Decl_Constant decl = declStmt->Constant;
 
     ASSERT(scope);
@@ -243,7 +262,7 @@ b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
         ReportError(pkg, MultipleConstantDeclError, decl.start, "Constant declarations must declare at most one item");
 
         if (ArrayLen(decl.names) > 0) {
-            for (size_t i = 0; i < ArrayLen(decl.names); i++) {
+            For (decl.names) {
                 const char *name = decl.names[i]->name;
                 Symbol *symbol = MapGet(&pkg->symbolMap, name);
                 invalidateSymbol(symbol);
@@ -263,6 +282,9 @@ b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
     if (decl.type) {
         ExprInfo info = {.scope = scope};
         expectedType = lowerMeta(pkg, checkExpr(pkg, decl.type, &info), decl.type->start);
+        if (info.mode == ExprMode_Unresolved) {
+            return true;
+        }
     }
 
     Expr_Ident *name = decl.names[0];
@@ -275,6 +297,9 @@ b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
         Expr_LitFunction func = value->LitFunction;
         ExprInfo info = {.scope = scope};
         Type *type = checkFuncType(func.type, &info);
+        if (info.mode == ExprMode_Unresolved) {
+            return true;
+        }
         resolveSymbol(symbol, type);
     } break;
 
@@ -287,6 +312,9 @@ b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
 
     ExprInfo info = {.scope = scope, .desiredType = expectedType};
     Type *type = checkExpr(pkg, value, &info);
+    if (info.mode == ExprMode_Unresolved) {
+        return true;
+    }
 
     if (expectedType) {
         if (!convert(type, expectedType)) {
@@ -311,15 +339,94 @@ b32 checkConstDecl(Package *pkg, Scope *scope, Decl *declStmt) {
     return false;
 }
 
-b32 checkVarDecl(Package *pkg, Scope *scope, Decl *declStmt) {
+b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     Decl_Variable var = declStmt->Variable;
+
+    Type *expectedType = NULL;
+
+    if (var.type) {
+        ExprInfo info = {.scope = scope};
+        expectedType = lowerMeta(pkg, checkExpr(pkg, var.type, &info), var.type->start);
+        if (info.mode == ExprMode_Unresolved) {
+            return true;
+        }
+    }
+
+    DynamicArray(Symbol *) symbols = NULL;
+    ArrayFit(symbols, ArrayLen(var.names));
+
+    if (isGlobal) {
+        For (var.names) {
+            Symbol *symbol = MapGet(&pkg->symbolMap, var.names[i]->name);
+            ArrayPush(symbols, symbol);
+        }
+    } else {
+        For (var.names) {
+            Symbol *symbol;
+            // FIXME(Brett): figure out how I want to recover from a duplicate
+            declareSymbol(pkg, scope, var.names[i]->name, &symbol, declStmt);
+            ArrayPush(symbols, symbol);
+        }
+    }
+
+    // NOTE: decl like `x, y: i32`
+    if (ArrayLen(var.values) == 0) {
+        ASSERT(expectedType);
+        For (symbols) {
+            symbols[i]->type = expectedType;
+            symbols[i]->state = SymbolState_Resolved;
+        }
+
+        if (expectedType->kind == TypeKind_Array && expectedType->Array.length == -1) {
+            ReportError(pkg, UninitImplicitArrayError, var.type->start, "Implicit-length array must have an initial value");
+        }
+
+        if (expectedType->kind == TypeKind_Function) {
+            ReportError(pkg, UninitFunctionTypeError, var.type->start, "Variables of a function type must be initialized");
+            ReportNote(pkg, var.type->start, "If you want an uninitialized function pointer use *%s instead", DescribeType(expectedType));
+        }
+    }
+    
+    else {
+        // TODO(Brett): check for multi-value call
+        ExprInfo info = {.scope = scope, .desiredType = expectedType};
+        For (var.names) {
+            Type *type = checkExpr(pkg, var.values[i], &info);
+            if (info.mode == ExprMode_Unresolved) {
+                return true;
+            }
+
+            if (expectedType && !convert(type, expectedType)) {
+                ReportError(
+                    pkg, InvalidConversionError, var.values[i]->start,
+                    "Unable to convert type %s to expected type type %s",
+                    DescribeType(type), DescribeType(expectedType)
+                );
+                invalidateSymbol(symbols[i]);
+            }
+
+            if (type->kind == TypeKind_Metatype) {
+                ReportError(pkg, MetatypeNotAnExprError, var.values[i]->start, "Metatype is not a valid expression");
+                invalidateSymbol(symbols[i]);
+                continue;
+            }
+
+            symbols[i]->type = expectedType ? expectedType : type;
+            symbols[i]->kind = SymbolKind_Variable;
+            symbols[i]->state = SymbolState_Resolved;
+        }
+    }
+
+    CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
+    solve->DeclList.symbols = symbols;
+    solve->kind = CheckerInfoKind_DeclList;
 
     return false;
 }
 
 b32 checkImportDecl(Package *pkg, Decl *declStmt) {
     Decl_Import import = declStmt->Import;
-
+    UNIMPLEMENTED();
     return false;
 }
 
@@ -330,11 +437,11 @@ b32 check(Package *pkg, Stmt *stmt) {
 
     switch (stmt->kind) {
     case StmtDeclKind_Constant: {
-        shouldRequeue = checkConstDecl(pkg, scope, (Decl *)stmt);
+        shouldRequeue = checkConstDecl(pkg, scope, true, (Decl *)stmt);
     } break;
 
     case StmtDeclKind_Variable: {
-        shouldRequeue = checkVarDecl(pkg, scope, (Decl *)stmt);
+        shouldRequeue = checkVarDecl(pkg, scope, true, (Decl *)stmt);
     } break;
 
     case StmtDeclKind_Import: {

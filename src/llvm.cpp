@@ -48,14 +48,25 @@ typedef struct LLVMGen {
     llvm::Module *m;
     llvm::Function *currentFunc;
     Debug *d;
+    llvm::Value **decls;
 } LLVMGen;
 
+
+void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
+
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
+repeat:
     switch (type->kind) {
+    case TypeKind_Metatype: {
+        type = type->Metatype.instanceType;
+        goto repeat;
+    }
+        
     case TypeKind_UntypedInt:
         return llvm::IntegerType::get(gen->m->getContext(), 64);
     case TypeKind_Int:
         return llvm::IntegerType::get(gen->m->getContext(), type->width);
+
     case TypeKind_UntypedFloat:
         return llvm::Type::getDoubleTy(gen->m->getContext());
     case TypeKind_Float: {
@@ -69,6 +80,7 @@ llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
     }
     }
 
+    ASSERT_MSG_VA(false, "Unable to canonicalize type %s", DescribeType(type));
     return NULL;
 }
 
@@ -84,9 +96,15 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
         }
     }
 
+    if (type == UntypedIntType)
+        return types.i64;
+
     if (type->kind == TypeKind_Float) {
         return type->width == 32 ? types.f32 : types.f64;
     }
+
+    if (type == UntypedFloatType)
+        return types.f64;
 
     if (type->kind == TypeKind_Void) {
         return NULL;
@@ -116,12 +134,13 @@ llvm::AllocaInst *createEntryBlockAlloca(llvm::Function *func, llvm::Type *type,
     return b.CreateAlloca(type, 0, name);
 }
 
-llvm::Value *emitExpr(LLVMGen *gen, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
     switch (expr->kind) {
     case ExprKind_LitInt: {
         Expr_LitInt lit = expr->LitInt;
         CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.LitInt.type;
+        Type *type = info.BasicLit.type;
+        debugPos(gen, b, expr->start);
         return llvm::ConstantInt::get(
             canonicalize(gen, type), 
             lit.val, 
@@ -132,8 +151,16 @@ llvm::Value *emitExpr(LLVMGen *gen, DynamicArray(CheckerInfo) checkerInfo, Expr 
     case ExprKind_LitFloat: {
         Expr_LitFloat lit = expr->LitFloat;
         CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.LitFloat.type;
+        Type *type = info.BasicLit.type;
+        debugPos(gen, b, expr->start);
         return llvm::ConstantFP::get(canonicalize(gen, type), lit.val);
+    };
+
+    case ExprKind_Ident: {
+        CheckerInfo info = checkerInfo[expr->id];
+        Symbol *symbol = info.Ident.symbol;
+        // TODO(Brett): check for return address
+        return b->CreateLoad(gen->decls[symbol->decl->declId]);
     };
 
     }
@@ -150,20 +177,41 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
         Symbol *symbol = info.Decl.symbol;
         llvm::Type *type = canonicalize(gen, symbol->type);
         llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
+        gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) alloca;
 
-        for (size_t i = 0; i < ArrayLen(decl.values); i++) {
-            llvm::Value *value = emitExpr(gen, checkerInfo, decl.values[i]);
-            b->CreateStore(value, alloca);
+        debugPos(gen, b, stmt->start);
+
+        llvm::Value *value = emitExpr(gen, b, checkerInfo, decl.values[0]);
+        b->CreateStore(value, alloca);
+    } break;
+
+    case StmtDeclKind_Variable: {
+        CheckerInfo info = checkerInfo[stmt->id];
+        DynamicArray(Symbol *) symbols = info.DeclList.symbols;
+        Decl_Variable var = stmt->Variable;
+
+        For (symbols) {
+            Symbol *symbol = symbols[i];
+            llvm::Type *type = canonicalize(gen, symbol->type);
+            llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
+
+            // TODO(Brett): need to generate a list of declIds so we can unique these
+            gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) alloca;
+
+            debugPos(gen, b, var.names[i]->start);
+
+            if (ArrayLen(var.values)) {
+                llvm::Value *value = emitExpr(gen, b, checkerInfo, var.values[i]);
+                b->CreateStore(value, alloca);
+            }
         }
     } break;
     }
 } 
 
-void debugPos(Package *p, Position pos);
 
 void CodegenLLVM(Package *p) {
     llvm::LLVMContext context;
-
     llvm::Module *module = new llvm::Module(p->path, context);
 
     Debug _debug;
@@ -190,11 +238,15 @@ void CodegenLLVM(Package *p) {
         debug = &_debug;
     }
 
+    llvm::Value **decls = (llvm::Value **) ArenaAlloc(&p->arena, sizeof(llvm::Value *)*p->declCount+1);
+
     LLVMGen _gen = {
         module,
         nullptr,
-        debug
+        debug,
+        decls
     };
+
     LLVMGen *gen = &_gen;
 
     llvm::IRBuilder<> b(context);
@@ -208,7 +260,10 @@ void CodegenLLVM(Package *p) {
 
     llvm::Function *main = (llvm::Function *)module->getOrInsertFunction("main", mainType);
     main->setCallingConv(llvm::CallingConv::C);
-    
+    llvm::BasicBlock *entry = llvm::BasicBlock::Create(module->getContext(), "entry", main, 0);
+    b.SetInsertPoint(entry);
+    gen->currentFunc = main;
+
     if (FlagDebug) {
         llvm::DISubprogram *sub = debug->builder->createFunction(
             debug->unit,
@@ -224,22 +279,34 @@ void CodegenLLVM(Package *p) {
             false
         );
         main->setSubprogram(sub);
+        debug->scope = sub;
     }
 
-    llvm::BasicBlock *entry = llvm::BasicBlock::Create(module->getContext(), "entry", main, 0);
-    b.SetInsertPoint(entry);
+    // NOTE: Unset the location for the prologue emission (leading instructions
+    // with nolocation in a function are considered part of the prologue and the
+    // debugger will run past them when breaking on a function)
+    Position pos;
+    pos.line = 0;
+    pos.column = 0;
+    debugPos(gen, &b, pos);
 
-    gen->currentFunc = main;
-
-    for (size_t i = 0; i < ArrayLen(p->stmts); i++) {
+    For (p->stmts) {
         emitStmt(gen, &b, p->checkerInfo, p->stmts[i]);
     }
 
     b.CreateRetVoid();
     
+    debug->scope = debug->unit;
+
     if (FlagDebug) {
         debug->builder->finalize();
     }
+
+#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+    if (llvm::verifyFunction(*main, &llvm::errs()) || llvm::verifyModule(*module, &llvm::errs())) {
+        ASSERT(false);
+    }
+#endif
 
     if (FlagDumpIR) {
         gen->m->print(llvm::errs(), nullptr);

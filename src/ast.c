@@ -86,6 +86,7 @@ Decl *NewDecl(Package *package, DeclKind kind, Position start) {
     d->kind = kind;
     d->start = start;
     d->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
+    d->declId = package->declCount++;
     return d;
 }
 
