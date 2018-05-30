@@ -21,8 +21,8 @@
     FOR_EACH(LitInt, "integer literal", false)               \
     FOR_EACH(LitFloat, "float literal", false)               \
     FOR_EACH(LitString, "string literal", false)             \
-    FOR_EACH(LitCompound, "compound literal", false)         \
-    FOR_EACH(LitFunction, "function literal", false)         \
+    FOR_EACH(LitCompound, "compound literal", true)          \
+    FOR_EACH(LitFunction, "function literal", true)          \
     FOR_EACH(TypePointer, "pointer type", false)             \
     FOR_EACH(TypeArray, "array type", true)                  \
     FOR_EACH(TypeSlice, "slice type", true)                  \

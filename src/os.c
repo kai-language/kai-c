@@ -21,6 +21,7 @@ char *RemoveKaiExtension(char *filename) {
     return filename;
 }
 
+
 // FIXME: We are mmap()'ing this with no way to munmap it currently
 char *ReadEntireFile(const char *path) {
     char *address = NULL;
@@ -90,3 +91,4 @@ void InitDetailsForCurrentSystem() {
     CurrentSystem.machine = "unknown";
 #endif
 }
+

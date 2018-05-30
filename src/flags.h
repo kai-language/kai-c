@@ -6,6 +6,7 @@ extern bool FlagVersion;
 extern bool FlagHelp;
 extern bool FlagEmitIR;
 extern bool FlagDumpIR;
+extern bool FlagDebug;
 
 extern const char *InputName;
 extern const char *OutputName;

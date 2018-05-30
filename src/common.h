@@ -9,6 +9,10 @@
 #include <stdbool.h>
 #include <wchar.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
 	#define SYSTEM_WINDOWS 1
@@ -244,3 +248,9 @@ typedef union Val {
     f64 f64;
     uintptr_t ptr;
 } Val;
+
+char *GetFileName(const char *path, char *res, char **dir);
+
+#ifdef __cplusplus
+}
+#endif

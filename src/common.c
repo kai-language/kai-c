@@ -15,7 +15,7 @@ void Backtrace() {
 #endif
 }
 
-void assertHandler(char const *file, i32 line, char const *msg, ...) {
+extern void assertHandler(char const *file, i32 line, char const *msg, ...) {
     va_list args;
     va_start(args, msg);
     Backtrace();
@@ -174,6 +174,20 @@ void test_arena() {
 }
 #endif
 
+char *GetFileName(const char *path, char *res, char **dir) {
+    size_t len = strlen(path);
+    memcpy(res, path, len);
+    res[len] = '\0';
+    char *index = strrchr(res, '/');
+
+    if (dir) {
+       *index = '\0'; 
+       *dir = res;
+    }
+
+    return index ? index+1 : res;
+}
+
 void PrintBits(u64 const size, void const * const ptr) {
     u8 *b = (u8*) ptr;
     u8 byte;
@@ -190,3 +204,13 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
+#if TEST
+void test_GetFileName() {
+    char buff[MAX_PATH];
+    char *dir;
+    char *name = GetFileName("abc/def/ghi/test/wip.kai", &buff[0], &dir);
+    printf("%s and %s\n", dir, name);
+    ASSERT(strcmp(dir, "abc/def/ghi/test") == 0);
+    ASSERT(strcmp(name, "wip.kai") == 0);
+}
+#endif

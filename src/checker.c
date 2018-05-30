@@ -184,6 +184,8 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         }
         
         exprInfo->mode = ExprMode_Computed;
+        CheckerInfo *info = &pkg->checkerInfo[expr->id];
+        info->LitInt.type = type;
         return type;
     };
 
@@ -217,6 +219,8 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         }
 
         exprInfo->mode = ExprMode_Computed;
+        CheckerInfo *info = &pkg->checkerInfo[expr->id];
+        info->LitInt.type = type;
         return type;
     } break;
     }

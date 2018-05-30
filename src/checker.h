@@ -2,6 +2,8 @@
     FOR_EACH(Decl)         \
     FOR_EACH(Selector)     \
     FOR_EACH(Ident)        \
+    FOR_EACH(LitInt)       \
+    FOR_EACH(LitFloat)     \
 
 typedef enum CheckerInfoKind {
 #define FOR_EACH(kind) CheckerInfoKind_##kind,
@@ -20,6 +22,14 @@ struct CheckerInfo_Ident {
 struct CheckerInfo_Selector {
     u32 levelsOfIndirection;
     Val constant;
+};
+
+struct CheckerInfo_LitInt {
+    Type *type;
+};
+
+struct CheckerInfo_LitFloat {
+    Type *type;
 };
 
 #define FOR_EACH(kind) typedef struct CheckerInfo_##kind CheckerInfo_##kind;
