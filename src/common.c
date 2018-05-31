@@ -174,6 +174,16 @@ void test_arena() {
 }
 #endif
 
+char *RemoveKaiExtension(char *filename) {
+    char *dot = strrchr(filename, '.');
+    if (!dot) return filename;
+
+    if (strcmp(dot, ".kai") == 0) {
+        *dot = '\0';
+    }
+    return filename;
+}
+
 char *GetFileName(const char *path, char *res, char **dir) {
     size_t len = strlen(path);
     memcpy(res, path, len);

@@ -335,6 +335,7 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
     solve->kind = CheckerInfoKind_Decl;
     solve->Decl.symbol = symbol;
+    solve->Decl.isGlobal = isGlobal;
 
     return false;
 }
@@ -388,6 +389,16 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     }
     
     else {
+        if (ArrayLen(var.values) != ArrayLen(var.names)) {
+            ReportError(pkg, ArityMismatchError, var.start, "The amount of identifiers (%zu) doesn't match the amount of values (%zu)", ArrayLen(var.names), ArrayLen(var.values));
+
+            For (symbols) {
+                invalidateSymbol(symbols[i]);
+            }
+            return false;
+        }
+
+
         // TODO(Brett): check for multi-value call
         ExprInfo info = {.scope = scope, .desiredType = expectedType};
         For (var.names) {
@@ -419,6 +430,7 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
 
     CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
     solve->DeclList.symbols = symbols;
+    solve->DeclList.isGlobal = isGlobal;
     solve->kind = CheckerInfoKind_DeclList;
 
     return false;

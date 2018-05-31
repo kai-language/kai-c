@@ -13,9 +13,11 @@ typedef enum CheckerInfoKind {
 
 struct CheckerInfo_Decl {
     Symbol *symbol;
+    b8 isGlobal;
 };
 
 struct CheckerInfo_DeclList {
+    b8 isGlobal;
     DynamicArray(Symbol *) symbols;
 };
 

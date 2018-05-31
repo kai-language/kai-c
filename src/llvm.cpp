@@ -21,6 +21,18 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/DIBuilder.h>
 
+#include "llvm/IR/LegacyPassManager.h"
+
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Host.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+
+
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+
 typedef struct DebugTypes {
     llvm::DIType *i8;
     llvm::DIType *i16;
@@ -195,10 +207,29 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
             llvm::Type *type = canonicalize(gen, symbol->type);
             llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
 
-            // TODO(Brett): need to generate a list of declIds so we can unique these
             gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) alloca;
 
             debugPos(gen, b, var.names[i]->start);
+
+            if (FlagDebug) {
+                llvm::DILocalVariable *d = gen->d->builder->createParameterVariable(
+                    gen->d->scope,
+                    symbol->name,
+                    0,
+                    gen->d->file,
+                    stmt->start.line,
+                    debugCanonicalize(gen, symbol->type),
+                    true
+                );
+
+                gen->d->builder->insertDeclare(
+                    alloca,
+                    d,
+                    gen->d->builder->createExpression(),
+                    llvm::DebugLoc::get(stmt->start.line, stmt->start.column, gen->d->scope),
+                    b->GetInsertBlock()
+                );
+            }
 
             if (ArrayLen(var.values)) {
                 llvm::Value *value = emitExpr(gen, b, checkerInfo, var.values[i]);
@@ -209,19 +240,20 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
     }
 } 
 
+b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
 
-void CodegenLLVM(Package *p) {
+b32 CodegenLLVM(Package *p) {
     llvm::LLVMContext context;
     llvm::Module *module = new llvm::Module(p->path, context);
+
+    char buff[MAX_PATH];
+    char *dir;
+    char *name = GetFileName(p->path, &buff[0], &dir);
 
     Debug _debug;
     Debug *debug = NULL;
     if (FlagDebug) {
         llvm::DIBuilder *builder = new llvm::DIBuilder(*module);
-
-        char buff[MAX_PATH];
-        char *dir;
-        char *name = GetFileName(p->path, &buff[0], &dir);
         llvm::DIFile *file = builder->createFile(name, dir);
 
         llvm::DICompileUnit *unit = builder->createCompileUnit(
@@ -310,9 +342,72 @@ void CodegenLLVM(Package *p) {
 
     if (FlagDumpIR) {
         gen->m->print(llvm::errs(), nullptr);
+        return 0;
+    } else {
+        return emitObjectFile(p, name, gen);
+    }
+}
+
+void setupTargetInfo() {
+    static b32 init = false;
+    if (init) return;
+
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+
+    init = true;
+}
+
+b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
+    setupTargetInfo();
+
+    std::string targetTriple, error;
+    targetTriple = llvm::sys::getDefaultTargetTriple();
+    const llvm::Target *target = llvm::TargetRegistry::lookupTarget(targetTriple, error);
+
+    if (!target) {
+        llvm::errs() << error;
+        return 1;
     }
 
-    delete module;
+    const char *cpu = "generic";
+    const char *features = "";
+
+    llvm::TargetOptions opt;
+    llvm::Optional<llvm::Reloc::Model> rm = llvm::Optional<llvm::Reloc::Model>();
+    llvm::TargetMachine *targetMachine = target->createTargetMachine(
+        targetTriple,
+        cpu,
+        features,
+        opt,
+        rm
+    );
+
+    gen->m->setDataLayout(targetMachine->createDataLayout());
+    gen->m->setTargetTriple(targetTriple);
+
+    std::error_code ec;
+    llvm::raw_fd_ostream dest(RemoveKaiExtension(name), ec, llvm::sys::fs::F_None);
+
+    if (ec) {
+        llvm::errs() << "Could not open object file: " << ec.message();
+        return 1;
+    }
+
+    llvm::legacy::PassManager pass;
+    llvm::TargetMachine::CodeGenFileType fileType = llvm::TargetMachine::CGFT_ObjectFile;
+    if (targetMachine->addPassesToEmitFile(pass, dest, fileType)) {
+        llvm::errs() << "TargetMachine can't emit a file of this type";
+        return 1;
+    }
+
+    pass.run(*gen->m);
+    dest.flush();
+
+    return 0;
 }
 
 void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos) {
