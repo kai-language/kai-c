@@ -581,7 +581,7 @@ Expr *parseFunctionType(Parser *p) {
         if (matchToken(p, TK_Colon)) {
             namedParameters = true;
             Expr *type = parseType(p);
-            for (size_t i = 0; i < ArrayLen(exprs); i++) {
+            For (exprs) {
                 if (exprs[i]->kind != ExprKind_Ident) {
                     ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
                     continue;
@@ -595,7 +595,7 @@ Expr *parseFunctionType(Parser *p) {
                 ReportError(p->package, SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
             }
             // The parameters are unnamed and the user may have entered a second variadic
-            for (size_t i = 0; i < ArrayLen(exprs); i++) {
+            For (exprs) {
                 if (exprs[i]->kind == ExprKind_TypeVariadic) {
                     nVarargs += 1;
                     if (nVarargs == 2) {
@@ -619,7 +619,7 @@ Expr *parseFunctionType(Parser *p) {
             if (matchToken(p, TK_Colon)) {
                 namedParameters = true;
                 Expr *type = parseType(p);
-                for (size_t i = 0; i < ArrayLen(exprs); i++) {
+                For (exprs) {
                     if (exprs[i]->kind != ExprKind_Ident) {
                         ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
                         continue;
@@ -630,7 +630,7 @@ Expr *parseFunctionType(Parser *p) {
                 if (namedParameters) {
                     ReportError(p->package, SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
                 }
-                for (size_t i = 0; i < ArrayLen(exprs); i++) {
+                For (exprs) {
                     if (exprs[i]->kind == ExprKind_TypeVariadic) {
                         nVarargs += 1;
                         if (nVarargs == 1) {
@@ -706,31 +706,40 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             if (ArrayLen(exprs) == 1 && exprs[0]->kind == ExprKind_Ident && (matchToken(p, TK_Terminator) || isTokenEof(p))) {
                 return NewStmtLabel(pkg, start, exprs[0]->Ident.name);
             }
+
             DynamicArray(Expr_Ident *) idents = NULL;
-            for (size_t i = 0; i < ArrayLen(exprs); i++) {
+            ArrayFit(idents, ArrayLen(exprs));
+            For (exprs) {
                 if (exprs[i]->kind != ExprKind_Ident) {
                     ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
                 }
                 ArrayPush(idents, &exprs[i]->Ident);
             }
             ArrayFree(exprs);
+
+            DynamicArray(Expr *) rhs = NULL;
+
             if (matchToken(p, TK_Assign)) {
-                DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
+                rhs = parseExprList(p, noCompoundLiteral);
                 return (Stmt *) NewDeclVariable(pkg, start, idents, NULL, rhs);
-            }
+            } 
+            
             if (matchToken(p, TK_Colon)) {
-                DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
+                rhs = parseExprList(p, noCompoundLiteral);
                 return (Stmt *) NewDeclConstant(pkg, start, idents, NULL, rhs);
             }
+
             Expr *type = parseExpr(p, noCompoundLiteral);
             if (matchToken(p, TK_Assign)) {
-                DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
+                rhs = parseExprList(p, noCompoundLiteral);
                 return (Stmt *) NewDeclVariable(pkg, start, idents, type, rhs);
-            }
+            } 
+            
             if (matchToken(p, TK_Colon)) {
-                DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
+                rhs = parseExprList(p, noCompoundLiteral);
                 return (Stmt *) NewDeclConstant(pkg, start, idents, type, rhs);
             }
+
             return (Stmt *) NewDeclVariable(pkg, start, idents, type, NULL);
         }
 
@@ -741,7 +750,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
     if (ArrayLen(exprs) > 1 && isIdentList) {
         *isIdentList = true;
         DynamicArray(Expr_Ident *) idents = NULL;
-        for (size_t i = 0; i < ArrayLen(exprs); i++) {
+        For (exprs) {
             if (exprs[i]->kind != ExprKind_Ident) {
                 ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
             }
@@ -902,6 +911,52 @@ void parsePackage(Package *package) {
     Token tok = NextToken(&lexer);
     Parser parser = {lexer, .tok = tok, package};
     package->stmts = parseStmts(&parser);
+
+    for(size_t i = 0; i < ArrayLen(package->stmts); i++) {
+        Stmt *stmt = package->stmts[i];
+
+        switch (stmt->kind) {
+        case StmtDeclKind_Constant:
+        case StmtDeclKind_Variable: {
+            Decl_Constant decl = stmt->Constant;
+            SymbolKind kind = stmt->kind == StmtDeclKind_Constant ? SymbolKind_Constant : SymbolKind_Variable;
+            for (size_t j = 0; j < ArrayLen(decl.names); j++) {
+                Symbol *symbol = ArenaAlloc(&package->arena, sizeof(Symbol));
+                symbol->decl = (Decl *) stmt;
+                symbol->name = decl.names[j]->name;
+                symbol->kind = kind;
+                symbol->state = SymbolState_Unresolved;
+                DeclarePackageSymbol(package, symbol->name, symbol);
+            }
+        } break;
+
+        case StmtDeclKind_Import:
+            // TODO(Brett): collect import
+            UNIMPLEMENTED();
+        }
+    }
+
+    if (HasErrors(package)) {
+        return;
+    }
+
+    DynamicArray(CheckerInfo) checkerInfo = NULL;
+    ArrayFit(checkerInfo, package->astIdCount+1);
+    package->checkerInfo = checkerInfo;
+    
+    // Copy builtins into the package's global scope
+    Scope *universalScope = ArenaAlloc(&package->arena, sizeof(Scope));
+    universalScope->members = TypesMap;
+    package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
+    package->globalScope->parent = universalScope;
+    package->globalScope->members = package->symbolMap;
+
+    for (int i = (int)(ArrayLen(package->stmts)) - 1; i >= 0; i--) {
+        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
+        work->package = package;
+        work->stmt = package->stmts[i];
+        QueueEnqueue(&checkingQueue, work);
+    }
 }
 
 #undef NextToken
@@ -912,9 +967,16 @@ Package testPackage = {0};
 Parser newTestParser(const char *stream) {
     Lexer lex = MakeLexer(stream, NULL);
     Token tok = NextToken(&lex);
-    ArenaFree(&testPackage.arena);
+
+    MapFree(&testPackage.symbolMap);
     ArrayFree(testPackage.diagnostics.errors);
+    ArrayFree(testPackage.stmts);
+    ArrayFree(testPackage.symbols);
+
+    ArenaFree(&testPackage.arena);
     ArenaFree(&testPackage.diagnostics.arena);
+
+
     Parser p = {lex, .tok = tok, &testPackage};
     return p;
 }

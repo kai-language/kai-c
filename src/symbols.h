@@ -1,4 +1,3 @@
-
 typedef enum SymbolKind {
     SymbolKind_Invalid,
     SymbolKind_Type,
@@ -16,7 +15,6 @@ typedef enum SymbolState {
 typedef struct Decl Decl;
 typedef struct Type Type;
 
-typedef struct Symbol Symbol;
 struct Symbol {
     const char *name;
     const char *externalName;
@@ -24,6 +22,7 @@ struct Symbol {
     SymbolState state;
     Decl *decl;
     Type *type;
+    b8 used;
     Val val;
 };
 

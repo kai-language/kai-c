@@ -2,7 +2,7 @@
 extern "C" {
 #endif
 
-void CodegenLLVM(Package *p);
+b32 CodegenLLVM(Package *p);
 
 #ifdef __cplusplus
 }

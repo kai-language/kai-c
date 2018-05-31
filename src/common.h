@@ -9,6 +9,10 @@
 #include <stdbool.h>
 #include <wchar.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if defined(_WIN32) || defined(_WIN64)
 	#ifndef SYSTEM_WINDOWS
 	#define SYSTEM_WINDOWS 1
@@ -83,6 +87,8 @@
 #define MB(x) (KB(x)*1024LL)
 #define GB(x) (MB(x)*1024LL)
 #define TB(x) (GB(x)*1024LL)
+
+#define For(agg) for (size_t i = 0; i < ArrayLen(agg); i++)
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -205,6 +211,13 @@ struct DiagnosticEngine {
 
 typedef struct Symbol Symbol;
 typedef struct Stmt Stmt;
+typedef struct CheckerInfo CheckerInfo;
+
+typedef struct Scope Scope;
+struct Scope {
+    Scope *parent;
+    Map members;
+};
 
 typedef struct Package Package;
 struct Package {
@@ -216,7 +229,12 @@ struct Package {
     DynamicArray(Stmt *) stmts;
     Map symbolMap;
     DynamicArray(Symbol *) symbols;
+
     u64 astIdCount;
+    u64 declCount;
+    DynamicArray(CheckerInfo) checkerInfo;
+
+    Scope *globalScope;
 };
 
 typedef union Val {
@@ -229,5 +247,14 @@ typedef union Val {
     u32 u32;
     i64 i64;
     u64 u64;
+    f32 f32;
+    f64 f64;
     uintptr_t ptr;
 } Val;
+
+char *RemoveKaiExtension(char *filename);
+char *GetFileName(const char *path, char *res, char **dir);
+
+#ifdef __cplusplus
+}
+#endif

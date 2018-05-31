@@ -23,7 +23,7 @@ const char *Keyword_defer;
 
 const char *Keyword_first;
 const char *Keyword_last;
-const char **Keywords;
+DynamicArray(const char *) Keywords;
 
 const char *internNewline;
 const char *internSemicolon;
@@ -42,7 +42,7 @@ const char *internLocation;
 
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
-void InitKeywords(void) {
+void InitKeywords() {
     static bool inited;
     if (inited) {
         return;

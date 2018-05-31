@@ -4,36 +4,36 @@ const char *AstDescriptions[] = {
 #define FOR_EACH(kindName, s, ...) "" s "",
     [EXPR_KIND_START] = "invalid",
     EXPR_KINDS
-    "invalid",
+        "invalid",
     [STMT_KIND_START] = "invalid",
     STMT_KINDS
-    "invalid",
+        "invalid",
     [DECL_KIND_START] = "invalid",
     DECL_KINDS
-    "invalid",
+        "invalid",
 #undef FOR_EACH
 };
 
 b8 DoesStmtKindAllocateTypeInfo[] = {
     [StmtKind_Invalid] =  0,
-
+    
     [_StmtKind_Start] = 0,
 #define FOR_EACH(kindName, __ignored__, doesAllocate) [StmtKind_##kindName] = doesAllocate,
     STMT_KINDS
 #undef FOR_EACH
-    [_StmtKind_End] = 0,
-
+        [_StmtKind_End] = 0,
+    
     [_StmtExprKind_Start] = 0,
 #define FOR_EACH(kindName, __ignored__, doesAllocate) [StmtExprKind_##kindName] = doesAllocate,
     EXPR_KINDS
 #undef FOR_EACH
-    [_StmtExprKind_End] = 0,
-
+        [_StmtExprKind_End] = 0,
+    
     [_StmtDeclKind_Start] = 0,
 #define FOR_EACH(kindName, __ignored__, doesAllocate) [StmtDeclKind_##kindName] = doesAllocate,
     DECL_KINDS
 #undef FOR_EACH
-    [_StmtDeclKind_End] = 0
+        [_StmtDeclKind_End] = 0
 };
 
 
@@ -69,7 +69,7 @@ Expr *NewExpr(Package *package, ExprKind kind, Position start) {
     Expr *e = AllocAst(package, sizeof(Expr));
     e->kind = kind;
     e->start = start;
-    e->id = DoesStmtKindAllocateTypeInfo[kind] ? package->astIdCount++ : 0;
+    e->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
     return e;
 }
 
@@ -77,7 +77,7 @@ Stmt *NewStmt(Package *package, StmtKind kind, Position start) {
     Stmt *s = AllocAst(package, sizeof(Stmt));
     s->kind = kind;
     s->start = start;
-    s->id = DoesStmtKindAllocateTypeInfo[kind] ? package->astIdCount++ : 0;
+    s->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
     return s;
 }
 
@@ -85,7 +85,8 @@ Decl *NewDecl(Package *package, DeclKind kind, Position start) {
     Decl *d = AllocAst(package, sizeof(Decl));
     d->kind = kind;
     d->start = start;
-    d->id = DoesStmtKindAllocateTypeInfo[kind] ? package->astIdCount++ : 0;
+    d->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
+    d->declId = package->declCount++;
     return d;
 }
 
@@ -411,7 +412,7 @@ void test_isExpr_and_isDecl() {
     Position pos = {0};
     Stmt *expr = (Stmt *) NewExprIdent(&pkg, pos, NULL);
     ASSERT(isExpr(expr));
-
+    
     Stmt *decl = (Stmt *) NewDeclVariable(&pkg, pos, NULL, NULL, NULL);
     ASSERT(isDecl(decl));
 }

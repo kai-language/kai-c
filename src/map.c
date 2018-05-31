@@ -30,13 +30,49 @@ u64 HashBytes(const void *ptr, size_t len) {
     return x;
 }
 
+void MapFree(Map *map) {
+    // TODO(Brett): figure out who's being naughty here
+//    if (map->allocator) {
+//        Free(*map->allocator, map->keys);
+//        Free(*map->allocator, map->vals);
+//    }
+
+    map->len = 0;
+    map->cap = 0;
+}
+
+void MapCopy(Allocator *alloc, Map *dest, Map *source) {
+    Allocator *a = alloc ? alloc : source->allocator;
+    Map map;
+
+    map.allocator = a;
+    map.len = source->len;
+    map.cap = source->cap;
+
+    u64 *keys = Alloc(*a, sizeof(u64) * map.cap);
+    if (!keys) return;
+
+    u64 *vals = Alloc(*a, sizeof(u64) * map.cap);
+    if (!vals) {
+        Free(*a, keys);
+    }
+
+    memcpy(keys, source->keys, sizeof(u64) * map.cap);
+    memcpy(vals, source->vals, sizeof(u64) * map.cap);
+
+    map.keys = keys;
+    map.vals = vals;
+
+    *dest = map;
+}
+
 void MapGrow(Map *map, size_t newCap) {
     newCap = CLAMP_MIN(newCap, 16);
     Allocator *al = map->allocator ? map->allocator : &DefaultAllocator;
     Map new_map = {
         al,
-        (u64*) checkedCalloc(newCap, sizeof(u64)),
-        (u64*) checkedMalloc(newCap * sizeof(u64)),
+        checkedCalloc(newCap, sizeof(u64)),
+        checkedMalloc(newCap * sizeof(u64)),
         0,
         newCap,
     };
@@ -45,9 +81,23 @@ void MapGrow(Map *map, size_t newCap) {
             MapSetU64(&new_map, map->keys[i], map->vals[i]);
         }
     }
-    Free(*al, (void *)map->keys);
-    Free(*al, (void *)map->vals);
+
+    Free(*al, map->keys);
+    Free(*al, map->vals);
+
     *map = new_map;
+}
+
+void MapCombine(Map *dest, Map *source) {
+    if (2*(dest->len+source->len) >= dest->cap) {
+        MapGrow(dest, 2 * dest->cap);
+    }
+
+    for (size_t i = 0; i < source->cap; i++) {
+        if (source->keys[i]) {
+            MapSetU64(dest, source->keys[i], source->vals[i]);
+        }
+    }
 }
 
 void *MapGetU64(Map *map, u64 key) {
@@ -59,7 +109,7 @@ void *MapGetU64(Map *map, u64 key) {
     for (;;) {
         i &= map->cap - 1;
         if (map->keys[i] == key) {
-            return (void*) map->vals[i];
+            return (void *) map->vals[i];
         } else if (!map->keys[i]) {
             return 0;
         }
@@ -101,24 +151,47 @@ void MapSet(Map *map, const void *key, const void *val) {
 }
 
 #if TEST
-void map_test(void) {
+void test_map(void) {
     Map map = {0};
     enum { N = 1024 };
     for (size_t i = 1; i < N; i++) {
-        MapSet(&map, (void*) i, (void*) (i + 1));
+        MapSet(&map, (void *) i, (void *) (i + 1));
     }
     for (size_t i = 1; i < N; i++) {
-        u64 val = (u64) MapGet(&map, (void*) i);
+        u64 val = (u64) MapGet(&map, (void *) i);
         ASSERT(val == (i + 1));
     }
     // Override values
 
     for (size_t i = 2; i < N; i++) {
-        MapSet(&map, (void*) i, (void*) (i - 1));
+        MapSet(&map, (void *) i, (void *) (i - 1));
     }
     for (size_t i = 2; i < N; i++) {
-        u64 val = (u64) MapGet(&map, (void*) i);
+        u64 val = (u64) MapGet(&map, (void *) i);
         ASSERT(val == (i - 1));
+    }
+}
+#endif
+
+#if TEST
+void test_mapCopy() {
+    Map map = {0};
+    enum { N = 1024 };
+    for (size_t i = 1; i < N; i++) {
+        MapSet(&map, (void *) i, (void *) (i + 1));
+    }
+
+    Map mapCopy;
+    MapCopy(NULL, &mapCopy, &map);
+
+    ASSERT(mapCopy.len == map.len);
+    ASSERT(mapCopy.cap == map.cap);
+    ASSERT(mapCopy.keys != map.keys);
+    ASSERT(mapCopy.vals != map.vals);
+
+    for (size_t i = 1; i < N; i++) {
+        u64 val = (u64) MapGet(&mapCopy, (void *) i);
+        ASSERT(val == (i + 1));
     }
 }
 #endif

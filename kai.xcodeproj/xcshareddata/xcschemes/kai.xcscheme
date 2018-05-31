@@ -74,9 +74,20 @@
          </CommandLineArgument>
          <CommandLineArgument
             argument = "$SRCROOT/test/tmp.kai"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "$SRCROOT/test/wip.kai"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "PATH"
+            value = "&quot;/usr/local/opt/llvm/bin:$PATH&quot;"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
       <AdditionalOptions>
          <AdditionalOption
             key = "NSZombieEnabled"

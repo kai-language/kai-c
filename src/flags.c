@@ -1,4 +1,19 @@
+
 #include "flags.h"
+
+bool FlagParseComments;
+bool FlagErrorCodes = true;
+bool FlagVerbose;
+bool FlagVersion;
+bool FlagHelp;
+bool FlagEmitIR;
+bool FlagDumpIR;
+bool FlagDebug = true;
+
+const char *InputName;
+const char *OutputName;
+int TargetOs;
+int TargetArch;
 
 CLIFlag Flags[] = {
     { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
@@ -12,6 +27,7 @@ CLIFlag Flags[] = {
     { CLIFlagKind_Bool, "emit-times", .ptr = NULL,                     .help = "Emit times for each stage of compilation" },
     { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "Display error codes along side error location" },
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },
+    { CLIFlagKind_Bool, "debug", "g",  .ptr.b = &FlagDebug,            .help = "Include debug symbols"},
 
     { CLIFlagKind_Enum, "os", .ptr.i = &TargetOs, .options = OsNames, .nOptions = sizeof(OsNames) / sizeof(*OsNames), .help = "Target operating system (default: current)" },
     { CLIFlagKind_Enum, "arch", .ptr.i = &TargetArch, .options = ArchNames, .nOptions = sizeof(ArchNames) / sizeof(*ArchNames), .help = "Target architecture (default: current)" },

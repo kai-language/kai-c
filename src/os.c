@@ -11,15 +11,6 @@ char *AbsolutePath(const char *filename, char *resolved) {
 #endif
 }
 
-char *RemoveKaiExtension(char *filename) {
-    char *dot = strrchr(filename, '.');
-    if (!dot) return filename;
-
-    if (strcmp(dot, ".kai") == 0) {
-        *dot = '\0';
-    }
-    return filename;
-}
 
 // FIXME: We are mmap()'ing this with no way to munmap it currently
 char *ReadEntireFile(const char *path) {
@@ -90,3 +81,4 @@ void InitDetailsForCurrentSystem() {
     CurrentSystem.machine = "unknown";
 #endif
 }
+

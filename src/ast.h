@@ -6,32 +6,32 @@
 #define EXPR_KINDS                                           \
     FOR_EACH(Ident, "identifier", true)                      \
     FOR_EACH(Paren, "parenthesis", false)                    \
-    FOR_EACH(Call, "call", false)                            \
+    FOR_EACH(Call, "call", true)                             \
     FOR_EACH(Selector, "selector", true)                     \
-    FOR_EACH(Subscript, "subscript", false)                  \
-    FOR_EACH(Slice, "slice", false)                          \
-    FOR_EACH(Unary, "unary", false)                          \
-    FOR_EACH(Binary, "binary", false)                        \
-    FOR_EACH(Ternary, "ternary", false)                      \
+    FOR_EACH(Subscript, "subscript", true)                   \
+    FOR_EACH(Slice, "slice", true)                           \
+    FOR_EACH(Unary, "unary", true)                           \
+    FOR_EACH(Binary, "binary", true)                         \
+    FOR_EACH(Ternary, "ternary", true)                       \
     FOR_EACH(Cast, "cast", false)                            \
     FOR_EACH(Autocast, "autocast", false)                    \
     FOR_EACH(KeyValue, "key value", false)                   \
     FOR_EACH(LocationDirective, "location directive", false) \
     FOR_EACH(LitNil, "nil literal", false)                   \
-    FOR_EACH(LitInt, "integer literal", false)               \
-    FOR_EACH(LitFloat, "float literal", false)               \
+    FOR_EACH(LitInt, "integer literal", true)                \
+    FOR_EACH(LitFloat, "float literal", true)                \
     FOR_EACH(LitString, "string literal", false)             \
-    FOR_EACH(LitCompound, "compound literal", false)         \
-    FOR_EACH(LitFunction, "function literal", false)         \
+    FOR_EACH(LitCompound, "compound literal", true)          \
+    FOR_EACH(LitFunction, "function literal", true)          \
     FOR_EACH(TypePointer, "pointer type", false)             \
-    FOR_EACH(TypeArray, "array type", false)                 \
-    FOR_EACH(TypeSlice, "slice type", false)                 \
-    FOR_EACH(TypeStruct, "struct type", false)               \
-    FOR_EACH(TypeEnum, "enum type", false)                   \
-    FOR_EACH(TypeUnion, "union type", false)                 \
-    FOR_EACH(TypePolymorphic, "polymorphic type", false)     \
-    FOR_EACH(TypeVariadic, "variadic type", false)           \
-    FOR_EACH(TypeFunction, "function type", false)
+    FOR_EACH(TypeArray, "array type", true)                  \
+    FOR_EACH(TypeSlice, "slice type", true)                  \
+    FOR_EACH(TypeStruct, "struct type", true)                \
+    FOR_EACH(TypeEnum, "enum type", true)                    \
+    FOR_EACH(TypeUnion, "union type", true)                  \
+    FOR_EACH(TypePolymorphic, "polymorphic type", true)      \
+    FOR_EACH(TypeVariadic, "variadic type", true)            \
+    FOR_EACH(TypeFunction, "function type", true)
 
 #define STMT_KINDS                        \
     FOR_EACH(Empty, "empty", false)       \
@@ -49,50 +49,50 @@
 
 // TODO: This needs to include some more directives (for example static asserts `#assert` should be supported at top level)
 #define DECL_KINDS                        \
-    FOR_EACH(Variable, "variable", false) \
-    FOR_EACH(Constant, "constant", false) \
-    FOR_EACH(Import, "import", false)
+    FOR_EACH(Variable, "variable", true) \
+    FOR_EACH(Constant, "constant", true) \
+    FOR_EACH(Import, "import", true)
 
 typedef enum ExprKind {
     ExprKind_Invalid = 0,
-
+    
     _ExprKind_Start = EXPR_KIND_START,
 #define FOR_EACH(kindName, ...) ExprKind_##kindName,
     EXPR_KINDS
 #undef FOR_EACH
-    _ExprKind_End,
+        _ExprKind_End,
 } ExprKind;
 
 typedef enum StmtKind {
     StmtKind_Invalid = 0,
-
+    
     _StmtKind_Start = STMT_KIND_START,
 #define FOR_EACH(kindName, ...) StmtKind_##kindName,
     STMT_KINDS
 #undef FOR_EACH
-    _StmtKind_End,
-
+        _StmtKind_End,
+    
     _StmtExprKind_Start = EXPR_KIND_START,
 #define FOR_EACH(kindName, ...) StmtExprKind_##kindName,
     EXPR_KINDS
 #undef FOR_EACH
-    _StmtExprKind_End,
-
+        _StmtExprKind_End,
+    
     _StmtDeclKind_Start = DECL_KIND_START,
 #define FOR_EACH(kindName, ...) StmtDeclKind_##kindName,
     DECL_KINDS
 #undef FOR_EACH
-    _StmtDeclKind_End
+        _StmtDeclKind_End
 } StmtKind;
 
 typedef enum DeclKind {
     DeclKind_Invalid = 0,
-
+    
     _DeclKind_Start = DECL_KIND_START,
 #define FOR_EACH(kindName, ...) DeclKind_##kindName,
     DECL_KINDS
 #undef FOR_EACH
-    _DeclKind_End,
+        _DeclKind_End,
 } DeclKind;
 
 
@@ -434,17 +434,17 @@ struct Stmt {
         ExprValue expr;
         DeclValue decl;
         AstInvalid Invalid;
-
+        
 #define FOR_EACH(kindName, ...) Stmt_##kindName kindName;
         STMT_KINDS
 #undef FOR_EACH
-
+        
 #define FOR_EACH(kindName, ...) Expr_##kindName kindName;
-        EXPR_KINDS
+            EXPR_KINDS
 #undef FOR_EACH
-
+        
 #define FOR_EACH(kindName, ...) Decl_##kindName kindName;
-        DECL_KINDS
+            DECL_KINDS
 #undef FOR_EACH
     };
 };
@@ -456,7 +456,7 @@ struct Expr {
         Position start;
         ExprValue expr;
         AstInvalid Invalid;
-
+        
 #define FOR_EACH(kindName, ...) Expr_##kindName kindName;
         EXPR_KINDS
 #undef FOR_EACH
@@ -470,11 +470,12 @@ struct Decl {
         Position start;
         DeclValue decl;
         AstInvalid Invalid;
-
+        
 #define FOR_EACH(kindName, ...) Decl_##kindName kindName;
         DECL_KINDS
 #undef FOR_EACH
     };
+    u64 declId;
 };
 
 b32 isExpr(Stmt *stmt);

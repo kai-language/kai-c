@@ -21,32 +21,73 @@ An expressive low level programming language.
 ## Community
 Join our community on [Discord](https://discord.gg/jevNkRd).
 
-## Building
+## Getting Started
+In the future, we plan to have binary releases for all 3 platforms. Until then, you will have to install Kai from source.
+
+### System Requirements
+Currently, the actively supported platforms are macOS, Windows and Ubuntu (18.04 LTS).
+#### macOS
+To build on macOS it's recommended that you have the latest [Xcode](https://developer.apple.com/xcode/downloads/) and have installed the command-line tools.
+
+You will also need LLVM 6.0, which can be installed via a package manager:
+
+**[Homebrew](https://brew.sh/)**
+```
+brew install llvm@6.0
+```
+and then add the following to your `~/.bash_profile`:
+```
+export PATH="/usr/local/opt/llvm/bin:$PATH"
+```
+
+#### Linux
+To build on Ubuntu Linux you will need to have LLVM 6.0, Clang and libz installed. All of which can be installed using apt:
+
+```
+apt-get install llvm-6.0-dev clang libz-dev 
+```
+
+## Building Kai
+On macOS and Linux there is a `Makefile` that is responsible for making debug, release and test builds. See [configuration](#congiuration) for details on build customization.
+
+#### macOS & Linux (make)
+##### debug
 ```
 make
 ```
 
-## Testing
+##### release
+```
+make release
+```
+
+#### Windows
+On Windows there is `build.bat`. At the moment, the script does not support anything other than building a debug build.
+
+## Testing Kai
 ```
 make tests
 ```
 
 ## Configuration
+`Makefile` tries to follow common make practices and allows you to configure many common variables, such as `CC`, `CXX` and `CFLAGS`. Just not that `CC` and `CXX` must be from the same project. For example `CC=gcc` paired with `CXX=g++` or `CC=clang` and `CXX=clang++` *(default)*. 
 
-`-DDEBUG`:
+### Makefile Build Flags
+The `Makefile` has an assortment of build flags that allow for extensive customization. Just override `CFLAGS` to enable/disable them:
 
-`-DRELEASE`:
+```
+make release CFLAGS="-DNO_ERROR_CODES -DASSERTS"
+```
 
-`-DASSERTS`:
+#### Supported Flags
 
-Compile Kai with asserts enabled (this is the default for all non-release builds).
+| Flag               | Default | Description                                                                    |
+| ------------------ | ------- | ------------------------------------------------------------------------------ |
+| `-DDEBUG`          | ✔       | Enables debugging checks, logs and assertions, easing the development process. |
+| `-DRELEASE`        |         | Disables development checks.                                                   |
+| `-DASSERTS`        | ✔       | Enables assertions (default for DEBUG builds).                                 |
+| `-DSLOW`           | ✔       | Use "slow" versions of routines that help when debugging.                      |
+| `-DFAST`           |         | Use the fast version of all routines.                                          |
+| `-DNO_ERROR_CODES` |         | Disable support for error codes.                                               |
+| `-DDIAGNOSTICS`    | ✔       | Enable support for diagnostics and profiling.                                  |
 
-`-DNO_BOUNDS_CHECK`:
-
-`-DSLOW`:
-
-`-DFAST`:
-
-`-DNO_ERROR_CODES`:
-
-`-DDIAGNOSTICS`:
