@@ -20,6 +20,14 @@ typedef struct ArrayHdr {
 #define ArrayClear(b) ((b) ? _array_hdr(b)->len = 0 : 0)
 #define ArrayAllocator(b) ((b) ? _array_hdr(b)->allocator : &DefaultAllocator)
 
-void *_arrayFree(void *array, Allocator al);
-void *_arrayGrow(const void *array, size_t newLen, size_t elemSize);
-u8 *_arrayPrintf(u8 *array, const char *fmt, ...);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern void *_arrayFree(void *array, Allocator al);
+extern void *_arrayGrow(const void *array, size_t newLen, size_t elemSize);
+extern u8 *_arrayPrintf(u8 *array, const char *fmt, ...);
+
+#ifdef __cplusplus
+}
+#endif

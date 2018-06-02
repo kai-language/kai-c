@@ -184,6 +184,17 @@ char *RemoveKaiExtension(char *filename) {
     return filename;
 }
 
+char *KaiToObjectExtension(char *filename) {
+    char *dot = strrchr(filename, '.');
+    if (!dot) return filename;
+
+    if (strcmp(dot, ".kai") == 0) {
+        *(dot+1) = 'o';
+        *(dot+2) = '\0';
+    }
+    return filename;
+}
+
 char *GetFileName(const char *path, char *res, char **dir) {
     size_t len = strlen(path);
     memcpy(res, path, len);

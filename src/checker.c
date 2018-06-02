@@ -398,7 +398,6 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
             return false;
         }
 
-
         // TODO(Brett): check for multi-value call
         ExprInfo info = {.scope = scope, .desiredType = expectedType};
         For (var.names) {
