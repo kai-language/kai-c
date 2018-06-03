@@ -11,7 +11,7 @@ void Backtrace() {
     }
     free(strs);
 #elif SYSTEM_WINDOWS
-    UNIMPLEMENTED();
+    // NOTE: Windows doesn't have a backtrace implementation that's not super tedious to use
 #endif
 }
 
