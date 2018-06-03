@@ -17,7 +17,7 @@
     FOR_EACH(Autocast, "autocast", false)                    \
     FOR_EACH(KeyValue, "key value", false)                   \
     FOR_EACH(LocationDirective, "location directive", false) \
-    FOR_EACH(LitNil, "nil literal", false)                   \
+    FOR_EACH(LitNil, "nil literal", true)                    \
     FOR_EACH(LitInt, "integer literal", true)                \
     FOR_EACH(LitFloat, "float literal", true)                \
     FOR_EACH(LitString, "string literal", false)             \

@@ -24,6 +24,8 @@
     FOR_EACH(UninitImplicitArray, "Implicit-length array was provided without an initial value"), \
     FOR_EACH(UninitFunctionType, "A function type wasn't provided a body"), \
     FOR_EACH(MetatypeNotAnExpr, "A metatype is not a valid expression"), \
+    FOR_EACH(NotNilable, "The type cannot be converted to nil"), \
+    FOR_EACH(InvalidPointeeType, "The pointee type is not a valid metatype"), \
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error

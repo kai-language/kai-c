@@ -40,6 +40,19 @@ void resolveSymbol(Symbol *symbol, Type *type) {
     symbol->type = type;
 }
 
+Inline
+void storeDeclInfo(Package *pkg, Decl *decl, CheckerInfo info) {
+    ASSERT_MSG_VA(decl->id, "AST of type %s doesn't store checker info. Maybe the macro in ast.h needs to be updated?", AstDescriptions[decl->kind]);
+    pkg->checkerInfo[decl->id] = info;
+}
+
+Inline
+void storeExprInfo(Package *pkg, Expr *expr, CheckerInfo info) {
+    ASSERT_MSG_VA(expr->id, "AST of type %s doesn't store checker info. Maybe the macro in ast.h needs to be updated?", AstDescriptions[expr->kind]);
+    pkg->checkerInfo[expr->id] = info;
+}
+
+
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
     Symbol *old = Lookup(scope, name);
     if (old) {
@@ -96,6 +109,10 @@ b32 isFloat(Type *type) {
     return false;
 }
 
+b32 isNilable(Type *type) {
+    return baseType(type)->kind == TypeKind_Pointer;
+}
+
 b32 convert(Type *type, Type *target) {
     if (type == UntypedIntType) {
         return target == UntypedIntType || target->kind == TypeKind_Int;
@@ -121,6 +138,7 @@ Scope *popScope(Package *pkg, Scope *scope) {
 }
 
 Symbol *Lookup(Scope *scope, const char *name) {
+    ASSERT(scope);
     do {
         Symbol *symbol = MapGet(&scope->members, name);
         if (symbol) {
@@ -242,6 +260,57 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         info->BasicLit.type = type;
         return type;
     } break;
+
+    case ExprKind_LitNil: {
+        exprInfo->mode = ExprMode_Nil;
+        Type *desiredType = exprInfo->desiredType;
+
+        if (desiredType) {
+            if (isNilable(desiredType)) {
+                CheckerInfo solve;
+                solve.kind = CheckerInfoKind_NilLit;
+                solve.NilLit.type = desiredType;
+                storeExprInfo(pkg, expr, solve);
+            }
+
+            ReportError(
+                pkg, NotNilableError, expr->start,
+                "'nil' is not convertable to '%s'",
+                DescribeType(exprInfo->desiredType)
+            );
+        }
+
+        return InvalidType;
+    } break;
+
+    case ExprKind_TypePointer: {
+        Expr_TypePointer typePointer = expr->TypePointer;
+
+        // push desired type
+        Type *desiredType = exprInfo->desiredType;
+        Type *type = checkExpr(pkg, typePointer.type, exprInfo);
+        exprInfo->desiredType = NULL;
+
+        if (exprInfo->mode == ExprMode_Unresolved) {
+            return InvalidType;
+        }
+
+        if (exprInfo->mode != ExprMode_Type) {
+            ReportError(
+                pkg, InvalidPointeeTypeError, expr->start,
+                "'%s' is not a valid pointee type",
+                DescribeType(type)
+            );
+            return InvalidType;
+        }
+
+        Type *ptr = TypeIntern((Type){ .kind = TypeKind_Pointer, .Pointer.pointeeType = type});
+        type = TypeIntern((Type){.kind = TypeKind_Metatype, .Metatype.instanceType = ptr});
+
+        exprInfo->mode = ExprMode_Type;
+
+        return type;
+    } break;
     }
 
     return InvalidType;
@@ -256,10 +325,11 @@ Type *checkFuncType(Expr *funcExpr, ExprInfo *exprInfo) {
 b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     Decl_Constant decl = declStmt->Constant;
 
-    ASSERT(scope);
-
     if (ArrayLen(decl.names) != 1) {
-        ReportError(pkg, MultipleConstantDeclError, decl.start, "Constant declarations must declare at most one item");
+        ReportError(
+            pkg, MultipleConstantDeclError, decl.start,
+            "Constant declarations must declare at most one item"
+        );
 
         if (ArrayLen(decl.names) > 0) {
             For (decl.names) {
@@ -273,7 +343,11 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     }
 
     if (ArrayLen(decl.values) > 1) {
-        ReportError(pkg, ArityMismatchError, decl.start, "Constant declarations only allow for a single value, but got %zu", ArrayLen(decl.values));
+        ReportError(
+            pkg, ArityMismatchError, decl.start,
+            "Constant declarations only allow for a single value, but got %zu",
+            ArrayLen(decl.values)
+        );
         return false;
     }
 
@@ -327,8 +401,6 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
         }
     }
 
-    // TODO: check for tuple
-    
     symbol->type = type;
     symbol->state = SymbolState_Resolved;
 
@@ -379,18 +451,29 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
         }
 
         if (expectedType->kind == TypeKind_Array && expectedType->Array.length == -1) {
-            ReportError(pkg, UninitImplicitArrayError, var.type->start, "Implicit-length array must have an initial value");
+            ReportError(
+                pkg, UninitImplicitArrayError, var.type->start, 
+                "Implicit-length array must have an initial value"
+            );
         }
 
         if (expectedType->kind == TypeKind_Function) {
-            ReportError(pkg, UninitFunctionTypeError, var.type->start, "Variables of a function type must be initialized");
+            ReportError(
+                pkg, UninitFunctionTypeError, var.type->start, 
+                "Variables of a function type must be initialized"
+            );
             ReportNote(pkg, var.type->start, "If you want an uninitialized function pointer use *%s instead", DescribeType(expectedType));
         }
     }
     
     else {
         if (ArrayLen(var.values) != ArrayLen(var.names)) {
-            ReportError(pkg, ArityMismatchError, var.start, "The amount of identifiers (%zu) doesn't match the amount of values (%zu)", ArrayLen(var.names), ArrayLen(var.values));
+            // TODO: ensure that this is a function call otherwise report this error
+            ReportError(
+                pkg, ArityMismatchError, var.start, 
+                "The amount of identifiers (%zu) doesn't match the amount of values (%zu)", 
+                ArrayLen(var.names), ArrayLen(var.values)
+            );
 
             For (symbols) {
                 invalidateSymbol(symbols[i]);
@@ -417,7 +500,10 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
             }
 
             if (type->kind == TypeKind_Metatype) {
-                ReportError(pkg, MetatypeNotAnExprError, var.values[i]->start, "Metatype is not a valid expression");
+                ReportError(
+                    pkg, MetatypeNotAnExprError, var.values[i]->start, 
+                    "Metatype is not a valid expression"
+                );
                 invalidateSymbol(symbols[i]);
                 continue;
             }

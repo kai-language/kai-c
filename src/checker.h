@@ -4,6 +4,7 @@
     FOR_EACH(Selector)     \
     FOR_EACH(Ident)        \
     FOR_EACH(BasicLit)     \
+    FOR_EACH(NilLit)     \
 
 typedef enum CheckerInfoKind {
 #define FOR_EACH(kind) CheckerInfoKind_##kind,
@@ -31,6 +32,10 @@ struct CheckerInfo_Selector {
 };
 
 struct CheckerInfo_BasicLit {
+    Type *type;
+};
+
+struct CheckerInfo_NilLit {
     Type *type;
 };
 
