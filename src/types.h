@@ -108,7 +108,7 @@ struct TypeKind_Union {
 };
 
 struct TypeKind_Function {
-    DynamicArray(Type *) args;
+    DynamicArray(Type *) params;
     DynamicArray(Type *) results;
 };
 

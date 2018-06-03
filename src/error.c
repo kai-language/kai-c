@@ -26,6 +26,7 @@
     FOR_EACH(MetatypeNotAnExpr, "A metatype is not a valid expression"), \
     FOR_EACH(NotNilable, "The type cannot be converted to nil"), \
     FOR_EACH(InvalidPointeeType, "The pointee type is not a valid metatype"), \
+    FOR_EACH(ParamNameMissing, "The parameter doesn't have a name") , \
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error

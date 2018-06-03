@@ -46,6 +46,11 @@ Map TypesMap;
     ArrayPush(Types, _kind##Type);                                                       \
     MapSet(&TypesMap, intern##_kind, buildTypeSymbol(intern##_kind, _kind##Type))        \
 
+#define INT_TYPE(_kind, name, _type, _width, _isSigned) \
+    TYPE(_kind, name, _type, _width); \
+    _kind##Type->_type.isSigned = _isSigned
+    
+
 Arena typeInternArena;
 
 Type *TypeIntern(Type type) {
@@ -89,14 +94,14 @@ void InitBuiltinTypes() {
 
     TYPE(Bool, "bool", Bool, 8);
 
-    TYPE(I8,  "i8",  Int,  8);
-    TYPE(I16, "i16", Int, 16);
-    TYPE(I32, "i32", Int, 32);
-    TYPE(I64, "i64", Int, 64);
-    TYPE(U8,  "u8",  Int,  8);
-    TYPE(U16, "u16", Int, 16);
-    TYPE(U32, "u32", Int, 32);
-    TYPE(U64, "u64", Int, 64);
+    INT_TYPE(I8,  "i8",  Int,  8, false);
+    INT_TYPE(I16, "i16", Int, 16, false);
+    INT_TYPE(I32, "i32", Int, 32, false);
+    INT_TYPE(I64, "i64", Int, 64, false);
+    INT_TYPE(U8,  "u8",  Int,  8, true);
+    INT_TYPE(U16, "u16", Int, 16, true);
+    INT_TYPE(U32, "u32", Int, 32, true);
+    INT_TYPE(U64, "u64", Int, 64, true);
 
     TYPE(F32, "f32", Float, 32);
     TYPE(F64, "f64", Float, 64);

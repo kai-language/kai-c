@@ -201,7 +201,7 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
         CheckerInfo info = checkerInfo[expr->id];
         Symbol *symbol = info.Ident.symbol;
         // TODO(Brett): check for return address
-        return b->CreateLoad(gen->decls[symbol->decl->declId]);
+        return b->CreateLoad(gen->decls[symbol->declId]);
     };
     }
 
@@ -216,13 +216,22 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
         Decl_Constant decl = stmt->Constant;
         Symbol *symbol = info.Decl.symbol;
         llvm::Type *type = canonicalize(gen, symbol->type);
-        llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
-        gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) alloca;
+
+        llvm::GlobalVariable *global = new llvm::GlobalVariable(
+            *gen->m,
+            type,
+            /*isConstant:*/true,
+            info.Decl.isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+            0,
+            symbol->name
+        );
+
+        gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) global;
 
         debugPos(gen, b, stmt->start);
 
         llvm::Value *value = emitExpr(gen, b, checkerInfo, decl.values[0]);
-        b->CreateStore(value, alloca);
+        global->setInitializer((llvm::Constant *)value);
     } break;
 
     case StmtDeclKind_Variable: {
@@ -267,7 +276,6 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
     } break;
     }
 } 
-
 
 b32 CodegenLLVM(Package *p) {
     llvm::LLVMContext context;

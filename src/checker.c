@@ -7,7 +7,8 @@ typedef enum ExprMode {
     ExprMode_Nil,
     ExprMode_File,
     ExprMode_Library,
-    ExprMode_Type
+    ExprMode_Type,
+    ExprMode_Function
 } ExprMode;
 
 typedef struct ExprInfo ExprInfo;
@@ -53,19 +54,23 @@ void storeExprInfo(Package *pkg, Expr *expr, CheckerInfo info) {
 }
 
 
-b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Position *decl) {
     Symbol *old = Lookup(scope, name);
     if (old) {
-        ReportError(pkg, RedefinitionError, decl->start, "Duplication definition of symbol %s", name);
-        ReportNote(pkg, old->decl->start, "Previous definition of %s", name);
+        ReportError(pkg, RedefinitionError, *decl, "Duplicate definition of symbol %s", name);
+        ReportNote(pkg, *old->decl, "Previous definition of %s", name);
         *symbol = old;
         return true;
     }
 
     Symbol *sym = ArenaAlloc(&pkg->arena, sizeof(Symbol));
+    sym->name = name;
     sym->kind = SymbolKind_Invalid;
     sym->state = SymbolState_Resolving;
     sym->decl = decl;
+    sym->declId = declId;
+
+    MapSet(&scope->members, name, sym);
 
     *symbol = sym;
     
@@ -115,7 +120,7 @@ b32 isNilable(Type *type) {
 
 b32 convert(Type *type, Type *target) {
     if (type == UntypedIntType) {
-        return target == UntypedIntType || target->kind == TypeKind_Int;
+        return target == UntypedIntType || (target->kind == TypeKind_Int);
     }
 
     if (type == UntypedFloatType) {
@@ -151,6 +156,8 @@ Symbol *Lookup(Scope *scope, const char *name) {
     return NULL;
 }
 
+Type *checkFuncLit(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo);
+
 Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
     switch (expr->kind) {
     case ExprKind_Ident: {
@@ -168,9 +175,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
             return InvalidType;
         }
 
-        CheckerInfo *solve = &pkg->checkerInfo[expr->id];
-        solve->kind = CheckerInfoKind_Ident;
-        solve->Ident.symbol = symbol;
+        CheckerInfo solve;
+        solve.kind = CheckerInfoKind_Ident;
+        solve.Ident.symbol = symbol;
+        storeExprInfo(pkg, expr, solve);
 
         switch (symbol->kind) {
         case SymbolKind_Type: {
@@ -221,8 +229,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         }
         
         exprInfo->mode = ExprMode_Computed;
-        CheckerInfo *info = &pkg->checkerInfo[expr->id];
-        info->BasicLit.type = type;
+        CheckerInfo solve;
+        solve.kind = CheckerInfoKind_BasicLit;
+        solve.BasicLit.type = type;
+        storeExprInfo(pkg, expr, solve);
         return type;
     };
 
@@ -256,8 +266,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         }
 
         exprInfo->mode = ExprMode_Computed;
-        CheckerInfo *info = &pkg->checkerInfo[expr->id];
-        info->BasicLit.type = type;
+        CheckerInfo solve;
+        solve.kind = CheckerInfoKind_BasicLit;
+        solve.BasicLit.type = type;
+        storeExprInfo(pkg, expr, solve);
         return type;
     } break;
 
@@ -282,6 +294,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         }
 
         return InvalidType;
+    } break;
+
+    case ExprKind_LitFunction: {
+        return checkFuncLit(pkg, expr, exprInfo);
     } break;
 
     case ExprKind_TypePointer: {
@@ -317,10 +333,80 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
     return InvalidType;
 }
 
-Type *checkFuncType(Expr *funcExpr, ExprInfo *exprInfo) {
+Type *checkFuncLit(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
+    Expr_LitFunction func = funcExpr->LitFunction;
+    Scope *scope = pushScope(pkg, exprInfo->scope);
+
+    DynamicArray(Expr_KeyValue *) params = func.type->TypeFunction.params;
+
+    CheckerInfo info = pkg->checkerInfo[func.type->id];
+    Type *funcType = info.BasicLit.type;
+    DynamicArray(Type *) paramTypes = funcType->Function.params;
+
+    DynamicArray(Symbol *) paramSymbols = NULL;
+    ArrayFit(paramSymbols, ArrayLen(paramTypes));
+
+    For (params) {
+        Expr_KeyValue *param = params[i];
+
+        if (!param->key || param->key->kind != ExprKind_Ident) {
+            ReportError(
+                pkg, ParamNameMissingError, param->start,
+                "Parameters must have a name"
+            );
+
+            continue;
+        }
+
+        Symbol *symbol;
+        declareSymbol(pkg, scope, param->key->Ident.name, &symbol, 0, &param->start);
+
+        Type *type = paramTypes[i];
+        resolveSymbol(symbol, type);
+        ArrayPush(paramSymbols, symbol);
+    }
+
+    
+    UNIMPLEMENTED();
+    return NULL;
+}
+
+Type *checkFuncType(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
     Expr_TypeFunction func = funcExpr->TypeFunction;
 
-    return NULL;
+    DynamicArray(Type *) params = NULL;
+    ArrayFit(params, ArrayLen(func.params));
+
+    For (func.params) {
+        Type * type = lowerMeta(pkg, checkExpr(pkg, func.params[i]->value, exprInfo), func.params[i]->start);
+        // TODO: look for variadics
+        
+        ArrayPush(params, type);
+    }
+
+    DynamicArray(Type *) returnTypes = NULL;
+    ArrayFit(returnTypes, ArrayLen(func.result));
+
+    For (func.result) {
+        Type *type = lowerMeta(pkg, checkExpr(pkg, func.result[i], exprInfo), func.result[i]->start);
+        ArrayPush(returnTypes, type);
+    }
+
+    exprInfo->mode = ExprMode_Function;
+
+    Type *type = TypeIntern((Type){
+        .kind = TypeKind_Function, 
+        .Function.params = params, 
+        .Function.results = returnTypes}
+    );
+
+    CheckerInfo solve;
+    solve.kind = CheckerInfoKind_BasicLit;
+    solve.BasicLit.type = type;
+    storeExprInfo(pkg, funcExpr, solve);
+
+    type =  TypeIntern((Type){ .kind = TypeKind_Metatype, .Metatype.instanceType = type});
+    return type;
 }
 
 b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
@@ -364,14 +450,21 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
 
     Expr_Ident *name = decl.names[0];
     Expr *value = decl.values[0];
-    Symbol *symbol = MapGet(&pkg->symbolMap, name->name);
+
+    Symbol *symbol;
+    if (isGlobal) {
+        symbol = MapGet(&pkg->symbolMap, name->name);
+    } else {
+        declareSymbol(pkg, scope, name->name, &symbol, declStmt->id, &declStmt->start);
+    }
+
     symbol->state = SymbolState_Resolving;
 
     switch (value->kind) {
     case ExprKind_LitFunction: {
         Expr_LitFunction func = value->LitFunction;
         ExprInfo info = {.scope = scope};
-        Type *type = checkFuncType(func.type, &info);
+        Type *type = lowerMeta(pkg, checkFuncType(pkg, func.type, &info), func.type->start);
         if (info.mode == ExprMode_Unresolved) {
             return true;
         }
@@ -438,7 +531,7 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
         For (var.names) {
             Symbol *symbol;
             // FIXME(Brett): figure out how I want to recover from a duplicate
-            declareSymbol(pkg, scope, var.names[i]->name, &symbol, declStmt);
+            declareSymbol(pkg, scope, var.names[i]->name, &symbol, declStmt->id, &declStmt->start);
             ArrayPush(symbols, symbol);
         }
     }

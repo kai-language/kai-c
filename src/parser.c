@@ -922,7 +922,7 @@ void parsePackage(Package *package) {
             SymbolKind kind = stmt->kind == StmtDeclKind_Constant ? SymbolKind_Constant : SymbolKind_Variable;
             for (size_t j = 0; j < ArrayLen(decl.names); j++) {
                 Symbol *symbol = ArenaAlloc(&package->arena, sizeof(Symbol));
-                symbol->decl = (Decl *) stmt;
+                symbol->decl =  &stmt->start;
                 symbol->name = decl.names[j]->name;
                 symbol->kind = kind;
                 symbol->state = SymbolState_Unresolved;

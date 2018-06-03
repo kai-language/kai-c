@@ -20,7 +20,8 @@ struct Symbol {
     const char *externalName;
     SymbolKind kind;
     SymbolState state;
-    Decl *decl;
+    Position  *decl;
+    u64 declId;
     Type *type;
     b8 used;
     Val val;
