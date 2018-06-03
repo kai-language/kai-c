@@ -89,7 +89,11 @@ repeat:
         } else {
             ASSERT(false);
         }
-    }
+    } break;
+
+    case TypeKind_Pointer: {
+        return llvm::PointerType::get(canonicalize(gen, type->Pointer.pointeeType), 0);
+    } break;
     }
 
     ASSERT_MSG_VA(false, "Unable to canonicalize type %s", DescribeType(type));
@@ -98,6 +102,10 @@ repeat:
 
 llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
     DebugTypes types = gen->d->types;
+
+    if (type->kind == TypeKind_Metatype) {
+        return debugCanonicalize(gen, type->Metatype.instanceType);
+    }
 
     if (type->kind == TypeKind_Int) {
         switch (type->width) {
@@ -120,6 +128,13 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
 
     if (type->kind == TypeKind_Void) {
         return NULL;
+    }
+
+    if (type->kind == TypeKind_Pointer) {
+        return gen->d->builder->createPointerType(
+            debugCanonicalize(gen, type->Pointer.pointeeType),
+            64
+        );
     }
 
     ASSERT(false);
@@ -168,13 +183,19 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
         return llvm::ConstantFP::get(canonicalize(gen, type), lit.val);
     };
 
+    case ExprKind_LitNil: {
+        CheckerInfo info = checkerInfo[expr->id];
+        Type *type = info.NilLit.type;
+        debugPos(gen, b, expr->start);
+        return llvm::ConstantPointerNull::get((llvm::PointerType *)canonicalize(gen, type));
+    } break;
+
     case ExprKind_Ident: {
         CheckerInfo info = checkerInfo[expr->id];
         Symbol *symbol = info.Ident.symbol;
         // TODO(Brett): check for return address
         return b->CreateLoad(gen->decls[symbol->decl->declId]);
     };
-
     }
 
     ASSERT(false);

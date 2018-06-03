@@ -271,6 +271,7 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
                 solve.kind = CheckerInfoKind_NilLit;
                 solve.NilLit.type = desiredType;
                 storeExprInfo(pkg, expr, solve);
+                return desiredType;
             }
 
             ReportError(
@@ -480,7 +481,6 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
             }
             return false;
         }
-
 
         // TODO(Brett): check for multi-value call
         ExprInfo info = {.scope = scope, .desiredType = expectedType};
