@@ -253,6 +253,7 @@ typedef union Val {
 } Val;
 
 char *RemoveKaiExtension(char *filename);
+char *KaiToObjectExtension(char *filename);
 char *GetFileName(const char *path, char *res, char **dir);
 
 #ifdef __cplusplus
