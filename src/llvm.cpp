@@ -64,7 +64,12 @@ typedef struct LLVMGen {
 } LLVMGen;
 
 
+/*
+ * @Forward declarations
+ */
+
 void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
+b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
 repeat:
@@ -127,18 +132,20 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
 }
 
 void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
-    types->i8  = b->createBasicType("i8",   8, llvm::dwarf::DW_ATE_signed_char);
-    types->i16 = b->createBasicType("i16", 16, llvm::dwarf::DW_ATE_signed);
-    types->i32 = b->createBasicType("i32", 32, llvm::dwarf::DW_ATE_signed);
-    types->i64 = b->createBasicType("i64", 64, llvm::dwarf::DW_ATE_signed);
+    using namespace llvm::dwarf;
 
-    types->u8  = b->createBasicType("u8",   8, llvm::dwarf::DW_ATE_unsigned_char);
-    types->u16 = b->createBasicType("u16", 16, llvm::dwarf::DW_ATE_unsigned);
-    types->u32 = b->createBasicType("u32", 32, llvm::dwarf::DW_ATE_unsigned);
-    types->u64 = b->createBasicType("u64", 64, llvm::dwarf::DW_ATE_unsigned);
+    types->i8  = b->createBasicType("i8",   8, DW_ATE_signed_char);
+    types->i16 = b->createBasicType("i16", 16, DW_ATE_signed);
+    types->i32 = b->createBasicType("i32", 32, DW_ATE_signed);
+    types->i64 = b->createBasicType("i64", 64, DW_ATE_signed);
 
-    types->f32 = b->createBasicType("f32", 32, llvm::dwarf::DW_ATE_float);
-    types->f64 = b->createBasicType("f64", 64, llvm::dwarf::DW_ATE_float);
+    types->u8  = b->createBasicType("u8",   8, DW_ATE_unsigned_char);
+    types->u16 = b->createBasicType("u16", 16, DW_ATE_unsigned);
+    types->u32 = b->createBasicType("u32", 32, DW_ATE_unsigned);
+    types->u64 = b->createBasicType("u64", 64, DW_ATE_unsigned);
+
+    types->f32 = b->createBasicType("f32", 32, DW_ATE_float);
+    types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
 }
 
 llvm::AllocaInst *createEntryBlockAlloca(llvm::Function *func, llvm::Type *type, const char *name) {
@@ -240,7 +247,6 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
     }
 } 
 
-b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
 
 b32 CodegenLLVM(Package *p) {
     llvm::LLVMContext context;
@@ -364,6 +370,8 @@ void setupTargetInfo() {
 b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
     setupTargetInfo();
 
+    char *objectName = KaiToObjectExtension(name);
+
     std::string targetTriple, error;
     targetTriple = llvm::sys::getDefaultTargetTriple();
     const llvm::Target *target = llvm::TargetRegistry::lookupTarget(targetTriple, error);
@@ -390,7 +398,7 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
     gen->m->setTargetTriple(targetTriple);
 
     std::error_code ec;
-    llvm::raw_fd_ostream dest(RemoveKaiExtension(name), ec, llvm::sys::fs::F_None);
+    llvm::raw_fd_ostream dest(objectName, ec, llvm::sys::fs::F_None);
 
     if (ec) {
         llvm::errs() << "Could not open object file: " << ec.message();
@@ -406,6 +414,21 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
 
     pass.run(*gen->m);
     dest.flush();
+
+    // Linking and debug symbols
+#ifdef SYSTEM_OSX
+    DynamicArray(u8) linkerFlags = NULL;
+    ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -macosx_version_min 10.13", objectName, OutputName);
+    system((char *)linkerFlags);
+
+    if (FlagDebug) {
+        DynamicArray(u8) symutilFlags = NULL;
+        ArrayPrintf(symutilFlags, "symutil %s", OutputName);
+    }
+#else
+    // TODO: linking on mac and Linux
+    UNIMPLEMENTED();
+#endif
 
     return 0;
 }
