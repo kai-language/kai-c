@@ -48,7 +48,7 @@ Map TypesMap;
 
 #define INT_TYPE(_kind, name, _type, _width, _isSigned) \
     TYPE(_kind, name, _type, _width); \
-    _kind##Type->_type.isSigned = _isSigned
+    _kind##Type->Metatype.instanceType->_type.isSigned = _isSigned
     
 
 Arena typeInternArena;
