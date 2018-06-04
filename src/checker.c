@@ -19,15 +19,6 @@ struct ExprInfo {
     Val val;
 };
 
-#define DeclCase(kind, node) case StmtDeclKind_##kind: { \
-    Decl_##kind *decl = &node->kind;
-    
-#define ExprCase(kind, node) case ExprKind_##kind: { \
-    Expr_##kind *expr = &node->kind;
-
-
-#define CaseEnd() } break;
-
 void invalidateSymbol(Symbol *symbol) {
     if (symbol) {
         symbol->state = SymbolState_Resolved;
@@ -52,7 +43,6 @@ void storeExprInfo(Package *pkg, Expr *expr, CheckerInfo info) {
     ASSERT_MSG_VA(expr->id, "AST of type %s doesn't store checker info. Maybe the macro in ast.h needs to be updated?", AstDescriptions[expr->kind]);
     pkg->checkerInfo[expr->id] = info;
 }
-
 
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Position *decl) {
     Symbol *old = Lookup(scope, name);
@@ -175,9 +165,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
             return InvalidType;
         }
 
-        CheckerInfo solve;
-        solve.kind = CheckerInfoKind_Ident;
-        solve.Ident.symbol = symbol;
+        CheckerInfo solve = {
+            .kind = CheckerInfoKind_Ident,
+            .Ident.symbol = symbol    
+        };
         storeExprInfo(pkg, expr, solve);
 
         switch (symbol->kind) {
@@ -229,9 +220,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         }
         
         exprInfo->mode = ExprMode_Computed;
-        CheckerInfo solve;
-        solve.kind = CheckerInfoKind_BasicLit;
-        solve.BasicLit.type = type;
+        CheckerInfo solve = {
+            .kind = CheckerInfoKind_BasicLit,
+            .BasicLit.type = type    
+        };
         storeExprInfo(pkg, expr, solve);
         return type;
     };
@@ -266,9 +258,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         }
 
         exprInfo->mode = ExprMode_Computed;
-        CheckerInfo solve;
-        solve.kind = CheckerInfoKind_BasicLit;
-        solve.BasicLit.type = type;
+        CheckerInfo solve = {
+            .kind = CheckerInfoKind_BasicLit,
+            .BasicLit.type = type
+        };
         storeExprInfo(pkg, expr, solve);
         return type;
     } break;
@@ -400,9 +393,10 @@ Type *checkFuncType(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
         .Function.results = returnTypes}
     );
 
-    CheckerInfo solve;
-    solve.kind = CheckerInfoKind_BasicLit;
-    solve.BasicLit.type = type;
+    CheckerInfo solve = {
+        .kind = CheckerInfoKind_BasicLit,
+        .BasicLit.type = type
+    };
     storeExprInfo(pkg, funcExpr, solve);
 
     type =  TypeIntern((Type){ .kind = TypeKind_Metatype, .Metatype.instanceType = type});
@@ -495,13 +489,14 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
         }
     }
 
-    symbol->type = type;
-    symbol->state = SymbolState_Resolved;
+    resolveSymbol(symbol, type);
 
-    CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
-    solve->kind = CheckerInfoKind_Decl;
-    solve->Decl.symbol = symbol;
-    solve->Decl.isGlobal = isGlobal;
+    CheckerInfo solve = {
+        .kind = CheckerInfoKind_Decl,
+        .Decl.symbol = symbol,
+        .Decl.isGlobal = isGlobal
+    };
+    storeDeclInfo(pkg, declStmt, solve);
 
     return false;
 }
@@ -607,10 +602,12 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
         }
     }
 
-    CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
-    solve->DeclList.symbols = symbols;
-    solve->DeclList.isGlobal = isGlobal;
-    solve->kind = CheckerInfoKind_DeclList;
+    CheckerInfo solve = {
+        .kind = CheckerInfoKind_DeclList,
+        .DeclList.symbols = symbols,
+        .DeclList.isGlobal = isGlobal   
+    };
+    storeDeclInfo(pkg, declStmt, solve);
 
     return false;
 }

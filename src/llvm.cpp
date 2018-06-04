@@ -410,6 +410,10 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
         return 1;
     }
 
+    if (FlagVerbose) {
+        printf("Target: %s\n", targetTriple.c_str());
+    }
+
     const char *cpu = "generic";
     const char *features = "";
 
@@ -448,14 +452,23 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
 #ifdef SYSTEM_OSX
     DynamicArray(u8) linkerFlags = NULL;
     ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -macosx_version_min 10.13", objectName, OutputName);
+
+    if (FlagVerbose) {
+        printf("%s\n", linkerFlags);
+    }
     system((char *)linkerFlags);
 
     if (FlagDebug) {
         DynamicArray(u8) symutilFlags = NULL;
-        ArrayPrintf(symutilFlags, "symutil %s", OutputName);
+        ArrayPrintf(symutilFlags, "dsymutil %s", OutputName);
+
+        if (FlagVerbose) {
+            printf("%s\n", symutilFlags);
+        }
+        system((char *)symutilFlags);
     }
 #else
-    // TODO: linking on mac and Linux
+    // TODO: linking on Windows and Linux
     UNIMPLEMENTED();
 #endif
 
