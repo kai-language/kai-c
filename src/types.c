@@ -29,9 +29,51 @@ Type *IntptrType;
 Type *UintptrType;
 Type *RawptrType;
 
-// TODO(Brett): figure out how I want to handle instance vs metatypes
 Type *UntypedIntType;
 Type *UntypedFloatType;
+
+i32 TypeRank(Type *type) {
+
+    // based off of Go's
+//        InvalidType,
+//        BoolType,
+//        IntType,
+//        I8Type,
+//        I16Type,
+//        I32Type,
+//        I64Type,
+//        IntptrType,
+//        UintType,
+//        U8Type,
+//        U16Type,
+//        U32Type,
+//        U64Type,
+//        UintptrType,
+//        RawptrType,
+//        F32Type,
+//        F64Type,
+//        UntypedIntType,
+//        UntypedFloatType,
+
+    // FIXME: This poorly emulates the above order. Made in a rush.
+    //  We should add typeid's like bitwise has and use those for type promotion.
+    if (type->Flags & TypeFlag_Untyped) return type->kind == TypeKind_Float ? 11000 : 10000;
+    switch (type->kind) {
+        case TypeKind_Invalid:
+            return 1;
+        case TypeKind_Bool:
+            return 2;
+        case TypeKind_Int:
+            return (type->Flags & TypeFlag_Signed) ? 1000 : 2000 + type->Width;
+        case TypeKind_Float:
+            return 3000 + type->Width;
+        case TypeKind_Pointer:
+            return 4000;
+        default:
+            return UINT32_MAX;
+    }
+}
+
 
 Symbol *FalseSymbol;
 Symbol *TrueSymbol;

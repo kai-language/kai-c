@@ -1,20 +1,20 @@
 
 typedef enum CheckerInfoKind {
-    CheckerInfoKind_Decl,
-    CheckerInfoKind_DeclList,
+    CheckerInfoKind_Constant,
+    CheckerInfoKind_Variable,
     CheckerInfoKind_Ident,
     CheckerInfoKind_Selector,
     CheckerInfoKind_BasicExpr,
 } CheckerInfoKind;
 
-typedef struct CheckerInfo_Decl CheckerInfo_Decl;
-struct CheckerInfo_Decl {
+typedef struct CheckerInfo_Constant CheckerInfo_Constant;
+struct CheckerInfo_Constant {
     Symbol *symbol;
     b8 isGlobal;
 };
 
-typedef struct CheckerInfo_DeclList CheckerInfo_DeclList;
-struct CheckerInfo_DeclList {
+typedef struct CheckerInfo_Variable CheckerInfo_Variable;
+struct CheckerInfo_Variable {
     b8 isGlobal;
     DynamicArray(Symbol *) symbols;
 };
@@ -40,8 +40,8 @@ typedef struct CheckerInfo CheckerInfo;
 struct CheckerInfo {
     CheckerInfoKind kind;
     union {
-        CheckerInfo_Decl Decl;
-        CheckerInfo_DeclList DeclList;
+        CheckerInfo_Constant Constant;
+        CheckerInfo_Variable Variable;
         CheckerInfo_Selector Selector;
         CheckerInfo_Ident Ident;
         CheckerInfo_BasicExpr BasicExpr;

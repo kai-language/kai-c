@@ -206,14 +206,14 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
     case StmtDeclKind_Constant: {
         CheckerInfo info = checkerInfo[stmt->id];
         Decl_Constant decl = stmt->Constant;
-        Symbol *symbol = info.Decl.symbol;
+        Symbol *symbol = info.Constant.symbol;
         llvm::Type *type = canonicalize(gen, symbol->type);
 
         llvm::GlobalVariable *global = new llvm::GlobalVariable(
             *gen->m,
             type,
             /*isConstant:*/true,
-            info.Decl.isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+            info.Constant.isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
             0,
             symbol->name
         );
@@ -228,7 +228,7 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
 
     case StmtDeclKind_Variable: {
         CheckerInfo info = checkerInfo[stmt->id];
-        DynamicArray(Symbol *) symbols = info.DeclList.symbols;
+        DynamicArray(Symbol *) symbols = info.Variable.symbols;
         Decl_Variable var = stmt->Variable;
 
         For (symbols) {

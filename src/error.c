@@ -29,7 +29,10 @@
     FOR_EACH(InvalidPointeeType, "The pointee type is not a valid metatype") \
     FOR_EACH(ParamNameMissing, "The parameter doesn't have a name") \
     FOR_EACH(AddressOfNonAddressable, "The expr could not have it's address taken") \
-    FOR_EACH(InvalidUnaryOperation, "Unary operation invalid on type")
+    FOR_EACH(InvalidUnaryOperation, "Unary operation invalid for type") \
+    FOR_EACH(InvalidBinaryOperation, "Binary operation invalid for type") \
+    FOR_EACH(DivisionByZero, "Divided by zero") \
+    FOR_EACH(TypeMismatch, "Type did not match")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,

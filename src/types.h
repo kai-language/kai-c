@@ -44,7 +44,7 @@ extern Symbol *TrueSymbol;
     FOR_EACH(Any, "any")            \
     FOR_EACH(Struct, "struct")      \
     FOR_EACH(Union, "union")        \
-    FOR_EACH(Metatype, "meta")      \
+    FOR_EACH(Enum, "enum")      \
     FOR_EACH(Alias, "alias")        \
     FOR_EACH(Function, "function")  \
 
@@ -52,6 +52,7 @@ typedef enum TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
     TYPE_KINDS
 #undef FOR_EACH
+    NUM_TYPE_KINDS,
 } TypeKind;
 
 #define FOR_EACH(kind, ...) typedef struct Type_##kind Type_##kind;
@@ -71,6 +72,9 @@ typedef u8 TypeFlag;
 // Slice & Function
 #define TypeFlag_Variadic 0x1
 #define TypeFlag_CVargs   0x2
+
+// Enum
+#define TypeFlag_EnumFlags 0x1
 
 struct Type_Pointer {
     TypeFlag Flags;
@@ -104,6 +108,10 @@ struct Type_Union {
     u32 tagWidth;
     u32 dataWidth;
     DynamicArray(Type *) cases;
+};
+
+struct Type_Enum {
+    TypeFlag Flags;
 };
 
 struct Type_Alias {
