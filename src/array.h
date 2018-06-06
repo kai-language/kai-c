@@ -19,6 +19,7 @@ typedef struct ArrayHdr {
 #define ArrayPrintf(b, ...) ((b) = _arrayPrintf((b), __VA_ARGS__))
 #define ArrayClear(b) ((b) ? _array_hdr(b)->len = 0 : 0)
 #define ArrayAllocator(b) ((b) ? _array_hdr(b)->allocator : &DefaultAllocator)
+#define ArraysEqual(a, b) (a == b || (ArrayLen(a) == ArrayLen(b) && memcmp(a, b, ArrayLen(a)) == 0))
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,6 +1,8 @@
 
 #include "types.h"
 
+TargetMetrics *TargetTypeMetrics = NULL;
+
 Type *InvalidType;
 Type *AnyType;
 Type *VoidType;
@@ -79,20 +81,98 @@ Symbol *symbolIntern(Symbol symbol) {
     return intern;
 }
 
-Type *NewTypePointer(TypeFlag flags, Type *pointeeType) {
-    return NULL;
+Type *AllocType(TypeKind kind) {
+    Type *type = Calloc(DefaultAllocator, 1, sizeof(Type));
+    type->kind = kind;
+    return type;
 }
 
-Type *NewTypeArray(TypeFlag flags, i64 length, Type *elementType) {
-    return NULL;
+void completeType(Type *type) {
+    // TODO: @CircularTypes
 }
+
+Map internPointerTypes;
+
+Type *NewTypePointer(TypeFlag flags, Type *pointeeType) {
+    Type *type = MapGet(&internPointerTypes, pointeeType);
+    if (!type) {
+        type = AllocType(TypeKind_Pointer);
+        type->Width = RawptrType->Width;
+        type->Flags = flags;
+        type->Pointer.pointeeType = pointeeType;
+        MapSet(&internPointerTypes, pointeeType, type);
+    }
+    return type;
+}
+
+Map internSliceTypes;
 
 Type *NewTypeSlice(TypeFlag flags, Type *elementType)  {
-    return NULL;
+    Type *type = MapGet(&internSliceTypes, elementType);
+    if (!type) {
+        type = AllocType(TypeKind_Pointer);
+        type->Width = RawptrType->Width;
+        type->Flags = flags;
+        type->Slice.elementType = elementType;
+        MapSet(&internSliceTypes, elementType, type);
+    }
+    return type;
 }
 
-Type *NewTypeAny(TypeFlag flags) {
-    return NULL;
+typedef struct InternType InternType;
+struct InternType {
+    Type *type;
+    InternType *next;
+};
+
+Map internArrayTypes;
+
+Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
+    u64 key = HashMix(HashPtr(elementType), HashU64(length)) ?: 1;
+    InternType *intern = MapGet(&internArrayTypes, (void*) key);
+    for (InternType *it = intern; it; it = it->next) {
+        Type *type = it->type;
+        if (type->Array.elementType == elementType && type->Array.length == type->Array.length) {
+            return type;
+        }
+    }
+    completeType(elementType);
+    Type *type = AllocType(TypeKind_Array);
+    ASSERT(length * elementType->Width < UINT32_MAX); // FIXME: Error for oversized arrays
+    type->Width = (u32) length * elementType->Width;
+    type->Align = elementType->Align;
+    type->Flags = flags;
+    type->Array.length = length;
+
+    InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
+    newIntern->type = type;
+    newIntern->next = intern;
+    MapSet(&internArrayTypes, (void*) key, newIntern);
+    return type;
+}
+
+Map internFunctionTypes;
+
+Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
+    u64 key = HashMix(HashBytes(params, ArrayLen(params)), HashBytes(results, ArrayLen(results))) ?: 1;
+    InternType *intern = MapGet(&internFunctionTypes, (void*) key);
+    for (InternType *it = intern; it; it = it->next) {
+        Type *type = it->type;
+        if (ArraysEqual(params, type->Function.params) && ArraysEqual(results, type->Function.results) && flags == type->Function.Flags) {
+            return type;
+        }
+    }
+    Type *type = AllocType(TypeKind_Function);
+    type->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    type->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
+    type->Flags = flags;
+    type->Function.params = params;
+    type->Function.results = results;
+    InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
+    newIntern->type = type;
+    newIntern->next = intern;
+    MapSet(&internArrayTypes, (void*) key, newIntern);
+    return type;
 }
 
 Type *NewTypeStruct(TypeFlag flags, DynamicArray(Type *) members) {
@@ -105,47 +185,46 @@ Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
     return NULL;
 }
 
-Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
-    return NULL;
-}
-
-#define TY(_global, _name, _kind, _width, _flags) \
-    _global = buildBuiltinIntern((Type){ .kind = TypeKind_##_kind, .width = _width, .Flags = _flags }); \
-    const char *intern##_global = StrIntern(_name); \
-    ArrayPush(Types, _global); \
-    MapSet(&TypesMap, intern##_global, buildTypeSymbol(intern##_global, _global))
 
 void InitBuiltinTypes() {
     static b32 init;
     if (init) return;
 
-    TY(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
+#define TYPE(_global, _name, _kind, _width, _flags) \
+    _global = buildBuiltinIntern((Type){ .kind = TypeKind_##_kind, .Width = _width, .Align = _width, .Flags = _flags }); \
+    const char *intern##_global = StrIntern(_name); \
+    ArrayPush(Types, _global); \
+    MapSet(&TypesMap, intern##_global, buildTypeSymbol(intern##_global, _global))
 
-    TY(AnyType,   "any",  Any, 0, TypeFlag_None);
-    TY(VoidType, "void", Void, 0, TypeFlag_None);
-    TY(BoolType, "bool", Bool, 8, TypeFlag_None);
+    TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
 
-    TY(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
-    TY(I16Type, "i16", Int, 16, TypeFlag_Signed);
-    TY(I32Type, "i32", Int, 32, TypeFlag_Signed);
-    TY(I64Type, "i64", Int, 64, TypeFlag_Signed);
-    TY(U8Type,  "u8",  Int,  8, TypeFlag_None);
-    TY(U16Type, "u16", Int, 16, TypeFlag_None);
-    TY(U32Type, "u32", Int, 32, TypeFlag_None);
-    TY(U64Type, "u64", Int, 64, TypeFlag_None);
+    TYPE(AnyType,   "any",  Any, 128, TypeFlag_None);
+    TYPE(VoidType, "void", Void, 0, TypeFlag_None);
+    TYPE(BoolType, "bool", Bool, 8, TypeFlag_None);
 
-    TY(F32Type, "f32", Float, 32, TypeFlag_None);
-    TY(F64Type, "f64", Float, 64, TypeFlag_None);
+    TYPE(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
+    TYPE(I16Type, "i16", Int, 16, TypeFlag_Signed);
+    TYPE(I32Type, "i32", Int, 32, TypeFlag_Signed);
+    TYPE(I64Type, "i64", Int, 64, TypeFlag_Signed);
+    TYPE(U8Type,  "u8",  Int,  8, TypeFlag_None);
+    TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
+    TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
+    TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
 
-    TY(IntType,   "int", Int, 32, TypeFlag_Signed);
-    TY(UintType, "uint", Int, 32, TypeFlag_None);
+    TYPE(F32Type, "f32", Float, 32, TypeFlag_None);
+    TYPE(F64Type, "f64", Float, 64, TypeFlag_None);
 
-    TY(IntptrType,   "intptr", Int, 64, TypeFlag_Signed);
-    TY(UintptrType, "uintptr", Int, 64, TypeFlag_None);
-    TY(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);
+    TYPE(IntType,   "int", Int, 32, TypeFlag_Signed);
+    TYPE(UintType, "uint", Int, 32, TypeFlag_None);
 
-    TY(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped);
-    TY(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
+    TYPE(IntptrType,   "intptr", Int, 64, TypeFlag_Signed);
+    TYPE(UintptrType, "uintptr", Int, 64, TypeFlag_None);
+    TYPE(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);
+
+    TYPE(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped);
+    TYPE(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
+
+#undef TYPE
 
     FalseSymbol = symbolIntern((Symbol){
         .name = StrIntern("false"),
@@ -160,8 +239,6 @@ void InitBuiltinTypes() {
         .state = SymbolState_Resolved,
         .type = BoolType
     });
-
-    TargetMetrics *TargetTypeMetrics = NULL;
 
     switch (TargetOs) {
         case Os_Linux:
@@ -181,12 +258,15 @@ void InitBuiltinTypes() {
         exit(1);
     }
 
-    IntType->width = TargetTypeMetrics[TargetMetrics_Int].Width;
-    UintType->width = TargetTypeMetrics[TargetMetrics_Int].Width;
+    AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
+    AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;
 
-    UintptrType->width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-    IntptrType->width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-    RawptrType->width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    IntType->Align = IntType->Width = TargetTypeMetrics[TargetMetrics_Int].Width;
+    UintType->Align = UintType->Width = TargetTypeMetrics[TargetMetrics_Int].Width;
+
+    UintptrType->Align = UintptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    IntptrType->Align = IntptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    RawptrType->Align = RawptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
 
     init = true;
 }
@@ -199,8 +279,6 @@ const char *DescribeType(Type *type) {
 
     return DescribeTypeKind(TypeKind_Invalid);
 }
-
-#undef TYPE
 
 #if TEST
 void test_TypeIntern() {

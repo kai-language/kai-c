@@ -8,6 +8,10 @@
 #include "checker.h"
 #include "llvm.h"
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma clang diagnostic ignored "-Wcomma"
+
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/IR/BasicBlock.h>
@@ -32,6 +36,8 @@
 
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
+
+#pragma clang diagnostic pop
 
 typedef struct DebugTypes {
     llvm::DIType *i8;
@@ -80,12 +86,12 @@ repeat:
     }
         
     case TypeKind_Int:
-        return llvm::IntegerType::get(gen->m->getContext(), type->width);
+        return llvm::IntegerType::get(gen->m->getContext(), type->Width);
 
     case TypeKind_Float: {
-        if (type->width == 32) {
+        if (type->Width == 32) {
             return llvm::Type::getFloatTy(gen->m->getContext());
-        } else if (type->width == 64) {
+        } else if (type->Width == 64) {
             return llvm::Type::getDoubleTy(gen->m->getContext());
         } else {
             ASSERT(false);
@@ -109,7 +115,7 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
     }
 
     if (type->kind == TypeKind_Int) {
-        switch (type->width) {
+        switch (type->Width) {
         case 8:  return type->Flags & TypeFlag_Signed ? types.i8  : types.u8;
         case 16: return type->Flags & TypeFlag_Signed ? types.i16 : types.u16;
         case 32: return type->Flags & TypeFlag_Signed ? types.i32 : types.u32;
@@ -121,7 +127,7 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
         return types.i64;
 
     if (type->kind == TypeKind_Float) {
-        return type->width == 32 ? types.f32 : types.f64;
+        return type->Width == 32 ? types.f32 : types.f64;
     }
 
     if (type == UntypedFloatType)

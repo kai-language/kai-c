@@ -166,18 +166,18 @@ struct Position {
 };
 
 /// Allocators
-typedef enum AllocType {
+typedef enum AllocKind {
     AT_Alloc,
     AT_Calloc,
     AT_Realloc,
     AT_Free,
     AT_FreeAll,
-} AllocType;
+} AllocKind;
 
 
 // NOTE: count is the target bytes always, size is either the size in bytes of each entry (for calloc) or the old size for realloc.
 #define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, size_t count, size_t size, void *old)
-typedef void *allocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old);
+typedef void *allocFunc(void *payload, enum AllocKind alType, size_t count, size_t size, void *old);
 //typedef ALLOC_FUNC(allocFunc);
 
 typedef struct Allocator Allocator;

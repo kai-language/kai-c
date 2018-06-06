@@ -59,7 +59,7 @@ void *checkedMalloc(size_t num_bytes) {
     return ptr;
 }
 
-void *heapAllocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old) {
+void *heapAllocFunc(void *payload, enum AllocKind alType, size_t count, size_t size, void *old) {
     switch (alType) {
         case AT_Alloc:
             return checkedMalloc(count);

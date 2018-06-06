@@ -15,7 +15,7 @@ const char *OutputName;
 int TargetOs;
 int TargetArch;
 
-CLIFlag Flags[] = {
+CLIFlag CLIFlags[] = {
     { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
     { CLIFlagKind_Bool, "version", .ptr.b = &FlagVersion, .help = "Prints version information" },
 
@@ -34,10 +34,10 @@ CLIFlag Flags[] = {
 };
 
 CLIFlag *FlagForName(const char *name) {
-    size_t nFlags = sizeof(Flags) / sizeof(*Flags);
+    size_t nFlags = sizeof(CLIFlags) / sizeof(*CLIFlags);
     for (size_t i = 0; i < nFlags; i++) {
-        if (strcmp(Flags[i].name, name) == 0)       return &Flags[i];
-        else if (Flags[i].alias && strcmp(Flags[i].alias, name) == 0) return &Flags[i];
+        if (strcmp(CLIFlags[i].name, name) == 0)       return &CLIFlags[i];
+        else if (CLIFlags[i].alias && strcmp(CLIFlags[i].alias, name) == 0) return &CLIFlags[i];
     }
     return NULL;
 }
@@ -156,12 +156,12 @@ void InitUnsetFlagsToDefaults() {
 }
 
 void PrintUsage() {
-    size_t nFlags = sizeof(Flags) / sizeof(*Flags);
+    size_t nFlags = sizeof(CLIFlags) / sizeof(*CLIFlags);
     for (size_t i = 0; i < nFlags; i++) {
 
         char invokation[40];
         int k = 0;
-        CLIFlag flag = Flags[i];
+        CLIFlag flag = CLIFlags[i];
 
         if (flag.alias) k = snprintf(invokation, sizeof(invokation), "-%s ", flag.alias);
         k += snprintf(invokation + k, sizeof(invokation) - k, "-%s", flag.name);

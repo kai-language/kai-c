@@ -1,4 +1,6 @@
 
+extern struct TargetMetrics *TargetTypeMetrics;
+
 extern Type *InvalidType;
 extern Type *AnyType;
 extern Type *VoidType;
@@ -67,15 +69,21 @@ struct Type_Pointer {
     Type *pointeeType;
 };
 
-struct Type_Array {
-    TypeFlag Flags;
-    i64 length;
-    Type *elementType;
-};
-
 struct Type_Slice {
     TypeFlag Flags;
     Type *elementType;
+};
+
+struct Type_Array {
+    TypeFlag Flags;
+    u64 length;
+    Type *elementType;
+};
+
+struct Type_Function {
+    TypeFlag Flags;
+    DynamicArray(Type *) params;
+    DynamicArray(Type *) results;
 };
 
 struct Type_Struct {
@@ -88,12 +96,6 @@ struct Type_Union {
     u32 tagWidth;
     u32 dataWidth;
     DynamicArray(Type *) cases;
-};
-
-struct Type_Function {
-    TypeFlag Flags;
-    DynamicArray(Type *) params;
-    DynamicArray(Type *) results;
 };
 
 struct Type_Metatype {
@@ -117,8 +119,8 @@ _Static_assert(offsetof(Type_Alias,    Flags) == 0, "Flags must be at offset 0")
 
 struct Type {
     TypeKind kind;
-    u32 width;
-    u32 align;
+    u32 Width;
+    u32 Align;
 
     union {
         TypeFlag Flags;
