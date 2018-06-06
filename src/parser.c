@@ -919,7 +919,7 @@ void parsePackage(Package *package) {
         case StmtDeclKind_Constant:
         case StmtDeclKind_Variable: {
             Decl_Constant decl = stmt->Constant;
-            SymbolKind kind = stmt->kind == StmtDeclKind_Constant ? SymbolKind_Constant : SymbolKind_Variable;
+            SymbolKind kind = stmt->kind == StmtDeclKind_Constant ?: SymbolKind_Variable;
             for (size_t j = 0; j < ArrayLen(decl.names); j++) {
                 Symbol *symbol = ArenaAlloc(&package->arena, sizeof(Symbol));
                 symbol->decl =  &stmt->start;
@@ -943,13 +943,6 @@ void parsePackage(Package *package) {
     DynamicArray(CheckerInfo) checkerInfo = NULL;
     ArrayFit(checkerInfo, package->astIdCount+1);
     package->checkerInfo = checkerInfo;
-    
-    // Copy builtins into the package's global scope
-    Scope *universalScope = ArenaAlloc(&package->arena, sizeof(Scope));
-    universalScope->members = TypesMap;
-    package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
-    package->globalScope->parent = universalScope;
-    package->globalScope->members = package->symbolMap;
 
     for (int i = (int)(ArrayLen(package->stmts)) - 1; i >= 0; i--) {
         CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));

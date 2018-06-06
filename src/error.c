@@ -2,36 +2,37 @@
 // The description isn't used by the compiler itself but is there for tools to utilize
 // in the future.
 #define ERROR_CODES \
-    FOR_EACH(InvalidEscape, "Escape sequence is an invalid Unicode codepoint"), \
-    FOR_EACH(InvalidCharacterEscape, "Escape sequence is a invalid"), \
-    FOR_EACH(InvalidNumericEscape, "Escape sequence is an invalid Unicode codepoint"), \
-    FOR_EACH(InvalidCodePoint, "An invalid Unicode codepoint"), \
-    FOR_EACH(StringContainsNewline, "A string literal contains a newline"), \
-    FOR_EACH(UnexpectedEOF, "An unexpected EOF while parsing a string literal"), \
-    FOR_EACH(ExpectedDigit, "Expected a digit"), \
-    FOR_EACH(DigitOutOfRange, "Digit is out of range of base"), \
-    FOR_EACH(FloatOverflow, "Float literal overflow"), \
-    FOR_EACH(IntOverflow, "Integer literal overflow"), \
-    FOR_EACH(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII"), \
-    FOR_EACH(Syntax, "Syntax error"), \
-    FOR_EACH(Fatal, "Fatal error"), \
-    FOR_EACH(Redefinition, "Redefinition"), \
-    FOR_EACH(MultipleConstantDecl, "Defined more than one constant item at a time"), \
-    FOR_EACH(ArityMismatch, "The amount of declarations doesn't match the amount of values"), \
-    FOR_EACH(InvalidMetatype, "The type provided was not a metatype"), \
-    FOR_EACH(UndefinedIdent, "Use of an undefined identifier"), \
-    FOR_EACH(InvalidConversion, "Unable to convert type to target type"), \
-    FOR_EACH(UninitImplicitArray, "Implicit-length array was provided without an initial value"), \
-    FOR_EACH(UninitFunctionType, "A function type wasn't provided a body"), \
-    FOR_EACH(MetatypeNotAnExpr, "A metatype is not a valid expression"), \
-    FOR_EACH(NotNilable, "The type cannot be converted to nil"), \
-    FOR_EACH(InvalidPointeeType, "The pointee type is not a valid metatype"), \
-    FOR_EACH(ParamNameMissing, "The parameter doesn't have a name") , \
-    FOR_EACH(AddressOfNonAddressable, "The expr could not have it's address taken") , \
-    FOR_EACH(InvalidUnaryOperation, "Unary operation invalid on type") , \
+    FOR_EACH(TODO, "No individual error code exists for this error currently") \
+    FOR_EACH(InvalidEscape, "Escape sequence is an invalid Unicode codepoint") \
+    FOR_EACH(InvalidCharacterEscape, "Escape sequence is a invalid") \
+    FOR_EACH(InvalidNumericEscape, "Escape sequence is an invalid Unicode codepoint") \
+    FOR_EACH(InvalidCodePoint, "An invalid Unicode codepoint") \
+    FOR_EACH(StringContainsNewline, "A string literal contains a newline") \
+    FOR_EACH(UnexpectedEOF, "An unexpected EOF while parsing a string literal") \
+    FOR_EACH(ExpectedDigit, "Expected a digit") \
+    FOR_EACH(DigitOutOfRange, "Digit is out of range of base") \
+    FOR_EACH(FloatOverflow, "Float literal overflow") \
+    FOR_EACH(IntOverflow, "Integer literal overflow") \
+    FOR_EACH(WrongDoubleQuote, "User entered `“` (0x201c) as a quote instead of ASCII") \
+    FOR_EACH(Syntax, "Syntax error") \
+    FOR_EACH(Fatal, "Fatal error") \
+    FOR_EACH(Redefinition, "Redefinition") \
+    FOR_EACH(MultipleConstantDecl, "Defined more than one constant item at a time") \
+    FOR_EACH(ArityMismatch, "The amount of declarations doesn't match the amount of values") \
+    FOR_EACH(InvalidMetatype, "The type provided was not a metatype") \
+    FOR_EACH(UndefinedIdent, "Use of an undefined identifier") \
+    FOR_EACH(InvalidConversion, "Unable to convert type to target type") \
+    FOR_EACH(UninitImplicitArray, "Implicit-length array was provided without an initial value") \
+    FOR_EACH(UninitFunctionType, "A function type wasn't provided a body") \
+    FOR_EACH(MetatypeNotAnExpr, "A metatype is not a valid expression") \
+    FOR_EACH(NotNilable, "The type cannot be converted to nil") \
+    FOR_EACH(InvalidPointeeType, "The pointee type is not a valid metatype") \
+    FOR_EACH(ParamNameMissing, "The parameter doesn't have a name") \
+    FOR_EACH(AddressOfNonAddressable, "The expr could not have it's address taken") \
+    FOR_EACH(InvalidUnaryOperation, "Unary operation invalid on type")
 
 typedef enum ErrorCode {
-#define FOR_EACH(e, s) e##Error
+#define FOR_EACH(e, s) e##Error,
     ERROR_CODES
 #undef FOR_EACH
 } ErrorCode;

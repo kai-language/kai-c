@@ -78,13 +78,7 @@ void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
 b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
-repeat:
     switch (type->kind) {
-    case TypeKind_Metatype: {
-        type = type->Metatype.instanceType;
-        goto repeat;
-    }
-        
     case TypeKind_Int:
         return llvm::IntegerType::get(gen->m->getContext(), type->Width);
 
@@ -109,10 +103,6 @@ repeat:
 
 llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
     DebugTypes types = gen->d->types;
-
-    if (type->kind == TypeKind_Metatype) {
-        return debugCanonicalize(gen, type->Metatype.instanceType);
-    }
 
     if (type->kind == TypeKind_Int) {
         switch (type->Width) {
@@ -175,7 +165,7 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
     case ExprKind_LitInt: {
         Expr_LitInt lit = expr->LitInt;
         CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.BasicLit.type;
+        Type *type = info.BasicExpr.type;
         debugPos(gen, b, expr->start);
         return llvm::ConstantInt::get(
             canonicalize(gen, type), 
@@ -187,14 +177,14 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
     case ExprKind_LitFloat: {
         Expr_LitFloat lit = expr->LitFloat;
         CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.BasicLit.type;
+        Type *type = info.BasicExpr.type;
         debugPos(gen, b, expr->start);
         return llvm::ConstantFP::get(canonicalize(gen, type), lit.val);
     };
 
     case ExprKind_LitNil: {
         CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.NilLit.type;
+        Type *type = info.BasicExpr.type;
         debugPos(gen, b, expr->start);
         return llvm::ConstantPointerNull::get((llvm::PointerType *)canonicalize(gen, type));
     } break;

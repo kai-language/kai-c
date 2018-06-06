@@ -8,7 +8,7 @@ typedef enum ExprMode {
     ExprMode_File,
     ExprMode_Library,
     ExprMode_Type,
-    ExprMode_Function
+    ExprMode_Function,
 } ExprMode;
 
 typedef struct ExprInfo ExprInfo;
@@ -44,6 +44,18 @@ void storeExprInfo(Package *pkg, Expr *expr, CheckerInfo info) {
     pkg->checkerInfo[expr->id] = info;
 }
 
+void StoreInfoIdent(Package *pkg, Expr *expr, Symbol *symbol) {
+    ASSERT(expr->kind == ExprKind_Ident);
+    CheckerInfo info = {CheckerInfoKind_Ident, .Ident.symbol = symbol};
+    pkg->checkerInfo[expr->id] = info;
+}
+
+void StoreInfoBasicExpr(Package *pkg, Expr *expr, Type *type) {
+    ASSERT(expr->kind == ExprKind_LitInt);
+    CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
+    pkg->checkerInfo[expr->id] = info;
+}
+
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Position *decl) {
     Symbol *old = Lookup(scope, name);
     if (old) {
@@ -67,13 +79,11 @@ b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol,
     return false;
 }
 
-Type *lowerMeta(Package *pkg, Type *type, Position pos) {
-    if (type->kind != TypeKind_Metatype) {
+b32 expectType(Package *pkg, Type *type, ExprInfo *info, Position pos) {
+    if (info->mode != ExprMode_Type) {
         ReportError(pkg, InvalidMetatypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
-        return NULL;
     }
-
-    return type->Metatype.instanceType;
+    return info->mode != ExprMode_Type;
 }
 
 Type *baseType(Type *type) {
@@ -165,223 +175,330 @@ Symbol *Lookup(Scope *scope, const char *name) {
     return NULL;
 }
 
-Type *checkFuncLit(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo);
+Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo);
 
-Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
-    switch (expr->kind) {
-    case ExprKind_Ident: {
-        Expr_Ident ident = expr->Ident; 
-        Symbol *symbol = Lookup(exprInfo->scope, ident.name);
-        if (!symbol) {
-            ReportError(pkg, UndefinedIdentError, expr->start, "Use of undefined identifier '%s'", ident.name);
-            exprInfo->mode = ExprMode_Invalid;
-            return InvalidType;
-        }
+Type *checkExprIdent(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Expr_Ident ident = expr->Ident;
+    Symbol *symbol = Lookup(exprInfo->scope, ident.name);
+    if (!symbol) {
+        ReportError(pkg, UndefinedIdentError, expr->start, "Use of undefined identifier '%s'", ident.name);
+        exprInfo->mode = ExprMode_Invalid;
+        return InvalidType;
+    }
 
-        symbol->used = true;
-        if (symbol->state != SymbolState_Resolved) {
-            exprInfo->mode = ExprMode_Unresolved;
-            return InvalidType;
-        }
+    symbol->used = true;
+    if (symbol->state != SymbolState_Resolved) {
+        exprInfo->mode = ExprMode_Unresolved;
+        return InvalidType;
+    }
 
-        CheckerInfo solve = {
-            .kind = CheckerInfoKind_Ident,
-            .Ident.symbol = symbol    
-        };
-        storeExprInfo(pkg, expr, solve);
+    StoreInfoIdent(pkg, expr, symbol);
 
-        switch (symbol->kind) {
-        case SymbolKind_Type: {
+    switch (symbol->kind) {
+        case SymbolKind_Type:
             exprInfo->mode = ExprMode_Type;
-        } break;
+            break;
 
-        case SymbolKind_Constant: {
+        case SymbolKind_Constant:
             if (symbol == TrueSymbol || symbol == FalseSymbol) {
                 exprInfo->mode = ExprMode_Computed;
                 break;
             }
-        }
+            break;
+
         default:
             exprInfo->mode = ExprMode_Addressable;
-        }
+    }
 
-        exprInfo->val = symbol->val;
-        return symbol->type;
-    } break;
+    exprInfo->val = symbol->val;
+    return symbol->type;
+}
 
-    case ExprKind_LitInt: {
-        Expr_LitInt lit = expr->LitInt;
+Type *checkExprLitInt(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Expr_LitInt lit = expr->LitInt;
 
-        Type *type = InvalidType;
-
-        if (exprInfo->desiredType) {
-            if (isInteger(exprInfo->desiredType)) {
-                exprInfo->val.u64 = lit.val;
-            }
-
-            else if (isFloat(exprInfo->desiredType)) {
-                exprInfo->val.f64 = (f64)lit.val;
-            }
-
-            else {
-                ReportError(
-                    pkg, InvalidConversionError, expr->start,
-                    "Unable to convert type %s to expected type type %s",
-                    DescribeType(UntypedIntType), DescribeType(exprInfo->desiredType)
-                );
-
-                return InvalidType;
-            }
-
-            type = exprInfo->desiredType;
+    Type *type = UntypedIntType;
+    if (exprInfo->desiredType) {
+        if (isInteger(exprInfo->desiredType) || isPointer(exprInfo->desiredType)) {
+            exprInfo->val.u64 = lit.val;
+        } else if (isFloat(exprInfo->desiredType)) {
+            exprInfo->val.f64 = (f64)lit.val;
         } else {
-            type = UntypedIntType;
+            ReportError(pkg, InvalidConversionError, expr->start,
+                        "Unable to convert type %s to expected type type %s", DescribeType(UntypedIntType), DescribeType(exprInfo->desiredType));
+            goto error;
         }
-        
-        exprInfo->mode = ExprMode_Computed;
-        CheckerInfo solve = {
-            .kind = CheckerInfoKind_BasicLit,
-            .BasicLit.type = type    
-        };
-        storeExprInfo(pkg, expr, solve);
-        return type;
-    };
 
-    case ExprKind_LitFloat: {
-        Expr_LitFloat lit = expr->LitFloat;
+        type = exprInfo->desiredType;
+    }
 
-        Type *type = InvalidType;
+    exprInfo->mode = ExprMode_Computed;
+    StoreInfoBasicExpr(pkg, expr, type);
+    return type;
 
-        if (exprInfo->desiredType) {
-            if (isInteger(exprInfo->desiredType)) {
-                exprInfo->val.u64 = (u64)lit.val;
-            }
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
 
-            else if (isFloat(exprInfo->desiredType)) {
-                exprInfo->val.f64 = lit.val;
-            }
+Type *checkExprLitFloat(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Expr_LitFloat lit = expr->LitFloat;
 
-            else {
-                ReportError(
-                    pkg, InvalidConversionError, expr->start,
-                    "Unable to convert type %s to expected type type %s",
-                    DescribeType(UntypedFloatType), DescribeType(exprInfo->desiredType)
-                );
-
-                return InvalidType;
-            }
-
-            type = exprInfo->desiredType;
+    Type *type = UntypedFloatType;
+    if (exprInfo->desiredType) {
+        if (isFloat(exprInfo->desiredType)) {
+            exprInfo->val.f64 = lit.val;
         } else {
-            type = UntypedFloatType;
+            ReportError(pkg, InvalidConversionError, expr->start,
+                        "Unable to convert type %s to expected type type %s", DescribeType(UntypedFloatType), DescribeType(exprInfo->desiredType));
+            goto error;
         }
 
-        exprInfo->mode = ExprMode_Computed;
-        CheckerInfo solve = {
-            .kind = CheckerInfoKind_BasicLit,
-            .BasicLit.type = type
-        };
-        storeExprInfo(pkg, expr, solve);
-        return type;
-    } break;
+        type = exprInfo->desiredType;
+    }
 
-    case ExprKind_LitNil: {
-        exprInfo->mode = ExprMode_Nil;
-        Type *desiredType = exprInfo->desiredType;
+    exprInfo->mode = ExprMode_Computed;
+    StoreInfoBasicExpr(pkg, expr, type);
+    return type;
 
-        if (desiredType) {
-            if (isNilable(desiredType)) {
-                CheckerInfo solve;
-                solve.kind = CheckerInfoKind_NilLit;
-                solve.NilLit.type = desiredType;
-                storeExprInfo(pkg, expr, solve);
-                return desiredType;
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExprLitNil(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    exprInfo->mode = ExprMode_Nil;
+    Type *desiredType = exprInfo->desiredType;
+
+    if (!desiredType) {
+        ReportError(pkg, TODOError, expr->start, "'nil' used without a contextual type");
+        goto error;
+    }
+
+    if (!isNilable(desiredType)) {
+        ReportError(pkg, NotNilableError, expr->start, "'nil' is not convertable to '%s'", DescribeType(exprInfo->desiredType));
+        goto error;
+    }
+
+    StoreInfoBasicExpr(pkg, expr, desiredType);
+    exprInfo->mode = ExprMode_Nil; // TODO: Is a nil mode something that makes sense? Should it just be any other non addressable value?
+    return desiredType;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkVariadicType(Package *pkg, Expr *expr, ExprInfo *info) {
+    Type *type = checkExpr(pkg, expr->TypeVariadic.type, info);
+    if (!expectType(pkg, type, info, expr->TypeVariadic.type->start)) goto error;
+    TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlagCVargs ? TypeFlag_CVargs : TypeFlag_None;
+    type = NewTypeSlice(flags, type);
+    info->mode = ExprMode_Type;
+    return type;
+
+error:
+    info->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkTypeFunction(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
+    Expr_TypeFunction func = expr->TypeFunction;
+    TypeFlag flags = TypeFlag_None;
+
+    b32 isInvalid = false;
+
+    DynamicArray(Type *) params = NULL;
+    ArrayFit(params, ArrayLen(func.params));
+
+    ExprInfo info = { .scope = pushScope(pkg, exprInfo->scope) };
+    For (func.params) {
+        Type *type = checkExpr(pkg, func.params[i]->value, &info);
+        if (!expectType(pkg, type, &info, func.params[i]->start)) isInvalid = true;
+
+        flags |= type->Flags & TypeFlag_Variadic;
+        flags |= type->Flags & TypeFlag_CVargs;
+        ArrayPush(params, type);
+    }
+
+    DynamicArray(Type *) returnTypes = NULL;
+    ArrayFit(returnTypes, ArrayLen(func.result));
+
+    ForEach(func.result) {
+        Type *type = checkExpr(pkg, it, &info);
+        if (!expectType(pkg, type, &info, it->start)) isInvalid = true;
+        ArrayPush(returnTypes, type);
+    }
+
+    if (isInvalid) goto error;
+
+    Type *type = NewTypeFunction(flags, params, returnTypes);
+
+    StoreInfoBasicExpr(pkg, expr, type);
+    exprInfo->mode = ExprMode_Type;
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
+    Expr_LitFunction func = funcExpr->LitFunction;
+    Scope *scope = pushScope(pkg, exprInfo->scope);
+    ExprInfo funcInfo = { .scope = scope };
+
+    DynamicArray(Type *) paramTypes = NULL;
+    DynamicArray(Type *) resultTypes = NULL;
+    DynamicArray(Symbol *) paramSymbols = NULL;
+    ArrayFit(paramTypes, ArrayLen(func.type->TypeFunction.params));
+    ArrayFit(resultTypes, ArrayLen(func.type->TypeFunction.result));
+    ArrayFit(paramSymbols, ArrayLen(func.type->TypeFunction.params));
+
+    TypeFlag typeFlags = TypeFlag_None;
+
+    // FIXME: We need to extract and pass on desired types parameters & results
+    ForEach(func.type->TypeFunction.params) {
+        if (!it->key || it->key->kind != ExprKind_Ident) {
+            ReportError(pkg, ParamNameMissingError, it->start, "Parameters for a function literal must be named");
+            continue;
+        }
+
+        Symbol *symbol;
+        declareSymbol(pkg, scope, it->key->Ident.name, &symbol, 0, &it->start);
+        ArrayPush(paramSymbols, symbol);
+
+        Type *type = checkExpr(pkg, it->value, &funcInfo);
+        if (!expectType(pkg, type, &funcInfo, it->value->start)) continue;
+
+        typeFlags |= type->Flags & TypeFlag_Variadic;
+        typeFlags |= type->Flags & TypeFlag_CVargs;
+        ArrayPush(paramTypes, type);
+    }
+
+    ForEach(func.type->TypeFunction.result) {
+        Type *type = checkExpr(pkg, it, &funcInfo);
+        if (!expectType(pkg, type, &funcInfo, it->start)) continue;
+        ArrayPush(resultTypes, type);
+    }
+
+    UNIMPLEMENTED();
+    return NULL;
+}
+
+Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
+    Type *type = NULL;
+    switch (expr->kind) {
+        case ExprKind_Ident:
+            type = checkExprIdent(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_LitInt:
+            type = checkExprLitInt(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_LitFloat: {
+            Expr_LitFloat lit = expr->LitFloat;
+
+            Type *type = InvalidType;
+
+            if (exprInfo->desiredType) {
+                if (isInteger(exprInfo->desiredType)) {
+                    exprInfo->val.u64 = (u64)lit.val;
+                } else if (isFloat(exprInfo->desiredType)) {
+                    exprInfo->val.f64 = lit.val;
+                } else {
+                    ReportError(pkg, InvalidConversionError, expr->start,
+                                "Unable to convert type %s to expected type type %s",
+                                DescribeType(UntypedFloatType), DescribeType(exprInfo->desiredType));
+                    return InvalidType;
+                }
+
+                type = exprInfo->desiredType;
+            } else {
+                type = UntypedFloatType;
             }
 
-            ReportError(
-                pkg, NotNilableError, expr->start,
-                "'nil' is not convertable to '%s'",
-                DescribeType(exprInfo->desiredType)
-            );
-        }
+            exprInfo->mode = ExprMode_Computed;
+            StoreInfoBasicExpr(pkg, expr, type);
+            return type;
+        } break;
 
-        return InvalidType;
-    } break;
+        case ExprKind_LitNil:
+            type = checkExprLitNil(expr, exprInfo, pkg);
+            break;
 
-    case ExprKind_LitFunction: {
-        return checkFuncLit(pkg, expr, exprInfo);
-    } break;
+        case ExprKind_LitFunction:
+            type = checkLitFunction(pkg, expr, exprInfo);
+            break;
 
-    case ExprKind_TypePointer: {
-        Expr_TypePointer typePointer = expr->TypePointer;
+        case ExprKind_TypeVariadic:
+            type = checkVariadicType(pkg, expr, exprInfo);
+            break;
 
-        // push desired type
-        Type *desiredType = exprInfo->desiredType;
-        Type *type = checkExpr(pkg, typePointer.type, exprInfo);
-        exprInfo->desiredType = NULL;
+        case ExprKind_TypePointer: {
+            Type *desiredType = exprInfo->desiredType;
+            exprInfo->desiredType = isPointer(exprInfo->desiredType) ? exprInfo->desiredType->Pointer.pointeeType : NULL;
+            Type *type = checkExpr(pkg, expr->TypePointer.type, exprInfo);
+            expectType(pkg, type, exprInfo, expr->TypePointer.type->start);
+            exprInfo->desiredType = NULL;
 
-        if (exprInfo->mode == ExprMode_Unresolved) {
-            return InvalidType;
-        }
+            if (exprInfo->mode == ExprMode_Unresolved) return InvalidType;
+            expectType(pkg, type, exprInfo, expr->TypePointer.type->start);
+            if (exprInfo->mode != ExprMode_Type) {
+                ReportError(pkg, InvalidPointeeTypeError, expr->start,
+                            "'%s' is not a valid pointee type", DescribeType(type));
+                goto exprIsInvalid;
+            } else if (type == VoidType) {
+                ReportError(pkg, TODOError, expr->TypePointer.type->start, "Kai does not use void * for raw pointers instead use rawptr");
+            }
 
-        if (exprInfo->mode != ExprMode_Type) {
-            ReportError(
-                pkg, InvalidPointeeTypeError, expr->start,
-                "'%s' is not a valid pointee type",
-                DescribeType(type)
-            );
-            return InvalidType;
-        }
+            if (desiredType == RawptrType) type = RawptrType;
 
-        Type *ptr = TypeIntern((Type){ .kind = TypeKind_Pointer, .Pointer.pointeeType = type});
-        type = TypeIntern((Type){.kind = TypeKind_Metatype, .Metatype.instanceType = ptr});
+            type = NewTypePointer(TypeFlag_None, type);
+            exprInfo->mode = ExprMode_Type;
 
-        exprInfo->mode = ExprMode_Type;
-
-        return type;
+            return type;
     } break;
 
     case ExprKind_Unary: {
         Type *type = checkExpr(pkg, expr->Unary.expr, exprInfo);
         if (exprInfo->mode == ExprMode_Unresolved) return InvalidType;
 
-        type = lowerMeta(pkg, type, expr->Unary.expr->start);
-
         switch (expr->Unary.op) {
-            case TK_And:
+            case TK_And: {
                 if (exprInfo->mode != ExprMode_Addressable) {
                     ReportError(pkg, AddressOfNonAddressableError, expr->start,
                                 "Cannot take address of %s", DescribeExpr(expr->Unary.expr));
                     exprInfo->mode = ExprMode_Invalid;
                     type = InvalidType;
-                    break;
+                    goto exprIsInvalid;
                 }
-
-                type = TypeIntern((Type){ .kind = TypeKind_Pointer, .Pointer.pointeeType = type });
-
-                StoreInfoUnary(pkg, expr, type);
+                type = NewTypePointer(TypeFlag_None, type);
                 break;
-
-            default:
+            }
+            default: {
                 if (!unaryPredicates[expr->Unary.op]) {
                     ReportError(pkg, InvalidUnaryOperationError, expr->start,
                                 "Operation '%s' undefined for %s", DescribeTokenKind(expr->Unary.op), DescribeExpr(expr->Unary.expr));
                     exprInfo->mode = ExprMode_Invalid;
                     type = InvalidType;
-                    break;
+                    goto exprIsInvalid;
                 }
 
                 switch (expr->Unary.op) {
                     case TK_Not:
-                        StoreInfoUnary(pkg, expr, BoolType);
+                        type = BoolType;
                     case TK_Lss: {
                         type = NewTypePointer(TypeFlag_None, type);
-                        StoreInfoUnary(pkg, expr, type);
                     default:
-                        StoreInfoUnary(pkg, expr, type);
+                        break;
                     }
                 }
+            }
         }
+
+        StoreInfoBasicExpr(pkg, expr, type);
         exprInfo->mode = ExprMode_Computed;
 
         return type;
@@ -391,84 +508,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
         break;
     }
 
-    return InvalidType;
-}
-
-Type *checkFuncLit(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
-    Expr_LitFunction func = funcExpr->LitFunction;
-    Scope *scope = pushScope(pkg, exprInfo->scope);
-
-    DynamicArray(Expr_KeyValue *) params = func.type->TypeFunction.params;
-
-    CheckerInfo info = pkg->checkerInfo[func.type->id];
-    Type *funcType = info.BasicLit.type;
-    DynamicArray(Type *) paramTypes = funcType->Function.params;
-
-    DynamicArray(Symbol *) paramSymbols = NULL;
-    ArrayFit(paramSymbols, ArrayLen(paramTypes));
-
-    For (params) {
-        Expr_KeyValue *param = params[i];
-
-        if (!param->key || param->key->kind != ExprKind_Ident) {
-            ReportError(
-                pkg, ParamNameMissingError, param->start,
-                "Parameters must have a name"
-            );
-
-            continue;
-        }
-
-        Symbol *symbol;
-        declareSymbol(pkg, scope, param->key->Ident.name, &symbol, 0, &param->start);
-
-        Type *type = paramTypes[i];
-        resolveSymbol(symbol, type);
-        ArrayPush(paramSymbols, symbol);
-    }
-
-    
-    UNIMPLEMENTED();
-    return NULL;
-}
-
-Type *checkFuncType(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
-    Expr_TypeFunction func = funcExpr->TypeFunction;
-
-    DynamicArray(Type *) params = NULL;
-    ArrayFit(params, ArrayLen(func.params));
-
-    For (func.params) {
-        Type * type = lowerMeta(pkg, checkExpr(pkg, func.params[i]->value, exprInfo), func.params[i]->start);
-        // TODO: look for variadics
-        
-        ArrayPush(params, type);
-    }
-
-    DynamicArray(Type *) returnTypes = NULL;
-    ArrayFit(returnTypes, ArrayLen(func.result));
-
-    For (func.result) {
-        Type *type = lowerMeta(pkg, checkExpr(pkg, func.result[i], exprInfo), func.result[i]->start);
-        ArrayPush(returnTypes, type);
-    }
-
-    exprInfo->mode = ExprMode_Function;
-
-    Type *type = TypeIntern((Type){
-        .kind = TypeKind_Function, 
-        .Function.params = params, 
-        .Function.results = returnTypes}
-    );
-
-    CheckerInfo solve = {
-        .kind = CheckerInfoKind_BasicLit,
-        .BasicLit.type = type
-    };
-    storeExprInfo(pkg, funcExpr, solve);
-
-    type =  TypeIntern((Type){ .kind = TypeKind_Metatype, .Metatype.instanceType = type});
     return type;
+
+exprIsInvalid:
+    return InvalidType;
 }
 
 b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
@@ -503,11 +546,11 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     Type *expectedType = NULL;
 
     if (decl.type) {
-        ExprInfo info = {.scope = scope};
-        expectedType = lowerMeta(pkg, checkExpr(pkg, decl.type, &info), decl.type->start);
-        if (info.mode == ExprMode_Unresolved) {
-            return true;
-        }
+        ExprInfo info = { .scope = scope };
+        expectedType = checkExpr(pkg, decl.type, &info);
+        if (info.mode == ExprMode_Unresolved) return true;
+
+        expectType(pkg, expectedType, &info, decl.type->start);
     }
 
     Expr_Ident *name = decl.names[0];
@@ -526,10 +569,11 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     case ExprKind_LitFunction: {
         Expr_LitFunction func = value->LitFunction;
         ExprInfo info = {.scope = scope};
-        Type *type = lowerMeta(pkg, checkFuncType(pkg, func.type, &info), func.type->start);
-        if (info.mode == ExprMode_Unresolved) {
-            return true;
-        }
+        Type *type = checkTypeFunction(pkg, func.type, &info);
+        if (info.mode == ExprMode_Unresolved) return true;
+
+        expectType(pkg, type, &info, func.type->start);
+
         resolveSymbol(symbol, type);
     } break;
 
@@ -575,11 +619,11 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     Type *expectedType = NULL;
 
     if (var.type) {
-        ExprInfo info = {.scope = scope};
-        expectedType = lowerMeta(pkg, checkExpr(pkg, var.type, &info), var.type->start);
-        if (info.mode == ExprMode_Unresolved) {
-            return true;
-        }
+        ExprInfo info = { .scope = scope };
+        expectedType = checkExpr(pkg, var.type, &info);
+        if (info.mode == ExprMode_Unresolved) return true;
+
+        expectType(pkg, expectedType, &info, var.type->start);
     }
 
     DynamicArray(Symbol *) symbols = NULL;

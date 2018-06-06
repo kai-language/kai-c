@@ -66,6 +66,8 @@ int main(int argc, const char **argv) {
         PrintUsage();
         exit(!FlagHelp);
     }
+
+
         
     InitCompiler();
     Package *mainPackage = ImportPackage(InputName);

@@ -46,39 +46,14 @@ const char *DescribeTypeKind(TypeKind kind) {
     return TypeKindDescriptions[kind];
 }
 
-DynamicArray(const Type *) Types;
-Map TypesMap;
-
-Arena typeInternArena;
-
-Type *TypeIntern(Type type) {
-    Type *intern = ArenaAlloc(&typeInternArena, sizeof(Type));
-    memcpy(intern, &type, sizeof(Type));
-    return intern;
-}
-
-Type *buildBuiltinIntern(Type type) {
-    Type *t = ArenaAlloc(&typeInternArena, sizeof(Type));
-    memcpy(t, &type, sizeof(Type));
-
-    Type metatype = {.kind = TypeKind_Metatype};
-    metatype.Metatype.instanceType = t;
-    return TypeIntern(metatype);
-}
-
-Symbol *buildTypeSymbol(const char *name, Type *type) {
-    Symbol *symbol = ArenaAlloc(&typeInternArena, sizeof(Symbol));
+void declareBuiltinType(const char *name, Type *type) {
+    name = StrIntern(name);
+    Symbol *symbol = ArenaAlloc(&builtinPackage.arena, sizeof(Symbol));
     symbol->name = name;
     symbol->kind = SymbolKind_Type;
     symbol->state = SymbolState_Resolved;
     symbol->type = type;
-    return symbol;
-}
-
-Symbol *symbolIntern(Symbol symbol) {
-    Symbol *intern = ArenaAlloc(&typeInternArena, sizeof(Symbol));
-    memcpy(intern, &symbol, sizeof(Symbol));
-    return intern;
+    DeclarePackageSymbol(&builtinPackage, name, symbol);
 }
 
 Type *AllocType(TypeKind kind) {
@@ -185,16 +160,31 @@ Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
     return NULL;
 }
 
+Scope *pushScope(Package *pkg, Scope *parent);
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Position *decl);
 
-void InitBuiltinTypes() {
+void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Type *type, Val val) {
+    b32 dup = declareSymbol(&builtinPackage, builtinPackage.globalScope, name, symbol, 0, NULL);
+    ASSERT(!dup);
+    (*symbol)->type = type;
+    (*symbol)->val = val;
+    (*symbol)->used = true;
+    (*symbol)->state = SymbolState_Resolved;
+    (*symbol)->kind = kind;
+}
+
+void InitBuiltins() {
     static b32 init;
     if (init) return;
 
+    builtinPackage.globalScope = pushScope(&builtinPackage, NULL);
+
 #define TYPE(_global, _name, _kind, _width, _flags) \
-    _global = buildBuiltinIntern((Type){ .kind = TypeKind_##_kind, .Width = _width, .Align = _width, .Flags = _flags }); \
-    const char *intern##_global = StrIntern(_name); \
-    ArrayPush(Types, _global); \
-    MapSet(&TypesMap, intern##_global, buildTypeSymbol(intern##_global, _global))
+    _global = AllocType(TypeKind_##_kind); \
+    _global->Width = _width; \
+    _global->Align = _width; \
+    _global->Flags = _flags; \
+    declareBuiltinType(_name, _global)
 
     TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
 
@@ -226,19 +216,8 @@ void InitBuiltinTypes() {
 
 #undef TYPE
 
-    FalseSymbol = symbolIntern((Symbol){
-        .name = StrIntern("false"),
-        .kind = SymbolKind_Constant,
-        .state = SymbolState_Resolved,
-        .type = BoolType
-    });
-
-    TrueSymbol = symbolIntern((Symbol){
-        .name = StrIntern("true"),
-        .kind = SymbolKind_Constant,
-        .state = SymbolState_Resolved,
-        .type = BoolType
-    });
+    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){0});
+    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){1});
 
     switch (TargetOs) {
         case Os_Linux:
@@ -282,7 +261,7 @@ const char *DescribeType(Type *type) {
 
 #if TEST
 void test_TypeIntern() {
-    InitBuiltinTypes();
+    InitBuiltins();
 
     ASSERT(InvalidType);
     ASSERT(AnyType);
@@ -298,28 +277,16 @@ void test_TypeIntern() {
     ASSERT(U32Type);
     ASSERT(U64Type);
 
-    ASSERT(I8Type->Metatype.instanceType->width  ==  8);
-    ASSERT(I16Type->Metatype.instanceType->width == 16);
-    ASSERT(I32Type->Metatype.instanceType->width == 32);
-    ASSERT(I64Type->Metatype.instanceType->width == 64);
-    ASSERT(U8Type->Metatype.instanceType->width  ==  8);
-    ASSERT(U16Type->Metatype.instanceType->width == 16);
-    ASSERT(U32Type->Metatype.instanceType->width == 32);
-    ASSERT(U64Type->Metatype.instanceType->width == 64);
+    ASSERT(I8Type->Width  ==  8);
+    ASSERT(I16Type->Width == 16);
+    ASSERT(I32Type->Width == 32);
+    ASSERT(I64Type->Width == 64);
+    ASSERT(U8Type->Width  ==  8);
+    ASSERT(U16Type->Width == 16);
+    ASSERT(U32Type->Width == 32);
+    ASSERT(U64Type->Width == 64);
 
-    ASSERT(F32Type->Metatype.instanceType->width == 32);
-    ASSERT(F64Type->Metatype.instanceType->width == 64);
-}
-#endif
-
-#if TEST
-void test_TypeInternMap() {
-    InitKeywords();
-    InitBuiltinTypes();
-
-    Symbol *symbol = MapGet(&TypesMap, StrIntern("i32"));
-    ASSERT(symbol);
-    ASSERT(symbol->kind == SymbolKind_Type);
-    ASSERT(symbol->type == I32Type);
+    ASSERT(F32Type->Width == 32);
+    ASSERT(F64Type->Width == 64);
 }
 #endif

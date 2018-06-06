@@ -60,9 +60,17 @@ typedef enum TypeKind {
 
 typedef u8 TypeFlag;
 #define TypeFlag_None 0
-#define TypeFlag_Untyped  0x1
+#define TypeFlag_Untyped  0x80
+
+// Void
 #define TypeFlag_NoReturn 0x1
-#define TypeFlag_Signed   0x2
+
+// Integer
+#define TypeFlag_Signed   0x1
+
+// Slice & Function
+#define TypeFlag_Variadic 0x1
+#define TypeFlag_CVargs   0x2
 
 struct Type_Pointer {
     TypeFlag Flags;
@@ -98,11 +106,6 @@ struct Type_Union {
     DynamicArray(Type *) cases;
 };
 
-struct Type_Metatype {
-    TypeFlag Flags;
-    Type *instanceType;
-};
-
 struct Type_Alias {
     TypeFlag Flags;
     Symbol *symbol;
@@ -114,13 +117,13 @@ _Static_assert(offsetof(Type_Slice,    Flags) == 0, "Flags must be at offset 0")
 _Static_assert(offsetof(Type_Struct,   Flags) == 0, "Flags must be at offset 0");
 _Static_assert(offsetof(Type_Union,    Flags) == 0, "Flags must be at offset 0");
 _Static_assert(offsetof(Type_Function, Flags) == 0, "Flags must be at offset 0");
-_Static_assert(offsetof(Type_Metatype, Flags) == 0, "Flags must be at offset 0");
 _Static_assert(offsetof(Type_Alias,    Flags) == 0, "Flags must be at offset 0");
 
 struct Type {
     TypeKind kind;
     u32 Width;
     u32 Align;
+    Symbol *symbol;
 
     union {
         TypeFlag Flags;
@@ -131,7 +134,6 @@ struct Type {
         Type_Union Union;
         Type_Function Function;
 
-        Type_Metatype Metatype;
         Type_Alias Alias;
     };
 };

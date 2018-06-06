@@ -1,67 +1,51 @@
-#define CHECKER_INFO_KINDS \
-    FOR_EACH(Decl)         \
-    FOR_EACH(DeclList)     \
-    FOR_EACH(Selector)     \
-    FOR_EACH(Ident)        \
-    FOR_EACH(BasicLit)     \
-    FOR_EACH(Unary)        \
-    FOR_EACH(NilLit)       \
 
 typedef enum CheckerInfoKind {
-#define FOR_EACH(kind) CheckerInfoKind_##kind,
-    CHECKER_INFO_KINDS
-#undef FOR_EACH
+    CheckerInfoKind_Decl,
+    CheckerInfoKind_DeclList,
+    CheckerInfoKind_Ident,
+    CheckerInfoKind_Selector,
+    CheckerInfoKind_BasicExpr,
 } CheckerInfoKind;
 
+typedef struct CheckerInfo_Decl CheckerInfo_Decl;
 struct CheckerInfo_Decl {
     Symbol *symbol;
     b8 isGlobal;
 };
 
+typedef struct CheckerInfo_DeclList CheckerInfo_DeclList;
 struct CheckerInfo_DeclList {
     b8 isGlobal;
     DynamicArray(Symbol *) symbols;
 };
 
+typedef struct CheckerInfo_Ident CheckerInfo_Ident;
 struct CheckerInfo_Ident {
     Symbol *symbol;
 };
 
+typedef struct CheckerInfo_Selector CheckerInfo_Selector;
 struct CheckerInfo_Selector {
     u32 levelsOfIndirection;
     Val constant;
 };
 
-struct CheckerInfo_BasicLit {
+typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;
+struct CheckerInfo_BasicExpr {
     Type *type;
+    Val val;
 };
-
-struct CheckerInfo_NilLit {
-    Type *type;
-};
-
-struct CheckerInfo_Unary {
-    Type *type;
-};
-
-#define FOR_EACH(kind) typedef struct CheckerInfo_##kind CheckerInfo_##kind;
-    CHECKER_INFO_KINDS
-#undef  FOR_EACH
 
 typedef struct CheckerInfo CheckerInfo;
 struct CheckerInfo {
     CheckerInfoKind kind;
     union {
-#define FOR_EACH(kind) CheckerInfo_##kind kind;
-        CHECKER_INFO_KINDS
-#undef FOR_EACH
+        CheckerInfo_Decl Decl;
+        CheckerInfo_DeclList DeclList;
+        CheckerInfo_Selector Selector;
+        CheckerInfo_Ident Ident;
+        CheckerInfo_BasicExpr BasicExpr;
     };
 };
 
 Symbol *Lookup(Scope *scope, const char *name);
-
-CheckerInfo *StoreInfoUnary(Package *pkg, Expr *expr, Type *type) {
-    CheckerInfo info = {CheckerInfoKind_Unary, .Unary.type = type };
-    pkg->checkerInfo[expr->id] = info;
-    return &pkg->checkerInfo[expr->id];
-}
