@@ -27,6 +27,8 @@
     FOR_EACH(NotNilable, "The type cannot be converted to nil"), \
     FOR_EACH(InvalidPointeeType, "The pointee type is not a valid metatype"), \
     FOR_EACH(ParamNameMissing, "The parameter doesn't have a name") , \
+    FOR_EACH(AddressOfNonAddressable, "The expr could not have it's address taken") , \
+    FOR_EACH(InvalidUnaryOperation, "Unary operation invalid on type") , \
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error

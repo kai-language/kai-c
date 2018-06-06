@@ -125,23 +125,33 @@ void InitUnsetFlagsToDefaults() {
     if (OutputName == NULL) {
         // TODO: should we use the basename of InputName?
         size_t prefixLen = sizeof("out_") - 1;
-        size_t len = prefixLen + strlen(InputName) + 1;
+
+        static char outputPathBuff[MAX_PATH];
+        OutputName = GetFileName(InputName, outputPathBuff, NULL);
+
+        size_t len = prefixLen + strlen(OutputName) + 1;
         char *mem = Alloc(DefaultAllocator, len);
         memcpy(mem, "out_", prefixLen);
 
         char *filename = mem + prefixLen;
 
-        memcpy(filename, InputName, len - prefixLen);
+        memcpy(filename, OutputName, len - prefixLen);
         RemoveKaiExtension(filename);
 
         OutputName = mem;
     }
 
+    InitDetailsForCurrentSystem();
     if (TargetOs == Os_Current) {
         TargetOs = OsForName(CurrentSystem.name);
     }
     if (TargetArch == Arch_Current) {
         TargetArch = ArchForName(CurrentSystem.machine);
+    }
+
+    if (TargetOs == -1 || TargetArch == -1) {
+        printf("Unsupported Os or Arch: %s %s\n", OsNames[TargetOs], ArchNames[TargetArch]);
+        exit(1);
     }
 }
 

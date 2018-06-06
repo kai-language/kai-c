@@ -482,6 +482,10 @@ b32 isExpr(Stmt *stmt);
 
 b32 isDecl(Stmt *stmt);
 
+const char *DescribeStmt(Stmt *stmt);
+const char *DescribeExpr(Expr *expr);
+const char *DescribeDecl(Decl *decl);
+
 void *AllocAst(Package *package, size_t size);
 
 // - MARK: Ends

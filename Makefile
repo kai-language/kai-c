@@ -1,8 +1,8 @@
 CC = clang
 CXX = clang++
 
-debug:   local_CFLAGS = -g -O0 -DDEBUG -DDIAGNOSTICS -DSLOW $(CFLAGS)
-release: local_CFLAGS = -O3 -march=native -DRELEASE -DFAST $(CFLAGS)
+debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG -DDIAGNOSTICS -DSLOW $(CFLAGS)
+release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE -DFAST $(CFLAGS)
 
 LLVM_VERSION := 6.0
 
@@ -16,7 +16,7 @@ LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
 LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs)
 
 LFLAGS =
-DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch
+DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
 
 TARGET = kai
 TEST_TARGET = $(TARGET)_tests

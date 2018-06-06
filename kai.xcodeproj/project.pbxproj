@@ -423,8 +423,12 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
+				GCC_WARN_CHECK_SWITCH_STATEMENTS = NO;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				OTHER_CFLAGS = (
+					"-Wno-c99-extensions",
+					"-Wno-c11-extensions",
+					"-Wno-switch",
 					"-g",
 					"-O0",
 					"-DDEBUG",
@@ -447,8 +451,12 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
+				GCC_WARN_CHECK_SWITCH_STATEMENTS = NO;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				OTHER_CFLAGS = (
+					"-Wno-c99-extensions",
+					"-Wno-c11-extensions",
+					"-Wno-switch",
 					"-O3",
 					"-march=native",
 					"-DRELEASE",

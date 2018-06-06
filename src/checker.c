@@ -86,27 +86,46 @@ repeat:
     return type;
 }
 
+b32 isBoolean(Type *type) {
+    type = baseType(type);
+    return type->kind == TypeKind_Bool;
+}
+
 b32 isInteger(Type *type) {
     type = baseType(type);
-    if (type->kind == TypeKind_Int || type->kind == TypeKind_UntypedInt) {
-        return true;
-    }
-
-    return false;
+    return type->kind == TypeKind_Int;
 }
 
 b32 isFloat(Type *type) {
     type = baseType(type);
-    if (type->kind == TypeKind_Float || type->kind == TypeKind_UntypedFloat) {
-        return true;
-    }
+    return type->kind == TypeKind_Float;
+}
 
-    return false;
+b32 isNumeric(Type *type) {
+    type = baseType(type);
+    return isInteger(type) || isFloat(type);
+}
+
+b32 isPointer(Type *type) {
+    type = baseType(type);
+    return type->kind == TypeKind_Pointer;
 }
 
 b32 isNilable(Type *type) {
     return baseType(type)->kind == TypeKind_Pointer;
 }
+
+b32 isNumericOrPointer(Type *type) {
+    return isNumeric(type) || isPointer(type);
+}
+
+b32 (*unaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
+    [TK_Add] = isNumeric,
+    [TK_Sub] = isNumeric,
+    [TK_BNot] = isInteger,
+    [TK_Not] = isNumericOrPointer,
+    [TK_Lss] = isPointer,
+};
 
 b32 convert(Type *type, Type *target) {
     if (type == UntypedIntType) {
@@ -321,6 +340,55 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
         return type;
     } break;
+
+    case ExprKind_Unary: {
+        Type *type = checkExpr(pkg, expr->Unary.expr, exprInfo);
+        if (exprInfo->mode == ExprMode_Unresolved) return InvalidType;
+
+        type = lowerMeta(pkg, type, expr->Unary.expr->start);
+
+        switch (expr->Unary.op) {
+            case TK_And:
+                if (exprInfo->mode != ExprMode_Addressable) {
+                    ReportError(pkg, AddressOfNonAddressableError, expr->start,
+                                "Cannot take address of %s", DescribeExpr(expr->Unary.expr));
+                    exprInfo->mode = ExprMode_Invalid;
+                    type = InvalidType;
+                    break;
+                }
+
+                type = TypeIntern((Type){ .kind = TypeKind_Pointer, .Pointer.pointeeType = type });
+
+                StoreInfoUnary(pkg, expr, type);
+                break;
+
+            default:
+                if (!unaryPredicates[expr->Unary.op]) {
+                    ReportError(pkg, InvalidUnaryOperationError, expr->start,
+                                "Operation '%s' undefined for %s", DescribeTokenKind(expr->Unary.op), DescribeExpr(expr->Unary.expr));
+                    exprInfo->mode = ExprMode_Invalid;
+                    type = InvalidType;
+                    break;
+                }
+
+                switch (expr->Unary.op) {
+                    case TK_Not:
+                        StoreInfoUnary(pkg, expr, BoolType);
+                    case TK_Lss: {
+                        type = NewTypePointer(TypeFlag_None, type);
+                        StoreInfoUnary(pkg, expr, type);
+                    default:
+                        StoreInfoUnary(pkg, expr, type);
+                    }
+                }
+        }
+        exprInfo->mode = ExprMode_Computed;
+
+        return type;
+    } break;
+
+    default:
+        break;
     }
 
     return InvalidType;

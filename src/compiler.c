@@ -1,12 +1,12 @@
 #include "compiler.h"
 
+void InitTarget(void);
 void InitBuiltinTypes(void);
 
 void InitCompiler() {
+    InitUnsetFlagsToDefaults();
     InitKeywords();
     InitBuiltinTypes();
-    InitDetailsForCurrentSystem();
-    InitUnsetFlagsToDefaults();
 }
 
 Map packageMap;

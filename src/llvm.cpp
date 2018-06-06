@@ -79,13 +79,9 @@ repeat:
         goto repeat;
     }
         
-    case TypeKind_UntypedInt:
-        return llvm::IntegerType::get(gen->m->getContext(), 64);
     case TypeKind_Int:
         return llvm::IntegerType::get(gen->m->getContext(), type->width);
 
-    case TypeKind_UntypedFloat:
-        return llvm::Type::getDoubleTy(gen->m->getContext());
     case TypeKind_Float: {
         if (type->width == 32) {
             return llvm::Type::getFloatTy(gen->m->getContext());
@@ -114,10 +110,10 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
 
     if (type->kind == TypeKind_Int) {
         switch (type->width) {
-        case 8:  return type->Int.isSigned ? types.i8  : types.u8;
-        case 16: return type->Int.isSigned ? types.i16 : types.u16;
-        case 32: return type->Int.isSigned ? types.i32 : types.u32;
-        case 64: return type->Int.isSigned ? types.i64 : types.u64;
+        case 8:  return type->Flags & TypeFlag_Signed ? types.i8  : types.u8;
+        case 16: return type->Flags & TypeFlag_Signed ? types.i16 : types.u16;
+        case 32: return type->Flags & TypeFlag_Signed ? types.i32 : types.u32;
+        case 64: return type->Flags & TypeFlag_Signed ? types.i64 : types.u64;
         }
     }
 
@@ -178,7 +174,7 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
         return llvm::ConstantInt::get(
             canonicalize(gen, type), 
             lit.val, 
-            type->Int.isSigned
+            type->Flags & TypeFlag_Signed
         );
     };
 

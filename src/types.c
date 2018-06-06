@@ -20,6 +20,13 @@ Type *U64Type;
 Type *F32Type;
 Type *F64Type;
 
+Type *IntType;
+Type *UintType;
+
+Type *IntptrType;
+Type *UintptrType;
+Type *RawptrType;
+
 // TODO(Brett): figure out how I want to handle instance vs metatypes
 Type *UntypedIntType;
 Type *UntypedFloatType;
@@ -39,17 +46,6 @@ const char *DescribeTypeKind(TypeKind kind) {
 
 DynamicArray(const Type *) Types;
 Map TypesMap;
-
-#define TYPE(_kind, name, _type, _width)                                                 \
-    _kind##Type = buildBuiltinIntern((Type){.kind = TypeKind_##_type, .width = _width}); \
-    const char *intern##_kind = StrIntern(name);                                         \
-    ArrayPush(Types, _kind##Type);                                                       \
-    MapSet(&TypesMap, intern##_kind, buildTypeSymbol(intern##_kind, _kind##Type))        \
-
-#define INT_TYPE(_kind, name, _type, _width, _isSigned) \
-    TYPE(_kind, name, _type, _width); \
-    _kind##Type->Metatype.instanceType->_type.isSigned = _isSigned
-    
 
 Arena typeInternArena;
 
@@ -72,7 +68,7 @@ Symbol *buildTypeSymbol(const char *name, Type *type) {
     Symbol *symbol = ArenaAlloc(&typeInternArena, sizeof(Symbol));
     symbol->name = name;
     symbol->kind = SymbolKind_Type;
-    symbol->state = SymbolState_Resolved;;
+    symbol->state = SymbolState_Resolved;
     symbol->type = type;
     return symbol;
 }
@@ -83,31 +79,73 @@ Symbol *symbolIntern(Symbol symbol) {
     return intern;
 }
 
+Type *NewTypePointer(TypeFlag flags, Type *pointeeType) {
+    return NULL;
+}
+
+Type *NewTypeArray(TypeFlag flags, i64 length, Type *elementType) {
+    return NULL;
+}
+
+Type *NewTypeSlice(TypeFlag flags, Type *elementType)  {
+    return NULL;
+}
+
+Type *NewTypeAny(TypeFlag flags) {
+    return NULL;
+}
+
+Type *NewTypeStruct(TypeFlag flags, DynamicArray(Type *) members) {
+    UNIMPLEMENTED();
+    return NULL;
+}
+
+Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
+    UNIMPLEMENTED();
+    return NULL;
+}
+
+Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
+    return NULL;
+}
+
+#define TY(_global, _name, _kind, _width, _flags) \
+    _global = buildBuiltinIntern((Type){ .kind = TypeKind_##_kind, .width = _width, .Flags = _flags }); \
+    const char *intern##_global = StrIntern(_name); \
+    ArrayPush(Types, _global); \
+    MapSet(&TypesMap, intern##_global, buildTypeSymbol(intern##_global, _global))
+
 void InitBuiltinTypes() {
     static b32 init;
     if (init) return;
 
-    TYPE(Invalid, "<invalid>", Invalid, 0);
+    TY(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
 
-    TYPE(Any,  "any",  Any,  0);
-    TYPE(Void, "void", Void, 0);
+    TY(AnyType,   "any",  Any, 0, TypeFlag_None);
+    TY(VoidType, "void", Void, 0, TypeFlag_None);
+    TY(BoolType, "bool", Bool, 8, TypeFlag_None);
 
-    TYPE(Bool, "bool", Bool, 8);
+    TY(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
+    TY(I16Type, "i16", Int, 16, TypeFlag_Signed);
+    TY(I32Type, "i32", Int, 32, TypeFlag_Signed);
+    TY(I64Type, "i64", Int, 64, TypeFlag_Signed);
+    TY(U8Type,  "u8",  Int,  8, TypeFlag_None);
+    TY(U16Type, "u16", Int, 16, TypeFlag_None);
+    TY(U32Type, "u32", Int, 32, TypeFlag_None);
+    TY(U64Type, "u64", Int, 64, TypeFlag_None);
 
-    INT_TYPE(I8,  "i8",  Int,  8, false);
-    INT_TYPE(I16, "i16", Int, 16, false);
-    INT_TYPE(I32, "i32", Int, 32, false);
-    INT_TYPE(I64, "i64", Int, 64, false);
-    INT_TYPE(U8,  "u8",  Int,  8, true);
-    INT_TYPE(U16, "u16", Int, 16, true);
-    INT_TYPE(U32, "u32", Int, 32, true);
-    INT_TYPE(U64, "u64", Int, 64, true);
+    TY(F32Type, "f32", Float, 32, TypeFlag_None);
+    TY(F64Type, "f64", Float, 64, TypeFlag_None);
 
-    TYPE(F32, "f32", Float, 32);
-    TYPE(F64, "f64", Float, 64);
-    
-    UntypedIntType = TypeIntern((Type){.kind = TypeKind_UntypedInt});
-    UntypedFloatType = TypeIntern((Type){.kind = TypeKind_UntypedFloat});
+    TY(IntType,   "int", Int, 32, TypeFlag_Signed);
+    TY(UintType, "uint", Int, 32, TypeFlag_None);
+
+    TY(IntptrType,   "intptr", Int, 64, TypeFlag_Signed);
+    TY(UintptrType, "uintptr", Int, 64, TypeFlag_None);
+    TY(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);
+
+    TY(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped);
+    TY(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
 
     FalseSymbol = symbolIntern((Symbol){
         .name = StrIntern("false"),
@@ -122,6 +160,33 @@ void InitBuiltinTypes() {
         .state = SymbolState_Resolved,
         .type = BoolType
     });
+
+    TargetMetrics *TargetTypeMetrics = NULL;
+
+    switch (TargetOs) {
+        case Os_Linux:
+            TargetTypeMetrics = Os_Linux_ArchSupport[TargetArch];
+            break;
+        case Os_Darwin:
+            TargetTypeMetrics = Os_Darwin_ArchSupport[TargetArch];
+            break;
+        case Os_Windows:
+            break;
+
+        default:
+            break;
+    }
+    if (!TargetTypeMetrics) {
+        printf("Unsupported os & arch combination: %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
+        exit(1);
+    }
+
+    IntType->width = TargetTypeMetrics[TargetMetrics_Int].Width;
+    UintType->width = TargetTypeMetrics[TargetMetrics_Int].Width;
+
+    UintptrType->width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    IntptrType->width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    RawptrType->width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
 
     init = true;
 }

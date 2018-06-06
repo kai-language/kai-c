@@ -4,7 +4,8 @@
     FOR_EACH(Selector)     \
     FOR_EACH(Ident)        \
     FOR_EACH(BasicLit)     \
-    FOR_EACH(NilLit)     \
+    FOR_EACH(Unary)        \
+    FOR_EACH(NilLit)       \
 
 typedef enum CheckerInfoKind {
 #define FOR_EACH(kind) CheckerInfoKind_##kind,
@@ -39,6 +40,10 @@ struct CheckerInfo_NilLit {
     Type *type;
 };
 
+struct CheckerInfo_Unary {
+    Type *type;
+};
+
 #define FOR_EACH(kind) typedef struct CheckerInfo_##kind CheckerInfo_##kind;
     CHECKER_INFO_KINDS
 #undef  FOR_EACH
@@ -54,3 +59,9 @@ struct CheckerInfo {
 };
 
 Symbol *Lookup(Scope *scope, const char *name);
+
+CheckerInfo *StoreInfoUnary(Package *pkg, Expr *expr, Type *type) {
+    CheckerInfo info = {CheckerInfoKind_Unary, .Unary.type = type };
+    pkg->checkerInfo[expr->id] = info;
+    return &pkg->checkerInfo[expr->id];
+}
