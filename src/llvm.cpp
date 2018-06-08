@@ -201,7 +201,7 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
     return NULL;
 }
 
-void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Stmt *stmt) {
+void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Stmt *stmt, bool isGlobal) {
     switch (stmt->kind) {
     case StmtDeclKind_Constant: {
         CheckerInfo info = checkerInfo[stmt->id];
@@ -213,7 +213,7 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
             *gen->m,
             type,
             /*isConstant:*/true,
-            info.Constant.isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+            isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
             0,
             symbol->name
         );
@@ -350,7 +350,7 @@ b32 CodegenLLVM(Package *p) {
     debugPos(gen, &b, pos);
 
     For (p->stmts) {
-        emitStmt(gen, &b, p->checkerInfo, p->stmts[i]);
+        emitStmt(gen, &b, p->checkerInfo, p->stmts[i], true);
     }
 
     b.CreateRetVoid();

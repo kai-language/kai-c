@@ -1,3 +1,4 @@
+
 typedef enum SymbolKind {
     SymbolKind_Invalid,
     SymbolKind_Type,
@@ -20,11 +21,9 @@ struct Symbol {
     const char *externalName;
     SymbolKind kind;
     SymbolState state;
-    Position  *decl;
+    Decl *decl;
     u64 declId;
     Type *type;
     b8 used;
     Val val;
 };
-
-void DeclarePackageSymbol(Package *package, const char *name, Symbol *sym);

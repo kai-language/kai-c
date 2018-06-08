@@ -4,7 +4,7 @@
 #include "lexer.c"
 #include "compiler.c"
 #include "ast.c"
-#include "symbols.c"
+#include "symbols.h"
 #include "types.c"
 
 #include "checker.h"
@@ -85,7 +85,7 @@ int main(int argc, const char **argv) {
         
         CheckerWork *work = QueueDequeue(&checkingQueue);
         if (work) {
-            b32 shouldRequeue = check(work->package, work->stmt);
+            b32 shouldRequeue = checkStmt(work->package, work->stmt);
             if (shouldRequeue) {
                 QueueEnqueue(&checkingQueue, work);
             }

@@ -10,12 +10,10 @@ typedef enum CheckerInfoKind {
 typedef struct CheckerInfo_Constant CheckerInfo_Constant;
 struct CheckerInfo_Constant {
     Symbol *symbol;
-    b8 isGlobal;
 };
 
 typedef struct CheckerInfo_Variable CheckerInfo_Variable;
 struct CheckerInfo_Variable {
-    b8 isGlobal;
     DynamicArray(Symbol *) symbols;
 };
 

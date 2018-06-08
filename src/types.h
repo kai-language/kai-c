@@ -35,7 +35,6 @@ extern Symbol *TrueSymbol;
 #define TYPE_KINDS                  \
     FOR_EACH(Invalid, "invalid")    \
     FOR_EACH(Void, "void")          \
-    FOR_EACH(Bool, "bool")          \
     FOR_EACH(Int, "int")            \
     FOR_EACH(Float, "float")        \
     FOR_EACH(Pointer, "pointer")    \

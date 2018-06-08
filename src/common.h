@@ -227,14 +227,13 @@ struct Package {
     DiagnosticEngine diagnostics;
     Arena arena;
     DynamicArray(Stmt *) stmts;
-    Map symbolMap;
     DynamicArray(Symbol *) symbols;
 
     u64 astIdCount;
     u64 declCount;
     DynamicArray(CheckerInfo) checkerInfo;
 
-    Scope *globalScope;
+    Scope *scope;
 };
 
 typedef union Val {

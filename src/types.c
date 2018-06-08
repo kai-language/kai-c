@@ -61,8 +61,6 @@ i32 TypeRank(Type *type) {
     switch (type->kind) {
         case TypeKind_Invalid:
             return 1;
-        case TypeKind_Bool:
-            return 2;
         case TypeKind_Int:
             return (type->Flags & TypeFlag_Signed) ? 1000 : 2000 + type->Width;
         case TypeKind_Float:
@@ -88,14 +86,11 @@ const char *DescribeTypeKind(TypeKind kind) {
     return TypeKindDescriptions[kind];
 }
 
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl);
 void declareBuiltinType(const char *name, Type *type) {
     name = StrIntern(name);
-    Symbol *symbol = ArenaAlloc(&builtinPackage.arena, sizeof(Symbol));
-    symbol->name = name;
-    symbol->kind = SymbolKind_Type;
-    symbol->state = SymbolState_Resolved;
-    symbol->type = type;
-    DeclarePackageSymbol(&builtinPackage, name, symbol);
+    Symbol *symbol;
+    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, 0, NULL);
 }
 
 Type *AllocType(TypeKind kind) {
@@ -203,10 +198,10 @@ Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
 }
 
 Scope *pushScope(Package *pkg, Scope *parent);
-b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Position *decl);
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl);
 
 void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Type *type, Val val) {
-    b32 dup = declareSymbol(&builtinPackage, builtinPackage.globalScope, name, symbol, 0, NULL);
+    b32 dup = declareSymbol(&builtinPackage, builtinPackage.scope, StrIntern(name), symbol, 0, NULL);
     ASSERT(!dup);
     (*symbol)->type = type;
     (*symbol)->val = val;
@@ -219,7 +214,7 @@ void InitBuiltins() {
     static b32 init;
     if (init) return;
 
-    builtinPackage.globalScope = pushScope(&builtinPackage, NULL);
+    builtinPackage.scope = pushScope(&builtinPackage, NULL);
 
 #define TYPE(_global, _name, _kind, _width, _flags) \
     _global = AllocType(TypeKind_##_kind); \
@@ -232,7 +227,7 @@ void InitBuiltins() {
 
     TYPE(AnyType,   "any",  Any, 128, TypeFlag_None);
     TYPE(VoidType, "void", Void, 0, TypeFlag_None);
-    TYPE(BoolType, "bool", Bool, 8, TypeFlag_None);
+    TYPE(BoolType, "bool", Int, 8, TypeFlag_Untyped);
 
     TYPE(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
     TYPE(I16Type, "i16", Int, 16, TypeFlag_Signed);

@@ -36,9 +36,9 @@
 /* Begin PBXFileReference section */
 		5D3CD46420A308C500600F43 /* kai-tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "kai-tests"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D3CD46C20A3099800600F43 /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
+		5D41B51720CA0591005E9A8E /* constant_eval.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = constant_eval.c; path = src/constant_eval.c; sourceTree = "<group>"; };
 		5D5612AD20ABA02E00E2F4E8 /* targets.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = targets.c; path = src/targets.c; sourceTree = "<group>"; };
 		5D5612AE20ABAD5B00E2F4E8 /* os.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = os.c; path = src/os.c; sourceTree = "<group>"; };
-		5D59D64F20B2F98900637EDF /* symbols.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = symbols.c; path = src/symbols.c; sourceTree = "<group>"; };
 		5D9C729920A5E7C400755A1B /* flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = flags.c; path = src/flags.c; sourceTree = "<group>"; };
 		5DA7CA2720A9653F00E4640D /* ast.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ast.c; path = src/ast.c; sourceTree = "<group>"; };
 		5DA7CA2820A9655F00E4640D /* compiler.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = compiler.c; path = src/compiler.c; sourceTree = "<group>"; };
@@ -103,6 +103,7 @@
 		B2194992209B79E0007BB781 = {
 			isa = PBXGroup;
 			children = (
+				5D41B51720CA0591005E9A8E /* constant_eval.c */,
 				5DBC259A20BC133A0086904A /* tools */,
 				B25AB22520B987D0002E1440 /* array.h */,
 				B25AB22620B987D0002E1440 /* ast.h */,
@@ -121,7 +122,6 @@
 				B249A260209B80E10016B49E /* array.c */,
 				B249A257209B80E00016B49E /* checker.c */,
 				B249A25B209B80E00016B49E /* types.c */,
-				5D59D64F20B2F98900637EDF /* symbols.c */,
 				5DA7CA2820A9655F00E4640D /* compiler.c */,
 				5DA7CA2C20A9A83D00E4640D /* queue.c */,
 				B249A25C209B80E00016B49E /* common.c */,
