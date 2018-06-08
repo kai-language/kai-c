@@ -230,7 +230,6 @@ void test_GetFileName() {
     char buff[MAX_PATH];
     char *dir;
     char *name = GetFileName("abc/def/ghi/test/wip.kai", &buff[0], &dir);
-    printf("%s and %s\n", dir, name);
     ASSERT(strcmp(dir, "abc/def/ghi/test") == 0);
     ASSERT(strcmp(name, "wip.kai") == 0);
 }

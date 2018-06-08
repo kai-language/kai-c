@@ -967,7 +967,6 @@ void parsePackage(Package *package) {
 #undef NextToken
 
 #if TEST
-
 Package parserTestPackage = {0};
 Parser newTestParser(const char *stream) {
     Lexer lex = MakeLexer(stream, NULL);
@@ -988,9 +987,7 @@ Parser newTestParser(const char *stream) {
     Parser p = {lex, .tok = tok, &parserTestPackage};
     return p;
 }
-#endif
 
-#if TEST
 void test_parseExprAtom() {
 #define ASSERT_EXPR_KIND(expected) \
     expr = parseExprAtom(&p); \
@@ -1022,9 +1019,7 @@ void test_parseExprAtom() {
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprPrimary() {
 #define ASSERT_EXPR_KIND(expected) \
     expr = parseExprPrimary(&p, false); \
@@ -1063,9 +1058,7 @@ void test_parseExprPrimary() {
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprUnary() {
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprUnary(&p, false); \
@@ -1086,9 +1079,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprBinary() {
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
@@ -1107,9 +1098,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprTernary() {
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
@@ -1126,9 +1115,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseSimpleStmt() {
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseSimpleStmt(&p, false, NULL); \
@@ -1142,9 +1129,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
 #undef ASSERT_STMT_KIND
 }
-#endif
 
-#if TEST
 void test_parseStmt() {
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseStmt(&p); \
@@ -1171,9 +1156,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
 #undef ASSERT_STMT_KIND
 }
-#endif
 
-#if TEST
 void test_parseStruct() {
 #define ASSERT_EXPR_KIND(expected) \
     expr = parseExprAtom(&p); \
@@ -1190,9 +1173,7 @@ void test_parseStruct() {
     p = newTestParser("struct { a, b, c: u32 }");
     ASSERT_EXPR_KIND(ExprKind_TypeStruct);
 }
-#endif
 
-#if TEST
 void test_parseUnion() {
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprAtom(&p); \

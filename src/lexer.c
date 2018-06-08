@@ -629,10 +629,7 @@ void test_keywords() {
     ASSERT(!isStringKeyword(StrIntern("asdf")));
     ASSERT(StrIntern("fn") == Keyword_fn);
 }
-#endif
 
-
-#if TEST
 void test_lexer() {
     test_keywords();
 
@@ -738,11 +735,5 @@ void test_lexer() {
     ASSERT_TOKEN_KIND(TK_Rparen);
     ASSERT_TOKEN_KIND(TK_Terminator);
     ASSERT_TOKEN_EOF();
-}
-#endif
-
-#if TEST
-void test_assumptions() {
-
 }
 #endif
