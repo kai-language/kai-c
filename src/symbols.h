@@ -22,7 +22,10 @@ struct Symbol {
     SymbolKind kind;
     SymbolState state;
     Decl *decl;
-    u64 declId;
+
+    // This pointer can be used by any backend to store symbol-related info for quick lookup
+    void *backendUserdata;
+
     Type *type;
     b8 used;
     Val val;

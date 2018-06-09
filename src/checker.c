@@ -87,7 +87,6 @@ b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol,
     sym->kind = SymbolKind_Invalid;
     sym->state = SymbolState_Resolving;
     sym->decl = decl;
-    sym->declId = declId;
 
     MapSet(&scope->members, name, sym);
 
@@ -100,7 +99,7 @@ b32 expectType(Package *pkg, Type *type, ExprInfo *info, Position pos) {
     if (info->mode != ExprMode_Type) {
         ReportError(pkg, InvalidMetatypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
     }
-    return info->mode != ExprMode_Type;
+    return info->mode == ExprMode_Type;
 }
 
 Type *baseType(Type *type) {
@@ -423,7 +422,9 @@ Type *checkExprTypeFunction(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
     ForEach(func.result) {
         Type *type = checkExpr(pkg, it, &info);
-        if (!expectType(pkg, type, &info, it->start)) isInvalid = true;
+        if (!expectType(pkg, type, &info, it->start)) {
+            isInvalid = true;
+        }
         ArrayPush(returnTypes, type);
     }
 
@@ -479,8 +480,10 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
         ArrayPush(resultTypes, type);
     }
 
-    UNIMPLEMENTED();
-    return NULL;
+    // TODO: call check for each stmt in body
+
+    exprInfo->mode = ExprMode_Type;
+    return NewTypeFunction(typeFlags, paramTypes, resultTypes);
 }
 
 Type *checkExprTypePointer(Expr *expr, ExprInfo *exprInfo, Package *pkg) {

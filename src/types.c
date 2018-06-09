@@ -91,6 +91,9 @@ void declareBuiltinType(const char *name, Type *type) {
     name = StrIntern(name);
     Symbol *symbol;
     declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, 0, NULL);
+    symbol->state = SymbolState_Resolved;
+    symbol->type = type;
+    symbol->kind = SymbolKind_Type;
 }
 
 Type *AllocType(TypeKind kind) {

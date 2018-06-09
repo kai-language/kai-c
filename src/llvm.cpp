@@ -66,7 +66,6 @@ typedef struct LLVMGen {
     llvm::Module *m;
     llvm::Function *currentFunc;
     Debug *d;
-    llvm::Value **decls;
 } LLVMGen;
 
 
@@ -79,6 +78,8 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
     switch (type->kind) {
+    case TypeKind_Void:
+        return llvm::Type::getVoidTy(gen->m->getContext());
     case TypeKind_Int:
         return llvm::IntegerType::get(gen->m->getContext(), type->Width);
 
@@ -94,6 +95,19 @@ llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
 
     case TypeKind_Pointer: {
         return llvm::PointerType::get(canonicalize(gen, type->Pointer.pointeeType), 0);
+    } break;
+
+    case TypeKind_Function: {
+        ASSERT_MSG(ArrayLen(type->Function.results) == 1, "Currently we don't support multi-return");
+        std::vector<llvm::Type *> params;
+        For(type->Function.params) {
+            llvm::Type *paramType = canonicalize(gen, type);
+            params.push_back(paramType);
+        }
+
+        // TODO(Brett): canonicalize multi-return and Kai vargs
+        llvm::Type *returnType = canonicalize(gen, type->Function.results[0]);
+        return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
     } break;
     }
 
@@ -189,11 +203,12 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
         return llvm::ConstantPointerNull::get((llvm::PointerType *)canonicalize(gen, type));
     } break;
 
+    
     case ExprKind_Ident: {
         CheckerInfo info = checkerInfo[expr->id];
         Symbol *symbol = info.Ident.symbol;
         // TODO(Brett): check for return address
-        return b->CreateLoad(gen->decls[symbol->declId]);
+        return b->CreateLoad((llvm::Value *)symbol->backendUserdata);
     };
     }
 
@@ -207,23 +222,28 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
         CheckerInfo info = checkerInfo[stmt->id];
         Decl_Constant decl = stmt->Constant;
         Symbol *symbol = info.Constant.symbol;
-        llvm::Type *type = canonicalize(gen, symbol->type);
 
-        llvm::GlobalVariable *global = new llvm::GlobalVariable(
-            *gen->m,
-            type,
-            /*isConstant:*/true,
-            isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
-            0,
-            symbol->name
-        );
+        if (symbol->type->kind == TypeKind_Function) {
+            UNIMPLEMENTED();
+        } else {
+            llvm::Type *type = canonicalize(gen, symbol->type);
 
-        gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) global;
+            llvm::GlobalVariable *global = new llvm::GlobalVariable(
+                *gen->m,
+                type,
+                /*isConstant:*/true,
+                isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+                0,
+                symbol->name
+            );
 
-        debugPos(gen, b, stmt->start);
+            symbol->backendUserdata = global;
 
-        llvm::Value *value = emitExpr(gen, b, checkerInfo, decl.values[0]);
-        global->setInitializer((llvm::Constant *)value);
+            debugPos(gen, b, stmt->start);
+
+            llvm::Value *value = emitExpr(gen, b, checkerInfo, decl.values[0]);
+            global->setInitializer((llvm::Constant *)value);
+        }
     } break;
 
     case StmtDeclKind_Variable: {
@@ -236,7 +256,7 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
             llvm::Type *type = canonicalize(gen, symbol->type);
             llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
 
-            gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) alloca;
+            symbol->backendUserdata = alloca;
 
             debugPos(gen, b, var.names[i]->start);
 
@@ -297,13 +317,10 @@ b32 CodegenLLVM(Package *p) {
         debug = &_debug;
     }
 
-    llvm::Value **decls = (llvm::Value **) ArenaAlloc(&p->arena, sizeof(llvm::Value *)*p->declCount+1);
-
     LLVMGen _gen = {
         module,
         nullptr,
-        debug,
-        decls
+        debug
     };
 
     LLVMGen *gen = &_gen;

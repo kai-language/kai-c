@@ -907,6 +907,10 @@ void parsePackageCode(Package *pkg, const char *code) {
     Parser parser = {lexer, .tok = tok, pkg};
     pkg->stmts = parseStmts(&parser);
 
+    if (HasErrors(pkg)) {
+        return;
+    }
+
     for(size_t i = 0; i < ArrayLen(pkg->stmts); i++) {
         Stmt *stmt = pkg->stmts[i];
         Symbol *symbol;
@@ -937,10 +941,6 @@ void parsePackageCode(Package *pkg, const char *code) {
             default:
                 break;
         }
-    }
-
-    if (HasErrors(pkg)) {
-        return;
     }
 
     DynamicArray(CheckerInfo) checkerInfo = NULL;
