@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -56,10 +57,14 @@ extern "C" {
     #include <execinfo.h>
     #include <limits.h>
     #include <unistd.h>
-    #include <stdlib.h>
     #include <sys/utsname.h> // uname to default arch & os to current
+
+#define STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
 #elif SYSTEM_WINDOWS
     #include <windows.h>
+    #include <crtdbg.h>
+
+#define STATIC_ASSERT(cond, msg) _STATIC_ASSERT(cond)
 #endif
 
 #ifndef MAX_PATH

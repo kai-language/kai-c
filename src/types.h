@@ -118,13 +118,13 @@ struct Type_Alias {
     Symbol *symbol;
 };
 
-_Static_assert(offsetof(Type_Pointer,  Flags) == 0, "Flags must be at offset 0");
-_Static_assert(offsetof(Type_Array,    Flags) == 0, "Flags must be at offset 0");
-_Static_assert(offsetof(Type_Slice,    Flags) == 0, "Flags must be at offset 0");
-_Static_assert(offsetof(Type_Struct,   Flags) == 0, "Flags must be at offset 0");
-_Static_assert(offsetof(Type_Union,    Flags) == 0, "Flags must be at offset 0");
-_Static_assert(offsetof(Type_Function, Flags) == 0, "Flags must be at offset 0");
-_Static_assert(offsetof(Type_Alias,    Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Pointer,  Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Array,    Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Slice,    Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Struct,   Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Union,    Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Function, Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Alias,    Flags) == 0, "Flags must be at offset 0");
 
 struct Type {
     TypeKind kind;
