@@ -56,6 +56,7 @@ extern "C" {
     #include <execinfo.h>
     #include <limits.h>
     #include <unistd.h>
+    #include <stdlib.h>
     #include <sys/utsname.h> // uname to default arch & os to current
 #elif SYSTEM_WINDOWS
     #include <windows.h>
