@@ -286,7 +286,7 @@ void discoverTests(const char *directoryPath) {
             printf("    _performTestCaseReportingResults(%s, \"%s\");\n", testNames[i], testNames[i]);
         }
         printf("    colorGray();\n");
-        printf("    printf(\"%%3.1f%%%% success (%%d out of %d)\\n\\n\", (double) _fileTestsPassCount / %d * 100, _fileTestsPassCount);\n", fileTests, fileTests);
+        printf("    printf(\"%%3.1f%%%% success (%%d out of %d)\\n\\n\", (double) _fileTestsPassCount / %d.f * 100, _fileTestsPassCount);\n", fileTests, fileTests);
         printf("    colorReset();\n");
         printf("    _fileTestsPassCount = 0;\n");
         printf("\n");
