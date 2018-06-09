@@ -430,9 +430,7 @@ void test_isExpr_and_isDecl() {
     Stmt *decl = (Stmt *) NewDeclVariable(&pkg, pos, NULL, NULL, NULL);
     ASSERT(isDecl(decl));
 }
-#endif
 
-#if TEST
 void test_doesExprAllocate() {
     ASSERT(DoesStmtKindAllocateTypeInfo[StmtExprKind_Ident]);
     ASSERT(DoesStmtKindAllocateTypeInfo[StmtExprKind_Selector]);

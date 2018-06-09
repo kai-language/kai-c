@@ -171,9 +171,7 @@ void test_map(void) {
         ASSERT(val == (i - 1));
     }
 }
-#endif
 
-#if TEST
 void test_mapCopy() {
     Map map = {0};
     enum { N = 1024 };

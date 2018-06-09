@@ -35,8 +35,11 @@ core.o:
 llvm.o:
 	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 
-tests: clean
-	@./tools/gen_test_main.sh > $(TEST_MAIN)
+tools/genTests:
+	$(CXX) -o tools/genTests tools/gen_test_main.cpp
+
+tests: clean tools/genTests
+	@./tools/genTests src/ > $(TEST_MAIN)
 	@$(CC) $(TEST_MAIN) -c -o core.o  -DTEST $(LFLAGS) $(DISABLED_WARNINGS) $(local_CFLAGS)
 	@$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
