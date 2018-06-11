@@ -994,6 +994,8 @@ void test_parseExprAtom() {
     ASSERT(expr->kind == expected); \
     ASSERT(!parserTestPackage.diagnostics.errors)
 
+    INIT_COMPILER();
+
     Expr *expr;
 
     Parser p = newTestParser("a 1 1.0 #line nil");

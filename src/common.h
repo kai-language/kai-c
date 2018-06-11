@@ -71,6 +71,8 @@ extern "C" {
     #define MAX_PATH 4096
 #endif
 
+#undef MIN
+#undef MAX
 #define MIN(x, y) ((x) <= (y) ? (x) : (y))
 #define MAX(x, y) ((x) >= (y) ? (x) : (y))
 #define CLAMP_MAX(x, max) MIN(x, max)
@@ -257,4 +259,44 @@ char *GetFileName(const char *path, char *res, char **dir);
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef TEST
+extern const char *InputName;
+extern const char *OutputName;
+extern int TargetOs;
+extern int TargetArch;
+
+extern bool HaveInitializedBuiltins;
+extern bool HaveInitializedKeywords;
+extern bool HaveInitializedUnsetFlagsToDefaults;
+extern bool HaveInitializedDetailsForCurrentSystem;
+
+extern Arena internArena;
+extern Map interns;
+extern const char **Keywords;
+
+void InitCompiler(void);
+
+#define INIT_COMPILER() \
+InputName = "test_source"; \
+InitCompiler();
+
+#define DEINIT_COMPILER() \
+HaveInitializedBuiltins = false; \
+HaveInitializedKeywords = false; \
+HaveInitializedUnsetFlagsToDefaults = false; \
+HaveInitializedDetailsForCurrentSystem = false; \
+OutputName = false; \
+InputName = false; \
+TargetOs = Os_Current; \
+TargetArch = Arch_Current; \
+MapFree(&interns); \
+ArenaFree(&internArena); \
+ArrayFree(Keywords)
+
+#define REINIT_COMPILER() \
+DEINIT_COMPILER(); \
+INIT_COMPILER()
+
 #endif

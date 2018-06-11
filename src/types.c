@@ -215,9 +215,10 @@ void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Ty
     (*symbol)->kind = kind;
 }
 
+bool HaveInitializedBuiltins = false;
 void InitBuiltins() {
-    static b32 init;
-    if (init) return;
+    if (HaveInitializedBuiltins) return;
+    HaveInitializedBuiltins = true;
 
     builtinPackage.scope = pushScope(&builtinPackage, NULL);
 
@@ -258,8 +259,8 @@ void InitBuiltins() {
 
 #undef TYPE
 
-    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){0});
-    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){1});
+    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
+    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
 
     switch (TargetOs) {
         case Os_Linux:
@@ -288,8 +289,6 @@ void InitBuiltins() {
     UintptrType->Align = UintptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
     IntptrType->Align = IntptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
     RawptrType->Align = RawptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-
-    init = true;
 }
 
 const char *DescribeType(Type *type) {
@@ -303,7 +302,7 @@ const char *DescribeType(Type *type) {
 
 #if TEST
 void test_TypeIntern() {
-    InitBuiltins();
+    INIT_COMPILER();
 
     ASSERT(InvalidType);
     ASSERT(AnyType);
@@ -330,5 +329,7 @@ void test_TypeIntern() {
 
     ASSERT(F32Type->Width == 32);
     ASSERT(F64Type->Width == 64);
+
+    
 }
 #endif

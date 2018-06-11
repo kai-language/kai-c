@@ -121,7 +121,11 @@ void ParseFlags(int *pargc, const char ***pargv) {
     }
 }
 
+bool HaveInitializedUnsetFlagsToDefaults = false;
 void InitUnsetFlagsToDefaults() {
+    if (HaveInitializedUnsetFlagsToDefaults) return;
+    HaveInitializedUnsetFlagsToDefaults = true;
+
     if (OutputName == NULL) {
         // TODO: should we use the basename of InputName?
         size_t prefixLen = sizeof("out_") - 1;
@@ -199,13 +203,19 @@ void test_flagParsingAndDefaults() {
     ASSERT(TargetOs == Os_Darwin);
     ASSERT(argc == 1);
 
-    InitDetailsForCurrentSystem();
-
-    InitUnsetFlagsToDefaults();
+    REINIT_COMPILER();
     ASSERT(TargetArch != Arch_Current);
-    ASSERT(OutputName == "outputName");
+    ASSERT(TargetOs != Arch_Current);
+    OutputName = NULL;
+
+    REINIT_COMPILER();
+    InputName = "src/main.kai";
+    HaveInitializedUnsetFlagsToDefaults = false;
     OutputName = NULL;
     InitUnsetFlagsToDefaults();
+    printf("%s\n", OutputName);
     ASSERT(strcmp(OutputName, "out_main") == 0);
+
+    REINIT_COMPILER();
 }
 #endif

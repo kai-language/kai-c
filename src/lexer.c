@@ -42,13 +42,13 @@ const char *internLocation;
 
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
+bool HaveInitializedKeywords = false;
 void InitKeywords() {
-    static bool inited;
-    if (inited) {
-        return;
-    }
+    if (HaveInitializedKeywords) return;
+    HaveInitializedKeywords = true;
 
     KEYWORD(if);
+    void *arena_end = internArena.end;
     KEYWORD(for);
     KEYWORD(fn);
     KEYWORD(return);
@@ -68,8 +68,11 @@ void InitKeywords() {
     KEYWORD(continue);
     KEYWORD(fallthrough);
     KEYWORD(defer);
+    ASSERT(internArena.end == arena_end);
     Keyword_first = Keyword_if;
     Keyword_last = Keyword_defer;
+
+    ASSERT(Keyword_first < Keyword_last);
 
     internNewline = StrIntern("\n");
     internSemicolon = StrIntern(";");
@@ -84,8 +87,6 @@ void InitKeywords() {
     internForeign = StrIntern("foreign");
     internFunction = StrIntern("function");
     internLocation = StrIntern("location");
-
-    inited = true;
 }
 
 #undef KEYWORD
@@ -619,7 +620,8 @@ repeat: ;
 
 #if TEST
 void test_keywords() {
-    InitKeywords();
+    INIT_COMPILER();
+
     ASSERT(isStringKeyword(Keyword_first));
     ASSERT(isStringKeyword(Keyword_last));
 
@@ -641,7 +643,7 @@ void test_lexer() {
 #define ASSERT_TOKEN_INT(x) \
     tok = NextToken(&lex); \
     ASSERT_MSG_VA(tok.kind == TK_Int, "Expected integer token got %s", DescribeTokenKind(tok.kind)); \
-    ASSERT_MSG_VA(tok.val.i == (x), "Expected integer token with value %llu got %llu", (x), tok.val.i)
+    ASSERT_MSG_VA(tok.val.i == (x), "Expected integer token with value %d got %llu", (x), tok.val.i)
 
 #define ASSERT_TOKEN_FLOAT(x) \
     tok = NextToken(&lex); \
@@ -664,7 +666,7 @@ void test_lexer() {
 
 #define ASSERT_TOKEN_KIND(x) \
     tok = NextToken(&lex); \
-    ASSERT_MSG_VA(tok.kind == (x), "Expected EOF token got %s", DescribeTokenKind((x)), DescribeTokenKind(tok.kind));
+    ASSERT_MSG_VA(tok.kind == (x), "Expected %s token got %s", DescribeTokenKind((x)), DescribeTokenKind(tok.kind));
 
 #define ASSERT_TOKEN_POS(OFFSET, LINE, COLUMN) \
     tok = NextToken(&lex); \

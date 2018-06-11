@@ -886,18 +886,14 @@ b32 checkStmt(Package *pkg, Stmt *stmt) {
     return shouldRequeue;
 }
 
-#if TEST
 
+
+
+#if TEST
 #define pkg checkerTestPackage
 Package pkg = {0};
 Queue resetAndParse(const char *code) {
-    static b32 init;
-    if (!init) {
-        InputName = "";
-        OutputName = "";
-        InitCompiler();
-        init = true;
-    }
+    INIT_COMPILER();
 
     // reset package
     ArrayFree(pkg.diagnostics.errors);
@@ -926,9 +922,7 @@ Stmt *resetAndParseSingleStmt(const char *code) {
     ArenaFree(&queue.arena);
     return stmt;
 }
-#endif
 
-#if TEST
 void test_checkConstantDeclarations() {
     Queue queue = resetAndParse("x :: 8");
 
@@ -949,9 +943,7 @@ void test_checkConstantDeclarations() {
     ASSERT(sym->decl->start.offset == 0);
     ASSERT(sym->val.u64 == 8);
 }
-#endif
 
-#if TEST
 void test_checkConstantUnaryExpressions() {
     Stmt *stmt;
     ExprInfo info;
@@ -983,9 +975,6 @@ void test_checkConstantUnaryExpressions() {
 
 #undef checkUnary
 }
-#endif
-
-#if TEST
 
 #undef pkg
 #endif
