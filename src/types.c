@@ -143,7 +143,8 @@ struct InternType {
 Map internArrayTypes;
 
 Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
-    u64 key = HashMix(HashPtr(elementType), HashU64(length)) ?: 1;
+    u64 hash = HashMix(HashPtr(elementType), HashU64(length));
+    u64 key = hash ? hash : 1;
     InternType *intern = MapGet(&internArrayTypes, (void*) key);
     for (InternType *it = intern; it; it = it->next) {
         Type *type = it->type;
@@ -169,7 +170,8 @@ Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
 Map internFunctionTypes;
 
 Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
-    u64 key = HashMix(HashBytes(params, ArrayLen(params)), HashBytes(results, ArrayLen(results))) ?: 1;
+    u64 hash = HashMix(HashBytes(params, ArrayLen(params)), HashBytes(results, ArrayLen(results)));
+    u64 key = hash ? hash : 1;
     InternType *intern = MapGet(&internFunctionTypes, (void*) key);
     for (InternType *it = intern; it; it = it->next) {
         Type *type = it->type;

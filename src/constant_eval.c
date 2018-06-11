@@ -37,6 +37,7 @@ i64 evalUnarySigned(TokenKind op, Val val) {
         default:
             ASSERT(false);
     }
+    return 0;
 }
 
 u64 evalUnaryUnsigned(TokenKind op, Val val) {
@@ -53,6 +54,7 @@ u64 evalUnaryUnsigned(TokenKind op, Val val) {
         default:
             ASSERT(false);
     }
+    return 0;
 }
 
 f64 evalUnaryFloat(TokenKind op, Val val) {
@@ -64,4 +66,5 @@ f64 evalUnaryFloat(TokenKind op, Val val) {
         default:
             ASSERT(false);
     }
+    return 0;
 }

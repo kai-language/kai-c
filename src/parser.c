@@ -917,7 +917,7 @@ void parsePackageCode(Package *pkg, const char *code) {
 
         switch (stmt->kind) {
             case StmtDeclKind_Constant: {
-                ForEach(stmt->Constant.names) {
+                ForEach(stmt->Constant.names, Expr_Ident *) {
                     // We iterate over, and declare all names of the constant despite only supporting a single name
                     declareSymbol(pkg, pkg->scope, it->name, &symbol, stmt->id, (Decl *) stmt);
                     symbol->kind = SymbolKind_Constant;
@@ -926,7 +926,7 @@ void parsePackageCode(Package *pkg, const char *code) {
                 break;
             }
             case StmtDeclKind_Variable: {
-                ForEach(stmt->Variable.names) {
+                ForEach(stmt->Variable.names, Expr_Ident *) {
                     declareSymbol(pkg, pkg->scope, it->name, &symbol, stmt->id, (Decl *) stmt);
                     symbol->kind = SymbolKind_Variable;
                     symbol->state = SymbolState_Unresolved;

@@ -420,7 +420,7 @@ Type *checkExprTypeFunction(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
     DynamicArray(Type *) returnTypes = NULL;
     ArrayFit(returnTypes, ArrayLen(func.result));
 
-    ForEach(func.result) {
+    ForEach(func.result, Expr *) {
         Type *type = checkExpr(pkg, it, &info);
         if (!expectType(pkg, type, &info, it->start)) {
             isInvalid = true;
@@ -456,7 +456,7 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
     TypeFlag typeFlags = TypeFlag_None;
 
     // FIXME: We need to extract and pass on desired types parameters & results
-    ForEach(func.type->TypeFunction.params) {
+    ForEach(func.type->TypeFunction.params, Expr_KeyValue *) {
         if (!it->key || it->key->kind != ExprKind_Ident) {
             ReportError(pkg, ParamNameMissingError, it->start, "Parameters for a function literal must be named");
             continue;
@@ -474,7 +474,7 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
         ArrayPush(paramTypes, type);
     }
 
-    ForEach(func.type->TypeFunction.result) {
+    ForEach(func.type->TypeFunction.result, Expr *) {
         Type *type = checkExpr(pkg, it, &funcInfo);
         if (!expectType(pkg, type, &funcInfo, it->start)) continue;
         ArrayPush(resultTypes, type);
@@ -679,7 +679,7 @@ b32 checkDeclConstant(Package *pkg, Scope *scope, Decl *declStmt) {
         ReportError(pkg, MultipleConstantDeclError, decl.start,
             "Constant declarations must declare at most one item");
 
-        ForEach (decl.names) {
+        ForEach (decl.names, Expr_Ident *) {
             Symbol *symbol = Lookup(pkg->scope, it->name);
             markSymbolInvalid(symbol);
         }
@@ -773,13 +773,13 @@ b32 checkDeclVariable(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) 
     ArrayFit(symbols, ArrayLen(var.names));
 
     if (scope == pkg->scope) {
-        ForEach(var.names) {
+        ForEach(var.names, Expr_Ident *) {
             Symbol *symbol = MapGet(&scope->members, it->name);
             ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
             ArrayPush(symbols, symbol);
         }
     } else {
-        ForEach(var.names) {
+        ForEach(var.names, Expr_Ident *) {
             Symbol *symbol;
             // FIXME(Brett): figure out how I want to recover from a duplicate
             declareSymbol(pkg, scope, it->name, &symbol, declStmt->id, declStmt);
@@ -790,7 +790,7 @@ b32 checkDeclVariable(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) 
     // NOTE: decl like `x, y: i32`
     if (ArrayLen(var.values) == 0) {
         ASSERT(expectedType);
-        ForEach(symbols) {
+        ForEach(symbols, Symbol *) {
             it->type = expectedType;
             it->state = SymbolState_Resolved;
         }
