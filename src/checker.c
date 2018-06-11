@@ -102,38 +102,24 @@ b32 expectType(Package *pkg, Type *type, ExprInfo *info, Position pos) {
     return info->mode == ExprMode_Type;
 }
 
-Type *baseType(Type *type) {
-repeat:
-    if (type->kind == TypeKind_Alias) {
-        type = type->Alias.symbol->type;
-        goto repeat;
-    }
-
-    return type;
-}
-
 b32 isInteger(Type *type) {
-    type = baseType(type);
     return type->kind == TypeKind_Int;
 }
 
 b32 isFloat(Type *type) {
-    type = baseType(type);
     return type->kind == TypeKind_Float;
 }
 
 b32 isNumeric(Type *type) {
-    type = baseType(type);
     return isInteger(type) || isFloat(type);
 }
 
 b32 isPointer(Type *type) {
-    type = baseType(type);
     return type->kind == TypeKind_Pointer;
 }
 
 b32 isNilable(Type *type) {
-    return baseType(type)->kind == TypeKind_Pointer;
+    return type->kind == TypeKind_Pointer;
 }
 
 b32 isNumericOrPointer(Type *type) {
@@ -145,11 +131,11 @@ b32 canBeUsedForLogical(Type *type) {
 }
 
 b32 isEnum(Type *type) {
-    return baseType(type)->kind == TypeKind_Enum;
+    return type->kind == TypeKind_Enum;
 }
 
 b32 isEnumFlags(Type *type) {
-    return isEnum(type) && (baseType(type)->Flags & TypeFlag_EnumFlags) != 0;
+    return isEnum(type) && (type->Flags & TypeFlag_EnumFlags) != 0;
 }
 
 b32 canBeUsedForBitwise(Type *type) {

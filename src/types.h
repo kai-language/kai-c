@@ -61,6 +61,7 @@ typedef enum TypeKind {
 typedef u8 TypeFlag;
 #define TypeFlag_None 0
 #define TypeFlag_Untyped  0x80
+#define TypeFlag_Alias    0x40
 
 // Void
 #define TypeFlag_NoReturn 0x1
@@ -113,24 +114,18 @@ struct Type_Enum {
     TypeFlag Flags;
 };
 
-struct Type_Alias {
-    TypeFlag Flags;
-    Symbol *symbol;
-};
-
 STATIC_ASSERT(offsetof(Type_Pointer,  Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Array,    Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Slice,    Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Struct,   Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Union,    Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Function, Flags) == 0, "Flags must be at offset 0");
-STATIC_ASSERT(offsetof(Type_Alias,    Flags) == 0, "Flags must be at offset 0");
 
 struct Type {
     TypeKind kind;
     u32 Width;
     u32 Align;
-    Symbol *symbol;
+    Symbol *Symbol;
 
     union {
         TypeFlag Flags;
@@ -140,8 +135,6 @@ struct Type {
         Type_Struct Struct;
         Type_Union Union;
         Type_Function Function;
-
-        Type_Alias Alias;
     };
 };
 
