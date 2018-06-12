@@ -56,27 +56,16 @@ typedef struct TargetMetrics {
 } TargetMetrics;
 
 enum {
-    TargetMetrics_Int,
     TargetMetrics_Pointer,
 };
 
-#define DEFAULT_TARGET_METRICS \
-    [TargetMetrics_Int] = { .Width = 32, .Align = 32 }, \
-    [TargetMetrics_Pointer] = { .Width = 64, .Align = 64 },
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Winitializer-overrides"
-
 TargetMetrics metrics_32bit[2] = {
-    DEFAULT_TARGET_METRICS
     [TargetMetrics_Pointer] = { .Width = 32, .Align = 32 },
 };
 
 TargetMetrics metrics_64bit[2] = {
-    DEFAULT_TARGET_METRICS
+    [TargetMetrics_Pointer] = { .Width = 64, .Align = 64 },
 };
-
-#pragma clang diagnostic pop
 
 TargetMetrics *Os_Linux_ArchSupport[NUM_ARCHES] = {
     [Arch_x86_64] = metrics_64bit,
@@ -84,4 +73,9 @@ TargetMetrics *Os_Linux_ArchSupport[NUM_ARCHES] = {
 
 TargetMetrics *Os_Darwin_ArchSupport[NUM_ARCHES] = {
     [Arch_x86_64] = metrics_64bit,
+};
+
+TargetMetrics *Os_Windows_ArchSupport[NUM_ARCHES] = {
+    [Arch_x86_64] = metrics_64bit,
+    [Arch_x86] = metrics_32bit,
 };

@@ -71,12 +71,20 @@ void setSelfForTestCase(XCTestCase *testCase) {
     [self setContinueAfterFailure: false];
 }
 
+- (void)test_canConvert {
+    test_canConvert();
+}
+
 - (void)test_checkConstantDeclarations {
     test_checkConstantDeclarations();
 }
 
 - (void)test_checkConstantUnaryExpressions {
     test_checkConstantUnaryExpressions();
+}
+
+- (void)test_checkConstantBinaryExpressions {
+    test_checkConstantBinaryExpressions();
 }
 
 @end

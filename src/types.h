@@ -43,8 +43,7 @@ extern Symbol *TrueSymbol;
     FOR_EACH(Any, "any")            \
     FOR_EACH(Struct, "struct")      \
     FOR_EACH(Union, "union")        \
-    FOR_EACH(Enum, "enum")      \
-    FOR_EACH(Alias, "alias")        \
+    FOR_EACH(Enum, "enum")          \
     FOR_EACH(Function, "function")  \
 
 typedef enum TypeKind {
@@ -125,6 +124,7 @@ struct Type {
     TypeKind kind;
     u32 Width;
     u32 Align;
+    u32 TypeId;
     Symbol *Symbol;
 
     union {

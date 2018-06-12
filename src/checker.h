@@ -31,6 +31,7 @@ struct CheckerInfo_Selector {
 typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;
 struct CheckerInfo_BasicExpr {
     Type *type;
+    b8 isConstant;
     Val val;
 };
 

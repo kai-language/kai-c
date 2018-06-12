@@ -19,14 +19,14 @@
     FOR_EACH(Redefinition, "Redefinition") \
     FOR_EACH(MultipleConstantDecl, "Defined more than one constant item at a time") \
     FOR_EACH(ArityMismatch, "The amount of declarations doesn't match the amount of values") \
-    FOR_EACH(InvalidMetatype, "The type provided was not a metatype") \
+    FOR_EACH(NotAType, "A type was expected but something else was given") \
     FOR_EACH(UndefinedIdent, "Use of an undefined identifier") \
     FOR_EACH(InvalidConversion, "Unable to convert type to target type") \
     FOR_EACH(UninitImplicitArray, "Implicit-length array was provided without an initial value") \
     FOR_EACH(UninitFunctionType, "A function type wasn't provided a body") \
-    FOR_EACH(MetatypeNotAnExpr, "A metatype is not a valid expression") \
+    FOR_EACH(TypeNotAnExpression, "A type is not a valid expression in the provided context") \
     FOR_EACH(NotNilable, "The type cannot be converted to nil") \
-    FOR_EACH(InvalidPointeeType, "The pointee type is not a valid metatype") \
+    FOR_EACH(InvalidPointeeType, "The pointee type is not a valid type") \
     FOR_EACH(ParamNameMissing, "The parameter doesn't have a name") \
     FOR_EACH(AddressOfNonAddressable, "The expr could not have it's address taken") \
     FOR_EACH(InvalidUnaryOperation, "Unary operation invalid for type") \

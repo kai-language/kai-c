@@ -4,6 +4,7 @@
 TargetMetrics *TargetTypeMetrics = NULL;
 
 Type *InvalidType;
+
 Type *AnyType;
 Type *VoidType;
 
@@ -32,46 +33,12 @@ Type *RawptrType;
 Type *UntypedIntType;
 Type *UntypedFloatType;
 
-i32 TypeRank(Type *type) {
+// TODO: Mechanism to lookup type by their ID
+u32 nextTypeId = 1;
 
-    // based off of Go's
-//        InvalidType,
-//        BoolType,
-//        IntType,
-//        I8Type,
-//        I16Type,
-//        I32Type,
-//        I64Type,
-//        IntptrType,
-//        UintType,
-//        U8Type,
-//        U16Type,
-//        U32Type,
-//        U64Type,
-//        UintptrType,
-//        RawptrType,
-//        F32Type,
-//        F64Type,
-//        UntypedIntType,
-//        UntypedFloatType,
-
-    // FIXME: This poorly emulates the above order. Made in a rush.
-    //  We should add typeid's like bitwise has and use those for type promotion.
-    if (type->Flags & TypeFlag_Untyped) return type->kind == TypeKind_Float ? 11000 : 10000;
-    switch (type->kind) {
-        case TypeKind_Invalid:
-            return 1;
-        case TypeKind_Int:
-            return (type->Flags & TypeFlag_Signed) ? 1000 : 2000 + type->Width;
-        case TypeKind_Float:
-            return 3000 + type->Width;
-        case TypeKind_Pointer:
-            return 4000;
-        default:
-            return UINT32_MAX;
-    }
+u32 TypeRank(Type *type) {
+    return type->TypeId;
 }
-
 
 Symbol *FalseSymbol;
 Symbol *TrueSymbol;
@@ -86,19 +53,10 @@ const char *DescribeTypeKind(TypeKind kind) {
     return TypeKindDescriptions[kind];
 }
 
-b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl);
-void declareBuiltinType(const char *name, Type *type) {
-    name = StrIntern(name);
-    Symbol *symbol;
-    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, 0, NULL);
-    symbol->state = SymbolState_Resolved;
-    symbol->type = type;
-    symbol->kind = SymbolKind_Type;
-}
-
 Type *AllocType(TypeKind kind) {
     Type *type = Calloc(DefaultAllocator, 1, sizeof(Type));
     type->kind = kind;
+    type->TypeId = nextTypeId++;
     return type;
 }
 
@@ -215,52 +173,20 @@ void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Ty
     (*symbol)->kind = kind;
 }
 
+void declareBuiltinType(const char *name, Type *type) {
+    name = StrIntern(name);
+    Symbol *symbol;
+    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, 0, NULL);
+    symbol->state = SymbolState_Resolved;
+    symbol->type = type;
+    symbol->kind = SymbolKind_Type;
+    type->Symbol = symbol;
+}
+
 bool HaveInitializedBuiltins = false;
 void InitBuiltins() {
     if (HaveInitializedBuiltins) return;
     HaveInitializedBuiltins = true;
-
-    builtinPackage.scope = pushScope(&builtinPackage, NULL);
-
-#define TYPE(_global, _name, _kind, _width, _flags) \
-    _global = AllocType(TypeKind_##_kind); \
-    _global->Width = _width; \
-    _global->Align = _width; \
-    _global->Flags = _flags; \
-    declareBuiltinType(_name, _global)
-
-    TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
-
-    TYPE(AnyType,   "any",  Any, 128, TypeFlag_None);
-    TYPE(VoidType, "void", Void, 0, TypeFlag_None);
-    TYPE(BoolType, "bool", Int, 8, TypeFlag_Untyped);
-
-    TYPE(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
-    TYPE(I16Type, "i16", Int, 16, TypeFlag_Signed);
-    TYPE(I32Type, "i32", Int, 32, TypeFlag_Signed);
-    TYPE(I64Type, "i64", Int, 64, TypeFlag_Signed);
-    TYPE(U8Type,  "u8",  Int,  8, TypeFlag_None);
-    TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
-    TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
-    TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
-
-    TYPE(F32Type, "f32", Float, 32, TypeFlag_None);
-    TYPE(F64Type, "f64", Float, 64, TypeFlag_None);
-
-    TYPE(IntType,   "int", Int, 32, TypeFlag_Signed);
-    TYPE(UintType, "uint", Int, 32, TypeFlag_None);
-
-    TYPE(IntptrType,   "intptr", Int, 64, TypeFlag_Signed);
-    TYPE(UintptrType, "uintptr", Int, 64, TypeFlag_None);
-    TYPE(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);
-
-    TYPE(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped);
-    TYPE(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
-
-#undef TYPE
-
-    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
-    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
 
     switch (TargetOs) {
         case Os_Linux:
@@ -270,6 +196,7 @@ void InitBuiltins() {
             TargetTypeMetrics = Os_Darwin_ArchSupport[TargetArch];
             break;
         case Os_Windows:
+            TargetTypeMetrics = Os_Windows_ArchSupport[TargetArch];
             break;
 
         default:
@@ -280,21 +207,83 @@ void InitBuiltins() {
         exit(1);
     }
 
+    builtinPackage.scope = pushScope(&builtinPackage, NULL);
+
+#define TYPE(_global, _name, _kind, _width, _flags) \
+    _global = AllocType(TypeKind_##_kind); \
+    _global->Width = _width; \
+    _global->Align = _width; \
+    _global->Flags = _flags; \
+    declareBuiltinType(_name, _global)
+
+#define TYPEALIAS(_global, _name, _alias) \
+    _global = Alloc(DefaultAllocator, sizeof(Type)); \
+    memcpy(_global, _alias, sizeof(Type)); \
+    _global->Symbol = _alias->Symbol; \
+    _global->Flags |= TypeFlag_Alias
+
+    TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
+    nextTypeId--;
+
+    // @IMPORTANT: The order is important here as it sets up the TypeId's
+    // The TypeId's are used to rank numeric types for type promotion
+    //  We can promote compatible types upwards (as ordered below) provided there can be no loss of information
+    //
+    TYPE(AnyType,   "any",  Any, 128, TypeFlag_None); // typeid = 1
+    TYPE(VoidType, "void", Void, 0, TypeFlag_None);
+
+    TYPE(F32Type, "f32", Float, 32, TypeFlag_None);
+    TYPE(F64Type, "f64", Float, 64, TypeFlag_None);
+    TYPE(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
+
+    TYPE(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
+    TYPE(I16Type, "i16", Int, 16, TypeFlag_Signed);
+    TYPE(I32Type, "i32", Int, 32, TypeFlag_Signed);
+    TYPE(I64Type, "i64", Int, 64, TypeFlag_Signed);
+    TYPE(U8Type,  "u8",  Int,  8, TypeFlag_None);
+    TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
+    TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
+    TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
+    TYPE(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped);
+    // TODO: Do we need an UntypedUintType? ... UntypedIntType cannot represent values over INT64_MAX;
+
+    TYPE(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);
+
+    // Aliases behave in promotion just as the types they alias do.
+    TYPEALIAS(BoolType, "bool", U8Type);
+    TYPEALIAS(IntType,   "int", I32Type);
+    TYPEALIAS(UintType, "uint", U32Type);
+
+    switch (TargetTypeMetrics[TargetMetrics_Pointer].Width) {
+        case 32:
+            TYPEALIAS(IntptrType,   "intptr", I32Type);
+            TYPEALIAS(UintptrType, "uintptr", U32Type);
+            break;
+        case 64:
+            TYPEALIAS(IntptrType,   "intptr", I64Type);
+            TYPEALIAS(UintptrType, "uintptr", U64Type);
+            break;
+        default:
+            printf("Unsupported pointer width on os & arch %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
+            exit(1);
+    }
+
+    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
+    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
+
     AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
     AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;
 
-    IntType->Align = IntType->Width = TargetTypeMetrics[TargetMetrics_Int].Width;
-    UintType->Align = UintType->Width = TargetTypeMetrics[TargetMetrics_Int].Width;
-
-    UintptrType->Align = UintptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-    IntptrType->Align = IntptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
     RawptrType->Align = RawptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+
+#undef TYPE
 }
 
 const char *DescribeType(Type *type) {
-    // FIXME(Brett): just temp output
-    if (type) {
-        return DescribeTypeKind(type->kind);
+    if (!type) return DescribeTypeKind(TypeKind_Invalid);
+
+    if (type->Symbol) {
+        return type->Symbol->name;
     }
 
     return DescribeTypeKind(TypeKind_Invalid);
@@ -302,6 +291,7 @@ const char *DescribeType(Type *type) {
 
 #if TEST
 void test_TypeIntern() {
+    TargetArch = Arch_x86_64;
     INIT_COMPILER();
 
     ASSERT(InvalidType);
@@ -330,6 +320,13 @@ void test_TypeIntern() {
     ASSERT(F32Type->Width == 32);
     ASSERT(F64Type->Width == 64);
 
-    
+    ASSERT(IntptrType->Symbol->type == I64Type);
+    ASSERT(UintptrType->Symbol->type == U64Type);
+
+    ASSERT(IntptrType->Width == 64);
+    ASSERT(UintptrType->Width == 64);
+
+    ASSERT(RawptrType->Width == 64);
+    ASSERT(AnyType->Width == 128);
 }
 #endif

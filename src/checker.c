@@ -73,6 +73,25 @@ void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type) {
     pkg->checkerInfo[expr->id] = info;
 }
 
+void storeInfoBasicExprWithConstant(Package *pkg, Expr *expr, Type *type, Val val) {
+    CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
+    info.BasicExpr.isConstant = true;
+    info.BasicExpr.val = val;
+    pkg->checkerInfo[expr->id] = info;
+}
+
+CheckerInfo *CheckerInfoForExpr(Package *pkg, Expr *expr) {
+    return &pkg->checkerInfo[expr->id];
+}
+
+CheckerInfo *CheckerInfoForStmt(Package *pkg, Stmt *stmt) {
+    return &pkg->checkerInfo[stmt->id];
+}
+
+CheckerInfo *CheckerInfoForDecl(Package *pkg, Decl *decl) {
+    return &pkg->checkerInfo[decl->id];
+}
+
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl) {
     Symbol *old = Lookup(scope, name);
     if (old) {
@@ -97,13 +116,18 @@ b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol,
 
 b32 expectType(Package *pkg, Type *type, ExprInfo *info, Position pos) {
     if (info->mode != ExprMode_Type) {
-        ReportError(pkg, InvalidMetatypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
+        ReportError(pkg, NotATypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
     }
     return info->mode == ExprMode_Type;
 }
 
 b32 isInteger(Type *type) {
     return type->kind == TypeKind_Int;
+}
+
+b32 isSigned(Type *type) {
+    ASSERT_MSG(isInteger(type), "isSigned should only be called for integers. Try `isInteger(type) && isSigned(type)`");
+    return (type->Flags & TypeFlag_Signed) != 0;
 }
 
 b32 isFloat(Type *type) {
@@ -138,6 +162,18 @@ b32 isEnumFlags(Type *type) {
     return isEnum(type) && (type->Flags & TypeFlag_EnumFlags) != 0;
 }
 
+b32 isTyped(Type *type) {
+    return (type->Flags & TypeFlag_Untyped) == 0;
+}
+
+b32 isUntyped(Type *type) {
+    return (type->Flags & TypeFlag_Untyped) != 0;
+}
+
+b32 isAlias(Type *type) {
+    return (type->Flags & TypeFlag_Alias) != 0;
+}
+
 b32 canBeUsedForBitwise(Type *type) {
     return isInteger(type) || isEnumFlags(type);
 }
@@ -155,29 +191,6 @@ b32 isEquatable(Type *type) {
     };
     return equatables[type->kind];
 }
-
-// FIXME(vdka): We will need this now. We stopped this because we needed to pass a package, and updating the type was awkward.
-//void convertUntyped(Package *pkg, Type **type, Type *target) {
-//    if (*type == InvalidType || target == InvalidType) return;
-//    if (((*type)->Flags & TypeFlag_Untyped) == 0) return;
-//
-//    if (target->Flags & TypeFlag_Untyped) {
-//        // Both are untyped
-//        i32 rank = TypeRank(*type);
-//        i32 targetRank = TypeRank(target);
-//        if (isNumeric(*type) && isNumeric(target)) {
-//            if (rank < targetRank) {
-//                *type = target;
-//
-//            }
-//        } else if (rank != targetRank) {
-//            goto error;
-//        }
-//    }
-//
-//error:
-//    ReportError(pkg, TODOError, <#Position pos#>, <#const char *msg, ...#>)
-//}
 
 #include "constant_eval.c"
 
@@ -214,16 +227,202 @@ b32 (*binaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
     [TK_Lor]  = canBeUsedForLogical,
 };
 
-b32 convert(Type *type, Type *target) {
-    if (type == UntypedIntType) {
-        return target == UntypedIntType || (target->kind == TypeKind_Int);
+b32 canConvert(Type *type, Type *target) {
+    if (type == target) return true;
+
+    if (isInteger(target) && isInteger(type)) {
+        if (isSigned(type) && !isSigned(target)) {
+            // Conversion from a signed integer to an unsigned requires a cast.
+            return false;
+        }
+
+        if (!isSigned(type) && isSigned(target)) {
+            // Conversion from unsigned to signed requires the signed type is larger
+            return type->Width < target->Width;
+        }
+
+        // The two integer types have the same signedness. The target must be the same or a larger size.
+        return type->Width <= target->Width;
     }
 
-    if (type == UntypedFloatType) {
-        return target == UntypedFloatType || target->kind == TypeKind_Float;
+    if (isFloat(type)) {
+        // Conversion between float types requires the target is larger or equal in size.
+        return isFloat(target) && type->Width <= target->Width;
+    }
+    if (isFloat(target)) {
+        // Conversion to float type only requires the source type is numeric
+        return isNumeric(type);
     }
 
-    // FIXME: Brett, this doesn't work for aliased types
+    if (isPointer(type)) {
+        // Conversion from any pointer type to rawptr is allowed
+        // Conversion from any pointer type to an integer is allowed if the intptr or uintptr types can also convert
+        return target == RawptrType || canConvert(IntptrType, target) || canConvert(UintptrType, target);
+    }
+
+    if (isPointer(target)) {
+        // Only untyped integers are allowed to implicitly convert to a pointer type
+        // Well... pointers can implicitly convert to pointers too. But that's handled above.
+        return isInteger(type) && isUntyped(type);
+    }
+
+    return false;
+}
+
+#if TEST
+void test_canConvert() {
+    INIT_COMPILER();
+
+    ASSERT(canConvert(I8Type, I16Type));
+    ASSERT(canConvert(U8Type, I16Type));
+    ASSERT(canConvert(I16Type, I16Type));
+    ASSERT(canConvert(UintType, UintptrType));
+    ASSERT(!canConvert(I8Type, U64Type));
+    ASSERT(canConvert(NewTypePointer(TypeFlag_None, U8Type), RawptrType));
+    ASSERT(canConvert(UntypedIntType, NewTypePointer(TypeFlag_None, U8Type)));
+    ASSERT(canConvert(NewTypePointer(TypeFlag_None, IntType), RawptrType));
+    ASSERT(canConvert(NewTypePointer(TypeFlag_None, U64Type), IntptrType));
+}
+#endif
+
+b32 canRepresentValue(Val val, Type *target) {
+    // TODO: Implement this properly
+    // Also tests for it.
+    return true;
+}
+
+i64 SignExtend(Type *type, Type *target, Val val) {
+    val.i64 = val.i64 & ((1ull << type->Width) - 1);
+    i64 mask = 1ull << (type->Width - 1);
+    val.i64 = (val.i64 ^ mask) - mask;
+    return val.i64;
+}
+
+void convertValue(Type *type, Type *target, Val *val) {
+    if (isInteger(type) && isSigned(type) && isInteger(target) && isSigned(target)) {
+        val->i64 = SignExtend(type, target, *val);
+        return;
+    }
+
+    if (isInteger(type) && isFloat(target)) {
+        if (isSigned(type)) {
+            val->i64 = SignExtend(type, target, *val);
+            switch (target->Width) {
+                case 32:
+                    val->f32 = (f32) val->i32;
+                    break;
+                case 64:
+                    val->f64 = (f64) val->i64;
+                    break;
+                default:
+                    PANIC("Unhandled float type during constant conversion");
+            }
+        } else {
+            switch (target->Width) {
+                case 32:
+                    val->f32 = (f32) val->u32;
+                    break;
+                case 64:
+                    val->f64 = (f64) val->u64;
+                    break;
+                default:
+                    PANIC("Unhandled float type during constant conversion");
+            }
+        }
+    }
+}
+
+void updateExprTypeIfUntyped(Package *pkg, ExprInfo *info, Expr *expr, Type *type, Type *target) {
+    if (isTyped(target)) return;
+
+    switch (expr->kind) {
+        case ExprKind_Paren:
+            updateExprTypeIfUntyped(pkg, info, expr->Paren.expr, type, target);
+            break;
+
+        case ExprKind_Unary:
+            updateExprTypeIfUntyped(pkg, info, expr->Unary.expr, type, target);
+            break;
+
+        case ExprKind_Binary:
+            updateExprTypeIfUntyped(pkg, info, expr->Binary.lhs, type, target);
+            updateExprTypeIfUntyped(pkg, info, expr->Binary.rhs, type, target);
+            break;
+
+        case ExprKind_LitInt:
+        case ExprKind_LitFloat:
+        case ExprKind_LitNil:
+        case ExprKind_LitString:
+            break;
+
+        default:
+            return;
+    }
+
+    CheckerInfo_BasicExpr *ci = &CheckerInfoForExpr(pkg, expr)->BasicExpr;
+    if (ci->isConstant && isUntyped(ci->type)) {
+        if (!canRepresentValue(ci->val, target)) {
+            ReportError(pkg, InvalidConversionError, expr->start,
+                        "Cannot implicitly convert %s to type %s as loss of information would occur",
+                        DescribeExpr(expr), DescribeType(target));
+            // TODO: Attach a note reporting what is forcing that type on this expression
+            //  This will require  more parameters (the source of the target) for both
+            //  updateExprTypeIfUntyped & for convertUntyped
+        }
+    }
+
+    ci->type = target;
+    convertValue(type, target, &info->val);
+}
+
+void convertUntyped(Package *pkg, ExprInfo *info, Expr *expr, Type **type, Type *target) {
+    if (*type == InvalidType || isTyped(*type) || target == InvalidType) return;
+
+    if (isUntyped(target)) {
+        // Both are untyped
+        if (target->TypeId < (*type)->TypeId) {
+            updateExprTypeIfUntyped(pkg, info, expr, *type, target);
+
+            *type = target;
+            return;
+        }
+        // Either the types match or the conversion cannot occur
+        return;
+    }
+
+    // target is typed
+    switch (target->kind) {
+        case TypeKind_Int:
+        case TypeKind_Float:
+        case TypeKind_Pointer:
+            updateExprTypeIfUntyped(pkg, info, expr, *type, target);
+            break;
+
+        default:
+            *type = InvalidType;
+    }
+}
+
+void convert(Package *pkg, Expr *expr, Type **type, Type *target) {
+    if (*type == InvalidType || target == InvalidType) return;
+
+    if (!canConvert(*type, target)) {
+        ReportError(pkg, InvalidConversionError, expr->start,
+                    "Cannot convert %s to type %s", DescribeExpr(expr), DescribeType(target));
+        *type = InvalidType;
+        return;
+    }
+
+    *type = target;
+}
+
+b32 TypesIdentical(Type *type, Type *target) {
+    while (isAlias(type)) {
+        type = type->Symbol->type;
+    }
+    while (isAlias(target)) {
+        target = target->Symbol->type;
+    }
     return type == target;
 }
 
@@ -274,10 +473,8 @@ Type *checkExprIdent(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
             break;
 
         case SymbolKind_Constant:
-            if (symbol == TrueSymbol || symbol == FalseSymbol) {
-                exprInfo->mode = ExprMode_Computed;
-                break;
-            }
+            exprInfo->mode = ExprMode_Computed;
+            exprInfo->isConstant = true;
             break;
 
         default:
@@ -309,7 +506,8 @@ Type *checkExprLitInt(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     }
 
     exprInfo->mode = ExprMode_Computed;
-    storeInfoBasicExpr(pkg, expr, type);
+    exprInfo->isConstant = true;
+    storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
     return type;
 
 error:
@@ -340,7 +538,8 @@ Type *checkExprLitFloat(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     }
 
     exprInfo->mode = ExprMode_Computed;
-    storeInfoBasicExpr(pkg, expr, type);
+    exprInfo->isConstant = true;
+    storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
     return type;
 
 error:
@@ -349,22 +548,21 @@ error:
 }
 
 Type *checkExprLitNil(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    if (exprInfo->desiredType && !isNilable(exprInfo->desiredType)) {
+        ReportError(pkg, NotNilableError, expr->start,
+                    "'nil' is not convertable to '%s'", DescribeType(exprInfo->desiredType));
+        goto error;
+    }
+
+    Type *type = exprInfo->desiredType;
+    if (!type) type = UntypedIntType;
+
+    storeInfoBasicExprWithConstant(pkg, expr, type, (Val){.u64 = 0});
+
     exprInfo->mode = ExprMode_Nil;
-    Type *desiredType = exprInfo->desiredType;
-
-    if (!desiredType) {
-        ReportError(pkg, TODOError, expr->start, "'nil' used without a contextual type");
-        goto error;
-    }
-
-    if (!isNilable(desiredType)) {
-        ReportError(pkg, NotNilableError, expr->start, "'nil' is not convertable to '%s'", DescribeType(exprInfo->desiredType));
-        goto error;
-    }
-
-    storeInfoBasicExpr(pkg, expr, desiredType);
-    exprInfo->mode = ExprMode_Nil; // TODO: Is a nil mode something that makes sense? Should it just be any other non addressable value?
-    return desiredType;
+    exprInfo->isConstant = true;
+    exprInfo->val = (Val){ .u64 = 0 };
+    return type;
 
 error:
     exprInfo->mode = ExprMode_Invalid;
@@ -525,8 +723,12 @@ Type *checkExprUnary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
             }
     }
 
-    storeInfoBasicExpr(pkg, expr, type);
-    exprInfo->isConstant = evalUnary(expr->Unary.op, type, &exprInfo->val);
+    if (evalUnary(expr->Unary.op, type, exprInfo)) {
+        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    } else {
+        storeInfoBasicExpr(pkg, expr, type);
+    }
+
     exprInfo->mode = ExprMode_Computed;
     return type;
 
@@ -536,8 +738,8 @@ error:
 }
 
 Type *checkExprBinary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
-    ExprInfo lhsInfo = *exprInfo;
-    ExprInfo rhsInfo = *exprInfo;
+    ExprInfo lhsInfo = { .scope = exprInfo->scope };
+    ExprInfo rhsInfo = { .scope = exprInfo->scope };
     Type *lhs = checkExpr(pkg, expr->Binary.lhs, &lhsInfo);
     Type *rhs = checkExpr(pkg, expr->Binary.rhs, &rhsInfo);
 
@@ -545,43 +747,34 @@ Type *checkExprBinary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
         goto error;
     }
 
-    if (lhsInfo.mode == ExprMode_Nil) {
-        if (!isNilable(rhs)) {
-            ReportError(pkg, TODOError, expr->start, "Cannot infer type for %s", DescribeExpr(expr->Binary.lhs));
-        } else {
-            GetExprInfo(pkg, expr->Binary.lhs)->BasicExpr.type = GetExprInfo(pkg, expr->Binary.rhs)->BasicExpr.type;
-            lhs = rhs;
-        }
-    } else if (rhsInfo.mode == ExprMode_Nil) {
-        if (!isNilable(rhs)) {
-            ReportError(pkg, TODOError, expr->Binary.rhs->start, "Cannot infer type for %s", DescribeExpr(expr->Binary.rhs));
-        } else {
-            GetExprInfo(pkg, expr->Binary.rhs)->BasicExpr.type = GetExprInfo(pkg, expr->Binary.lhs)->BasicExpr.type;
-            rhs = lhs;
-        }
-    }
+    convertUntyped(pkg, &lhsInfo, expr->Binary.lhs, &lhs, rhs);
+    if (lhs == InvalidType) goto error;
 
-    // FIXME: Handle untyped types
+    convertUntyped(pkg, &rhsInfo, expr->Binary.rhs, &rhs, lhs);
+    if (rhs == InvalidType) goto error;
 
-    if (convert(lhs, rhs)) {
-        lhs = rhs;
-    } else if (convert(rhs, lhs)) {
-        rhs = lhs;
-    }
+    // TODO: Do we need to note the implicit conversion? Or can it be implied?
+    if      (canConvert(lhs, rhs)) lhs = rhs;
+    else if (canConvert(rhs, lhs)) rhs = lhs;
 
-    if (lhs != rhs) {
-        if (lhs == InvalidType || rhs == InvalidType) goto error;
+    if (lhs == InvalidType || rhs == InvalidType) goto error;
 
-        ReportError(pkg, TypeMismatchError, expr->start, "Mismatched types %s and %s", DescribeExpr(expr->Binary.lhs), DescribeExpr(expr->Binary.rhs));
+    if (!TypesIdentical(lhs, rhs)) {
+        ReportError(pkg, TypeMismatchError, expr->start,
+                    "Mismatched types %s and %s", DescribeExpr(expr->Binary.lhs), DescribeExpr(expr->Binary.rhs));
         goto error;
     }
 
-    if (!binaryPredicates[expr->Binary.op](lhs)) {
-        ReportError(pkg, InvalidBinaryOperationError, expr->Binary.pos, "Operation '%s' undefined for type %s", DescribeTokenKind(expr->Binary.op), DescribeExpr(expr->Binary.lhs));
+    // Both lhs & rhs have this type.
+    Type *type = lhs;
+
+    if (!binaryPredicates[expr->Binary.op](type)) {
+        ReportError(pkg, InvalidBinaryOperationError, expr->Binary.pos,
+                    "Operation '%s' undefined for type %s",
+                    DescribeTokenKind(expr->Binary.op), DescribeExpr(expr->Binary.lhs));
         goto error;
     }
 
-    Type *type = NULL;
     switch (expr->Binary.op) {
         case TK_Eql:
         case TK_Neq:
@@ -591,21 +784,28 @@ Type *checkExprBinary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
         case TK_Gtr:
         case TK_Lor:
         case TK_Land:
-            if (exprInfo->desiredType && canBeUsedForLogical(exprInfo->desiredType) && convert(lhs, exprInfo->desiredType)) {
+            if (exprInfo->desiredType && canConvert(type, exprInfo->desiredType)) {
                 type = exprInfo->desiredType;
             } else {
                 type = BoolType;
             }
             break;
         default:
-            type = lhs;
+            break;
     }
 
     if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && rhsInfo.isConstant && rhsInfo.val.i64 == 0) {
         ReportError(pkg, DivisionByZeroError, expr->Binary.rhs->start, "Division by zero");
     }
 
-    storeInfoBasicExpr(pkg, expr, type);
+    exprInfo->isConstant = lhsInfo.isConstant && rhsInfo.isConstant;
+    if (evalBinary(expr->Binary.op, type, lhsInfo.val, rhsInfo.val, exprInfo)) {
+        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    } else {
+        storeInfoBasicExpr(pkg, expr, type);
+    }
+
+    exprInfo->mode = ExprMode_Computed;
     return type;
 
 error:
@@ -730,7 +930,8 @@ b32 checkDeclConstant(Package *pkg, Scope *scope, Decl *declStmt) {
     symbol->val = info.val;
 
     if (expectedType) {
-        if (!convert(type, expectedType)) {
+        convert(pkg, value, &type, expectedType);
+        if (type == InvalidType) {
             ReportError(pkg, InvalidConversionError, value->start,
                 "Unable to convert type %s to expected type type %s", DescribeType(type), DescribeType(expectedType));
             markSymbolInvalid(symbol);
@@ -817,24 +1018,26 @@ b32 checkDeclVariable(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) 
                 return true;
             }
 
-            if (expectedType && !convert(type, expectedType)) {
-                ReportError(
-                    pkg, InvalidConversionError, var.values[i]->start,
-                    "Unable to convert type %s to expected type type %s",
-                    DescribeType(type), DescribeType(expectedType)
-                );
+            if (expectedType) {
+                convert(pkg, var.values[i], &type, expectedType);
+                ReportError(pkg, InvalidConversionError, var.values[i]->start,
+                            "Unable to convert type %s to expected type type %s",
+                            DescribeType(type), DescribeType(expectedType));
                 markSymbolInvalid(symbols[i]);
+                return false;
             }
 
             if (info.mode == ExprMode_Type) {
-                ReportError(pkg, MetatypeNotAnExprError, var.values[i]->start,
-                    "Metatype is not a valid expression");
+                ReportError(pkg, TypeNotAnExpressionError, var.values[i]->start,
+                            "Type %s is not an expression in this context", DescribeType(type));
+                ReportNote(pkg, var.values[i]->start,
+                           "Type metadata can be retrieved using the typeof or typeid functions");
                 markSymbolInvalid(symbols[i]);
                 continue;
             }
 
             symbols[i]->kind = SymbolKind_Variable;
-            markSymbolResolved(symbols[i], expectedType ? expectedType : type);
+            markSymbolResolved(symbols[i], type);
         }
     }
 
@@ -879,8 +1082,6 @@ b32 checkStmt(Package *pkg, Stmt *stmt) {
 #define pkg checkerTestPackage
 Package pkg = {0};
 Queue resetAndParse(const char *code) {
-    INIT_COMPILER();
-
     // reset package
     ArrayFree(pkg.diagnostics.errors);
     ArrayFree(pkg.stmts);
@@ -910,6 +1111,7 @@ Stmt *resetAndParseSingleStmt(const char *code) {
 }
 
 void test_checkConstantDeclarations() {
+    REINIT_COMPILER();
     Queue queue = resetAndParse("x :: 8");
 
     CheckerWork *work = QueueDequeue(&queue);
@@ -931,6 +1133,7 @@ void test_checkConstantDeclarations() {
 }
 
 void test_checkConstantUnaryExpressions() {
+    REINIT_COMPILER();
     Stmt *stmt;
     ExprInfo info;
     Type *type;
@@ -960,6 +1163,41 @@ void test_checkConstantUnaryExpressions() {
     ASSERT(info.val.u64 == ~0xffff);
 
 #undef checkUnary
+}
+
+void test_checkConstantBinaryExpressions() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    ExprInfo info;
+    Type *type;
+#define checkBinary(_CODE) \
+    stmt = resetAndParseSingleStmt(_CODE); \
+    info = (ExprInfo){ .scope = pkg.scope }; \
+    type = checkExprBinary((Expr *) stmt, &info, &pkg)
+
+    checkBinary("1 + 2");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 3);
+
+    checkBinary("1 + 2.0");
+    ASSERT(type == UntypedFloatType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.f64 == 3.0);
+
+    checkBinary("1 + 2.0 - 3");
+    ASSERT(type == UntypedFloatType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.f64 == 0.f);
+
+    checkBinary("1 / 0");
+    ASSERT(ArrayLen(pkg.diagnostics.errors) == 1);
+    ArrayFree(pkg.diagnostics.errors);
+
+    checkBinary("-1 + -8");
+    ASSERT(isInteger(type));
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == -9);
 }
 
 #undef pkg

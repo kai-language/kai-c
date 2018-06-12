@@ -989,12 +989,12 @@ Parser newTestParser(const char *stream) {
 }
 
 void test_parseExprAtom() {
-#define ASSERT_EXPR_KIND(expected) \
-    expr = parseExprAtom(&p); \
-    ASSERT(expr->kind == expected); \
-    ASSERT(!parserTestPackage.diagnostics.errors)
+    REINIT_COMPILER();
 
-    INIT_COMPILER();
+#define ASSERT_EXPR_KIND(expected) \
+expr = parseExprAtom(&p); \
+ASSERT(expr->kind == expected); \
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
 
@@ -1023,10 +1023,12 @@ void test_parseExprAtom() {
 }
 
 void test_parseExprPrimary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
-    expr = parseExprPrimary(&p, false); \
-    ASSERT(expr->kind == expected); \
-    ASSERT(!parserTestPackage.diagnostics.errors)
+expr = parseExprPrimary(&p, false); \
+ASSERT(expr->kind == expected); \
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
 
@@ -1062,6 +1064,8 @@ void test_parseExprPrimary() {
 }
 
 void test_parseExprUnary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprUnary(&p, false); \
 ASSERT(expr->kind == expected); \
@@ -1083,6 +1087,8 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseExprBinary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
 ASSERT(expr->kind == expected); \
@@ -1102,6 +1108,8 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseExprTernary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
 ASSERT(expr->kind == expected); \
@@ -1119,6 +1127,8 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseSimpleStmt() {
+    REINIT_COMPILER();
+
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseSimpleStmt(&p, false, NULL); \
 ASSERT(stmt->kind == expected); \
@@ -1133,6 +1143,8 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseStmt() {
+    REINIT_COMPILER();
+
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseStmt(&p); \
 ASSERT(stmt->kind == expected); \
@@ -1160,10 +1172,12 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseStruct() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
-    expr = parseExprAtom(&p); \
-    ASSERT(expr->kind == expected); \
-    ASSERT(!parserTestPackage.diagnostics.errors)
+expr = parseExprAtom(&p); \
+ASSERT(expr->kind == expected); \
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
     Parser p;
@@ -1177,6 +1191,8 @@ void test_parseStruct() {
 }
 
 void test_parseUnion() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprAtom(&p); \
 ASSERT(expr->kind == expected); \
