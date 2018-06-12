@@ -11,7 +11,7 @@ void Backtrace() {
     }
     free(strs);
 #elif SYSTEM_WINDOWS
-    UNIMPLEMENTED();
+    // NOTE: Windows doesn't have a backtrace implementation that's not super tedious to use
 #endif
 }
 
@@ -59,7 +59,7 @@ void *checkedMalloc(size_t num_bytes) {
     return ptr;
 }
 
-void *heapAllocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old) {
+void *heapAllocFunc(void *payload, enum AllocKind alType, size_t count, size_t size, void *old) {
     switch (alType) {
         case AT_Alloc:
             return checkedMalloc(count);
@@ -230,7 +230,6 @@ void test_GetFileName() {
     char buff[MAX_PATH];
     char *dir;
     char *name = GetFileName("abc/def/ghi/test/wip.kai", &buff[0], &dir);
-    printf("%s and %s\n", dir, name);
     ASSERT(strcmp(dir, "abc/def/ghi/test") == 0);
     ASSERT(strcmp(name, "wip.kai") == 0);
 }

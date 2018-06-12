@@ -1,3 +1,4 @@
+
 typedef enum SymbolKind {
     SymbolKind_Invalid,
     SymbolKind_Type,
@@ -21,9 +22,11 @@ struct Symbol {
     SymbolKind kind;
     SymbolState state;
     Decl *decl;
+
+    // This pointer can be used by any backend to store symbol-related info for quick lookup
+    void *backendUserdata;
+
     Type *type;
     b8 used;
     Val val;
 };
-
-void DeclarePackageSymbol(Package *package, const char *name, Symbol *sym);

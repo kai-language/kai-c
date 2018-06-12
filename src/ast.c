@@ -45,6 +45,20 @@ b32 isDecl(Stmt *stmt) {
     return stmt->kind > _DeclKind_Start && stmt->kind < _DeclKind_End;
 }
 
+// @ErrorQuality
+// FIXME: Better description
+const char *DescribeStmt(Stmt *stmt) {
+    return AstDescriptions[stmt->kind];
+}
+
+const char *DescribeExpr(Expr *expr) {
+    return AstDescriptions[expr->kind];
+}
+
+const char *DescribeDecl(Decl *decl) {
+    return AstDescriptions[decl->kind];
+}
+
 void *AllocAst(Package *package, size_t size) {
     ASSERT(size != 0);
     void *mem = ArenaCalloc(&package->arena, size);
@@ -416,9 +430,7 @@ void test_isExpr_and_isDecl() {
     Stmt *decl = (Stmt *) NewDeclVariable(&pkg, pos, NULL, NULL, NULL);
     ASSERT(isDecl(decl));
 }
-#endif
 
-#if TEST
 void test_doesExprAllocate() {
     ASSERT(DoesStmtKindAllocateTypeInfo[StmtExprKind_Ident]);
     ASSERT(DoesStmtKindAllocateTypeInfo[StmtExprKind_Selector]);

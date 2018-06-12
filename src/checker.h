@@ -1,50 +1,49 @@
-#define CHECKER_INFO_KINDS \
-    FOR_EACH(Decl)         \
-    FOR_EACH(DeclList)     \
-    FOR_EACH(Selector)     \
-    FOR_EACH(Ident)        \
-    FOR_EACH(BasicLit)     \
 
 typedef enum CheckerInfoKind {
-#define FOR_EACH(kind) CheckerInfoKind_##kind,
-    CHECKER_INFO_KINDS
-#undef FOR_EACH
+    CheckerInfoKind_Constant,
+    CheckerInfoKind_Variable,
+    CheckerInfoKind_Ident,
+    CheckerInfoKind_Selector,
+    CheckerInfoKind_BasicExpr,
 } CheckerInfoKind;
 
-struct CheckerInfo_Decl {
+typedef struct CheckerInfo_Constant CheckerInfo_Constant;
+struct CheckerInfo_Constant {
     Symbol *symbol;
-    b8 isGlobal;
 };
 
-struct CheckerInfo_DeclList {
-    b8 isGlobal;
+typedef struct CheckerInfo_Variable CheckerInfo_Variable;
+struct CheckerInfo_Variable {
     DynamicArray(Symbol *) symbols;
 };
 
+typedef struct CheckerInfo_Ident CheckerInfo_Ident;
 struct CheckerInfo_Ident {
     Symbol *symbol;
 };
 
+typedef struct CheckerInfo_Selector CheckerInfo_Selector;
 struct CheckerInfo_Selector {
     u32 levelsOfIndirection;
     Val constant;
 };
 
-struct CheckerInfo_BasicLit {
+typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;
+struct CheckerInfo_BasicExpr {
     Type *type;
+    b8 isConstant;
+    Val val;
 };
-
-#define FOR_EACH(kind) typedef struct CheckerInfo_##kind CheckerInfo_##kind;
-    CHECKER_INFO_KINDS
-#undef  FOR_EACH
 
 typedef struct CheckerInfo CheckerInfo;
 struct CheckerInfo {
     CheckerInfoKind kind;
     union {
-#define FOR_EACH(kind) CheckerInfo_##kind kind;
-        CHECKER_INFO_KINDS
-#undef FOR_EACH
+        CheckerInfo_Constant Constant;
+        CheckerInfo_Variable Variable;
+        CheckerInfo_Selector Selector;
+        CheckerInfo_Ident Ident;
+        CheckerInfo_BasicExpr BasicExpr;
     };
 };
 

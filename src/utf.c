@@ -134,12 +134,8 @@ b32 IsIdentifierHead(u32 cp) {
     return false;
 }
 
-b32 IsNumeric(u32 cp) {
-    return cp >= '0' && cp <= '9';
-}
-
 b32 IsIdentifierCharacter(u32 cp) {
-    if (IsIdentifierHead(cp) || IsNumeric(cp))
+    if (IsIdentifierHead(cp) || (cp >= '0' && cp <= '9'))
         return true;
 
     if (cp >= 0x0300 && cp <= 0x036F) { return true; }

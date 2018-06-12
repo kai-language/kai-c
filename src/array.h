@@ -19,6 +19,17 @@ typedef struct ArrayHdr {
 #define ArrayPrintf(b, ...) ((b) = _arrayPrintf((b), __VA_ARGS__))
 #define ArrayClear(b) ((b) ? _array_hdr(b)->len = 0 : 0)
 #define ArrayAllocator(b) ((b) ? _array_hdr(b)->allocator : &DefaultAllocator)
+#define ArraysEqual(a, b) (a == b || (ArrayLen(a) == ArrayLen(b) && memcmp(a, b, ArrayLen(a)) == 0))
+
+#define ForEachWithIndex(AGG, IDX, TYPE, ITER) \
+size_t IDX = 0; \
+for (TYPE ITER = AGG[IDX]; IDX < ArrayLen(AGG); IDX++, ITER = AGG[IDX])
+
+#define CONCATENATE_DIRECT(x, y) x##y
+#define CONCATENATE(x, y) CONCATENATE_DIRECT(x, y)
+#define ANONYMOUS_VARIABLE(x) CONCATENATE(x, __LINE__)
+
+#define ForEach(AGG, TYPE) ForEachWithIndex(AGG, ANONYMOUS_VARIABLE(_index), TYPE, it)
 
 #ifdef __cplusplus
 extern "C" {

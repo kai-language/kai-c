@@ -488,7 +488,7 @@ Expr *parseExprUnary(Parser *p, b32 noCompoundLiteral) {
         case TK_Add: case TK_Sub: case TK_Not: case TK_BNot: case TK_Xor: case TK_And: case TK_Lss: {
             TokenKind op = p->tok.kind;
             nextToken();
-            return NewExprUnary(p->package, p->prevStart, op, parseExprPrimary(p, noCompoundLiteral));
+            return NewExprUnary(p->package, p->prevStart, op, parseExprUnary(p, noCompoundLiteral));
         }
         default:
             return parseExprPrimary(p, noCompoundLiteral);
@@ -901,93 +901,100 @@ DynamicArray(Stmt *) parseStmts(Parser *p) {
     return stmts;
 }
 
+void parsePackageCode(Package *pkg, const char *code) {
+    Lexer lexer = MakeLexer(code, pkg->path);
+    Token tok = NextToken(&lexer);
+    Parser parser = {lexer, .tok = tok, pkg};
+    pkg->stmts = parseStmts(&parser);
+
+    if (HasErrors(pkg)) {
+        return;
+    }
+
+    for(size_t i = 0; i < ArrayLen(pkg->stmts); i++) {
+        Stmt *stmt = pkg->stmts[i];
+        Symbol *symbol;
+
+        switch (stmt->kind) {
+            case StmtDeclKind_Constant: {
+                ForEach(stmt->Constant.names, Expr_Ident *) {
+                    // We iterate over, and declare all names of the constant despite only supporting a single name
+                    declareSymbol(pkg, pkg->scope, it->name, &symbol, stmt->id, (Decl *) stmt);
+                    symbol->kind = SymbolKind_Constant;
+                    symbol->state = SymbolState_Unresolved;
+                }
+                break;
+            }
+            case StmtDeclKind_Variable: {
+                ForEach(stmt->Variable.names, Expr_Ident *) {
+                    declareSymbol(pkg, pkg->scope, it->name, &symbol, stmt->id, (Decl *) stmt);
+                    symbol->kind = SymbolKind_Variable;
+                    symbol->state = SymbolState_Unresolved;
+                }
+                break;
+            }
+            case StmtDeclKind_Import:
+                // TODO(Brett): collect import
+                UNIMPLEMENTED();
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    DynamicArray(CheckerInfo) checkerInfo = NULL;
+    ArrayFit(checkerInfo, pkg->astIdCount+1);
+    pkg->checkerInfo = checkerInfo;
+
+    for (int i = (int)(ArrayLen(pkg->stmts)) - 1; i >= 0; i--) {
+        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
+        work->package = pkg;
+        work->stmt = pkg->stmts[i];
+        QueueEnqueue(&checkingQueue, work);
+    }
+}
+
 void parsePackage(Package *package) {
     const char *code = ReadEntireFile(package->fullPath);
     if (!code) {
         ReportError(package, FatalError, (Position){ .name = package->path }, "Failed to read source file");
         return;
     }
-    Lexer lexer = MakeLexer(code, package->path);
-    Token tok = NextToken(&lexer);
-    Parser parser = {lexer, .tok = tok, package};
-    package->stmts = parseStmts(&parser);
-
-    for(size_t i = 0; i < ArrayLen(package->stmts); i++) {
-        Stmt *stmt = package->stmts[i];
-
-        switch (stmt->kind) {
-        case StmtDeclKind_Constant:
-        case StmtDeclKind_Variable: {
-            Decl_Constant decl = stmt->Constant;
-            SymbolKind kind = stmt->kind == StmtDeclKind_Constant ? SymbolKind_Constant : SymbolKind_Variable;
-            for (size_t j = 0; j < ArrayLen(decl.names); j++) {
-                Symbol *symbol = ArenaAlloc(&package->arena, sizeof(Symbol));
-                symbol->decl = (Decl *) stmt;
-                symbol->name = decl.names[j]->name;
-                symbol->kind = kind;
-                symbol->state = SymbolState_Unresolved;
-                DeclarePackageSymbol(package, symbol->name, symbol);
-            }
-        } break;
-
-        case StmtDeclKind_Import:
-            // TODO(Brett): collect import
-            UNIMPLEMENTED();
-        }
-    }
-
-    if (HasErrors(package)) {
-        return;
-    }
-
-    DynamicArray(CheckerInfo) checkerInfo = NULL;
-    ArrayFit(checkerInfo, package->astIdCount+1);
-    package->checkerInfo = checkerInfo;
-    
-    // Copy builtins into the package's global scope
-    Scope *universalScope = ArenaAlloc(&package->arena, sizeof(Scope));
-    universalScope->members = TypesMap;
-    package->globalScope = ArenaAlloc(&package->arena, sizeof(Scope));
-    package->globalScope->parent = universalScope;
-    package->globalScope->members = package->symbolMap;
-
-    for (int i = (int)(ArrayLen(package->stmts)) - 1; i >= 0; i--) {
-        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
-        work->package = package;
-        work->stmt = package->stmts[i];
-        QueueEnqueue(&checkingQueue, work);
-    }
+    parsePackageCode(package, code);
 }
 
 #undef NextToken
 
 #if TEST
-
-Package testPackage = {0};
+Package parserTestPackage = {0};
 Parser newTestParser(const char *stream) {
     Lexer lex = MakeLexer(stream, NULL);
     Token tok = NextToken(&lex);
 
-    MapFree(&testPackage.symbolMap);
-    ArrayFree(testPackage.diagnostics.errors);
-    ArrayFree(testPackage.stmts);
-    ArrayFree(testPackage.symbols);
+    ArrayFree(parserTestPackage.diagnostics.errors);
+    ArrayFree(parserTestPackage.stmts);
+    ArrayFree(parserTestPackage.symbols);
 
-    ArenaFree(&testPackage.arena);
-    ArenaFree(&testPackage.diagnostics.arena);
+    ArenaFree(&parserTestPackage.arena);
+    ArenaFree(&parserTestPackage.diagnostics.arena);
 
+    ArenaFree(&parsingQueue.arena);
+    memset(&checkingQueue, 0, sizeof(Queue));
+    ArenaFree(&checkingQueue.arena);
+    memset(&checkingQueue, 0, sizeof(Queue));
 
-    Parser p = {lex, .tok = tok, &testPackage};
+    Parser p = {lex, .tok = tok, &parserTestPackage};
     return p;
 }
-#endif
 
-#if TEST
 void test_parseExprAtom() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
-    expr = parseExprAtom(&p); \
-    ASSERT(expr->kind == expected); \
-    ASSERT(!testPackage.diagnostics.errors)
+expr = parseExprAtom(&p); \
+ASSERT(expr->kind == expected); \
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
 
@@ -1014,14 +1021,14 @@ void test_parseExprAtom() {
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprPrimary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
-    expr = parseExprPrimary(&p, false); \
-    ASSERT(expr->kind == expected); \
-    ASSERT(!testPackage.diagnostics.errors)
+expr = parseExprPrimary(&p, false); \
+ASSERT(expr->kind == expected); \
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
 
@@ -1055,18 +1062,19 @@ void test_parseExprPrimary() {
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprUnary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprUnary(&p, false); \
 ASSERT(expr->kind == expected); \
-ASSERT(!testPackage.diagnostics.errors)
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
 
-    Parser p = newTestParser("+5 -5 ~a ^a !a &a <a");
+    Parser p = newTestParser("+5 -5 ~a ^a !a &a <a !!a");
+    ASSERT_EXPR_KIND(ExprKind_Unary);
     ASSERT_EXPR_KIND(ExprKind_Unary);
     ASSERT_EXPR_KIND(ExprKind_Unary);
     ASSERT_EXPR_KIND(ExprKind_Unary);
@@ -1077,14 +1085,14 @@ ASSERT(!testPackage.diagnostics.errors)
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprBinary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
 ASSERT(expr->kind == expected); \
-ASSERT(!testPackage.diagnostics.errors)
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
 
@@ -1098,14 +1106,14 @@ ASSERT(!testPackage.diagnostics.errors)
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseExprTernary() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
 ASSERT(expr->kind == expected); \
-ASSERT(!testPackage.diagnostics.errors)
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
 
@@ -1117,14 +1125,14 @@ ASSERT(!testPackage.diagnostics.errors)
 
 #undef ASSERT_EXPR_KIND
 }
-#endif
 
-#if TEST
 void test_parseSimpleStmt() {
+    REINIT_COMPILER();
+
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseSimpleStmt(&p, false, NULL); \
 ASSERT(stmt->kind == expected); \
-ASSERT(!testPackage.diagnostics.errors)
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Stmt *stmt;
 
@@ -1133,14 +1141,14 @@ ASSERT(!testPackage.diagnostics.errors)
 
 #undef ASSERT_STMT_KIND
 }
-#endif
 
-#if TEST
 void test_parseStmt() {
+    REINIT_COMPILER();
+
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseStmt(&p); \
 ASSERT(stmt->kind == expected); \
-ASSERT(!testPackage.diagnostics.errors)
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Stmt *stmt;
     Parser p;
@@ -1162,14 +1170,14 @@ ASSERT(!testPackage.diagnostics.errors)
 
 #undef ASSERT_STMT_KIND
 }
-#endif
 
-#if TEST
 void test_parseStruct() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
-    expr = parseExprAtom(&p); \
-    ASSERT(expr->kind == expected); \
-    ASSERT(!testPackage.diagnostics.errors)
+expr = parseExprAtom(&p); \
+ASSERT(expr->kind == expected); \
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
     Parser p;
@@ -1181,14 +1189,14 @@ void test_parseStruct() {
     p = newTestParser("struct { a, b, c: u32 }");
     ASSERT_EXPR_KIND(ExprKind_TypeStruct);
 }
-#endif
 
-#if TEST
 void test_parseUnion() {
+    REINIT_COMPILER();
+
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprAtom(&p); \
 ASSERT(expr->kind == expected); \
-ASSERT(!testPackage.diagnostics.errors)
+ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
     Parser p;

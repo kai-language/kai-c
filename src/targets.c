@@ -27,7 +27,7 @@ enum Arch {
 
 const char *ArchNames[NUM_ARCHES] = {
     [Arch_Current] = "current",
-    [Arch_x86_64]  = "x86-64",
+    [Arch_x86_64]  = "x86_64",
     [Arch_x86]     = "x86",
     [Arch_arm]     = "arm",
     [Arch_arm64]   = "arm64",
@@ -46,3 +46,36 @@ Arch ArchForName(const char *name) {
     }
     return -1;
 }
+
+
+// Type details
+
+typedef struct TargetMetrics {
+    u32 Width;
+    u32 Align;
+} TargetMetrics;
+
+enum {
+    TargetMetrics_Pointer,
+};
+
+TargetMetrics metrics_32bit[2] = {
+    [TargetMetrics_Pointer] = { .Width = 32, .Align = 32 },
+};
+
+TargetMetrics metrics_64bit[2] = {
+    [TargetMetrics_Pointer] = { .Width = 64, .Align = 64 },
+};
+
+TargetMetrics *Os_Linux_ArchSupport[NUM_ARCHES] = {
+    [Arch_x86_64] = metrics_64bit,
+};
+
+TargetMetrics *Os_Darwin_ArchSupport[NUM_ARCHES] = {
+    [Arch_x86_64] = metrics_64bit,
+};
+
+TargetMetrics *Os_Windows_ArchSupport[NUM_ARCHES] = {
+    [Arch_x86_64] = metrics_64bit,
+    [Arch_x86] = metrics_32bit,
+};

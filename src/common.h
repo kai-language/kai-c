@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -57,20 +58,21 @@ extern "C" {
     #include <limits.h>
     #include <unistd.h>
     #include <sys/utsname.h> // uname to default arch & os to current
+
+#define STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
 #elif SYSTEM_WINDOWS
     #include <windows.h>
+    #include <crtdbg.h>
+
+#define STATIC_ASSERT(cond, msg) _STATIC_ASSERT(cond)
 #endif
 
 #ifndef MAX_PATH
-    #if defined _MAX_PATH
-        #define MAX_PATH _MAX_PATH
-    #elif defined PATH_MAX
-        #define MAX_PATH PATH_MAX
-    #else
-        #error "No suitable MAX_PATH surrogate"
-    #endif
+    #define MAX_PATH 4096
 #endif
 
+#undef MIN
+#undef MAX
 #define MIN(x, y) ((x) <= (y) ? (x) : (y))
 #define MAX(x, y) ((x) >= (y) ? (x) : (y))
 #define CLAMP_MAX(x, max) MIN(x, max)
@@ -166,18 +168,18 @@ struct Position {
 };
 
 /// Allocators
-typedef enum AllocType {
+typedef enum AllocKind {
     AT_Alloc,
     AT_Calloc,
     AT_Realloc,
     AT_Free,
     AT_FreeAll,
-} AllocType;
+} AllocKind;
 
 
 // NOTE: count is the target bytes always, size is either the size in bytes of each entry (for calloc) or the old size for realloc.
 #define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, size_t count, size_t size, void *old)
-typedef void *allocFunc(void *payload, enum AllocType alType, size_t count, size_t size, void *old);
+typedef void *allocFunc(void *payload, enum AllocKind alType, size_t count, size_t size, void *old);
 //typedef ALLOC_FUNC(allocFunc);
 
 typedef struct Allocator Allocator;
@@ -227,14 +229,13 @@ struct Package {
     DiagnosticEngine diagnostics;
     Arena arena;
     DynamicArray(Stmt *) stmts;
-    Map symbolMap;
     DynamicArray(Symbol *) symbols;
 
     u64 astIdCount;
     u64 declCount;
     DynamicArray(CheckerInfo) checkerInfo;
 
-    Scope *globalScope;
+    Scope *scope;
 };
 
 typedef union Val {
@@ -258,4 +259,44 @@ char *GetFileName(const char *path, char *res, char **dir);
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef TEST
+extern const char *InputName;
+extern const char *OutputName;
+extern int TargetOs;
+extern int TargetArch;
+
+extern bool HaveInitializedBuiltins;
+extern bool HaveInitializedKeywords;
+extern bool HaveInitializedUnsetFlagsToDefaults;
+extern bool HaveInitializedDetailsForCurrentSystem;
+
+extern Arena internArena;
+extern Map interns;
+extern const char **Keywords;
+
+void InitCompiler(void);
+
+#define INIT_COMPILER() \
+InputName = "test_source"; \
+InitCompiler();
+
+#define DEINIT_COMPILER() \
+HaveInitializedBuiltins = false; \
+HaveInitializedKeywords = false; \
+HaveInitializedUnsetFlagsToDefaults = false; \
+HaveInitializedDetailsForCurrentSystem = false; \
+OutputName = false; \
+InputName = false; \
+TargetOs = Os_Current; \
+TargetArch = Arch_Current; \
+MapFree(&interns); \
+ArenaFree(&internArena); \
+ArrayFree(Keywords)
+
+#define REINIT_COMPILER() \
+DEINIT_COMPILER(); \
+INIT_COMPILER()
+
 #endif

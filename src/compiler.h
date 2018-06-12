@@ -1,3 +1,4 @@
+
 typedef struct CheckerWork CheckerWork;
 struct CheckerWork {
     Package *package;
@@ -6,3 +7,5 @@ struct CheckerWork {
 
 void InitCompiler(void);
 Package *ImportPackage(const char *path);
+
+extern Package builtinPackage;

@@ -8,6 +8,8 @@ llvm.o
 *.so
 *.dSYM
 test/wip.kai
+tools/genTests
+tools/genXCTests
 kai_tests*
 scripts/clang-with-compilation-db
 compile_commands.json

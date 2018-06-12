@@ -15,7 +15,7 @@ const char *OutputName;
 int TargetOs;
 int TargetArch;
 
-CLIFlag Flags[] = {
+CLIFlag CLIFlags[] = {
     { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
     { CLIFlagKind_Bool, "version", .ptr.b = &FlagVersion, .help = "Prints version information" },
 
@@ -34,10 +34,10 @@ CLIFlag Flags[] = {
 };
 
 CLIFlag *FlagForName(const char *name) {
-    size_t nFlags = sizeof(Flags) / sizeof(*Flags);
+    size_t nFlags = sizeof(CLIFlags) / sizeof(*CLIFlags);
     for (size_t i = 0; i < nFlags; i++) {
-        if (strcmp(Flags[i].name, name) == 0)       return &Flags[i];
-        else if (Flags[i].alias && strcmp(Flags[i].alias, name) == 0) return &Flags[i];
+        if (strcmp(CLIFlags[i].name, name) == 0)       return &CLIFlags[i];
+        else if (CLIFlags[i].alias && strcmp(CLIFlags[i].alias, name) == 0) return &CLIFlags[i];
     }
     return NULL;
 }
@@ -121,37 +121,51 @@ void ParseFlags(int *pargc, const char ***pargv) {
     }
 }
 
+bool HaveInitializedUnsetFlagsToDefaults = false;
 void InitUnsetFlagsToDefaults() {
+    if (HaveInitializedUnsetFlagsToDefaults) return;
+    HaveInitializedUnsetFlagsToDefaults = true;
+
     if (OutputName == NULL) {
         // TODO: should we use the basename of InputName?
         size_t prefixLen = sizeof("out_") - 1;
-        size_t len = prefixLen + strlen(InputName) + 1;
+
+        static char outputPathBuff[MAX_PATH];
+        OutputName = GetFileName(InputName, outputPathBuff, NULL);
+
+        size_t len = prefixLen + strlen(OutputName) + 1;
         char *mem = Alloc(DefaultAllocator, len);
         memcpy(mem, "out_", prefixLen);
 
         char *filename = mem + prefixLen;
 
-        memcpy(filename, InputName, len - prefixLen);
+        memcpy(filename, OutputName, len - prefixLen);
         RemoveKaiExtension(filename);
 
         OutputName = mem;
     }
 
+    InitDetailsForCurrentSystem();
     if (TargetOs == Os_Current) {
         TargetOs = OsForName(CurrentSystem.name);
     }
     if (TargetArch == Arch_Current) {
         TargetArch = ArchForName(CurrentSystem.machine);
     }
+
+    if (TargetOs == -1 || TargetArch == -1) {
+        printf("Unsupported Os or Arch: %s %s\n", OsNames[TargetOs], ArchNames[TargetArch]);
+        exit(1);
+    }
 }
 
 void PrintUsage() {
-    size_t nFlags = sizeof(Flags) / sizeof(*Flags);
+    size_t nFlags = sizeof(CLIFlags) / sizeof(*CLIFlags);
     for (size_t i = 0; i < nFlags; i++) {
 
         char invokation[40];
         int k = 0;
-        CLIFlag flag = Flags[i];
+        CLIFlag flag = CLIFlags[i];
 
         if (flag.alias) k = snprintf(invokation, sizeof(invokation), "-%s ", flag.alias);
         k += snprintf(invokation + k, sizeof(invokation) - k, "-%s", flag.name);
@@ -189,13 +203,19 @@ void test_flagParsingAndDefaults() {
     ASSERT(TargetOs == Os_Darwin);
     ASSERT(argc == 1);
 
-    InitDetailsForCurrentSystem();
-
-    InitUnsetFlagsToDefaults();
+    REINIT_COMPILER();
     ASSERT(TargetArch != Arch_Current);
-    ASSERT(OutputName == "outputName");
+    ASSERT(TargetOs != Arch_Current);
+    OutputName = NULL;
+
+    REINIT_COMPILER();
+    InputName = "src/main.kai";
+    HaveInitializedUnsetFlagsToDefaults = false;
     OutputName = NULL;
     InitUnsetFlagsToDefaults();
+    printf("%s\n", OutputName);
     ASSERT(strcmp(OutputName, "out_main") == 0);
+
+    REINIT_COMPILER();
 }
 #endif

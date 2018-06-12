@@ -7,13 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		5D3CD46D20A3099800600F43 /* kai_tests.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D3CD46C20A3099800600F43 /* kai_tests.c */; };
+		5D41B52D20CE32E8005E9A8E /* gen_xcode_tests.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D41B52C20CE32E8005E9A8E /* gen_xcode_tests.cpp */; };
+		5DA32D5A20CEACB700090405 /* TestSuite.m in Sources */ = {isa = PBXBuildFile; fileRef = 5DA32D5920CEACB700090405 /* TestSuite.m */; };
 		B249A256209B80CA0016B49E /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = B249A255209B80CA0016B49E /* main.c */; };
 		B25AB23A20B994C4002E1440 /* llvm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B25AB22E20B987D1002E1440 /* llvm.cpp */; settings = {COMPILER_FLAGS = "$(LLVM_CXXFLAGS)"; }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		5D3CD46220A308C500600F43 /* CopyFiles */ = {
+		5D41B51B20CA365A005E9A8E /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = /usr/share/man/man1/;
@@ -34,17 +35,21 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		5D3CD46420A308C500600F43 /* kai-tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "kai-tests"; sourceTree = BUILT_PRODUCTS_DIR; };
-		5D3CD46C20A3099800600F43 /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
+		5D41B51720CA0591005E9A8E /* constant_eval.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = constant_eval.c; path = src/constant_eval.c; sourceTree = "<group>"; };
+		5D41B51D20CA365A005E9A8E /* testGen */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = testGen; sourceTree = BUILT_PRODUCTS_DIR; };
+		5D41B52820CAD07D005E9A8E /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
+		5D41B52A20CAD23A005E9A8E /* gen_test_main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = gen_test_main.cpp; sourceTree = "<group>"; };
+		5D41B52C20CE32E8005E9A8E /* gen_xcode_tests.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = gen_xcode_tests.cpp; sourceTree = "<group>"; };
+		5D41B53420CE393F005E9A8E /* kai-xctests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "kai-xctests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5D41B53820CE393F005E9A8E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		5D5612AD20ABA02E00E2F4E8 /* targets.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = targets.c; path = src/targets.c; sourceTree = "<group>"; };
 		5D5612AE20ABAD5B00E2F4E8 /* os.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = os.c; path = src/os.c; sourceTree = "<group>"; };
-		5D59D64F20B2F98900637EDF /* symbols.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = symbols.c; path = src/symbols.c; sourceTree = "<group>"; };
 		5D9C729920A5E7C400755A1B /* flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = flags.c; path = src/flags.c; sourceTree = "<group>"; };
+		5DA32D5920CEACB700090405 /* TestSuite.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TestSuite.m; path = tools/TestSuite.m; sourceTree = "<group>"; };
 		5DA7CA2720A9653F00E4640D /* ast.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ast.c; path = src/ast.c; sourceTree = "<group>"; };
 		5DA7CA2820A9655F00E4640D /* compiler.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = compiler.c; path = src/compiler.c; sourceTree = "<group>"; };
 		5DA7CA2B20A96F3000E4640D /* error.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = error.c; path = src/error.c; sourceTree = "<group>"; };
 		5DA7CA2C20A9A83D00E4640D /* queue.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = queue.c; path = src/queue.c; sourceTree = "<group>"; };
-		5DBC259B20BC133A0086904A /* gen_test_main.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = gen_test_main.sh; sourceTree = "<group>"; };
 		5DBC259C20BC133A0086904A /* gen_llvm_xcconfig.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = gen_llvm_xcconfig.sh; sourceTree = "<group>"; };
 		5DBC259D20BC14060086904A /* LLVM.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LLVM.xcconfig; sourceTree = "<group>"; };
 		B219499B209B79E0007BB781 /* kai */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = kai; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -73,7 +78,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		5D3CD46120A308C500600F43 /* Frameworks */ = {
+		5D41B51A20CA365A005E9A8E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5D41B53120CE393F005E9A8E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -90,11 +102,29 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		5D41B52420CACF5E005E9A8E /* tests */ = {
+			isa = PBXGroup;
+			children = (
+				5D41B52820CAD07D005E9A8E /* kai_tests.c */,
+				5DA32D5920CEACB700090405 /* TestSuite.m */,
+			);
+			name = tests;
+			sourceTree = "<group>";
+		};
+		5D41B53520CE393F005E9A8E /* kai-xctests */ = {
+			isa = PBXGroup;
+			children = (
+				5D41B53820CE393F005E9A8E /* Info.plist */,
+			);
+			path = "kai-xctests";
+			sourceTree = "<group>";
+		};
 		5DBC259A20BC133A0086904A /* tools */ = {
 			isa = PBXGroup;
 			children = (
+				5D41B52C20CE32E8005E9A8E /* gen_xcode_tests.cpp */,
+				5D41B52A20CAD23A005E9A8E /* gen_test_main.cpp */,
 				5DBC259D20BC14060086904A /* LLVM.xcconfig */,
-				5DBC259B20BC133A0086904A /* gen_test_main.sh */,
 				5DBC259C20BC133A0086904A /* gen_llvm_xcconfig.sh */,
 			);
 			path = tools;
@@ -116,12 +146,12 @@
 				B25AB22D20B987D1002E1440 /* map.h */,
 				B25AB22920B987D1002E1440 /* symbols.h */,
 				B25AB22C20B987D1002E1440 /* types.h */,
+				5D41B51720CA0591005E9A8E /* constant_eval.c */,
 				5D5612AE20ABAD5B00E2F4E8 /* os.c */,
 				5D5612AD20ABA02E00E2F4E8 /* targets.c */,
 				B249A260209B80E10016B49E /* array.c */,
 				B249A257209B80E00016B49E /* checker.c */,
 				B249A25B209B80E00016B49E /* types.c */,
-				5D59D64F20B2F98900637EDF /* symbols.c */,
 				5DA7CA2820A9655F00E4640D /* compiler.c */,
 				5DA7CA2C20A9A83D00E4640D /* queue.c */,
 				B249A25C209B80E00016B49E /* common.c */,
@@ -134,7 +164,8 @@
 				B249A25E209B80E00016B49E /* string.c */,
 				B249A25F209B80E00016B49E /* utf.c */,
 				B249A255209B80CA0016B49E /* main.c */,
-				5D3CD46C20A3099800600F43 /* kai_tests.c */,
+				5D41B52420CACF5E005E9A8E /* tests */,
+				5D41B53520CE393F005E9A8E /* kai-xctests */,
 				B219499C209B79E0007BB781 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -143,7 +174,8 @@
 			isa = PBXGroup;
 			children = (
 				B219499B209B79E0007BB781 /* kai */,
-				5D3CD46420A308C500600F43 /* kai-tests */,
+				5D41B51D20CA365A005E9A8E /* testGen */,
+				5D41B53420CE393F005E9A8E /* kai-xctests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -151,23 +183,40 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		5D3CD46320A308C500600F43 /* kai-tests */ = {
+		5D41B51C20CA365A005E9A8E /* testGen */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 5D3CD46A20A308C500600F43 /* Build configuration list for PBXNativeTarget "kai-tests" */;
+			buildConfigurationList = 5D41B52120CA365A005E9A8E /* Build configuration list for PBXNativeTarget "testGen" */;
 			buildPhases = (
-				5D3CD46B20A3091000600F43 /* ShellScript */,
-				5D3CD46020A308C500600F43 /* Sources */,
-				5D3CD46120A308C500600F43 /* Frameworks */,
-				5D3CD46220A308C500600F43 /* CopyFiles */,
+				5D41B51920CA365A005E9A8E /* Sources */,
+				5D41B51A20CA365A005E9A8E /* Frameworks */,
+				5D41B51B20CA365A005E9A8E /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = "kai-tests";
-			productName = "kai-tests";
-			productReference = 5D3CD46420A308C500600F43 /* kai-tests */;
+			name = testGen;
+			productName = testGen;
+			productReference = 5D41B51D20CA365A005E9A8E /* testGen */;
 			productType = "com.apple.product-type.tool";
+		};
+		5D41B53320CE393F005E9A8E /* kai-xctests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5D41B53920CE393F005E9A8E /* Build configuration list for PBXNativeTarget "kai-xctests" */;
+			buildPhases = (
+				5DA32D5820CEA86800090405 /* ShellScript */,
+				5D41B53020CE393F005E9A8E /* Sources */,
+				5D41B53120CE393F005E9A8E /* Frameworks */,
+				5D41B53220CE393F005E9A8E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "kai-xctests";
+			productName = "kai-xctests";
+			productReference = 5D41B53420CE393F005E9A8E /* kai-xctests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		B219499A209B79E0007BB781 /* kai */ = {
 			isa = PBXNativeTarget;
@@ -196,8 +245,11 @@
 				LastUpgradeCheck = 0930;
 				ORGANIZATIONNAME = "Brett Toomey";
 				TargetAttributes = {
-					5D3CD46320A308C500600F43 = {
-						CreatedOnToolsVersion = 9.3;
+					5D41B51C20CA365A005E9A8E = {
+						CreatedOnToolsVersion = 10.0;
+					};
+					5D41B53320CE393F005E9A8E = {
+						CreatedOnToolsVersion = 10.0;
 					};
 					B219499A209B79E0007BB781 = {
 						CreatedOnToolsVersion = 9.3;
@@ -217,24 +269,40 @@
 			projectRoot = "";
 			targets = (
 				B219499A209B79E0007BB781 /* kai */,
-				5D3CD46320A308C500600F43 /* kai-tests */,
+				5D41B51C20CA365A005E9A8E /* testGen */,
+				5D41B53320CE393F005E9A8E /* kai-xctests */,
 			);
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		5D41B53220CE393F005E9A8E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXShellScriptBuildPhase section */
-		5D3CD46B20A3091000600F43 /* ShellScript */ = {
+		5DA32D5820CEA86800090405 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
+			inputFileListPaths = (
+			);
 			inputPaths = (
+			);
+			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "cd $SRCROOT\n./tools/gen_test_main.sh > kai_tests.c";
+			shellPath = /bin/bash;
+			shellScript = "\npushd $SRCROOT\nif [ ! -f tools/genXCTests ]; then\n    clang++ -std=c++11 tools/gen_xcode_tests.cpp -o tools/genXCTests\nfi\n\n./tools/genXCTests src/ > tools/TestSuite.m\n";
+			showEnvVarsInLog = 0;
 		};
 		B25AB23B20B9952F002E1440 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -252,11 +320,19 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		5D3CD46020A308C500600F43 /* Sources */ = {
+		5D41B51920CA365A005E9A8E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5D3CD46D20A3099800600F43 /* kai_tests.c in Sources */,
+				5D41B52D20CE32E8005E9A8E /* gen_xcode_tests.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5D41B53020CE393F005E9A8E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5DA32D5A20CEACB700090405 /* TestSuite.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -272,36 +348,62 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		5D3CD46820A308C500600F43 /* Debug */ = {
+		5D41B52220CA365A005E9A8E /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 5DBC259D20BC14060086904A /* LLVM.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
-				GCC_C_LANGUAGE_STANDARD = c11;
-				MACOSX_DEPLOYMENT_TARGET = 10.13;
-				OTHER_CFLAGS = (
-					"-DTEST",
-					"-DNO_COLOR",
-				);
+				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
 		};
-		5D3CD46920A308C500600F43 /* Release */ = {
+		5D41B52320CA365A005E9A8E /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 5DBC259D20BC14060086904A /* LLVM.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Mac Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
-				GCC_C_LANGUAGE_STANDARD = c11;
-				MACOSX_DEPLOYMENT_TARGET = 10.13;
-				OTHER_CFLAGS = (
-					"-DTEST",
-					"-DNO_COLOR",
+				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		5D41B53A20CE393F005E9A8E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				INFOPLIST_FILE = "kai-xctests/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
 				);
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				OTHER_CFLAGS = "-DTEST";
+				PRODUCT_BUNDLE_IDENTIFIER = "me.vdka.kai-xctests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		5D41B53B20CE393F005E9A8E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 8Q2MVNGX2D;
+				INFOPLIST_FILE = "kai-xctests/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				OTHER_CFLAGS = "-DTEST";
+				PRODUCT_BUNDLE_IDENTIFIER = "me.vdka.kai-xctests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
@@ -423,8 +525,13 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
+				GCC_WARN_CHECK_SWITCH_STATEMENTS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				OTHER_CFLAGS = (
+					"-Wno-c99-extensions",
+					"-Wno-c11-extensions",
+					"-Wno-switch",
+					"-Wno-switch-enum",
 					"-g",
 					"-O0",
 					"-DDEBUG",
@@ -447,8 +554,13 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
+				GCC_WARN_CHECK_SWITCH_STATEMENTS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				OTHER_CFLAGS = (
+					"-Wno-c99-extensions",
+					"-Wno-c11-extensions",
+					"-Wno-switch",
+					"-Wno-switch-enum",
 					"-O3",
 					"-march=native",
 					"-DRELEASE",
@@ -467,11 +579,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		5D3CD46A20A308C500600F43 /* Build configuration list for PBXNativeTarget "kai-tests" */ = {
+		5D41B52120CA365A005E9A8E /* Build configuration list for PBXNativeTarget "testGen" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				5D3CD46820A308C500600F43 /* Debug */,
-				5D3CD46920A308C500600F43 /* Release */,
+				5D41B52220CA365A005E9A8E /* Debug */,
+				5D41B52320CA365A005E9A8E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5D41B53920CE393F005E9A8E /* Build configuration list for PBXNativeTarget "kai-xctests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5D41B53A20CE393F005E9A8E /* Debug */,
+				5D41B53B20CE393F005E9A8E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

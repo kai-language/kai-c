@@ -55,7 +55,9 @@ struct SysInfo {
 
 SysInfo CurrentSystem = {0};
 
+bool HaveInitializedDetailsForCurrentSystem = false;
 void InitDetailsForCurrentSystem() {
+    if (HaveInitializedDetailsForCurrentSystem) return;
 #if SYSTEM_POSIX
     struct utsname *sysinfo = malloc(sizeof(struct utsname));
     int res = uname(sysinfo);
@@ -80,5 +82,7 @@ void InitDetailsForCurrentSystem() {
     CurrentSystem.name = "unknown";
     CurrentSystem.machine = "unknown";
 #endif
+
+    HaveInitializedDetailsForCurrentSystem = true;
 }
 

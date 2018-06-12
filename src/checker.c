@@ -1,3 +1,4 @@
+
 typedef enum ExprMode {
     ExprMode_Invalid,
     ExprMode_Unresolved,
@@ -7,7 +8,8 @@ typedef enum ExprMode {
     ExprMode_Nil,
     ExprMode_File,
     ExprMode_Library,
-    ExprMode_Type
+    ExprMode_Type,
+    ExprMode_Function,
 } ExprMode;
 
 typedef struct ExprInfo ExprInfo;
@@ -15,19 +17,11 @@ struct ExprInfo {
     Type *desiredType;
     Scope *scope;
     ExprMode mode;
+    b8 isConstant;
     Val val;
 };
 
-#define DeclCase(kind, node) case StmtDeclKind_##kind: { \
-    Decl_##kind *decl = &node->kind;
-    
-#define ExprCase(kind, node) case ExprKind_##kind: { \
-    Expr_##kind *expr = &node->kind;
-
-
-#define CaseEnd() } break;
-
-void invalidateSymbol(Symbol *symbol) {
+void markSymbolInvalid(Symbol *symbol) {
     if (symbol) {
         symbol->state = SymbolState_Resolved;
         symbol->kind = SymbolKind_Invalid;
@@ -35,77 +29,400 @@ void invalidateSymbol(Symbol *symbol) {
 }
 
 Inline
-void resolveSymbol(Symbol *symbol, Type *type) {
+void markSymbolResolved(Symbol *symbol, Type *type) {
     symbol->state = SymbolState_Resolved;
     symbol->type = type;
 }
 
-b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
+Inline
+CheckerInfo *GetStmtInfo(Package *pkg, Stmt *stmt) {
+    ASSERT(DoesStmtKindAllocateTypeInfo[stmt->kind]);
+    return &pkg->checkerInfo[stmt->id];
+}
+
+Inline
+CheckerInfo *GetExprInfo(Package *pkg, Expr *expr) {
+    return GetStmtInfo(pkg, (Stmt *) expr);
+}
+
+Inline
+CheckerInfo *GetDeclInfo(Package *pkg, Decl *decl) {
+    return GetStmtInfo(pkg, (Stmt *) decl);
+}
+
+void storeInfoConstant(Package *pkg, Decl *decl, Symbol *symbol) {
+    ASSERT(decl->kind == DeclKind_Constant);
+    CheckerInfo info = {CheckerInfoKind_Constant, .Constant.symbol = symbol};
+    pkg->checkerInfo[decl->id] = info;
+}
+
+void storeInfoVariable(Package *pkg, Decl *decl, Symbol **symbols) {
+    ASSERT(decl->kind == DeclKind_Variable);
+    CheckerInfo info = {CheckerInfoKind_Variable, .Variable.symbols = symbols};
+    pkg->checkerInfo[decl->id] = info;
+}
+
+void storeInfoIdent(Package *pkg, Expr *expr, Symbol *symbol) {
+    ASSERT(expr->kind == ExprKind_Ident);
+    CheckerInfo info = {CheckerInfoKind_Ident, .Ident.symbol = symbol};
+    pkg->checkerInfo[expr->id] = info;
+}
+
+void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type) {
+    CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
+    pkg->checkerInfo[expr->id] = info;
+}
+
+void storeInfoBasicExprWithConstant(Package *pkg, Expr *expr, Type *type, Val val) {
+    CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
+    info.BasicExpr.isConstant = true;
+    info.BasicExpr.val = val;
+    pkg->checkerInfo[expr->id] = info;
+}
+
+CheckerInfo *CheckerInfoForExpr(Package *pkg, Expr *expr) {
+    return &pkg->checkerInfo[expr->id];
+}
+
+CheckerInfo *CheckerInfoForStmt(Package *pkg, Stmt *stmt) {
+    return &pkg->checkerInfo[stmt->id];
+}
+
+CheckerInfo *CheckerInfoForDecl(Package *pkg, Decl *decl) {
+    return &pkg->checkerInfo[decl->id];
+}
+
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl) {
     Symbol *old = Lookup(scope, name);
     if (old) {
-        ReportError(pkg, RedefinitionError, decl->start, "Duplication definition of symbol %s", name);
+        ReportError(pkg, RedefinitionError, decl->start, "Duplicate definition of symbol %s", name);
         ReportNote(pkg, old->decl->start, "Previous definition of %s", name);
         *symbol = old;
         return true;
     }
 
     Symbol *sym = ArenaAlloc(&pkg->arena, sizeof(Symbol));
+    sym->name = name;
     sym->kind = SymbolKind_Invalid;
     sym->state = SymbolState_Resolving;
     sym->decl = decl;
+
+    MapSet(&scope->members, name, sym);
 
     *symbol = sym;
     
     return false;
 }
 
-Type *lowerMeta(Package *pkg, Type *type, Position pos) {
-    if (type->kind != TypeKind_Metatype) {
-        ReportError(pkg, InvalidMetatypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
-        return NULL;
+b32 expectType(Package *pkg, Type *type, ExprInfo *info, Position pos) {
+    if (info->mode != ExprMode_Type) {
+        ReportError(pkg, NotATypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
     }
-
-    return type->Metatype.instanceType;
-}
-
-Type *baseType(Type *type) {
-repeat:
-    if (type->kind == TypeKind_Alias) {
-        type = type->Alias.symbol->type;
-        goto repeat;
-    }
-
-    return type;
+    return info->mode == ExprMode_Type;
 }
 
 b32 isInteger(Type *type) {
-    type = baseType(type);
-    if (type->kind == TypeKind_Int || type->kind == TypeKind_UntypedInt) {
-        return true;
-    }
+    return type->kind == TypeKind_Int;
+}
 
-    return false;
+b32 isSigned(Type *type) {
+    ASSERT_MSG(isInteger(type), "isSigned should only be called for integers. Try `isInteger(type) && isSigned(type)`");
+    return (type->Flags & TypeFlag_Signed) != 0;
 }
 
 b32 isFloat(Type *type) {
-    type = baseType(type);
-    if (type->kind == TypeKind_Float || type->kind == TypeKind_UntypedFloat) {
-        return true;
+    return type->kind == TypeKind_Float;
+}
+
+b32 isNumeric(Type *type) {
+    return isInteger(type) || isFloat(type);
+}
+
+b32 isPointer(Type *type) {
+    return type->kind == TypeKind_Pointer;
+}
+
+b32 isNilable(Type *type) {
+    return type->kind == TypeKind_Pointer;
+}
+
+b32 isNumericOrPointer(Type *type) {
+    return isNumeric(type) || isPointer(type);
+}
+
+b32 canBeUsedForLogical(Type *type) {
+    return isInteger(type) || isPointer(type);
+}
+
+b32 isEnum(Type *type) {
+    return type->kind == TypeKind_Enum;
+}
+
+b32 isEnumFlags(Type *type) {
+    return isEnum(type) && (type->Flags & TypeFlag_EnumFlags) != 0;
+}
+
+b32 isTyped(Type *type) {
+    return (type->Flags & TypeFlag_Untyped) == 0;
+}
+
+b32 isUntyped(Type *type) {
+    return (type->Flags & TypeFlag_Untyped) != 0;
+}
+
+b32 isAlias(Type *type) {
+    return (type->Flags & TypeFlag_Alias) != 0;
+}
+
+b32 canBeUsedForBitwise(Type *type) {
+    return isInteger(type) || isEnumFlags(type);
+}
+
+b32 isComparable(Type *type) {
+    return isInteger(type) || isFloat(type) || isEnum(type);
+}
+
+b32 isEquatable(Type *type) {
+    static b32 equatables[NUM_TYPE_KINDS] = {
+        [TypeKind_Int] = true,
+        [TypeKind_Float] = true,
+        [TypeKind_Pointer] = true,
+        [TypeKind_Enum] = true,
+    };
+    return equatables[type->kind];
+}
+
+#include "constant_eval.c"
+
+b32 (*unaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
+    [TK_Add] = isNumeric,
+    [TK_Sub] = isNumeric,
+    [TK_BNot] = isInteger,
+    [TK_Not] = canBeUsedForLogical,
+    [TK_Lss] = isPointer,
+};
+
+b32 (*binaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
+    [TK_Add] = isNumeric,
+    [TK_Sub] = isNumeric,
+    [TK_Mul] = isNumeric,
+    [TK_Div] = isNumeric,
+    [TK_Rem] = isInteger,
+
+    [TK_And] = canBeUsedForBitwise,
+    [TK_Or]  = canBeUsedForBitwise,
+    [TK_Xor] = canBeUsedForBitwise,
+    [TK_Shl] = canBeUsedForBitwise,
+    [TK_Shr] = canBeUsedForBitwise,
+
+    [TK_Eql] = isEquatable,
+    [TK_Neq] = isEquatable,
+
+    [TK_Lss] = isComparable,
+    [TK_Gtr] = isComparable,
+    [TK_Leq] = isComparable,
+    [TK_Geq] = isComparable,
+
+    [TK_Land] = canBeUsedForLogical,
+    [TK_Lor]  = canBeUsedForLogical,
+};
+
+b32 canConvert(Type *type, Type *target) {
+    if (type == target) return true;
+
+    if (isInteger(target) && isInteger(type)) {
+        if (isSigned(type) && !isSigned(target)) {
+            // Conversion from a signed integer to an unsigned requires a cast.
+            return false;
+        }
+
+        if (!isSigned(type) && isSigned(target)) {
+            // Conversion from unsigned to signed requires the signed type is larger
+            return type->Width < target->Width;
+        }
+
+        // The two integer types have the same signedness. The target must be the same or a larger size.
+        return type->Width <= target->Width;
+    }
+
+    if (isFloat(type)) {
+        // Conversion between float types requires the target is larger or equal in size.
+        return isFloat(target) && type->Width <= target->Width;
+    }
+    if (isFloat(target)) {
+        // Conversion to float type only requires the source type is numeric
+        return isNumeric(type);
+    }
+
+    if (isPointer(type)) {
+        // Conversion from any pointer type to rawptr is allowed
+        // Conversion from any pointer type to an integer is allowed if the intptr or uintptr types can also convert
+        return target == RawptrType || canConvert(IntptrType, target) || canConvert(UintptrType, target);
+    }
+
+    if (isPointer(target)) {
+        // Only untyped integers are allowed to implicitly convert to a pointer type
+        // Well... pointers can implicitly convert to pointers too. But that's handled above.
+        return isInteger(type) && isUntyped(type);
     }
 
     return false;
 }
 
-b32 convert(Type *type, Type *target) {
-    if (type == UntypedIntType) {
-        return target == UntypedIntType || target->kind == TypeKind_Int;
+#if TEST
+void test_canConvert() {
+    INIT_COMPILER();
+
+    ASSERT(canConvert(I8Type, I16Type));
+    ASSERT(canConvert(U8Type, I16Type));
+    ASSERT(canConvert(I16Type, I16Type));
+    ASSERT(canConvert(UintType, UintptrType));
+    ASSERT(!canConvert(I8Type, U64Type));
+    ASSERT(canConvert(NewTypePointer(TypeFlag_None, U8Type), RawptrType));
+    ASSERT(canConvert(UntypedIntType, NewTypePointer(TypeFlag_None, U8Type)));
+    ASSERT(canConvert(NewTypePointer(TypeFlag_None, IntType), RawptrType));
+    ASSERT(canConvert(NewTypePointer(TypeFlag_None, U64Type), IntptrType));
+}
+#endif
+
+b32 canRepresentValue(Val val, Type *target) {
+    // TODO: Implement this properly
+    // Also tests for it.
+    return true;
+}
+
+i64 SignExtend(Type *type, Type *target, Val val) {
+    val.i64 = val.i64 & ((1ull << type->Width) - 1);
+    i64 mask = 1ull << (type->Width - 1);
+    val.i64 = (val.i64 ^ mask) - mask;
+    return val.i64;
+}
+
+void convertValue(Type *type, Type *target, Val *val) {
+    if (isInteger(type) && isSigned(type) && isInteger(target) && isSigned(target)) {
+        val->i64 = SignExtend(type, target, *val);
+        return;
     }
 
-    if (type == UntypedFloatType) {
-        return target == UntypedFloatType || target->kind == TypeKind_Float;
+    if (isInteger(type) && isFloat(target)) {
+        if (isSigned(type)) {
+            val->i64 = SignExtend(type, target, *val);
+            switch (target->Width) {
+                case 32:
+                    val->f32 = (f32) val->i32;
+                    break;
+                case 64:
+                    val->f64 = (f64) val->i64;
+                    break;
+                default:
+                    PANIC("Unhandled float type during constant conversion");
+            }
+        } else {
+            switch (target->Width) {
+                case 32:
+                    val->f32 = (f32) val->u32;
+                    break;
+                case 64:
+                    val->f64 = (f64) val->u64;
+                    break;
+                default:
+                    PANIC("Unhandled float type during constant conversion");
+            }
+        }
+    }
+}
+
+void updateExprTypeIfUntyped(Package *pkg, ExprInfo *info, Expr *expr, Type *type, Type *target) {
+    if (isTyped(target)) return;
+
+    switch (expr->kind) {
+        case ExprKind_Paren:
+            updateExprTypeIfUntyped(pkg, info, expr->Paren.expr, type, target);
+            break;
+
+        case ExprKind_Unary:
+            updateExprTypeIfUntyped(pkg, info, expr->Unary.expr, type, target);
+            break;
+
+        case ExprKind_Binary:
+            updateExprTypeIfUntyped(pkg, info, expr->Binary.lhs, type, target);
+            updateExprTypeIfUntyped(pkg, info, expr->Binary.rhs, type, target);
+            break;
+
+        case ExprKind_LitInt:
+        case ExprKind_LitFloat:
+        case ExprKind_LitNil:
+        case ExprKind_LitString:
+            break;
+
+        default:
+            return;
     }
 
-    // FIXME: Brett, this doesn't work for aliased types
+    CheckerInfo_BasicExpr *ci = &CheckerInfoForExpr(pkg, expr)->BasicExpr;
+    if (ci->isConstant && isUntyped(ci->type)) {
+        if (!canRepresentValue(ci->val, target)) {
+            ReportError(pkg, InvalidConversionError, expr->start,
+                        "Cannot implicitly convert %s to type %s as loss of information would occur",
+                        DescribeExpr(expr), DescribeType(target));
+            // TODO: Attach a note reporting what is forcing that type on this expression
+            //  This will require  more parameters (the source of the target) for both
+            //  updateExprTypeIfUntyped & for convertUntyped
+        }
+    }
+
+    ci->type = target;
+    convertValue(type, target, &info->val);
+}
+
+void convertUntyped(Package *pkg, ExprInfo *info, Expr *expr, Type **type, Type *target) {
+    if (*type == InvalidType || isTyped(*type) || target == InvalidType) return;
+
+    if (isUntyped(target)) {
+        // Both are untyped
+        if (target->TypeId < (*type)->TypeId) {
+            updateExprTypeIfUntyped(pkg, info, expr, *type, target);
+
+            *type = target;
+            return;
+        }
+        // Either the types match or the conversion cannot occur
+        return;
+    }
+
+    // target is typed
+    switch (target->kind) {
+        case TypeKind_Int:
+        case TypeKind_Float:
+        case TypeKind_Pointer:
+            updateExprTypeIfUntyped(pkg, info, expr, *type, target);
+            break;
+
+        default:
+            *type = InvalidType;
+    }
+}
+
+void convert(Package *pkg, Expr *expr, Type **type, Type *target) {
+    if (*type == InvalidType || target == InvalidType) return;
+
+    if (!canConvert(*type, target)) {
+        ReportError(pkg, InvalidConversionError, expr->start,
+                    "Cannot convert %s to type %s", DescribeExpr(expr), DescribeType(target));
+        *type = InvalidType;
+        return;
+    }
+
+    *type = target;
+}
+
+b32 TypesIdentical(Type *type, Type *target) {
+    while (isAlias(type)) {
+        type = type->Symbol->type;
+    }
+    while (isAlias(target)) {
+        target = target->Symbol->type;
+    }
     return type == target;
 }
 
@@ -123,9 +440,7 @@ Scope *popScope(Package *pkg, Scope *scope) {
 Symbol *Lookup(Scope *scope, const char *name) {
     do {
         Symbol *symbol = MapGet(&scope->members, name);
-        if (symbol) {
-            return symbol;
-        }
+        if (symbol) return symbol;
 
         scope = scope->parent;
     } while (scope);
@@ -133,174 +448,470 @@ Symbol *Lookup(Scope *scope, const char *name) {
     return NULL;
 }
 
-Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
-    switch (expr->kind) {
-    case ExprKind_Ident: {
-        Expr_Ident ident = expr->Ident; 
-        Symbol *symbol = Lookup(exprInfo->scope, ident.name);
-        if (!symbol) {
-            ReportError(pkg, UndefinedIdentError, expr->start, "Use of undefined identifier '%s'", ident.name);
-            exprInfo->mode = ExprMode_Invalid;
-            return InvalidType;
-        }
+Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo);
 
-        symbol->used = true;
-        if (symbol->state != SymbolState_Resolved) {
-            exprInfo->mode = ExprMode_Unresolved;
-            return InvalidType;
-        }
-
-        CheckerInfo *solve = &pkg->checkerInfo[expr->id];
-        solve->kind = CheckerInfoKind_Ident;
-        solve->Ident.symbol = symbol;
-
-        switch (symbol->kind) {
-        case SymbolKind_Type: {
-            exprInfo->mode = ExprMode_Type;
-        } break;
-
-        case SymbolKind_Constant: {
-            if (symbol == TrueSymbol || symbol == FalseSymbol) {
-                exprInfo->mode = ExprMode_Computed;
-                break;
-            }
-        }
-        default:
-            exprInfo->mode = ExprMode_Addressable;
-        }
-
-        exprInfo->val = symbol->val;
-        return symbol->type;
-    } break;
-
-    case ExprKind_LitInt: {
-        Expr_LitInt lit = expr->LitInt;
-
-        Type *type = InvalidType;
-
-        if (exprInfo->desiredType) {
-            if (isInteger(exprInfo->desiredType)) {
-                exprInfo->val.u64 = lit.val;
-            }
-
-            else if (isFloat(exprInfo->desiredType)) {
-                exprInfo->val.f64 = (f64)lit.val;
-            }
-
-            else {
-                ReportError(
-                    pkg, InvalidConversionError, expr->start,
-                    "Unable to convert type %s to expected type type %s",
-                    DescribeType(UntypedIntType), DescribeType(exprInfo->desiredType)
-                );
-
-                return InvalidType;
-            }
-
-            type = exprInfo->desiredType;
-        } else {
-            type = UntypedIntType;
-        }
-        
-        exprInfo->mode = ExprMode_Computed;
-        CheckerInfo *info = &pkg->checkerInfo[expr->id];
-        info->BasicLit.type = type;
-        return type;
-    };
-
-    case ExprKind_LitFloat: {
-        Expr_LitFloat lit = expr->LitFloat;
-
-        Type *type = InvalidType;
-
-        if (exprInfo->desiredType) {
-            if (isInteger(exprInfo->desiredType)) {
-                exprInfo->val.u64 = (u64)lit.val;
-            }
-
-            else if (isFloat(exprInfo->desiredType)) {
-                exprInfo->val.f64 = lit.val;
-            }
-
-            else {
-                ReportError(
-                    pkg, InvalidConversionError, expr->start,
-                    "Unable to convert type %s to expected type type %s",
-                    DescribeType(UntypedFloatType), DescribeType(exprInfo->desiredType)
-                );
-
-                return InvalidType;
-            }
-
-            type = exprInfo->desiredType;
-        } else {
-            type = UntypedFloatType;
-        }
-
-        exprInfo->mode = ExprMode_Computed;
-        CheckerInfo *info = &pkg->checkerInfo[expr->id];
-        info->BasicLit.type = type;
-        return type;
-    } break;
+Type *checkExprIdent(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Expr_Ident ident = expr->Ident;
+    Symbol *symbol = Lookup(exprInfo->scope, ident.name);
+    if (!symbol) {
+        ReportError(pkg, UndefinedIdentError, expr->start, "Use of undefined identifier '%s'", ident.name);
+        exprInfo->mode = ExprMode_Invalid;
+        return InvalidType;
     }
 
+    symbol->used = true;
+    if (symbol->state != SymbolState_Resolved) {
+        exprInfo->mode = ExprMode_Unresolved;
+        return InvalidType;
+    }
+
+    storeInfoIdent(pkg, expr, symbol);
+
+    switch (symbol->kind) {
+        case SymbolKind_Type:
+            exprInfo->mode = ExprMode_Type;
+            break;
+
+        case SymbolKind_Constant:
+            exprInfo->mode = ExprMode_Computed;
+            exprInfo->isConstant = true;
+            break;
+
+        default:
+            exprInfo->mode = ExprMode_Addressable;
+    }
+
+    exprInfo->val = symbol->val;
+    return symbol->type;
+}
+
+Type *checkExprLitInt(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Expr_LitInt lit = expr->LitInt;
+
+    Type *type = UntypedIntType;
+    if (exprInfo->desiredType) {
+        if (isInteger(exprInfo->desiredType) || isPointer(exprInfo->desiredType)) {
+            exprInfo->val.u64 = lit.val;
+        } else if (isFloat(exprInfo->desiredType)) {
+            exprInfo->val.f64 = (f64)lit.val;
+        } else {
+            ReportError(pkg, InvalidConversionError, expr->start,
+                        "Unable to convert type %s to expected type type %s", DescribeType(UntypedIntType), DescribeType(exprInfo->desiredType));
+            goto error;
+        }
+
+        type = exprInfo->desiredType;
+    } else {
+        exprInfo->val.u64 = lit.val;
+    }
+
+    exprInfo->mode = ExprMode_Computed;
+    exprInfo->isConstant = true;
+    storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
     return InvalidType;
 }
 
-Type *checkFuncType(Expr *funcExpr, ExprInfo *exprInfo) {
-    Expr_TypeFunction func = funcExpr->TypeFunction;
+Type *checkExprLitFloat(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Expr_LitFloat lit = expr->LitFloat;
 
-    return NULL;
+    Type *type = UntypedFloatType;
+    if (exprInfo->desiredType) {
+        if (isFloat(exprInfo->desiredType)) {
+            if (exprInfo->desiredType->Width == 32) {
+                exprInfo->val.f32 = (f32) lit.val;
+            } else {
+                exprInfo->val.f64 = lit.val;
+            }
+        } else {
+            ReportError(pkg, InvalidConversionError, expr->start,
+                        "Unable to convert type %s to expected type type %s", DescribeType(UntypedFloatType), DescribeType(exprInfo->desiredType));
+            goto error;
+        }
+
+        type = exprInfo->desiredType;
+    } else {
+        exprInfo->val.f64 = lit.val;
+    }
+
+    exprInfo->mode = ExprMode_Computed;
+    exprInfo->isConstant = true;
+    storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
 }
 
-b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
+Type *checkExprLitNil(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    if (exprInfo->desiredType && !isNilable(exprInfo->desiredType)) {
+        ReportError(pkg, NotNilableError, expr->start,
+                    "'nil' is not convertable to '%s'", DescribeType(exprInfo->desiredType));
+        goto error;
+    }
+
+    Type *type = exprInfo->desiredType;
+    if (!type) type = UntypedIntType;
+
+    storeInfoBasicExprWithConstant(pkg, expr, type, (Val){.u64 = 0});
+
+    exprInfo->mode = ExprMode_Nil;
+    exprInfo->isConstant = true;
+    exprInfo->val = (Val){ .u64 = 0 };
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExprTypeVariadic(Package *pkg, Expr *expr, ExprInfo *info) {
+    Type *type = checkExpr(pkg, expr->TypeVariadic.type, info);
+    if (!expectType(pkg, type, info, expr->TypeVariadic.type->start)) goto error;
+    TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlagCVargs ? TypeFlag_CVargs : TypeFlag_None;
+    type = NewTypeSlice(flags, type);
+    info->mode = ExprMode_Type;
+    return type;
+
+error:
+    info->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExprTypeFunction(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
+    Expr_TypeFunction func = expr->TypeFunction;
+    TypeFlag flags = TypeFlag_None;
+
+    b32 isInvalid = false;
+
+    DynamicArray(Type *) params = NULL;
+    ArrayFit(params, ArrayLen(func.params));
+
+    ExprInfo info = { .scope = pushScope(pkg, exprInfo->scope) };
+    For (func.params) {
+        Type *type = checkExpr(pkg, func.params[i]->value, &info);
+        if (!expectType(pkg, type, &info, func.params[i]->start)) isInvalid = true;
+
+        flags |= type->Flags & TypeFlag_Variadic;
+        flags |= type->Flags & TypeFlag_CVargs;
+        ArrayPush(params, type);
+    }
+
+    DynamicArray(Type *) returnTypes = NULL;
+    ArrayFit(returnTypes, ArrayLen(func.result));
+
+    ForEach(func.result, Expr *) {
+        Type *type = checkExpr(pkg, it, &info);
+        if (!expectType(pkg, type, &info, it->start)) {
+            isInvalid = true;
+        }
+        ArrayPush(returnTypes, type);
+    }
+
+    if (isInvalid) goto error;
+
+    Type *type = NewTypeFunction(flags, params, returnTypes);
+
+    storeInfoBasicExpr(pkg, expr, type);
+    exprInfo->mode = ExprMode_Type;
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
+    Expr_LitFunction func = funcExpr->LitFunction;
+    Scope *scope = pushScope(pkg, exprInfo->scope);
+    ExprInfo funcInfo = { .scope = scope };
+
+    DynamicArray(Type *) paramTypes = NULL;
+    DynamicArray(Type *) resultTypes = NULL;
+    DynamicArray(Symbol *) paramSymbols = NULL;
+    ArrayFit(paramTypes, ArrayLen(func.type->TypeFunction.params));
+    ArrayFit(resultTypes, ArrayLen(func.type->TypeFunction.result));
+    ArrayFit(paramSymbols, ArrayLen(func.type->TypeFunction.params));
+
+    TypeFlag typeFlags = TypeFlag_None;
+
+    // FIXME: We need to extract and pass on desired types parameters & results
+    ForEach(func.type->TypeFunction.params, Expr_KeyValue *) {
+        if (!it->key || it->key->kind != ExprKind_Ident) {
+            ReportError(pkg, ParamNameMissingError, it->start, "Parameters for a function literal must be named");
+            continue;
+        }
+
+        Symbol *symbol;
+        declareSymbol(pkg, scope, it->key->Ident.name, &symbol, 0, (Decl *) it);
+        ArrayPush(paramSymbols, symbol);
+
+        Type *type = checkExpr(pkg, it->value, &funcInfo);
+        if (!expectType(pkg, type, &funcInfo, it->value->start)) continue;
+
+        typeFlags |= type->Flags & TypeFlag_Variadic;
+        typeFlags |= type->Flags & TypeFlag_CVargs;
+        ArrayPush(paramTypes, type);
+    }
+
+    ForEach(func.type->TypeFunction.result, Expr *) {
+        Type *type = checkExpr(pkg, it, &funcInfo);
+        if (!expectType(pkg, type, &funcInfo, it->start)) continue;
+        ArrayPush(resultTypes, type);
+    }
+
+    // TODO: call check for each stmt in body
+
+    exprInfo->mode = ExprMode_Type;
+    return NewTypeFunction(typeFlags, paramTypes, resultTypes);
+}
+
+Type *checkExprTypePointer(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Type *desiredType = exprInfo->desiredType;
+    exprInfo->desiredType = isPointer(exprInfo->desiredType) ? exprInfo->desiredType->Pointer.pointeeType : NULL;
+    Type *type = checkExpr(pkg, expr->TypePointer.type, exprInfo);
+
+    expectType(pkg, type, exprInfo, expr->TypePointer.type->start);
+    if (exprInfo->mode != ExprMode_Type) {
+        ReportError(pkg, InvalidPointeeTypeError, expr->start,
+                    "'%s' is not a valid pointee type", DescribeType(type));
+        goto error;
+    } else if (type == VoidType) {
+        ReportError(pkg, TODOError, expr->TypePointer.type->start, "Kai does not use void * for raw pointers instead use rawptr");
+    }
+
+    if (desiredType == RawptrType) type = RawptrType;
+
+    type = NewTypePointer(TypeFlag_None, type);
+    exprInfo->mode = ExprMode_Type;
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExprUnary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    Type *type = checkExpr(pkg, expr->Unary.expr, exprInfo);
+    if (exprInfo->mode == ExprMode_Unresolved) return InvalidType;
+
+    switch (expr->Unary.op) {
+        case TK_And:
+            if (exprInfo->mode != ExprMode_Addressable) {
+                ReportError(pkg, AddressOfNonAddressableError, expr->start,
+                            "Cannot take address of %s", DescribeExpr(expr->Unary.expr));
+                goto error;
+            }
+            type = NewTypePointer(TypeFlag_None, type);
+            break;
+
+        default:
+            if (!unaryPredicates[expr->Unary.op](type)) {
+                ReportError(pkg, InvalidUnaryOperationError, expr->start,
+                            "Operation '%s' undefined for %s", DescribeTokenKind(expr->Unary.op), DescribeExpr(expr->Unary.expr));
+                goto error;
+            }
+
+            if (expr->Unary.op == TK_Not && !exprInfo->desiredType) {
+                type = BoolType;
+            } else if (expr->Unary.op == TK_Lss) {
+                type = type->Pointer.pointeeType;
+            }
+    }
+
+    if (evalUnary(expr->Unary.op, type, exprInfo)) {
+        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    } else {
+        storeInfoBasicExpr(pkg, expr, type);
+    }
+
+    exprInfo->mode = ExprMode_Computed;
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExprBinary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    ExprInfo lhsInfo = { .scope = exprInfo->scope };
+    ExprInfo rhsInfo = { .scope = exprInfo->scope };
+    Type *lhs = checkExpr(pkg, expr->Binary.lhs, &lhsInfo);
+    Type *rhs = checkExpr(pkg, expr->Binary.rhs, &rhsInfo);
+
+    if (lhsInfo.mode == ExprMode_Invalid || rhsInfo.mode == ExprMode_Invalid) {
+        goto error;
+    }
+
+    convertUntyped(pkg, &lhsInfo, expr->Binary.lhs, &lhs, rhs);
+    if (lhs == InvalidType) goto error;
+
+    convertUntyped(pkg, &rhsInfo, expr->Binary.rhs, &rhs, lhs);
+    if (rhs == InvalidType) goto error;
+
+    // TODO: Do we need to note the implicit conversion? Or can it be implied?
+    if      (canConvert(lhs, rhs)) lhs = rhs;
+    else if (canConvert(rhs, lhs)) rhs = lhs;
+
+    if (lhs == InvalidType || rhs == InvalidType) goto error;
+
+    if (!TypesIdentical(lhs, rhs)) {
+        ReportError(pkg, TypeMismatchError, expr->start,
+                    "Mismatched types %s and %s", DescribeExpr(expr->Binary.lhs), DescribeExpr(expr->Binary.rhs));
+        goto error;
+    }
+
+    // Both lhs & rhs have this type.
+    Type *type = lhs;
+
+    if (!binaryPredicates[expr->Binary.op](type)) {
+        ReportError(pkg, InvalidBinaryOperationError, expr->Binary.pos,
+                    "Operation '%s' undefined for type %s",
+                    DescribeTokenKind(expr->Binary.op), DescribeExpr(expr->Binary.lhs));
+        goto error;
+    }
+
+    switch (expr->Binary.op) {
+        case TK_Eql:
+        case TK_Neq:
+        case TK_Leq:
+        case TK_Geq:
+        case TK_Lss:
+        case TK_Gtr:
+        case TK_Lor:
+        case TK_Land:
+            if (exprInfo->desiredType && canConvert(type, exprInfo->desiredType)) {
+                type = exprInfo->desiredType;
+            } else {
+                type = BoolType;
+            }
+            break;
+        default:
+            break;
+    }
+
+    if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && rhsInfo.isConstant && rhsInfo.val.i64 == 0) {
+        ReportError(pkg, DivisionByZeroError, expr->Binary.rhs->start, "Division by zero");
+    }
+
+    exprInfo->isConstant = lhsInfo.isConstant && rhsInfo.isConstant;
+    if (evalBinary(expr->Binary.op, type, lhsInfo.val, rhsInfo.val, exprInfo)) {
+        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    } else {
+        storeInfoBasicExpr(pkg, expr, type);
+    }
+
+    exprInfo->mode = ExprMode_Computed;
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
+    Type *type = NULL;
+    switch (expr->kind) {
+        case ExprKind_Ident:
+            type = checkExprIdent(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_LitInt:
+            type = checkExprLitInt(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_LitFloat:
+            type = checkExprLitFloat(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_LitNil:
+            type = checkExprLitNil(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_LitFunction:
+            type = checkExprLitFunction(pkg, expr, exprInfo);
+            break;
+
+        case ExprKind_TypeVariadic:
+            type = checkExprTypeVariadic(pkg, expr, exprInfo);
+            break;
+
+        case ExprKind_TypePointer:
+            type = checkExprTypePointer(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_Unary:
+            type = checkExprUnary(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_Binary:
+            type = checkExprBinary(expr, exprInfo, pkg);
+
+        default:
+            break;
+    }
+
+    return type;
+}
+
+b32 checkDeclConstant(Package *pkg, Scope *scope, Decl *declStmt) {
     Decl_Constant decl = declStmt->Constant;
 
-    ASSERT(scope);
-
     if (ArrayLen(decl.names) != 1) {
-        ReportError(pkg, MultipleConstantDeclError, decl.start, "Constant declarations must declare at most one item");
+        ReportError(pkg, MultipleConstantDeclError, decl.start,
+            "Constant declarations must declare at most one item");
 
-        if (ArrayLen(decl.names) > 0) {
-            For (decl.names) {
-                const char *name = decl.names[i]->name;
-                Symbol *symbol = MapGet(&pkg->symbolMap, name);
-                invalidateSymbol(symbol);
-            }
+        ForEach (decl.names, Expr_Ident *) {
+            Symbol *symbol = Lookup(pkg->scope, it->name);
+            markSymbolInvalid(symbol);
         }
 
         return false;
     }
 
     if (ArrayLen(decl.values) > 1) {
-        ReportError(pkg, ArityMismatchError, decl.start, "Constant declarations only allow for a single value, but got %zu", ArrayLen(decl.values));
+        ReportError(pkg, ArityMismatchError, decl.start,
+                    "Constant declarations only allow for a single value, but got %zu", ArrayLen(decl.values));
         return false;
     }
 
     Type *expectedType = NULL;
 
     if (decl.type) {
-        ExprInfo info = {.scope = scope};
-        expectedType = lowerMeta(pkg, checkExpr(pkg, decl.type, &info), decl.type->start);
-        if (info.mode == ExprMode_Unresolved) {
-            return true;
-        }
+        ExprInfo info = { .scope = scope };
+        expectedType = checkExpr(pkg, decl.type, &info);
+        if (info.mode == ExprMode_Unresolved) return true;
+
+        expectType(pkg, expectedType, &info, decl.type->start);
     }
 
-    Expr_Ident *name = decl.names[0];
+    Expr_Ident *ident = decl.names[0];
     Expr *value = decl.values[0];
-    Symbol *symbol = MapGet(&pkg->symbolMap, name->name);
+
+    Symbol *symbol;
+    if (scope == pkg->scope) {
+        symbol = MapGet(&scope->members, ident->name);
+        ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
+    } else {
+        declareSymbol(pkg, scope, ident->name, &symbol, declStmt->id, declStmt);
+    }
+
     symbol->state = SymbolState_Resolving;
 
     switch (value->kind) {
     case ExprKind_LitFunction: {
         Expr_LitFunction func = value->LitFunction;
         ExprInfo info = {.scope = scope};
-        Type *type = checkFuncType(func.type, &info);
-        if (info.mode == ExprMode_Unresolved) {
-            return true;
-        }
-        resolveSymbol(symbol, type);
+        Type *type = checkExprTypeFunction(pkg, func.type, &info);
+        if (info.mode == ExprMode_Unresolved) return true;
+
+        expectType(pkg, type, &info, func.type->start);
+
+        markSymbolResolved(symbol, type);
     } break;
 
     case ExprKind_TypeStruct:
@@ -308,64 +919,57 @@ b32 checkConstDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     case ExprKind_TypeEnum: {
         UNIMPLEMENTED();
     } break;
+        default:
+            break;
     }
 
     ExprInfo info = {.scope = scope, .desiredType = expectedType};
     Type *type = checkExpr(pkg, value, &info);
-    if (info.mode == ExprMode_Unresolved) {
-        return true;
-    }
+    if (info.mode == ExprMode_Unresolved) return true;
+
+    symbol->val = info.val;
 
     if (expectedType) {
-        if (!convert(type, expectedType)) {
-            ReportError(
-                pkg, InvalidConversionError, value->start,
-                "Unable to convert type %s to expected type type %s",
-                DescribeType(type), DescribeType(expectedType)
-            );
-            invalidateSymbol(symbol);
+        convert(pkg, value, &type, expectedType);
+        if (type == InvalidType) {
+            ReportError(pkg, InvalidConversionError, value->start,
+                "Unable to convert type %s to expected type type %s", DescribeType(type), DescribeType(expectedType));
+            markSymbolInvalid(symbol);
         }
     }
 
-    // TODO: check for tuple
-    
-    symbol->type = type;
-    symbol->state = SymbolState_Resolved;
-
-    CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
-    solve->kind = CheckerInfoKind_Decl;
-    solve->Decl.symbol = symbol;
-    solve->Decl.isGlobal = isGlobal;
-
+    markSymbolResolved(symbol, type);
+    storeInfoConstant(pkg, declStmt, symbol);
     return false;
 }
 
-b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
+b32 checkDeclVariable(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     Decl_Variable var = declStmt->Variable;
 
     Type *expectedType = NULL;
 
     if (var.type) {
-        ExprInfo info = {.scope = scope};
-        expectedType = lowerMeta(pkg, checkExpr(pkg, var.type, &info), var.type->start);
-        if (info.mode == ExprMode_Unresolved) {
-            return true;
-        }
+        ExprInfo info = { .scope = scope };
+        expectedType = checkExpr(pkg, var.type, &info);
+        if (info.mode == ExprMode_Unresolved) return true;
+
+        expectType(pkg, expectedType, &info, var.type->start);
     }
 
     DynamicArray(Symbol *) symbols = NULL;
     ArrayFit(symbols, ArrayLen(var.names));
 
-    if (isGlobal) {
-        For (var.names) {
-            Symbol *symbol = MapGet(&pkg->symbolMap, var.names[i]->name);
+    if (scope == pkg->scope) {
+        ForEach(var.names, Expr_Ident *) {
+            Symbol *symbol = MapGet(&scope->members, it->name);
+            ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
             ArrayPush(symbols, symbol);
         }
     } else {
-        For (var.names) {
+        ForEach(var.names, Expr_Ident *) {
             Symbol *symbol;
             // FIXME(Brett): figure out how I want to recover from a duplicate
-            declareSymbol(pkg, scope, var.names[i]->name, &symbol, declStmt);
+            declareSymbol(pkg, scope, it->name, &symbol, declStmt->id, declStmt);
             ArrayPush(symbols, symbol);
         }
     }
@@ -373,27 +977,35 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
     // NOTE: decl like `x, y: i32`
     if (ArrayLen(var.values) == 0) {
         ASSERT(expectedType);
-        For (symbols) {
-            symbols[i]->type = expectedType;
-            symbols[i]->state = SymbolState_Resolved;
+        ForEach(symbols, Symbol *) {
+            it->type = expectedType;
+            it->state = SymbolState_Resolved;
         }
 
         if (expectedType->kind == TypeKind_Array && expectedType->Array.length == -1) {
-            ReportError(pkg, UninitImplicitArrayError, var.type->start, "Implicit-length array must have an initial value");
+            ReportError(
+                pkg, UninitImplicitArrayError, var.type->start, 
+                "Implicit-length array must have an initial value"
+            );
         }
 
         if (expectedType->kind == TypeKind_Function) {
-            ReportError(pkg, UninitFunctionTypeError, var.type->start, "Variables of a function type must be initialized");
-            ReportNote(pkg, var.type->start, "If you want an uninitialized function pointer use *%s instead", DescribeType(expectedType));
+            ReportError(pkg, UninitFunctionTypeError, var.type->start,
+                "Variables of a function type must be initialized");
+            ReportNote(pkg, var.type->start,
+                       "If you want an uninitialized function pointer use *%s instead", DescribeType(expectedType));
         }
-    }
-    
-    else {
+    } else {
         if (ArrayLen(var.values) != ArrayLen(var.names)) {
-            ReportError(pkg, ArityMismatchError, var.start, "The amount of identifiers (%zu) doesn't match the amount of values (%zu)", ArrayLen(var.names), ArrayLen(var.values));
+            // TODO: ensure that this is a function call otherwise report this error
+            ReportError(
+                pkg, ArityMismatchError, var.start, 
+                "The amount of identifiers (%zu) doesn't match the amount of values (%zu)", 
+                ArrayLen(var.names), ArrayLen(var.values)
+            );
 
             For (symbols) {
-                invalidateSymbol(symbols[i]);
+                markSymbolInvalid(symbols[i]);
             }
             return false;
         }
@@ -406,68 +1018,187 @@ b32 checkVarDecl(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) {
                 return true;
             }
 
-            if (expectedType && !convert(type, expectedType)) {
-                ReportError(
-                    pkg, InvalidConversionError, var.values[i]->start,
-                    "Unable to convert type %s to expected type type %s",
-                    DescribeType(type), DescribeType(expectedType)
-                );
-                invalidateSymbol(symbols[i]);
+            if (expectedType) {
+                convert(pkg, var.values[i], &type, expectedType);
+                ReportError(pkg, InvalidConversionError, var.values[i]->start,
+                            "Unable to convert type %s to expected type type %s",
+                            DescribeType(type), DescribeType(expectedType));
+                markSymbolInvalid(symbols[i]);
+                return false;
             }
 
-            if (type->kind == TypeKind_Metatype) {
-                ReportError(pkg, MetatypeNotAnExprError, var.values[i]->start, "Metatype is not a valid expression");
-                invalidateSymbol(symbols[i]);
+            if (info.mode == ExprMode_Type) {
+                ReportError(pkg, TypeNotAnExpressionError, var.values[i]->start,
+                            "Type %s is not an expression in this context", DescribeType(type));
+                ReportNote(pkg, var.values[i]->start,
+                           "Type metadata can be retrieved using the typeof or typeid functions");
+                markSymbolInvalid(symbols[i]);
                 continue;
             }
 
-            symbols[i]->type = expectedType ? expectedType : type;
             symbols[i]->kind = SymbolKind_Variable;
-            symbols[i]->state = SymbolState_Resolved;
+            markSymbolResolved(symbols[i], type);
         }
     }
 
-    CheckerInfo *solve = &pkg->checkerInfo[declStmt->id];
-    solve->DeclList.symbols = symbols;
-    solve->DeclList.isGlobal = isGlobal;
-    solve->kind = CheckerInfoKind_DeclList;
+    storeInfoVariable(pkg, declStmt, symbols);
 
     return false;
 }
 
 b32 checkImportDecl(Package *pkg, Decl *declStmt) {
-    Decl_Import import = declStmt->Import;
+//    Decl_Import import = declStmt->Import;
     UNIMPLEMENTED();
     return false;
 }
 
-b32 check(Package *pkg, Stmt *stmt) {
+b32 checkStmt(Package *pkg, Stmt *stmt) {
     b32 shouldRequeue;
 
-    Scope *scope = pkg->globalScope;
-
     switch (stmt->kind) {
-    case StmtDeclKind_Constant: {
-        shouldRequeue = checkConstDecl(pkg, scope, true, (Decl *)stmt);
-    } break;
+        case StmtDeclKind_Constant:
+            shouldRequeue = checkDeclConstant(pkg, pkg->scope, (Decl *)stmt);
+            break;
 
-    case StmtDeclKind_Variable: {
-        shouldRequeue = checkVarDecl(pkg, scope, true, (Decl *)stmt);
-    } break;
+        case StmtDeclKind_Variable:
+            shouldRequeue = checkDeclVariable(pkg, pkg->scope, true, (Decl *)stmt);
+            break;
 
-    case StmtDeclKind_Import: {
-        shouldRequeue = checkImportDecl(pkg, (Decl *)stmt);
-    } break;
+        case StmtDeclKind_Import:
+            shouldRequeue = checkImportDecl(pkg, (Decl *)stmt);
+            break;
 
-    default:
-        ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
+        default:
+            ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
 
     return shouldRequeue;
 }
 
-#if TEST
-void test_checkerTest() {
 
+
+
+#if TEST
+#define pkg checkerTestPackage
+Package pkg = {0};
+Queue resetAndParse(const char *code) {
+    // reset package
+    ArrayFree(pkg.diagnostics.errors);
+    ArrayFree(pkg.stmts);
+    ArrayFree(pkg.symbols);
+
+    ArenaFree(&pkg.arena);
+    ArenaFree(&pkg.diagnostics.arena);
+
+    ArenaFree(&parsingQueue.arena);
+    memset(&checkingQueue, 0, sizeof(Queue));
+    ArenaFree(&checkingQueue.arena);
+    memset(&checkingQueue, 0, sizeof(Queue));
+
+    pkg.scope = pushScope(&pkg, builtinPackage.scope);
+
+    parsePackageCode(&pkg, code);
+    return checkingQueue;
 }
+
+Stmt *resetAndParseSingleStmt(const char *code) {
+    Queue queue = resetAndParse(code);
+    CheckerWork *work = QueueDequeue(&queue);
+    ASSERT(work);
+    Stmt *stmt = work->stmt;
+    ArenaFree(&queue.arena);
+    return stmt;
+}
+
+void test_checkConstantDeclarations() {
+    REINIT_COMPILER();
+    Queue queue = resetAndParse("x :: 8");
+
+    CheckerWork *work = QueueDequeue(&queue);
+
+    ASSERT(queue.size == 0);
+
+    Stmt *stmt = work->stmt;
+    b32 requeue = checkStmt(&pkg, stmt);
+    ASSERT(!requeue);
+
+    Symbol *sym = Lookup(pkg.scope, StrIntern("x"));
+    ASSERT(sym);
+    ASSERT(sym->type == UntypedIntType);
+    ASSERT(sym->state == SymbolState_Resolved);
+    ASSERT(!sym->used);
+    ASSERT(sym->kind == SymbolKind_Constant);
+    ASSERT(sym->decl->start.offset == 0);
+    ASSERT(sym->val.u64 == 8);
+}
+
+void test_checkConstantUnaryExpressions() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    ExprInfo info;
+    Type *type;
+#define checkUnary(_CODE) \
+    stmt = resetAndParseSingleStmt(_CODE); \
+    info = (ExprInfo){ .scope = pkg.scope }; \
+    type = checkExprUnary((Expr *) stmt, &info, &pkg)
+
+    checkUnary("-100");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == -100);
+
+    checkUnary("!false");
+    ASSERT(type == BoolType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.b32 == true);
+
+    checkUnary("!!false");
+    ASSERT(type == BoolType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.b32 == false);
+
+    checkUnary("~0xffff");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.u64 == ~0xffff);
+
+#undef checkUnary
+}
+
+void test_checkConstantBinaryExpressions() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    ExprInfo info;
+    Type *type;
+#define checkBinary(_CODE) \
+    stmt = resetAndParseSingleStmt(_CODE); \
+    info = (ExprInfo){ .scope = pkg.scope }; \
+    type = checkExprBinary((Expr *) stmt, &info, &pkg)
+
+    checkBinary("1 + 2");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 3);
+
+    checkBinary("1 + 2.0");
+    ASSERT(type == UntypedFloatType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.f64 == 3.0);
+
+    checkBinary("1 + 2.0 - 3");
+    ASSERT(type == UntypedFloatType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.f64 == 0.f);
+
+    checkBinary("1 / 0");
+    ASSERT(ArrayLen(pkg.diagnostics.errors) == 1);
+    ArrayFree(pkg.diagnostics.errors);
+
+    checkBinary("-1 + -8");
+    ASSERT(isInteger(type));
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == -9);
+}
+
+#undef pkg
 #endif

@@ -1,8 +1,8 @@
 CC = clang
 CXX = clang++
 
-debug:   local_CFLAGS = -g -O0 -DDEBUG -DDIAGNOSTICS -DSLOW $(CFLAGS)
-release: local_CFLAGS = -O3 -march=native -DRELEASE -DFAST $(CFLAGS)
+debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG -DDIAGNOSTICS -DSLOW $(CFLAGS)
+release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE -DFAST $(CFLAGS)
 
 LLVM_VERSION := 6.0
 
@@ -16,7 +16,7 @@ LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
 LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs)
 
 LFLAGS =
-DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch
+DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
 
 TARGET = kai
 TEST_TARGET = $(TARGET)_tests
@@ -35,8 +35,11 @@ core.o:
 llvm.o:
 	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 
-tests: clean
-	@./tools/gen_test_main.sh > $(TEST_MAIN)
+tools/genTests:
+	$(CXX) -o tools/genTests tools/gen_test_main.cpp
+
+tests: clean tools/genTests
+	@./tools/genTests src/ > $(TEST_MAIN)
 	@$(CC) $(TEST_MAIN) -c -o core.o  -DTEST $(LFLAGS) $(DISABLED_WARNINGS) $(local_CFLAGS)
 	@$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)

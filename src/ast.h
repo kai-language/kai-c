@@ -17,7 +17,7 @@
     FOR_EACH(Autocast, "autocast", false)                    \
     FOR_EACH(KeyValue, "key value", false)                   \
     FOR_EACH(LocationDirective, "location directive", false) \
-    FOR_EACH(LitNil, "nil literal", false)                   \
+    FOR_EACH(LitNil, "nil literal", true)                    \
     FOR_EACH(LitInt, "integer literal", true)                \
     FOR_EACH(LitFloat, "float literal", true)                \
     FOR_EACH(LitString, "string literal", false)             \
@@ -481,6 +481,10 @@ struct Decl {
 b32 isExpr(Stmt *stmt);
 
 b32 isDecl(Stmt *stmt);
+
+const char *DescribeStmt(Stmt *stmt);
+const char *DescribeExpr(Expr *expr);
+const char *DescribeDecl(Decl *decl);
 
 void *AllocAst(Package *package, size_t size);
 

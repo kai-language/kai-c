@@ -1,7 +1,10 @@
 
 #include "types.h"
 
+TargetMetrics *TargetTypeMetrics = NULL;
+
 Type *InvalidType;
+
 Type *AnyType;
 Type *VoidType;
 
@@ -20,9 +23,22 @@ Type *U64Type;
 Type *F32Type;
 Type *F64Type;
 
-// TODO(Brett): figure out how I want to handle instance vs metatypes
+Type *IntType;
+Type *UintType;
+
+Type *IntptrType;
+Type *UintptrType;
+Type *RawptrType;
+
 Type *UntypedIntType;
 Type *UntypedFloatType;
+
+// TODO: Mechanism to lookup type by their ID
+u32 nextTypeId = 1;
+
+u32 TypeRank(Type *type) {
+    return type->TypeId;
+}
 
 Symbol *FalseSymbol;
 Symbol *TrueSymbol;
@@ -37,104 +53,246 @@ const char *DescribeTypeKind(TypeKind kind) {
     return TypeKindDescriptions[kind];
 }
 
-DynamicArray(const Type *) Types;
-Map TypesMap;
-
-#define TYPE(_kind, name, _type, _width)                                                 \
-    _kind##Type = buildBuiltinIntern((Type){.kind = TypeKind_##_type, .width = _width}); \
-    const char *intern##_kind = StrIntern(name);                                         \
-    ArrayPush(Types, _kind##Type);                                                       \
-    MapSet(&TypesMap, intern##_kind, buildTypeSymbol(intern##_kind, _kind##Type))        \
-
-Arena typeInternArena;
-
-Type *TypeIntern(Type type) {
-    Type *intern = ArenaAlloc(&typeInternArena, sizeof(Type));
-    memcpy(intern, &type, sizeof(Type));
-    return intern;
+Type *AllocType(TypeKind kind) {
+    Type *type = Calloc(DefaultAllocator, 1, sizeof(Type));
+    type->kind = kind;
+    type->TypeId = nextTypeId++;
+    return type;
 }
 
-Type *buildBuiltinIntern(Type type) {
-    Type *t = ArenaAlloc(&typeInternArena, sizeof(Type));
-    memcpy(t, &type, sizeof(Type));
-
-    Type metatype = {.kind = TypeKind_Metatype};
-    metatype.Metatype.instanceType = t;
-    return TypeIntern(metatype);
+void completeType(Type *type) {
+    // TODO: @CircularTypes
 }
 
-Symbol *buildTypeSymbol(const char *name, Type *type) {
-    Symbol *symbol = ArenaAlloc(&typeInternArena, sizeof(Symbol));
-    symbol->name = name;
-    symbol->kind = SymbolKind_Type;
-    symbol->state = SymbolState_Resolved;;
+Map internPointerTypes;
+
+Type *NewTypePointer(TypeFlag flags, Type *pointeeType) {
+    Type *type = MapGet(&internPointerTypes, pointeeType);
+    if (!type) {
+        type = AllocType(TypeKind_Pointer);
+        type->Width = RawptrType->Width;
+        type->Flags = flags;
+        type->Pointer.pointeeType = pointeeType;
+        MapSet(&internPointerTypes, pointeeType, type);
+    }
+    return type;
+}
+
+Map internSliceTypes;
+
+Type *NewTypeSlice(TypeFlag flags, Type *elementType)  {
+    Type *type = MapGet(&internSliceTypes, elementType);
+    if (!type) {
+        type = AllocType(TypeKind_Pointer);
+        type->Width = RawptrType->Width;
+        type->Flags = flags;
+        type->Slice.elementType = elementType;
+        MapSet(&internSliceTypes, elementType, type);
+    }
+    return type;
+}
+
+typedef struct InternType InternType;
+struct InternType {
+    Type *type;
+    InternType *next;
+};
+
+Map internArrayTypes;
+
+Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
+    u64 hash = HashMix(HashPtr(elementType), HashU64(length));
+    u64 key = hash ? hash : 1;
+    InternType *intern = MapGet(&internArrayTypes, (void*) key);
+    for (InternType *it = intern; it; it = it->next) {
+        Type *type = it->type;
+        if (type->Array.elementType == elementType && type->Array.length == type->Array.length) {
+            return type;
+        }
+    }
+    completeType(elementType);
+    Type *type = AllocType(TypeKind_Array);
+    ASSERT(length * elementType->Width < UINT32_MAX); // FIXME: Error for oversized arrays
+    type->Width = (u32) length * elementType->Width;
+    type->Align = elementType->Align;
+    type->Flags = flags;
+    type->Array.length = length;
+
+    InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
+    newIntern->type = type;
+    newIntern->next = intern;
+    MapSet(&internArrayTypes, (void*) key, newIntern);
+    return type;
+}
+
+Map internFunctionTypes;
+
+Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
+    u64 hash = HashMix(HashBytes(params, ArrayLen(params)), HashBytes(results, ArrayLen(results)));
+    u64 key = hash ? hash : 1;
+    InternType *intern = MapGet(&internFunctionTypes, (void*) key);
+    for (InternType *it = intern; it; it = it->next) {
+        Type *type = it->type;
+        if (ArraysEqual(params, type->Function.params) && ArraysEqual(results, type->Function.results) && flags == type->Function.Flags) {
+            return type;
+        }
+    }
+    Type *type = AllocType(TypeKind_Function);
+    type->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    type->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
+    type->Flags = flags;
+    type->Function.params = params;
+    type->Function.results = results;
+    InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
+    newIntern->type = type;
+    newIntern->next = intern;
+    MapSet(&internArrayTypes, (void*) key, newIntern);
+    return type;
+}
+
+Type *NewTypeStruct(TypeFlag flags, DynamicArray(Type *) members) {
+    UNIMPLEMENTED();
+    return NULL;
+}
+
+Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
+    UNIMPLEMENTED();
+    return NULL;
+}
+
+Scope *pushScope(Package *pkg, Scope *parent);
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl);
+
+void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Type *type, Val val) {
+    b32 dup = declareSymbol(&builtinPackage, builtinPackage.scope, StrIntern(name), symbol, 0, NULL);
+    ASSERT(!dup);
+    (*symbol)->type = type;
+    (*symbol)->val = val;
+    (*symbol)->used = true;
+    (*symbol)->state = SymbolState_Resolved;
+    (*symbol)->kind = kind;
+}
+
+void declareBuiltinType(const char *name, Type *type) {
+    name = StrIntern(name);
+    Symbol *symbol;
+    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, 0, NULL);
+    symbol->state = SymbolState_Resolved;
     symbol->type = type;
-    return symbol;
+    symbol->kind = SymbolKind_Type;
+    type->Symbol = symbol;
 }
 
-Symbol *symbolIntern(Symbol symbol) {
-    Symbol *intern = ArenaAlloc(&typeInternArena, sizeof(Symbol));
-    memcpy(intern, &symbol, sizeof(Symbol));
-    return intern;
-}
+bool HaveInitializedBuiltins = false;
+void InitBuiltins() {
+    if (HaveInitializedBuiltins) return;
+    HaveInitializedBuiltins = true;
 
-void InitBuiltinTypes() {
-    static b32 init;
-    if (init) return;
+    switch (TargetOs) {
+        case Os_Linux:
+            TargetTypeMetrics = Os_Linux_ArchSupport[TargetArch];
+            break;
+        case Os_Darwin:
+            TargetTypeMetrics = Os_Darwin_ArchSupport[TargetArch];
+            break;
+        case Os_Windows:
+            TargetTypeMetrics = Os_Windows_ArchSupport[TargetArch];
+            break;
 
-    TYPE(Invalid, "<invalid>", Invalid, 0);
+        default:
+            break;
+    }
+    if (!TargetTypeMetrics) {
+        printf("Unsupported os & arch combination: %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
+        exit(1);
+    }
 
-    TYPE(Any,  "any",  Any,  0);
-    TYPE(Void, "void", Void, 0);
+    builtinPackage.scope = pushScope(&builtinPackage, NULL);
 
-    TYPE(Bool, "bool", Bool, 8);
+#define TYPE(_global, _name, _kind, _width, _flags) \
+    _global = AllocType(TypeKind_##_kind); \
+    _global->Width = _width; \
+    _global->Align = _width; \
+    _global->Flags = _flags; \
+    declareBuiltinType(_name, _global)
 
-    TYPE(I8,  "i8",  Int,  8);
-    TYPE(I16, "i16", Int, 16);
-    TYPE(I32, "i32", Int, 32);
-    TYPE(I64, "i64", Int, 64);
-    TYPE(U8,  "u8",  Int,  8);
-    TYPE(U16, "u16", Int, 16);
-    TYPE(U32, "u32", Int, 32);
-    TYPE(U64, "u64", Int, 64);
+#define TYPEALIAS(_global, _name, _alias) \
+    _global = Alloc(DefaultAllocator, sizeof(Type)); \
+    memcpy(_global, _alias, sizeof(Type)); \
+    _global->Symbol = _alias->Symbol; \
+    _global->Flags |= TypeFlag_Alias
 
-    TYPE(F32, "f32", Float, 32);
-    TYPE(F64, "f64", Float, 64);
-    
-    UntypedIntType = TypeIntern((Type){.kind = TypeKind_UntypedInt});
-    UntypedFloatType = TypeIntern((Type){.kind = TypeKind_UntypedFloat});
+    TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
+    nextTypeId--;
 
-    FalseSymbol = symbolIntern((Symbol){
-        .name = StrIntern("false"),
-        .kind = SymbolKind_Constant,
-        .state = SymbolState_Resolved,
-        .type = BoolType
-    });
+    // @IMPORTANT: The order is important here as it sets up the TypeId's
+    // The TypeId's are used to rank numeric types for type promotion
+    //  We can promote compatible types upwards (as ordered below) provided there can be no loss of information
+    //
+    TYPE(AnyType,   "any",  Any, 128, TypeFlag_None); // typeid = 1
+    TYPE(VoidType, "void", Void, 0, TypeFlag_None);
 
-    TrueSymbol = symbolIntern((Symbol){
-        .name = StrIntern("true"),
-        .kind = SymbolKind_Constant,
-        .state = SymbolState_Resolved,
-        .type = BoolType
-    });
+    TYPE(F32Type, "f32", Float, 32, TypeFlag_None);
+    TYPE(F64Type, "f64", Float, 64, TypeFlag_None);
+    TYPE(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
 
-    init = true;
+    TYPE(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
+    TYPE(I16Type, "i16", Int, 16, TypeFlag_Signed);
+    TYPE(I32Type, "i32", Int, 32, TypeFlag_Signed);
+    TYPE(I64Type, "i64", Int, 64, TypeFlag_Signed);
+    TYPE(U8Type,  "u8",  Int,  8, TypeFlag_None);
+    TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
+    TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
+    TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
+    TYPE(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped);
+    // TODO: Do we need an UntypedUintType? ... UntypedIntType cannot represent values over INT64_MAX;
+
+    TYPE(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);
+
+    // Aliases behave in promotion just as the types they alias do.
+    TYPEALIAS(BoolType, "bool", U8Type);
+    TYPEALIAS(IntType,   "int", I32Type);
+    TYPEALIAS(UintType, "uint", U32Type);
+
+    switch (TargetTypeMetrics[TargetMetrics_Pointer].Width) {
+        case 32:
+            TYPEALIAS(IntptrType,   "intptr", I32Type);
+            TYPEALIAS(UintptrType, "uintptr", U32Type);
+            break;
+        case 64:
+            TYPEALIAS(IntptrType,   "intptr", I64Type);
+            TYPEALIAS(UintptrType, "uintptr", U64Type);
+            break;
+        default:
+            printf("Unsupported pointer width on os & arch %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
+            exit(1);
+    }
+
+    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
+    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
+
+    AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
+    AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;
+
+    RawptrType->Align = RawptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+
+#undef TYPE
 }
 
 const char *DescribeType(Type *type) {
-    // FIXME(Brett): just temp output
-    if (type) {
-        return DescribeTypeKind(type->kind);
+    if (!type) return DescribeTypeKind(TypeKind_Invalid);
+
+    if (type->Symbol) {
+        return type->Symbol->name;
     }
 
     return DescribeTypeKind(TypeKind_Invalid);
 }
 
-#undef TYPE
-
 #if TEST
 void test_TypeIntern() {
-    InitBuiltinTypes();
+    TargetArch = Arch_x86_64;
+    INIT_COMPILER();
 
     ASSERT(InvalidType);
     ASSERT(AnyType);
@@ -150,28 +308,25 @@ void test_TypeIntern() {
     ASSERT(U32Type);
     ASSERT(U64Type);
 
-    ASSERT(I8Type->Metatype.instanceType->width  ==  8);
-    ASSERT(I16Type->Metatype.instanceType->width == 16);
-    ASSERT(I32Type->Metatype.instanceType->width == 32);
-    ASSERT(I64Type->Metatype.instanceType->width == 64);
-    ASSERT(U8Type->Metatype.instanceType->width  ==  8);
-    ASSERT(U16Type->Metatype.instanceType->width == 16);
-    ASSERT(U32Type->Metatype.instanceType->width == 32);
-    ASSERT(U64Type->Metatype.instanceType->width == 64);
+    ASSERT(I8Type->Width  ==  8);
+    ASSERT(I16Type->Width == 16);
+    ASSERT(I32Type->Width == 32);
+    ASSERT(I64Type->Width == 64);
+    ASSERT(U8Type->Width  ==  8);
+    ASSERT(U16Type->Width == 16);
+    ASSERT(U32Type->Width == 32);
+    ASSERT(U64Type->Width == 64);
 
-    ASSERT(F32Type->Metatype.instanceType->width == 32);
-    ASSERT(F64Type->Metatype.instanceType->width == 64);
-}
-#endif
+    ASSERT(F32Type->Width == 32);
+    ASSERT(F64Type->Width == 64);
 
-#if TEST
-void test_TypeInternMap() {
-    InitKeywords();
-    InitBuiltinTypes();
+    ASSERT(IntptrType->Symbol->type == I64Type);
+    ASSERT(UintptrType->Symbol->type == U64Type);
 
-    Symbol *symbol = MapGet(&TypesMap, StrIntern("i32"));
-    ASSERT(symbol);
-    ASSERT(symbol->kind == SymbolKind_Type);
-    ASSERT(symbol->type == I32Type);
+    ASSERT(IntptrType->Width == 64);
+    ASSERT(UintptrType->Width == 64);
+
+    ASSERT(RawptrType->Width == 64);
+    ASSERT(AnyType->Width == 128);
 }
 #endif

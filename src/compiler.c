@@ -1,12 +1,15 @@
+
 #include "compiler.h"
 
-void InitBuiltinTypes(void);
+void InitTarget(void);
+void InitBuiltins(void);
+
+Package builtinPackage;
 
 void InitCompiler() {
-    InitKeywords();
-    InitBuiltinTypes();
-    InitDetailsForCurrentSystem();
     InitUnsetFlagsToDefaults();
+    InitKeywords();
+    InitBuiltins();
 }
 
 Map packageMap;
@@ -24,16 +27,18 @@ void addPackage(Package *package) {
     }
 }
 
+Scope *pushScope(Package *pkg, Scope *parent);
 Package *ImportPackage(const char *path) {
     path = StrIntern(path);
     Package *package = MapGet(&packageMap, path);
     if (!package) { // First time we have seen this package
         package = Calloc(DefaultAllocator, 1, sizeof(Package));
         package->path = path;
+        package->scope = pushScope(package, builtinPackage.scope);
         if (FlagVerbose) printf("Importing %s\n", path);
 
         char fullPath[MAX_PATH];
-        if (!AbsolutePath(path, fullPath)) return NullWithLoggedReason("Failed to resolve absolute path for %s", path); // Unable to resolve file path
+        if (!AbsolutePath(path, fullPath)) return NullWithLoggedReason("Failed to resolve absolute path for %s", path);
 
         strcpy(package->fullPath, fullPath);
         addPackage(package);

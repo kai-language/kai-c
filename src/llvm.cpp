@@ -8,6 +8,10 @@
 #include "checker.h"
 #include "llvm.h"
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma clang diagnostic ignored "-Wcomma"
+
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/IR/BasicBlock.h>
@@ -32,6 +36,8 @@
 
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
+
+#pragma clang diagnostic pop
 
 typedef struct DebugTypes {
     llvm::DIType *i8;
@@ -60,7 +66,6 @@ typedef struct LLVMGen {
     llvm::Module *m;
     llvm::Function *currentFunc;
     Debug *d;
-    llvm::Value **decls;
 } LLVMGen;
 
 
@@ -72,29 +77,38 @@ void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
 b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
-repeat:
     switch (type->kind) {
-    case TypeKind_Metatype: {
-        type = type->Metatype.instanceType;
-        goto repeat;
-    }
-        
-    case TypeKind_UntypedInt:
-        return llvm::IntegerType::get(gen->m->getContext(), 64);
+    case TypeKind_Void:
+        return llvm::Type::getVoidTy(gen->m->getContext());
     case TypeKind_Int:
-        return llvm::IntegerType::get(gen->m->getContext(), type->width);
+        return llvm::IntegerType::get(gen->m->getContext(), type->Width);
 
-    case TypeKind_UntypedFloat:
-        return llvm::Type::getDoubleTy(gen->m->getContext());
     case TypeKind_Float: {
-        if (type->width == 32) {
+        if (type->Width == 32) {
             return llvm::Type::getFloatTy(gen->m->getContext());
-        } else if (type->width == 64) {
+        } else if (type->Width == 64) {
             return llvm::Type::getDoubleTy(gen->m->getContext());
         } else {
             ASSERT(false);
         }
-    }
+    } break;
+
+    case TypeKind_Pointer: {
+        return llvm::PointerType::get(canonicalize(gen, type->Pointer.pointeeType), 0);
+    } break;
+
+    case TypeKind_Function: {
+        ASSERT_MSG(ArrayLen(type->Function.results) == 1, "Currently we don't support multi-return");
+        std::vector<llvm::Type *> params;
+        For(type->Function.params) {
+            llvm::Type *paramType = canonicalize(gen, type);
+            params.push_back(paramType);
+        }
+
+        // TODO(Brett): canonicalize multi-return and Kai vargs
+        llvm::Type *returnType = canonicalize(gen, type->Function.results[0]);
+        return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
+    } break;
     }
 
     ASSERT_MSG_VA(false, "Unable to canonicalize type %s", DescribeType(type));
@@ -105,11 +119,11 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
     DebugTypes types = gen->d->types;
 
     if (type->kind == TypeKind_Int) {
-        switch (type->width) {
-        case 8:  return type->Int.isSigned ? types.i8  : types.u8;
-        case 16: return type->Int.isSigned ? types.i16 : types.u16;
-        case 32: return type->Int.isSigned ? types.i32 : types.u32;
-        case 64: return type->Int.isSigned ? types.i64 : types.u64;
+        switch (type->Width) {
+        case 8:  return type->Flags & TypeFlag_Signed ? types.i8  : types.u8;
+        case 16: return type->Flags & TypeFlag_Signed ? types.i16 : types.u16;
+        case 32: return type->Flags & TypeFlag_Signed ? types.i32 : types.u32;
+        case 64: return type->Flags & TypeFlag_Signed ? types.i64 : types.u64;
         }
     }
 
@@ -117,7 +131,7 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
         return types.i64;
 
     if (type->kind == TypeKind_Float) {
-        return type->width == 32 ? types.f32 : types.f64;
+        return type->Width == 32 ? types.f32 : types.f64;
     }
 
     if (type == UntypedFloatType)
@@ -125,6 +139,13 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
 
     if (type->kind == TypeKind_Void) {
         return NULL;
+    }
+
+    if (type->kind == TypeKind_Pointer) {
+        return gen->d->builder->createPointerType(
+            debugCanonicalize(gen, type->Pointer.pointeeType),
+            64
+        );
     }
 
     ASSERT(false);
@@ -158,55 +179,76 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
     case ExprKind_LitInt: {
         Expr_LitInt lit = expr->LitInt;
         CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.BasicLit.type;
+        Type *type = info.BasicExpr.type;
         debugPos(gen, b, expr->start);
         return llvm::ConstantInt::get(
             canonicalize(gen, type), 
             lit.val, 
-            type->Int.isSigned
+            type->Flags & TypeFlag_Signed
         );
     };
 
     case ExprKind_LitFloat: {
         Expr_LitFloat lit = expr->LitFloat;
         CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.BasicLit.type;
+        Type *type = info.BasicExpr.type;
         debugPos(gen, b, expr->start);
         return llvm::ConstantFP::get(canonicalize(gen, type), lit.val);
     };
 
+    case ExprKind_LitNil: {
+        CheckerInfo info = checkerInfo[expr->id];
+        Type *type = info.BasicExpr.type;
+        debugPos(gen, b, expr->start);
+        return llvm::ConstantPointerNull::get((llvm::PointerType *)canonicalize(gen, type));
+    } break;
+
+    
     case ExprKind_Ident: {
         CheckerInfo info = checkerInfo[expr->id];
         Symbol *symbol = info.Ident.symbol;
         // TODO(Brett): check for return address
-        return b->CreateLoad(gen->decls[symbol->decl->declId]);
+        return b->CreateLoad((llvm::Value *)symbol->backendUserdata);
     };
-
     }
 
     ASSERT(false);
     return NULL;
 }
 
-void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Stmt *stmt) {
+void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Stmt *stmt, bool isGlobal) {
     switch (stmt->kind) {
     case StmtDeclKind_Constant: {
         CheckerInfo info = checkerInfo[stmt->id];
         Decl_Constant decl = stmt->Constant;
-        Symbol *symbol = info.Decl.symbol;
-        llvm::Type *type = canonicalize(gen, symbol->type);
-        llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
-        gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) alloca;
+        Symbol *symbol = info.Constant.symbol;
 
-        debugPos(gen, b, stmt->start);
+        if (symbol->type->kind == TypeKind_Function) {
+            UNIMPLEMENTED();
+        } else {
+            llvm::Type *type = canonicalize(gen, symbol->type);
 
-        llvm::Value *value = emitExpr(gen, b, checkerInfo, decl.values[0]);
-        b->CreateStore(value, alloca);
+            llvm::GlobalVariable *global = new llvm::GlobalVariable(
+                *gen->m,
+                type,
+                /*isConstant:*/true,
+                isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+                0,
+                symbol->name
+            );
+
+            symbol->backendUserdata = global;
+
+            debugPos(gen, b, stmt->start);
+
+            llvm::Value *value = emitExpr(gen, b, checkerInfo, decl.values[0]);
+            global->setInitializer((llvm::Constant *)value);
+        }
     } break;
 
     case StmtDeclKind_Variable: {
         CheckerInfo info = checkerInfo[stmt->id];
-        DynamicArray(Symbol *) symbols = info.DeclList.symbols;
+        DynamicArray(Symbol *) symbols = info.Variable.symbols;
         Decl_Variable var = stmt->Variable;
 
         For (symbols) {
@@ -214,7 +256,7 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
             llvm::Type *type = canonicalize(gen, symbol->type);
             llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
 
-            gen->decls[((Decl *)stmt)->declId] = (llvm::Value *) alloca;
+            symbol->backendUserdata = alloca;
 
             debugPos(gen, b, var.names[i]->start);
 
@@ -247,7 +289,6 @@ void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) chec
     }
 } 
 
-
 b32 CodegenLLVM(Package *p) {
     llvm::LLVMContext context;
     llvm::Module *module = new llvm::Module(p->path, context);
@@ -276,13 +317,10 @@ b32 CodegenLLVM(Package *p) {
         debug = &_debug;
     }
 
-    llvm::Value **decls = (llvm::Value **) ArenaAlloc(&p->arena, sizeof(llvm::Value *)*p->declCount+1);
-
     LLVMGen _gen = {
         module,
         nullptr,
-        debug,
-        decls
+        debug
     };
 
     LLVMGen *gen = &_gen;
@@ -329,7 +367,7 @@ b32 CodegenLLVM(Package *p) {
     debugPos(gen, &b, pos);
 
     For (p->stmts) {
-        emitStmt(gen, &b, p->checkerInfo, p->stmts[i]);
+        emitStmt(gen, &b, p->checkerInfo, p->stmts[i], true);
     }
 
     b.CreateRetVoid();
@@ -381,6 +419,10 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
         return 1;
     }
 
+    if (FlagVerbose) {
+        printf("Target: %s\n", targetTriple.c_str());
+    }
+
     const char *cpu = "generic";
     const char *features = "";
 
@@ -419,14 +461,23 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
 #ifdef SYSTEM_OSX
     DynamicArray(u8) linkerFlags = NULL;
     ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -macosx_version_min 10.13", objectName, OutputName);
+
+    if (FlagVerbose) {
+        printf("%s\n", linkerFlags);
+    }
     system((char *)linkerFlags);
 
     if (FlagDebug) {
         DynamicArray(u8) symutilFlags = NULL;
-        ArrayPrintf(symutilFlags, "symutil %s", OutputName);
+        ArrayPrintf(symutilFlags, "dsymutil %s", OutputName);
+
+        if (FlagVerbose) {
+            printf("%s\n", symutilFlags);
+        }
+        system((char *)symutilFlags);
     }
 #else
-    // TODO: linking on mac and Linux
+    // TODO: linking on Windows and Linux
     UNIMPLEMENTED();
 #endif
 
