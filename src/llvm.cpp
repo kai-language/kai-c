@@ -237,17 +237,89 @@ llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(Che
         case TK_Mul:
             return isInt ? b->CreateMul(lhs, rhs) : b->CreateFMul(lhs, rhs);
 
+        case TK_And:
+            return b->CreateAnd(lhs, rhs);
+        case TK_Or:
+            return b->CreateOr(lhs, rhs);
+        case TK_Xor:
+            return b->CreateXor(lhs, rhs);
+        
         case TK_Div: {
             if (isInt) {
-                b32 isSigned = IsSigned(type);
-                return isSigned ? b->CreateSDiv(lhs, rhs) : b->CreateUDiv(lhs, rhs);
+                return IsSigned(type) ? b->CreateSDiv(lhs, rhs) : b->CreateUDiv(lhs, rhs);
             } else {
                 return b->CreateFDiv(lhs, rhs);
             }
         };
+
+        case TK_Rem: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateSRem(lhs, rhs) : b->CreateSRem(lhs, rhs);
+            } else {
+                return b->CreateFRem(lhs, rhs);
+            }
+        };
+
+        case TK_Land: {
+            llvm::Value *x = b->CreateAnd(lhs, rhs);
+            return b->CreateTruncOrBitCast(x, canonicalize(gen, BoolType));
+        };
+
+        case TK_Lor: {
+            llvm::Value *x = b->CreateOr(lhs, rhs);
+            return b->CreateTruncOrBitCast(x, canonicalize(gen, BoolType));
+        };
+
+        case TK_Shl: {
+            return b->CreateShl(lhs, rhs);
+        };
+
+        case TK_Shr: {
+            return IsSigned(type) ? b->CreateAShr(lhs, rhs) : b->CreateLShr(lhs, rhs);
+        };
+
+        case TK_Lss: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSLT(lhs, rhs) : b->CreateICmpULT(lhs, rhs);
+            } else {
+                return b->CreateFCmpOLT(lhs, rhs);
+            }
+        };
+
+        case TK_Gtr: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSGT(lhs, rhs) : b->CreateICmpUGT(lhs, rhs);
+            } else {
+                return b->CreateFCmpOGT(lhs, rhs);
+            }
+        };
+
+        case TK_Leq: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSLE(lhs, rhs) : b->CreateICmpULE(lhs, rhs);
+            } else {
+                return b->CreateFCmpOLE(lhs, rhs);
+            }
+        };
+
+        case TK_Geq: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSGE(lhs, rhs) : b->CreateICmpUGE(lhs, rhs);
+            } else {
+                return b->CreateFCmpOGE(lhs, rhs);
+            }
+        };
+
+        case TK_Eql: {
+            return isInt ? b->CreateICmpEQ(lhs, rhs) : b->CreateFCmpOEQ(lhs, rhs);
+        };
+
+        case TK_Neq: {
+            return isInt ? b->CreateICmpNE(lhs, rhs) : b->CreateFCmpONE(lhs, rhs);
+        };
     }
 
-    UNIMPLEMENTED();
+    ASSERT(false);
     return NULL;
 }
 
