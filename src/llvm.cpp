@@ -75,6 +75,7 @@ typedef struct LLVMGen {
 
 void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
 b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
+llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr);
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
     switch (type->kind) {
@@ -175,12 +176,14 @@ llvm::AllocaInst *createEntryBlockAlloca(llvm::Function *func, llvm::Type *type,
 }
 
 llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+
+    debugPos(gen, b, expr->start);
+
     switch (expr->kind) {
     case ExprKind_LitInt: {
         Expr_LitInt lit = expr->LitInt;
         CheckerInfo info = checkerInfo[expr->id];
         Type *type = info.BasicExpr.type;
-        debugPos(gen, b, expr->start);
         return llvm::ConstantInt::get(
             canonicalize(gen, type), 
             lit.val, 
@@ -192,27 +195,48 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
         Expr_LitFloat lit = expr->LitFloat;
         CheckerInfo info = checkerInfo[expr->id];
         Type *type = info.BasicExpr.type;
-        debugPos(gen, b, expr->start);
         return llvm::ConstantFP::get(canonicalize(gen, type), lit.val);
     };
 
     case ExprKind_LitNil: {
         CheckerInfo info = checkerInfo[expr->id];
         Type *type = info.BasicExpr.type;
-        debugPos(gen, b, expr->start);
         return llvm::ConstantPointerNull::get((llvm::PointerType *)canonicalize(gen, type));
     } break;
 
-    
     case ExprKind_Ident: {
         CheckerInfo info = checkerInfo[expr->id];
         Symbol *symbol = info.Ident.symbol;
         // TODO(Brett): check for return address
         return b->CreateLoad((llvm::Value *)symbol->backendUserdata);
     };
+
+    case ExprKind_Binary: {
+        return emitBinaryExpr(gen, b,  checkerInfo, expr);
+    };
     }
 
     ASSERT(false);
+    return NULL;
+}
+
+llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+    Expr_Binary binary = expr->Binary;
+    b32 isInt = checkerInfo[expr->id].BasicExpr.type->kind == TypeKind_Int;
+    llvm::Value *lhs, *rhs;
+    lhs = emitExpr(gen, b, checkerInfo, binary.lhs);
+    rhs = emitExpr(gen, b, checkerInfo, binary.rhs);
+
+    switch (binary.op) {
+        case TK_Add:
+            return isInt ? b->CreateAdd(lhs, rhs) : b->CreateFAdd(lhs, rhs);
+        case TK_Sub:
+            return isInt ? b->CreateSub(lhs, rhs) : b->CreateFSub(lhs, rhs);
+        case TK_Mul:
+            return isInt ? b->CreateMul(lhs, rhs) : b->CreateFMul(lhs, rhs);
+    }
+
+    UNIMPLEMENTED();
     return NULL;
 }
 

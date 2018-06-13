@@ -8,6 +8,8 @@ llvm.o
 *.so
 *.dSYM
 test/wip.kai
+out_wip
+wip.o
 tools/genTests
 tools/genXCTests
 kai_tests*
