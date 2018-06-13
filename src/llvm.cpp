@@ -76,6 +76,7 @@ typedef struct LLVMGen {
 void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
 b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
 llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr);
+llvm::Value *emitUnaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr);
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
     switch (type->kind) {
@@ -211,8 +212,12 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
         return b->CreateLoad((llvm::Value *)symbol->backendUserdata);
     };
 
+    case ExprKind_Unary: {
+        return emitUnaryExpr(gen, b, checkerInfo, expr);
+    };
+
     case ExprKind_Binary: {
-        return emitBinaryExpr(gen, b,  checkerInfo, expr);
+        return emitBinaryExpr(gen, b, checkerInfo, expr);
     };
     }
 
@@ -220,6 +225,29 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
     return NULL;
 }
 
+llvm::Value *emitUnaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+     Expr_Unary unary = expr->Unary;
+     llvm::Value *val = emitExpr(gen, b, checkerInfo, unary.expr);
+
+     switch (unary.op) {
+        case TK_Add:
+        case TK_And:
+            return val;
+        case TK_Sub:
+            return b->CreateNeg(val);
+        case TK_Not:
+        case TK_BNot:
+            return b->CreateNot(val);
+
+        case TK_Lss: {
+            // TODO: check for return address
+            return b->CreateLoad(val);
+        };
+     }
+
+     ASSERT(false);
+     return NULL;
+}
 llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
     Expr_Binary binary = expr->Binary;
     Type *type = checkerInfo[expr->id].BasicExpr.type;
