@@ -222,7 +222,9 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
 
 llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
     Expr_Binary binary = expr->Binary;
-    b32 isInt = checkerInfo[expr->id].BasicExpr.type->kind == TypeKind_Int;
+    Type *type = checkerInfo[expr->id].BasicExpr.type;
+    b32 isInt = IsInteger(type);
+
     llvm::Value *lhs, *rhs;
     lhs = emitExpr(gen, b, checkerInfo, binary.lhs);
     rhs = emitExpr(gen, b, checkerInfo, binary.rhs);
@@ -234,6 +236,15 @@ llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(Che
             return isInt ? b->CreateSub(lhs, rhs) : b->CreateFSub(lhs, rhs);
         case TK_Mul:
             return isInt ? b->CreateMul(lhs, rhs) : b->CreateFMul(lhs, rhs);
+
+        case TK_Div: {
+            if (isInt) {
+                b32 isSigned = IsSigned(type);
+                return isSigned ? b->CreateSDiv(lhs, rhs) : b->CreateUDiv(lhs, rhs);
+            } else {
+                return b->CreateFDiv(lhs, rhs);
+            }
+        };
     }
 
     UNIMPLEMENTED();
