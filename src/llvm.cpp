@@ -75,6 +75,8 @@ typedef struct LLVMGen {
 
 void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
 b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
+llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr);
+llvm::Value *emitUnaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr);
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
     switch (type->kind) {
@@ -175,12 +177,14 @@ llvm::AllocaInst *createEntryBlockAlloca(llvm::Function *func, llvm::Type *type,
 }
 
 llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+
+    debugPos(gen, b, expr->start);
+
     switch (expr->kind) {
     case ExprKind_LitInt: {
         Expr_LitInt lit = expr->LitInt;
         CheckerInfo info = checkerInfo[expr->id];
         Type *type = info.BasicExpr.type;
-        debugPos(gen, b, expr->start);
         return llvm::ConstantInt::get(
             canonicalize(gen, type), 
             lit.val, 
@@ -192,24 +196,155 @@ llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerIn
         Expr_LitFloat lit = expr->LitFloat;
         CheckerInfo info = checkerInfo[expr->id];
         Type *type = info.BasicExpr.type;
-        debugPos(gen, b, expr->start);
         return llvm::ConstantFP::get(canonicalize(gen, type), lit.val);
     };
 
     case ExprKind_LitNil: {
         CheckerInfo info = checkerInfo[expr->id];
         Type *type = info.BasicExpr.type;
-        debugPos(gen, b, expr->start);
         return llvm::ConstantPointerNull::get((llvm::PointerType *)canonicalize(gen, type));
     } break;
 
-    
     case ExprKind_Ident: {
         CheckerInfo info = checkerInfo[expr->id];
         Symbol *symbol = info.Ident.symbol;
         // TODO(Brett): check for return address
         return b->CreateLoad((llvm::Value *)symbol->backendUserdata);
     };
+
+    case ExprKind_Unary: {
+        return emitUnaryExpr(gen, b, checkerInfo, expr);
+    };
+
+    case ExprKind_Binary: {
+        return emitBinaryExpr(gen, b, checkerInfo, expr);
+    };
+    }
+
+    ASSERT(false);
+    return NULL;
+}
+
+llvm::Value *emitUnaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+     Expr_Unary unary = expr->Unary;
+     llvm::Value *val = emitExpr(gen, b, checkerInfo, unary.expr);
+
+     switch (unary.op) {
+        case TK_Add:
+        case TK_And:
+            return val;
+        case TK_Sub:
+            return b->CreateNeg(val);
+        case TK_Not:
+        case TK_BNot:
+            return b->CreateNot(val);
+
+        case TK_Lss: {
+            // TODO: check for return address
+            return b->CreateLoad(val);
+        };
+     }
+
+     ASSERT(false);
+     return NULL;
+}
+llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+    Expr_Binary binary = expr->Binary;
+    Type *type = checkerInfo[expr->id].BasicExpr.type;
+    b32 isInt = IsInteger(type);
+
+    llvm::Value *lhs, *rhs;
+    lhs = emitExpr(gen, b, checkerInfo, binary.lhs);
+    rhs = emitExpr(gen, b, checkerInfo, binary.rhs);
+
+    switch (binary.op) {
+        case TK_Add:
+            return isInt ? b->CreateAdd(lhs, rhs) : b->CreateFAdd(lhs, rhs);
+        case TK_Sub:
+            return isInt ? b->CreateSub(lhs, rhs) : b->CreateFSub(lhs, rhs);
+        case TK_Mul:
+            return isInt ? b->CreateMul(lhs, rhs) : b->CreateFMul(lhs, rhs);
+
+        case TK_And:
+            return b->CreateAnd(lhs, rhs);
+        case TK_Or:
+            return b->CreateOr(lhs, rhs);
+        case TK_Xor:
+            return b->CreateXor(lhs, rhs);
+        
+        case TK_Div: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateSDiv(lhs, rhs) : b->CreateUDiv(lhs, rhs);
+            } else {
+                return b->CreateFDiv(lhs, rhs);
+            }
+        };
+
+        case TK_Rem: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateSRem(lhs, rhs) : b->CreateSRem(lhs, rhs);
+            } else {
+                return b->CreateFRem(lhs, rhs);
+            }
+        };
+
+        case TK_Land: {
+            llvm::Value *x = b->CreateAnd(lhs, rhs);
+            return b->CreateTruncOrBitCast(x, canonicalize(gen, BoolType));
+        };
+
+        case TK_Lor: {
+            llvm::Value *x = b->CreateOr(lhs, rhs);
+            return b->CreateTruncOrBitCast(x, canonicalize(gen, BoolType));
+        };
+
+        case TK_Shl: {
+            return b->CreateShl(lhs, rhs);
+        };
+
+        case TK_Shr: {
+            return IsSigned(type) ? b->CreateAShr(lhs, rhs) : b->CreateLShr(lhs, rhs);
+        };
+
+        case TK_Lss: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSLT(lhs, rhs) : b->CreateICmpULT(lhs, rhs);
+            } else {
+                return b->CreateFCmpOLT(lhs, rhs);
+            }
+        };
+
+        case TK_Gtr: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSGT(lhs, rhs) : b->CreateICmpUGT(lhs, rhs);
+            } else {
+                return b->CreateFCmpOGT(lhs, rhs);
+            }
+        };
+
+        case TK_Leq: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSLE(lhs, rhs) : b->CreateICmpULE(lhs, rhs);
+            } else {
+                return b->CreateFCmpOLE(lhs, rhs);
+            }
+        };
+
+        case TK_Geq: {
+            if (isInt) {
+                return IsSigned(type) ? b->CreateICmpSGE(lhs, rhs) : b->CreateICmpUGE(lhs, rhs);
+            } else {
+                return b->CreateFCmpOGE(lhs, rhs);
+            }
+        };
+
+        case TK_Eql: {
+            return isInt ? b->CreateICmpEQ(lhs, rhs) : b->CreateFCmpOEQ(lhs, rhs);
+        };
+
+        case TK_Neq: {
+            return isInt ? b->CreateICmpNE(lhs, rhs) : b->CreateFCmpONE(lhs, rhs);
+        };
     }
 
     ASSERT(false);

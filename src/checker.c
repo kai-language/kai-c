@@ -121,25 +121,25 @@ b32 expectType(Package *pkg, Type *type, ExprInfo *info, Position pos) {
     return info->mode == ExprMode_Type;
 }
 
-b32 isInteger(Type *type) {
+b32 IsInteger(Type *type) {
     return type->kind == TypeKind_Int;
 }
 
-b32 isSigned(Type *type) {
-    ASSERT_MSG(isInteger(type), "isSigned should only be called for integers. Try `isInteger(type) && isSigned(type)`");
+b32 IsSigned(Type *type) {
+    ASSERT_MSG(IsInteger(type), "IsSigned should only be called for integers. Try `IsInteger(type) && IsSigned(type)`");
     return (type->Flags & TypeFlag_Signed) != 0;
 }
 
-b32 isFloat(Type *type) {
+b32 IsFloat(Type *type) {
     return type->kind == TypeKind_Float;
 }
 
 b32 isNumeric(Type *type) {
-    return isInteger(type) || isFloat(type);
+    return IsInteger(type) || IsFloat(type);
 }
 
 b32 isBoolean(Type *type) {
-    return isInteger(type) && (type->Flags & TypeFlag_Boolean) != 0;
+    return IsInteger(type) && (type->Flags & TypeFlag_Boolean) != 0;
 }
 
 b32 isPointer(Type *type) {
@@ -155,7 +155,7 @@ b32 isNumericOrPointer(Type *type) {
 }
 
 b32 canBeUsedForLogical(Type *type) {
-    return isInteger(type) || isPointer(type);
+    return IsInteger(type) || isPointer(type);
 }
 
 b32 isEnum(Type *type) {
@@ -179,11 +179,11 @@ b32 isAlias(Type *type) {
 }
 
 b32 canBeUsedForBitwise(Type *type) {
-    return isInteger(type) || isEnumFlags(type);
+    return IsInteger(type) || isEnumFlags(type);
 }
 
 b32 isComparable(Type *type) {
-    return isInteger(type) || isFloat(type) || isEnum(type);
+    return IsInteger(type) || IsFloat(type) || isEnum(type);
 }
 
 b32 isEquatable(Type *type) {
@@ -201,7 +201,7 @@ b32 isEquatable(Type *type) {
 b32 (*unaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
     [TK_Add] = isNumeric,
     [TK_Sub] = isNumeric,
-    [TK_BNot] = isInteger,
+    [TK_BNot] = IsInteger,
     [TK_Not] = canBeUsedForLogical,
     [TK_Lss] = isPointer,
 };
@@ -211,7 +211,7 @@ b32 (*binaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
     [TK_Sub] = isNumeric,
     [TK_Mul] = isNumeric,
     [TK_Div] = isNumeric,
-    [TK_Rem] = isInteger,
+    [TK_Rem] = IsInteger,
 
     [TK_And] = canBeUsedForBitwise,
     [TK_Or]  = canBeUsedForBitwise,
@@ -237,13 +237,13 @@ b32 canCoerce(Type *type, Type *target) {
     // Any numeric or pointer type can convert to Bool type
     if (isNumericOrPointer(type) && isBoolean(target)) return true;
 
-    if (isInteger(target) && isInteger(type)) {
-        if (isSigned(type) && !isSigned(target)) {
+    if (IsInteger(target) && IsInteger(type)) {
+        if (IsSigned(type) && !IsSigned(target)) {
             // Conversion from a signed integer to an unsigned requires a cast.
             return false;
         }
 
-        if (!isSigned(type) && isSigned(target)) {
+        if (!IsSigned(type) && IsSigned(target)) {
             // Conversion from unsigned to signed requires the signed type is larger
             return type->Width < target->Width;
         }
@@ -252,11 +252,11 @@ b32 canCoerce(Type *type, Type *target) {
         return type->Width <= target->Width;
     }
 
-    if (isFloat(type)) {
+    if (IsFloat(type)) {
         // Conversion between float types requires the target is larger or equal in size.
-        return isFloat(target) && type->Width <= target->Width;
+        return IsFloat(target) && type->Width <= target->Width;
     }
-    if (isFloat(target)) {
+    if (IsFloat(target)) {
         // Conversion to float type only requires the source type is numeric
         return isNumeric(type);
     }
@@ -270,7 +270,7 @@ b32 canCoerce(Type *type, Type *target) {
     if (isPointer(target)) {
         // Only untyped integers are allowed to implicitly convert to a pointer type
         // Well... pointers can implicitly convert to pointers too. But that's handled above.
-        return isInteger(type) && isUntyped(type);
+        return IsInteger(type) && isUntyped(type);
     }
 
     return false;
@@ -307,13 +307,13 @@ i64 SignExtend(Type *type, Type *target, Val val) {
 }
 
 void convertValue(Type *type, Type *target, Val *val) {
-    if (isInteger(type) && isSigned(type) && isInteger(target) && isSigned(target)) {
+    if (IsInteger(type) && IsSigned(type) && IsInteger(target) && IsSigned(target)) {
         val->i64 = SignExtend(type, target, *val);
         return;
     }
 
-    if (isInteger(type) && isFloat(target)) {
-        if (isSigned(type)) {
+    if (IsInteger(type) && IsFloat(target)) {
+        if (IsSigned(type)) {
             i64 v = SignExtend(type, target, *val);
             switch (target->Width) {
                 case 32:
@@ -510,9 +510,9 @@ Type *checkExprLitInt(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
 
     Type *type = UntypedIntType;
     if (exprInfo->desiredType) {
-        if (isInteger(exprInfo->desiredType) || isPointer(exprInfo->desiredType)) {
+        if (IsInteger(exprInfo->desiredType) || isPointer(exprInfo->desiredType)) {
             exprInfo->val.u64 = lit.val;
-        } else if (isFloat(exprInfo->desiredType)) {
+        } else if (IsFloat(exprInfo->desiredType)) {
             exprInfo->val.f64 = (f64)lit.val;
         } else {
             ReportError(pkg, InvalidConversionError, expr->start,
@@ -540,7 +540,7 @@ Type *checkExprLitFloat(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
 
     Type *type = UntypedFloatType;
     if (exprInfo->desiredType) {
-        if (isFloat(exprInfo->desiredType)) {
+        if (IsFloat(exprInfo->desiredType)) {
             if (exprInfo->desiredType->Width == 32) {
                 exprInfo->val.f32 = (f32) lit.val;
             } else {
@@ -1209,7 +1209,7 @@ void test_checkConstantBinaryExpressions() {
     ArrayFree(pkg.diagnostics.errors);
 
     checkBinary("-1 + -8");
-    ASSERT(isInteger(type));
+    ASSERT(IsInteger(type));
     ASSERT(info.isConstant);
     ASSERT(info.val.i64 == -9);
 }

@@ -7,14 +7,14 @@ b32 evalUnary(TokenKind op, Type *type, ExprInfo *info) {
     if (!info->isConstant) return false;
 
     b32 isConstant;
-    if (isInteger(type)) {
-        if (isSigned(type)) {
+    if (IsInteger(type)) {
+        if (IsSigned(type)) {
             info->val.i64 = evalUnarySigned(op, info->val);
         } else {
             info->val.u64 = evalUnaryUnsigned(op, info->val);
         }
         isConstant = true;
-    } else if (isFloat(type)) {
+    } else if (IsFloat(type)) {
         info->val.f64 = evalUnaryFloat(op, info->val);
         isConstant = true;
     } else {
@@ -33,14 +33,14 @@ b32 evalBinary(TokenKind op, Type *type, Val lhsValue, Val rhsValue, ExprInfo *i
     if (!info->isConstant) return false;
 
     b32 isConstant;
-    if (isInteger(type)) {
-        if (isSigned(type)) {
+    if (IsInteger(type)) {
+        if (IsSigned(type)) {
             info->val.i64 = evalBinarySigned(op, lhsValue.i64, rhsValue.i64);
         } else {
             info->val.u64 = evalBinaryUnsigned(op, lhsValue.u64, rhsValue.u64);
         }
         isConstant = true;
-    } else if (isFloat(type)) {
+    } else if (IsFloat(type)) {
         info->val.f64 = evalBinaryFloat(op, lhsValue.f64, rhsValue.f64);
         isConstant = true;
     } else {
