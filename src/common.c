@@ -225,6 +225,17 @@ void PrintBits(u64 const size, void const * const ptr) {
     puts("");
 }
 
+u64 IntegerPower(u64 base, u64 exp) {
+    u64 result = 1;
+    for (;;) {
+        if (exp & 1) result *= base;
+        exp >>= 1;
+        if (!exp) break;
+        base *= base;
+    }
+    return result;
+}
+
 #if TEST
 void test_GetFileName() {
     char buff[MAX_PATH];

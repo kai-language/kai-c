@@ -48,9 +48,9 @@ b32 evalBinary(TokenKind op, Type *type, Val lhsValue, Val rhsValue, ExprInfo *i
         isConstant = false;
     }
     info->isConstant = isConstant;
+
     return isConstant;
 }
-
 
 i64 evalUnarySigned(TokenKind op, Val val) {
     switch (op) {

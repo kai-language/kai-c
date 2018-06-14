@@ -79,6 +79,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkConstantDeclarations();
 }
 
+- (void)test_coercionsAreMarked {
+    test_coercionsAreMarked();
+}
+
 - (void)test_checkConstantUnaryExpressions {
     test_checkConstantUnaryExpressions();
 }
@@ -197,6 +201,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
 - (void) setUp {
     setSelfForTestCase(self);
     [self setContinueAfterFailure: false];
+}
+
+- (void)test_SmallestIntTypeForValue {
+    test_SmallestIntTypeForValue();
 }
 
 - (void)test_TypeIntern {

@@ -39,6 +39,9 @@
 
 #pragma clang diagnostic pop
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch"
+
 typedef struct DebugTypes {
     llvm::DIType *i8;
     llvm::DIType *i16;
@@ -129,15 +132,9 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
         }
     }
 
-    if (type == UntypedIntType)
-        return types.i64;
-
     if (type->kind == TypeKind_Float) {
         return type->Width == 32 ? types.f32 : types.f64;
     }
-
-    if (type == UntypedFloatType)
-        return types.f64;
 
     if (type->kind == TypeKind_Void) {
         return NULL;
@@ -623,3 +620,5 @@ void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos) {
     if (!FlagDebug) { return; }
     b->SetCurrentDebugLocation(llvm::DebugLoc::get(pos.line, pos.column, gen->d->scope));
 }
+
+#pragma clang diagnostic pop
