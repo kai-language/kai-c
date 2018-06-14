@@ -26,9 +26,6 @@ extern Type *IntptrType;
 extern Type *UintptrType;
 extern Type *RawptrType;
 
-extern Type *UntypedIntType;
-extern Type *UntypedFloatType;
-
 extern Symbol *FalseSymbol;
 extern Symbol *TrueSymbol;
 
@@ -59,8 +56,7 @@ typedef enum TypeKind {
 
 typedef u8 TypeFlag;
 #define TypeFlag_None 0
-#define TypeFlag_Untyped  0x80
-#define TypeFlag_Alias    0x40
+#define TypeFlag_Alias    0x80
 
 // Void
 #define TypeFlag_NoReturn 0x1
@@ -143,5 +139,9 @@ struct Type {
 extern "C" {
 const char *DescribeType(Type *type);
 const char *DescribeTypeKind(TypeKind kind);
+Type *SmallestIntTypeForValue(u64 val);
+i64 SignExtend(Type *type, Type *target, Val val);
+b32 TypesIdentical(Type *type, Type *target);
+u64 MaxValueForIntOrPointerType(Type *type);
 }
 #endif

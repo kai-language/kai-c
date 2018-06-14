@@ -7,6 +7,20 @@ typedef enum CheckerInfoKind {
     CheckerInfoKind_BasicExpr,
 } CheckerInfoKind;
 
+typedef u8 Conversion;
+#define ConversionClass_Mask 0x07  // Lower 3 bits denote the class
+#define ConversionClass_None 0
+#define ConversionClass_Same 1
+#define ConversionClass_FtoI 2
+#define ConversionClass_ItoF 3
+#define ConversionClass_PtoI 4
+#define ConversionClass_ItoP 5
+#define ConversionClass_Bool 6
+#define ConversionClass_Any  7
+
+#define ConversionFlag_Extend 0x10 // 0001
+#define ConversionFlag_Signed 0x20 // 0010
+
 typedef struct CheckerInfo_Constant CheckerInfo_Constant;
 struct CheckerInfo_Constant {
     Symbol *symbol;
@@ -19,26 +33,34 @@ struct CheckerInfo_Variable {
 
 typedef struct CheckerInfo_Ident CheckerInfo_Ident;
 struct CheckerInfo_Ident {
+    Conversion coerce;
     Symbol *symbol;
 };
 
 typedef struct CheckerInfo_Selector CheckerInfo_Selector;
 struct CheckerInfo_Selector {
+    Conversion coerce;
     u32 levelsOfIndirection;
     Val constant;
 };
 
 typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;
 struct CheckerInfo_BasicExpr {
+    Conversion coerce;
     Type *type;
     b8 isConstant;
     Val val;
 };
 
+STATIC_ASSERT(offsetof(CheckerInfo_Ident,     coerce) == 0, "conversion must be at offset 0 for expressions");
+STATIC_ASSERT(offsetof(CheckerInfo_Selector,  coerce) == 0, "conversion must be at offset 0 for expressions");
+STATIC_ASSERT(offsetof(CheckerInfo_BasicExpr, coerce) == 0, "conversion must be at offset 0 for expressions");
+
 typedef struct CheckerInfo CheckerInfo;
 struct CheckerInfo {
     CheckerInfoKind kind;
     union {
+        Conversion coerce; // Present when CheckerInfo is for an expression
         CheckerInfo_Constant Constant;
         CheckerInfo_Variable Variable;
         CheckerInfo_Selector Selector;

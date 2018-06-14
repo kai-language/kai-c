@@ -30,9 +30,6 @@ Type *IntptrType;
 Type *UintptrType;
 Type *RawptrType;
 
-Type *UntypedIntType;
-Type *UntypedFloatType;
-
 // TODO: Mechanism to lookup type by their ID
 u32 nextTypeId = 1;
 
@@ -52,6 +49,63 @@ const char *TypeKindDescriptions[] = {
 const char *DescribeTypeKind(TypeKind kind) {
     return TypeKindDescriptions[kind];
 }
+
+Type *SmallestIntTypeForValue(u64 val) {
+    val = MAX(val, INT8_MAX);
+    if (val == INT8_MAX) return I8Type;
+
+    val = MAX(val, INT16_MAX);
+    if (val == INT16_MAX) return I16Type;
+
+    val = MAX(val, INT32_MAX);
+    if (val == INT32_MAX) return I32Type;
+
+    val = MAX(val, INT64_MAX);
+    if (val == INT64_MAX) return I64Type;
+
+    return U64Type;
+}
+
+u64 MaxValueForIntOrPointerType(Type *type) {
+    if (type->Flags & TypeFlag_Signed) {
+        return IntegerPower(2, type->Width) / 2 - 1;
+    } else {
+        // Unsigned
+        return IntegerPower(2, type->Width) - 1;
+    }
+}
+
+// FIXME: This doesn't sign extend to the target size currently, only 64 bits.
+i64 SignExtend(Type *type, Type *target, Val val) {
+    if (type->Width == 64) return val.i64;
+    u64 v = val.u64 & ((1ull << type->Width) - 1);
+    u64 mask = 1ull << (type->Width - 1);
+    return (v ^ mask) - mask;
+}
+
+b32 isAlias(Type *type);
+b32 TypesIdentical(Type *type, Type *target) {
+    while (isAlias(type)) {
+        type = type->Symbol->type;
+    }
+    while (isAlias(target)) {
+        target = target->Symbol->type;
+    }
+    return type == target;
+}
+
+#if TEST
+void test_SmallestIntTypeForValue() {
+    INIT_COMPILER();
+
+    ASSERT(SmallestIntTypeForValue(0) == I8Type);
+    ASSERT(SmallestIntTypeForValue(INT8_MAX) == I8Type);
+    ASSERT(SmallestIntTypeForValue(INT16_MAX) == I16Type);
+    ASSERT(SmallestIntTypeForValue(INT32_MAX) == I32Type);
+    ASSERT(SmallestIntTypeForValue(INT64_MAX) == I64Type);
+    ASSERT(SmallestIntTypeForValue(UINT64_MAX) == U64Type);
+}
+#endif
 
 Type *AllocType(TypeKind kind) {
     Type *type = Calloc(DefaultAllocator, 1, sizeof(Type));
@@ -232,12 +286,11 @@ void InitBuiltins() {
     TYPE(AnyType,   "any",  Any, 128, TypeFlag_None); // typeid = 1
     TYPE(VoidType, "void", Void, 0, TypeFlag_None);
 
-    TYPE(BoolType, "bool", Int, 1, TypeFlag_Untyped | TypeFlag_Boolean);
+    TYPE(BoolType, "bool", Int, 1, TypeFlag_Boolean);
     BoolType->Align = 8; // Must be byte aligned
 
     TYPE(F32Type, "f32", Float, 32, TypeFlag_None);
     TYPE(F64Type, "f64", Float, 64, TypeFlag_None);
-    TYPE(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
 
     TYPE(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
     TYPE(I16Type, "i16", Int, 16, TypeFlag_Signed);
@@ -247,7 +300,6 @@ void InitBuiltins() {
     TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
     TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
     TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
-    TYPE(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped | TypeFlag_Signed);
     // TODO: Do we need an UntypedUintType? ... UntypedIntType cannot represent values over INT64_MAX;
 
     TYPE(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);

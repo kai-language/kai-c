@@ -33,7 +33,8 @@
     FOR_EACH(InvalidBinaryOperation, "Binary operation invalid for type") \
     FOR_EACH(DivisionByZero, "Divided by zero") \
     FOR_EACH(TypeMismatch, "Type did not match") \
-    FOR_EACH(BadCondition, "Expected a numeric or pointer type to act as a condition")
+    FOR_EACH(BadCondition, "Expected a numeric or pointer type to act as a condition") \
+    FOR_EACH(UnrepresentableValue, "The value could not be represented in the desired type without loss of information")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,
