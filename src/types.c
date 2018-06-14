@@ -232,6 +232,9 @@ void InitBuiltins() {
     TYPE(AnyType,   "any",  Any, 128, TypeFlag_None); // typeid = 1
     TYPE(VoidType, "void", Void, 0, TypeFlag_None);
 
+    TYPE(BoolType, "bool", Int, 1, TypeFlag_Untyped | TypeFlag_Boolean);
+    BoolType->Align = 8; // Must be byte aligned
+
     TYPE(F32Type, "f32", Float, 32, TypeFlag_None);
     TYPE(F64Type, "f64", Float, 64, TypeFlag_None);
     TYPE(UntypedFloatType, "<float>", Float, 64, TypeFlag_Untyped);
@@ -244,13 +247,12 @@ void InitBuiltins() {
     TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
     TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
     TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
-    TYPE(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped);
+    TYPE(UntypedIntType, "<integer>",   Int, 64, TypeFlag_Untyped | TypeFlag_Signed);
     // TODO: Do we need an UntypedUintType? ... UntypedIntType cannot represent values over INT64_MAX;
 
     TYPE(RawptrType,   "rawptr", Pointer, 64, TypeFlag_None);
 
     // Aliases behave in promotion just as the types they alias do.
-    TYPEALIAS(BoolType, "bool", U8Type);
     TYPEALIAS(IntType,   "int", I32Type);
     TYPEALIAS(UintType, "uint", U32Type);
 
