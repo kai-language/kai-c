@@ -504,6 +504,7 @@ Expr *parseExprBinary(Parser *p, i32 prec1, b32 noCompoundLiteral) {
         if (precedence < prec1) return lhs;
         nextToken();
         if (op == TK_Question) {
+            // NOTE: Ternary supports missing pass expressions ie: `cond ?: default`
             Expr *pass = NULL;
             if (!isToken(p, TK_Colon)) {
                 pass = parseExpr(p, noCompoundLiteral);

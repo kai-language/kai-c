@@ -87,6 +87,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkConstantBinaryExpressions();
 }
 
+- (void)test_checkConstantTernaryExpression {
+    test_checkConstantTernaryExpression();
+}
+
 @end
 
 //

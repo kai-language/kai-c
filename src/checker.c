@@ -404,7 +404,8 @@ void coerceUntyped(Package *pkg, ExprInfo *info, Expr *expr, Type **type, Type *
             *type = target;
             return;
         }
-        // Either the types match or the conversion cannot occur
+        // Either the types match or the conversion cannot occur. Regardless we exit without warning becuase we
+        //  should only get here in a binary expression where there will be a subsequent call to convert target to type
         return;
     }
 
@@ -417,8 +418,15 @@ void coerceUntyped(Package *pkg, ExprInfo *info, Expr *expr, Type **type, Type *
             break;
 
         default:
-            *type = InvalidType;
+            goto error;
     }
+
+    return;
+
+error:
+    ReportError(pkg, InvalidConversionError, expr->start,
+                "Cannot convert %s to %s", DescribeType(*type), DescribeType(target));
+    *type = InvalidType;
 }
 
 b32 coerceTypeSilently(Expr *expr, ExprInfo *info, Type **type, Type *target, Package *pkg) {
@@ -830,6 +838,48 @@ error:
     return InvalidType;
 }
 
+Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+
+    ExprInfo condInfo = { .scope = exprInfo->scope, .desiredType = BoolType };
+    Type *cond = checkExpr(pkg, expr->Ternary.cond, &condInfo);
+
+    Type *pass = NULL;
+    ExprInfo passInfo = { .scope = exprInfo->scope, .desiredType = exprInfo->desiredType };
+    if (expr->Ternary.pass) {
+        pass = checkExpr(pkg, expr->Ternary.pass, &passInfo);
+    }
+
+    ExprInfo failInfo = { .scope = exprInfo->scope, .desiredType = pass };
+    Type *fail = checkExpr(pkg, expr->Ternary.fail, &failInfo);
+
+    if (!isNumericOrPointer(cond)) {
+        ReportError(pkg, BadConditionError, expr->start,
+                    "Expected a numeric or pointer type to act as a condition in the ternary expression");
+        goto error;
+    }
+
+    if (!coerceType(expr->Ternary.fail, &failInfo, &fail, pass ? pass : cond, pkg)) {
+        ReportError(pkg, TypeMismatchError, expr->Ternary.fail->start,
+                    "Expected type %s got type %s", DescribeType(pass ? pass : cond), DescribeType(fail));
+        goto error;
+    }
+
+    if (condInfo.isConstant && passInfo.isConstant && failInfo.isConstant) {
+        exprInfo->isConstant = true;
+        exprInfo->val = condInfo.val.u64 ? passInfo.val : failInfo.val;
+        storeInfoBasicExprWithConstant(pkg, expr, fail, exprInfo->val);
+    } else {
+        storeInfoBasicExpr(pkg, expr, fail);
+    }
+
+    exprInfo->mode = ExprMode_Computed;
+    return fail;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
 Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
     Type *type = NULL;
     switch (expr->kind) {
@@ -867,6 +917,11 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
         case ExprKind_Binary:
             type = checkExprBinary(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_Ternary:
+            type = checkExprTernary(expr, exprInfo, pkg);
+            break;
 
         default:
             break;
@@ -1212,6 +1267,37 @@ void test_checkConstantBinaryExpressions() {
     ASSERT(IsInteger(type));
     ASSERT(info.isConstant);
     ASSERT(info.val.i64 == -9);
+}
+
+void test_checkConstantTernaryExpression() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    ExprInfo info;
+    Type *type;
+#define checkTernary(_CODE) \
+    stmt = resetAndParseSingleStmt(_CODE); \
+    info = (ExprInfo){ .scope = pkg.scope }; \
+    type = checkExprTernary((Expr *) stmt, &info, &pkg)
+
+    checkTernary("true ? 1 : 2");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 1);
+
+    checkTernary("false ? 1.5 : 2.5");
+    ASSERT(type == UntypedFloatType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.f64 == 2.5);
+
+    checkTernary("0 ? 1 ? 2 : 3 : 4");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 4);
+
+    checkTernary("1 ? 1 ? 2 : 3 : 4");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 2);
 }
 
 #undef pkg
