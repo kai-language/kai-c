@@ -858,8 +858,7 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
         goto error;
     }
 
-    convert(pkg, expr->Ternary.fail, &fail, pass ? pass : cond);
-    if (fail == InvalidType) {
+    if (!coerceType(expr->Ternary.fail, &failInfo, &fail, pass ? pass : cond, pkg)) {
         ReportError(pkg, TypeMismatchError, expr->Ternary.fail->start,
                     "Expected type %s got type %s", DescribeType(pass ? pass : cond), DescribeType(fail));
         goto error;
@@ -1289,6 +1288,16 @@ void test_checkConstantTernaryExpression() {
     ASSERT(type == UntypedFloatType);
     ASSERT(info.isConstant);
     ASSERT(info.val.f64 == 2.5);
+
+    checkTernary("0 ? 1 ? 2 : 3 : 4");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 4);
+
+    checkTernary("1 ? 1 ? 2 : 3 : 4");
+    ASSERT(type == UntypedIntType);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 2);
 }
 
 #undef pkg
