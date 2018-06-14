@@ -50,18 +50,28 @@ const char *DescribeTypeKind(TypeKind kind) {
     return TypeKindDescriptions[kind];
 }
 
-Type *SmallestIntTypeForValue(u64 val) {
-    val = MAX(val, INT8_MAX);
-    if (val == INT8_MAX) return I8Type;
+Type *SmallestIntTypeForNegativeValue(i64 val) {
+    val = MIN(val, INT8_MIN);
+    if (val == INT8_MIN) return I8Type;
 
-    val = MAX(val, INT16_MAX);
-    if (val == INT16_MAX) return I16Type;
+    val = MIN(val, INT16_MIN);
+    if (val == INT16_MIN) return I16Type;
 
-    val = MAX(val, INT32_MAX);
-    if (val == INT32_MAX) return I32Type;
+    val = MIN(val, INT32_MIN);
+    if (val == INT32_MIN) return I32Type;
 
-    val = MAX(val, INT64_MAX);
-    if (val == INT64_MAX) return I64Type;
+    return I64Type;
+}
+
+Type *SmallestIntTypeForPositiveValue(u64 val) {
+    val = MAX(val, UINT8_MAX);
+    if (val == UINT8_MAX) return U8Type;
+
+    val = MAX(val, UINT16_MAX);
+    if (val == UINT16_MAX) return U16Type;
+
+    val = MAX(val, UINT32_MAX);
+    if (val == UINT32_MAX) return U32Type;
 
     return U64Type;
 }
@@ -83,6 +93,13 @@ i64 SignExtend(Type *type, Type *target, Val val) {
     return (v ^ mask) - mask;
 }
 
+i64 SignExtendTo64Bits(Type *source, Val val) {
+    if (source->Width == 64) return val.i64;
+    u64 v = val.u64 & ((1ull << source->Width) - 1);
+    u64 mask = 1ull << (source->Width - 1);
+    return (v ^ mask) - mask;
+}
+
 b32 isAlias(Type *type);
 b32 TypesIdentical(Type *type, Type *target) {
     while (isAlias(type)) {
@@ -98,12 +115,11 @@ b32 TypesIdentical(Type *type, Type *target) {
 void test_SmallestIntTypeForValue() {
     INIT_COMPILER();
 
-    ASSERT(SmallestIntTypeForValue(0) == I8Type);
-    ASSERT(SmallestIntTypeForValue(INT8_MAX) == I8Type);
-    ASSERT(SmallestIntTypeForValue(INT16_MAX) == I16Type);
-    ASSERT(SmallestIntTypeForValue(INT32_MAX) == I32Type);
-    ASSERT(SmallestIntTypeForValue(INT64_MAX) == I64Type);
-    ASSERT(SmallestIntTypeForValue(UINT64_MAX) == U64Type);
+    ASSERT(SmallestIntTypeForPositiveValue(0) == U8Type);
+    ASSERT(SmallestIntTypeForPositiveValue(UINT8_MAX) == U8Type);
+    ASSERT(SmallestIntTypeForPositiveValue(UINT16_MAX) == U16Type);
+    ASSERT(SmallestIntTypeForPositiveValue(UINT32_MAX) == U32Type);
+    ASSERT(SmallestIntTypeForPositiveValue(UINT64_MAX) == U64Type);
 }
 #endif
 

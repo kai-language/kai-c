@@ -139,8 +139,10 @@ struct Type {
 extern "C" {
 const char *DescribeType(Type *type);
 const char *DescribeTypeKind(TypeKind kind);
-Type *SmallestIntTypeForValue(u64 val);
+Type *SmallestIntTypeForPositiveValue(u64 val);
+Type *SmallestIntTypeForNegativeValue(i64 val);
 i64 SignExtend(Type *type, Type *target, Val val);
+i64 SignExtendTo64Bits(Type *source, Val val);
 b32 TypesIdentical(Type *type, Type *target);
 u64 MaxValueForIntOrPointerType(Type *type);
 }

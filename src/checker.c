@@ -122,7 +122,7 @@ b32 expectType(Package *pkg, Type *type, ExprInfo *info, Position pos) {
 }
 
 b32 IsInteger(Type *type) {
-    return type->kind == TypeKind_Int;
+    return type->kind == TypeKind_Int && ((type->Flags & TypeFlag_Boolean) == 0);
 }
 
 b32 IsSigned(Type *type) {
@@ -139,7 +139,7 @@ b32 isNumeric(Type *type) {
 }
 
 b32 isBoolean(Type *type) {
-    return IsInteger(type) && (type->Flags & TypeFlag_Boolean) != 0;
+    return type->kind == TypeKind_Int && (type->Flags & TypeFlag_Boolean) != 0;
 }
 
 b32 isPointer(Type *type) {
@@ -159,7 +159,7 @@ b32 isNumericOrPointer(Type *type) {
 }
 
 b32 canBeUsedForLogical(Type *type) {
-    return IsInteger(type) || isPointer(type);
+    return isBoolean(type) || IsInteger(type) || isPointer(type);
 }
 
 b32 isEnum(Type *type) {
@@ -392,6 +392,23 @@ void changeTypeOrMarkConversionForExpr(Expr *expr, Type *type, Type *target, Pac
     }
 }
 
+void changeTypeOrRecordCoercionIfNeeded(Type **type, Expr *expr, ExprInfo *exprInfo, b32 isConstantNegative, Package *pkg) {
+    if (IsInteger(*type)) {
+        Type *requiredType = NULL;
+        if (isConstantNegative) {
+            i64 val = SignExtendTo64Bits(*type, exprInfo->val);
+            requiredType = SmallestIntTypeForNegativeValue(val);
+        } else {
+            requiredType = SmallestIntTypeForPositiveValue(exprInfo->val.u64);
+        }
+
+        if (requiredType != *type) {
+            changeTypeOrMarkConversionForExpr(expr, *type, requiredType, pkg);
+            *type = requiredType;
+        }
+    }
+}
+
 // TODO: Test this
 void convertValue(Type *type, Type *target, Val *val) {
     if (isBoolean(target) && isNumericOrPointer(type)) {
@@ -523,9 +540,9 @@ Type *checkExprIdent(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
 Type *checkExprLitInt(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     Expr_LitInt lit = expr->LitInt;
 
-    Type *type = SmallestIntTypeForValue(lit.val);
+    Type *type = SmallestIntTypeForPositiveValue(lit.val);
     if (exprInfo->desiredType) {
-        if (isIntegerOrPointer(exprInfo->desiredType)) {
+        if (isIntegerOrPointer(exprInfo->desiredType) || isBoolean(exprInfo->desiredType)) {
             exprInfo->val.u64 = lit.val;
 
             if (lit.val > MaxValueForIntOrPointerType(exprInfo->desiredType)) {
@@ -772,7 +789,9 @@ Type *checkExprUnary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
             }
     }
 
-    if (evalUnary(expr->Unary.op, type, exprInfo)) {
+    b32 isConstantNegative;
+    if (evalUnary(expr->Unary.op, type, exprInfo, &isConstantNegative)) {
+        changeTypeOrRecordCoercionIfNeeded(&type, expr, exprInfo, isConstantNegative, pkg);
         storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
     } else {
         storeInfoBasicExpr(pkg, expr, type);
@@ -839,7 +858,9 @@ Type *checkExprBinary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     }
 
     exprInfo->isConstant = lhsInfo.isConstant && rhsInfo.isConstant;
-    if (evalBinary(expr->Binary.op, type, lhsInfo.val, rhsInfo.val, exprInfo)) {
+    b32 isConstantNegative;
+    if (evalBinary(expr->Binary.op, type, lhsInfo.val, rhsInfo.val, exprInfo, &isConstantNegative)) {
+        changeTypeOrRecordCoercionIfNeeded(&type, expr, exprInfo, isConstantNegative, pkg);
         storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
     } else {
         storeInfoBasicExpr(pkg, expr, type);
@@ -867,7 +888,7 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     ExprInfo failInfo = { .scope = exprInfo->scope, .desiredType = pass };
     Type *fail = checkExpr(pkg, expr->Ternary.fail, &failInfo);
 
-    if (!isNumericOrPointer(cond)) {
+    if (!isBoolean(cond) && !isNumericOrPointer(cond)) {
         ReportError(pkg, BadConditionError, expr->start,
                     "Expected a numeric or pointer type to act as a condition in the ternary expression");
         goto error;
@@ -880,6 +901,7 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     }
 
     if (condInfo.isConstant && passInfo.isConstant && failInfo.isConstant) {
+        // FIXME: call to changeTypeOrRecordCoercionIfNeeded?
         exprInfo->isConstant = true;
         exprInfo->val = condInfo.val.u64 ? passInfo.val : failInfo.val;
         storeInfoBasicExprWithConstant(pkg, expr, fail, exprInfo->val);
@@ -1255,9 +1277,9 @@ void test_checkConstantUnaryExpressions() {
     ASSERT(info.val.b32 == false);
 
     checkUnary("~0xffff");
-    ASSERT(type == I32Type);
+    ASSERT_MSG(type == U8Type, "Expected a u8 type to represent the value 0");
     ASSERT(info.isConstant);
-    ASSERT(info.val.u64 == ~0xffff);
+    ASSERT(info.val.u64 == 0);
 
 #undef checkUnary
 }
@@ -1273,9 +1295,9 @@ void test_checkConstantBinaryExpressions() {
     type = checkExprBinary((Expr *) stmt, &info, &pkg)
 
     checkBinary("1 + 2");
-    ASSERT(type == I8Type);
+    ASSERT(type == U8Type);
     ASSERT(info.isConstant);
-    ASSERT(info.val.i64 == 3);
+    ASSERT(info.val.u64 == 3);
 
     checkBinary("1 + 2.0");
     ASSERT(type == F64Type);
@@ -1296,12 +1318,10 @@ void test_checkConstantBinaryExpressions() {
     ASSERT(info.isConstant);
     ASSERT(info.val.i64 == -9);
 
-    // TODO: The following check fails. We need to, evaluating constant expressions, promote them if required to represent
-    //  the operations result.
-//    checkBinary("127 + 1");
-//    ASSERT(type == I16Type);
-//    ASSERT(info.isConstant);
-//    ASSERT(info.val.i16 == 128);
+    checkBinary("255 + 255");
+    ASSERT(type == U16Type);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.u16 == 510);
 }
 
 void test_checkConstantTernaryExpression() {
@@ -1315,7 +1335,7 @@ void test_checkConstantTernaryExpression() {
     type = checkExprTernary((Expr *) stmt, &info, &pkg)
 
     checkTernary("true ? 1 : 2");
-    ASSERT(type == I8Type);
+    ASSERT(type == U8Type);
     ASSERT(info.isConstant);
     ASSERT(info.val.i64 == 1);
 
@@ -1325,14 +1345,18 @@ void test_checkConstantTernaryExpression() {
     ASSERT(info.val.f64 == 2.5);
 
     checkTernary("0 ? 1 ? 2 : 3 : 4");
-    ASSERT(type == I8Type);
+    ASSERT(type == U8Type);
     ASSERT(info.isConstant);
     ASSERT(info.val.i64 == 4);
 
     checkTernary("1 ? 1 ? 2 : 3 : 4");
-    ASSERT(type == I8Type);
+    ASSERT(type == U8Type);
     ASSERT(info.isConstant);
     ASSERT(info.val.i64 == 2);
+
+    // FIXME: See fixme about calling to changeTypeOrRecordCoercionIfNeeded in checkExprTernary
+//    checkTernary("false ? 100000 : 1");
+//    ASSERT(type == U8Type);
 }
 
 #undef pkg
