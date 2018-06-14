@@ -71,8 +71,8 @@ void setSelfForTestCase(XCTestCase *testCase) {
     [self setContinueAfterFailure: false];
 }
 
-- (void)test_canConvert {
-    test_canConvert();
+- (void)test_canCoerce {
+    test_canCoerce();
 }
 
 - (void)test_checkConstantDeclarations {

@@ -67,6 +67,7 @@ typedef u8 TypeFlag;
 
 // Integer
 #define TypeFlag_Signed   0x1
+#define TypeFlag_Boolean  0x2
 
 // Slice & Function
 #define TypeFlag_Variadic 0x1

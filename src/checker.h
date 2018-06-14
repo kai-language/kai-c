@@ -47,4 +47,14 @@ struct CheckerInfo {
     };
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 Symbol *Lookup(Scope *scope, const char *name);
+b32 IsInteger(Type *type);
+b32 IsSigned(Type *type);
+b32 IsFloat(Type *type);
+#ifdef __cplusplus
+}
+#endif
+
