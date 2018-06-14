@@ -266,6 +266,7 @@ extern const char *InputName;
 extern const char *OutputName;
 extern int TargetOs;
 extern int TargetArch;
+extern u32 nextTypeId;
 
 extern bool HaveInitializedBuiltins;
 extern bool HaveInitializedKeywords;
@@ -293,7 +294,8 @@ TargetOs = Os_Current; \
 TargetArch = Arch_Current; \
 MapFree(&interns); \
 ArenaFree(&internArena); \
-ArrayFree(Keywords)
+ArrayFree(Keywords); \
+nextTypeId = 1
 
 #define REINIT_COMPILER() \
 DEINIT_COMPILER(); \
