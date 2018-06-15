@@ -68,15 +68,10 @@ void storeInfoIdent(Package *pkg, Expr *expr, Symbol *symbol) {
     pkg->checkerInfo[expr->id] = info;
 }
 
-void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type) {
+void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type, ExprInfo *exprInfo) {
     CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
-    pkg->checkerInfo[expr->id] = info;
-}
-
-void storeInfoBasicExprWithConstant(Package *pkg, Expr *expr, Type *type, Val val) {
-    CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
-    info.BasicExpr.isConstant = true;
-    info.BasicExpr.val = val;
+    info.BasicExpr.isConstant = exprInfo->isConstant;
+    info.BasicExpr.val = exprInfo->val;
     pkg->checkerInfo[expr->id] = info;
 }
 
@@ -601,7 +596,7 @@ Type *checkExprLitInt(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
 
     exprInfo->mode = ExprMode_Computed;
     exprInfo->isConstant = true;
-    storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
     return type;
 
 error:
@@ -637,7 +632,7 @@ Type *checkExprLitFloat(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
 
     exprInfo->mode = ExprMode_Computed;
     exprInfo->isConstant = true;
-    storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
     return type;
 
 error:
@@ -655,11 +650,11 @@ Type *checkExprLitNil(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     Type *type = exprInfo->desiredType;
     if (!type) type = RawptrType;
 
-    storeInfoBasicExprWithConstant(pkg, expr, type, (Val){.u64 = 0});
-
     exprInfo->mode = ExprMode_Nil;
     exprInfo->isConstant = true;
     exprInfo->val = (Val){ .u64 = 0 };
+
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
     return type;
 
 error:
@@ -714,8 +709,8 @@ Type *checkExprTypeFunction(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
     Type *type = NewTypeFunction(flags, params, returnTypes);
 
-    storeInfoBasicExpr(pkg, expr, type);
     exprInfo->mode = ExprMode_Type;
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
     return type;
 
 error:
@@ -825,10 +820,8 @@ Type *checkExprUnary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     b32 isConstantNegative;
     if (evalUnary(expr->Unary.op, type, exprInfo, &isConstantNegative)) {
         changeTypeOrRecordCoercionIfNeeded(&type, expr, exprInfo, isConstantNegative, pkg);
-        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
-    } else {
-        storeInfoBasicExpr(pkg, expr, type);
     }
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
 
     exprInfo->mode = ExprMode_Computed;
     return type;
@@ -894,10 +887,8 @@ Type *checkExprBinary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     b32 isConstantNegative;
     if (evalBinary(expr->Binary.op, type, lhsInfo.val, rhsInfo.val, exprInfo, &isConstantNegative)) {
         changeTypeOrRecordCoercionIfNeeded(&type, expr, exprInfo, isConstantNegative, pkg);
-        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
-    } else {
-        storeInfoBasicExpr(pkg, expr, type);
     }
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
 
     exprInfo->mode = ExprMode_Computed;
     return type;
@@ -934,7 +925,6 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
         exprInfo->isConstant = true;
         exprInfo->val = condInfo.val.u64 ? passInfo.val : failInfo.val;
         type = condInfo.val.u64 ? pass : fail;
-        storeInfoBasicExprWithConstant(pkg, expr, fail, exprInfo->val);
     } else {
         // NOTE: If we coerce the type before doing handling constant evaluation, we lose signedness information.
         if (!coerceType(expr->Ternary.fail, &failInfo, &fail, pass, pkg)) {
@@ -942,8 +932,8 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
                         "Expected type %s got type %s", DescribeType(pass ? pass : cond), DescribeType(fail));
             goto error;
         }
-        storeInfoBasicExpr(pkg, expr, fail);
     }
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
 
     exprInfo->mode = ExprMode_Computed;
     return type;
@@ -976,11 +966,7 @@ Type *checkExprCast(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
 
     if (callersDesiredType) coerceType(expr, exprInfo, &type, callersDesiredType, pkg);
 
-    if (exprInfo->isConstant) {
-        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
-    } else {
-        storeInfoBasicExpr(pkg, expr, type);
-    }
+    storeInfoBasicExpr(pkg, expr, type, exprInfo);
 
     exprInfo->mode = ExprMode_Computed;
     return type;
