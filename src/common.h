@@ -90,6 +90,11 @@ extern "C" {
 #define GB(x) (MB(x)*1024LL)
 #define TB(x) (GB(x)*1024LL)
 
+// https://stackoverflow.com/a/28703383
+#define BITMASK(__TYPE__, __ONE_COUNT__) \
+    ((__TYPE__) (-((__ONE_COUNT__) != 0))) \
+    & (((__TYPE__) -1) >> ((sizeof(__TYPE__) * CHAR_BIT) - (__ONE_COUNT__)))
+
 #define For(agg) for (size_t i = 0; i < ArrayLen(agg); i++)
 
 typedef uint8_t  u8;
