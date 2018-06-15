@@ -204,7 +204,6 @@ Expr *parseExprAtom(Parser *p) {
             return NewExprLitCompound(pkg, start, NULL, elements, p->prevEnd);
         }
 
-
         case TK_Dollar: {
             Position start = p->tok.pos;
             nextToken();
@@ -212,13 +211,13 @@ Expr *parseExprAtom(Parser *p) {
             return NewExprTypePolymorphic(pkg, start, name);
         }
 
-        caseEllipsis:
+        caseEllipsis: // For `case TK_Directive` for #cvargs
         case TK_Ellipsis: {
             u8 flags = 0;
             flags |= matchDirective(p, internCVargs) ? TypeVariadicFlagCVargs : 0;
             Position start = p->tok.pos;
             expectToken(p, TK_Ellipsis); // NOTE: We must expect here because we handle the case of having #cvargs prior
-            return NewExprTypeVariadic(pkg, start, parseType(p), TypeVariadicFlagCVargs);
+            return NewExprTypeVariadic(pkg, start, parseType(p), flags);
         }
 
         case TK_Mul: {
@@ -241,24 +240,46 @@ Expr *parseExprAtom(Parser *p) {
         }
 
         case TK_Keyword: {
-            if (p->tok.val.ident == Keyword_fn) {
+            const char *ident = p->tok.val.ident;
+            if (ident == Keyword_fn) {
                 return parseFunctionType(p);
-            } else if (p->tok.val.ident == Keyword_nil) {
+            } else if (ident == Keyword_nil) {
                 Expr *expr = NewExprLitNil(pkg, p->tok.pos);
                 nextToken();
                 return expr;
-            } else if (p->tok.val.ident == Keyword_struct) {
+            } else if (ident == Keyword_struct) {
                 goto caseStruct;
-            } else if (p->tok.val.ident == Keyword_union) {
+            } else if (ident == Keyword_union) {
                 goto caseUnion;
-            } else if (p->tok.val.ident == Keyword_enum) {
+            } else if (ident == Keyword_enum) {
                 goto caseEnum;
+            } else if (ident == Keyword_cast) {
+                goto caseCast;
+            } else if (ident == Keyword_autocast) {
+                goto caseAutocast;
             }
             ReportError(p->package, SyntaxError, p->tok.pos, "Unexpected keyword '%s'", p->tok.val.ident);
             break;
         }
 
-        caseStruct: {
+        caseCast: {
+            Position start = p->tok.pos;
+            nextToken();
+            expectToken(p, TK_Lparen);
+            Expr *type = parseType(p);
+            expectToken(p, TK_Rparen);
+            Expr *expr = parseExpr(p, false);
+            return NewExprCast(pkg, start, type, expr);
+        }
+
+        caseAutocast: { // See `case TK_Keyword:`
+            Position start = p->tok.pos;
+            nextToken();
+            Expr *expr = parseExpr(p, false);
+            return NewExprAutocast(pkg, start, expr);
+        }
+
+        caseStruct: { // See `case TK_Keyword:`
             Position start = p->tok.pos;
             nextToken();
 
@@ -297,7 +318,7 @@ Expr *parseExprAtom(Parser *p) {
             return NewExprTypeStruct(pkg, start, items);
         }
 
-        caseUnion: {
+        caseUnion: { // See `case TK_Keyword:`
             Position start = p->tok.pos;
             nextToken();
 
@@ -331,7 +352,7 @@ Expr *parseExprAtom(Parser *p) {
             return NewExprTypeUnion(pkg, start, items);
         }
 
-        caseEnum: {
+        caseEnum: { // See `case TK_Keyword:`
             Position start = p->tok.pos;
             Expr *explicitType = NULL;
 
@@ -882,9 +903,8 @@ Stmt *parseStmt(Parser *p) {
             if (matchKeyword(p, Keyword_switch)) UNIMPLEMENTED();
             if (matchKeyword(p, Keyword_using)) UNIMPLEMENTED();
 
-
-            // Report an error
-            return NULL;
+            // Maybe the expression is the start of a stmt? Such as cast or autocast?
+            return (Stmt *) parseExpr(p, false);
         }
         default:
             UNIMPLEMENTED();
@@ -946,6 +966,7 @@ void parsePackageCode(Package *pkg, const char *code) {
 
     DynamicArray(CheckerInfo) checkerInfo = NULL;
     ArrayFit(checkerInfo, pkg->astIdCount+1);
+    memset(checkerInfo, 0, sizeof(CheckerInfo) * (pkg->astIdCount + 1));
     pkg->checkerInfo = checkerInfo;
 
     for (int i = (int)(ArrayLen(pkg->stmts)) - 1; i >= 0; i--) {

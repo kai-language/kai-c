@@ -1,5 +1,7 @@
 
 typedef enum CheckerInfoKind {
+    // None is the zero value and so the default for zero initialized checker info.
+    CheckerInfoKind_None,
     CheckerInfoKind_Constant,
     CheckerInfoKind_Variable,
     CheckerInfoKind_Ident,

@@ -7,13 +7,13 @@
     FOR_EACH(Ident, "identifier", true)                      \
     FOR_EACH(Paren, "parenthesis", false)                    \
     FOR_EACH(Call, "call", true)                             \
+    FOR_EACH(Cast, "cast", false)                            \
     FOR_EACH(Selector, "selector", true)                     \
     FOR_EACH(Subscript, "subscript", true)                   \
     FOR_EACH(Slice, "slice", true)                           \
     FOR_EACH(Unary, "unary", true)                           \
     FOR_EACH(Binary, "binary", true)                         \
     FOR_EACH(Ternary, "ternary", true)                       \
-    FOR_EACH(Cast, "cast", false)                            \
     FOR_EACH(Autocast, "autocast", false)                    \
     FOR_EACH(KeyValue, "key value", false)                   \
     FOR_EACH(LocationDirective, "location directive", false) \
