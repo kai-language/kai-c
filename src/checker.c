@@ -227,10 +227,8 @@ b32 (*binaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
     [TK_Lor]  = canBeUsedForLogical,
 };
 
-
 b32 canCoerce(Type *type, Type *target, ExprInfo *info) {
     if (TypesIdentical(type, target)) return true;
-
     if (target->kind == TypeKind_Any) return true;
 
     // Any numeric or pointer type can coerce to Bool type
@@ -455,9 +453,6 @@ b32 coerceTypeSilently(Expr *expr, ExprInfo *info, Type **type, Type *target, Pa
 
     if (!canCoerce(*type, target, info)) return false;
 
-    if (info->isConstant) {
-        // convert value from *type to target, adding coercion to checker info or updating literal values as needed.
-    }
     if (info->isConstant) convertValue(*type, target, &info->val);
     changeTypeOrMarkConversionForExpr(expr, *type, target, pkg);
 
@@ -476,6 +471,44 @@ b32 coerceType(Expr *expr, ExprInfo *info, Type **type, Type *target, Package *p
     }
 
     return success;
+}
+
+b32 canCast(Type *source, Type *target) {
+    if (TypesIdentical(source, target)) return true;
+    if (target->kind == TypeKind_Any) return true;
+
+    // TODO: Union type
+
+    if (isNumericOrPointer(source) && isBoolean(target)) return true;
+
+    if (isNumeric(source) && isNumeric(target)) return true;
+
+    if (isPointer(source)) {
+        if (isPointer(target)) return true;
+        if (TypesIdentical(target, IntptrType)) return true;
+        if (TypesIdentical(target, UintptrType)) return true;
+    }
+
+    if (IsInteger(source) &&
+        (TypesIdentical(target, IntptrType) || TypesIdentical(target, UintptrType))) return true;
+
+    // TODO: Function <-> Pointer
+    // TODO: Enum <-> Integer
+
+    return false;
+}
+
+b32 cast(Type *source, Type *target, ExprInfo *info) {
+    if (source == InvalidType || target == InvalidType) return false;
+
+    if (!canCast(source, target)) return false;
+
+    if (info->isConstant) {
+        convertValue(source, target, &info->val);
+        info->val.u64 &= BITMASK(u64, target->Width);
+    }
+
+    return true;
 }
 
 Scope *pushScope(Package *pkg, Scope *parent) {
@@ -918,6 +951,68 @@ error:
     return InvalidType;
 }
 
+Type *checkExprCast(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    ExprInfo targetInfo = { .scope = exprInfo->scope };
+    Type *type = checkExpr(pkg, expr->Cast.type, &targetInfo);
+
+    if (targetInfo.mode != ExprMode_Type) {
+        ReportError(pkg, NotATypeError, expr->start,
+                    "Cannot cast to non type %s", DescribeExpr(expr->Cast.type));
+        goto error;
+    }
+
+    Type *exprType = checkExpr(pkg, expr->Cast.expr, exprInfo);
+
+    if (!cast(exprType, type, exprInfo)) {
+        ReportError(pkg, InvalidConversionError, expr->start,
+                    "Unable to cast type %s to type %s", DescribeType(exprType), DescribeType(type));
+        goto error;
+    }
+
+    if (exprInfo->desiredType) coerceType(expr, exprInfo, &type, exprInfo->desiredType, pkg);
+
+    if (exprInfo->isConstant) {
+        storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
+    } else {
+        storeInfoBasicExpr(pkg, expr, type);
+    }
+
+    exprInfo->mode = ExprMode_Computed;
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
+Type *checkExprCall(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    ExprInfo calleeInfo = { .scope = exprInfo->scope };
+    Type *calleeType = checkExpr(pkg, expr->Call.expr, &calleeInfo);
+    if (calleeInfo.mode == ExprMode_Type) {
+
+        if (ArrayLen(expr->Call.args) < 1) {
+            ReportError(pkg, CastArgumentCountError, expr->start,
+                        "Missing argument in cast to %s", DescribeType(calleeType));
+            goto error;
+        } else if (ArrayLen(expr->Call.args) > 1) {
+            ReportError(pkg, CastArgumentCountError, expr->start,
+                        "Too many arguments in cast to %s", DescribeType(calleeType));
+            goto error;
+        }
+
+        expr->kind = ExprKind_Cast;
+        Expr_Cast cast = { .start = expr->start, .type = expr->Call.expr, .expr = expr->Call.args[0]->value };
+        expr->Cast = cast;
+        return checkExprCast(expr, exprInfo, pkg);
+    }
+
+    UNIMPLEMENTED();
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
 Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
     Type *type = NULL;
     switch (expr->kind) {
@@ -959,6 +1054,10 @@ Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo) {
 
         case ExprKind_Ternary:
             type = checkExprTernary(expr, exprInfo, pkg);
+            break;
+
+        case ExprKind_Call:
+            type = checkExprCall(expr, exprInfo, pkg);
             break;
 
         default:
@@ -1360,6 +1459,41 @@ void test_checkConstantTernaryExpression() {
 
     // TODO: Defaulting ternary (?:) tests
     // Would be best to get casting done first
+
+void test_checkConstantCastExpression() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    ExprInfo info;
+    Type *type;
+#define checkCastUsingCallSyntax(_CODE) \
+    stmt = resetAndParseSingleStmt(_CODE); \
+    info = (ExprInfo){ .scope = pkg.scope }; \
+    type = checkExprCall((Expr *) stmt, &info, &pkg)
+
+    checkCastUsingCallSyntax("i64(8)");
+    ASSERT(type == I64Type);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 8);
+
+    checkCastUsingCallSyntax("u8(100000000000042)");
+    ASSERT(type == U8Type);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.u64 == 42);
+
+#define checkCast(_CODE) \
+    stmt = resetAndParseSingleStmt(_CODE); \
+    info = (ExprInfo){ .scope = pkg.scope }; \
+    type = checkExprCast((Expr *) stmt, &info, &pkg)
+
+    checkCast("cast(i64) 8");
+    ASSERT(type == I64Type);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.i64 == 8);
+
+    checkCast("cast(u8) 100000000000042");
+    ASSERT(type == U8Type);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.u64 == 42);
 }
 
 #undef pkg

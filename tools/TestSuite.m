@@ -95,6 +95,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkConstantTernaryExpression();
 }
 
+- (void)test_checkConstantCastExpression {
+    test_checkConstantCastExpression();
+}
+
 @end
 
 //

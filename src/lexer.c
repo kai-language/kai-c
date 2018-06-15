@@ -12,7 +12,6 @@ const char *Keyword_else;
 const char *Keyword_switch;
 const char *Keyword_case;
 const char *Keyword_cast;
-const char *Keyword_bitcast;
 const char *Keyword_autocast;
 const char *Keyword_using;
 const char *Keyword_goto;
@@ -60,7 +59,6 @@ void InitKeywords() {
     KEYWORD(switch);
     KEYWORD(case);
     KEYWORD(cast);
-    KEYWORD(bitcast);
     KEYWORD(autocast);
     KEYWORD(using);
     KEYWORD(goto);
