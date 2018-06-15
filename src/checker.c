@@ -879,13 +879,13 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     ExprInfo condInfo = { .scope = exprInfo->scope, .desiredType = BoolType };
     Type *cond = checkExpr(pkg, expr->Ternary.cond, &condInfo);
 
-    Type *pass = NULL;
+    Type *pass = cond;
     ExprInfo passInfo = { .scope = exprInfo->scope, .desiredType = exprInfo->desiredType };
     if (expr->Ternary.pass) {
         pass = checkExpr(pkg, expr->Ternary.pass, &passInfo);
     }
 
-    ExprInfo failInfo = { .scope = exprInfo->scope, .desiredType = pass };
+    ExprInfo failInfo = { .scope = exprInfo->scope, .desiredType = exprInfo->desiredType };
     Type *fail = checkExpr(pkg, expr->Ternary.fail, &failInfo);
 
     if (!isBoolean(cond) && !isNumericOrPointer(cond)) {
@@ -894,23 +894,24 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
         goto error;
     }
 
-    if (!coerceType(expr->Ternary.fail, &failInfo, &fail, pass ? pass : cond, pkg)) {
-        ReportError(pkg, TypeMismatchError, expr->Ternary.fail->start,
-                    "Expected type %s got type %s", DescribeType(pass ? pass : cond), DescribeType(fail));
-        goto error;
-    }
-
+    Type *type = fail;
     if (condInfo.isConstant && passInfo.isConstant && failInfo.isConstant) {
-        // FIXME: call to changeTypeOrRecordCoercionIfNeeded?
         exprInfo->isConstant = true;
         exprInfo->val = condInfo.val.u64 ? passInfo.val : failInfo.val;
+        type = condInfo.val.u64 ? pass : fail;
         storeInfoBasicExprWithConstant(pkg, expr, fail, exprInfo->val);
     } else {
+        // NOTE: If we coerce the type before doing handling constant evaluation, we lose signedness information.
+        if (!coerceType(expr->Ternary.fail, &failInfo, &fail, pass, pkg)) {
+            ReportError(pkg, TypeMismatchError, expr->Ternary.fail->start,
+                        "Expected type %s got type %s", DescribeType(pass ? pass : cond), DescribeType(fail));
+            goto error;
+        }
         storeInfoBasicExpr(pkg, expr, fail);
     }
 
     exprInfo->mode = ExprMode_Computed;
-    return fail;
+    return type;
 
 error:
     exprInfo->mode = ExprMode_Invalid;
@@ -1354,9 +1355,11 @@ void test_checkConstantTernaryExpression() {
     ASSERT(info.isConstant);
     ASSERT(info.val.i64 == 2);
 
-    // FIXME: See fixme about calling to changeTypeOrRecordCoercionIfNeeded in checkExprTernary
-//    checkTernary("false ? 100000 : 1");
-//    ASSERT(type == U8Type);
+    checkTernary("false ? 100000 : 1");
+    ASSERT(type == U8Type);
+
+    // TODO: Defaulting ternary (?:) tests
+    // Would be best to get casting done first
 }
 
 #undef pkg
