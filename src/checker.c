@@ -913,13 +913,15 @@ Type *checkExprTernary(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     Type *cond = checkExpr(pkg, expr->Ternary.cond, &condInfo);
 
     Type *pass = cond;
-    ExprInfo passInfo = { .scope = exprInfo->scope, .desiredType = exprInfo->desiredType };
+    ExprInfo passInfo = condInfo;
     if (expr->Ternary.pass) {
+        passInfo.desiredType = exprInfo->desiredType;
         pass = checkExpr(pkg, expr->Ternary.pass, &passInfo);
     }
 
     ExprInfo failInfo = { .scope = exprInfo->scope, .desiredType = exprInfo->desiredType };
     Type *fail = checkExpr(pkg, expr->Ternary.fail, &failInfo);
+    if (failInfo.mode == ExprMode_Unresolved)
 
     if (!isBoolean(cond) && !isNumericOrPointer(cond)) {
         ReportError(pkg, BadConditionError, expr->start,
@@ -961,6 +963,9 @@ Type *checkExprCast(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
         goto error;
     }
 
+    Type *callersDesiredType = exprInfo->desiredType;
+
+    exprInfo->desiredType = type;
     Type *exprType = checkExpr(pkg, expr->Cast.expr, exprInfo);
 
     if (!cast(exprType, type, exprInfo)) {
@@ -969,7 +974,7 @@ Type *checkExprCast(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
         goto error;
     }
 
-    if (exprInfo->desiredType) coerceType(expr, exprInfo, &type, exprInfo->desiredType, pkg);
+    if (callersDesiredType) coerceType(expr, exprInfo, &type, callersDesiredType, pkg);
 
     if (exprInfo->isConstant) {
         storeInfoBasicExprWithConstant(pkg, expr, type, exprInfo->val);
@@ -1457,8 +1462,12 @@ void test_checkConstantTernaryExpression() {
     checkTernary("false ? 100000 : 1");
     ASSERT(type == U8Type);
 
-    // TODO: Defaulting ternary (?:) tests
-    // Would be best to get casting done first
+    // NOTE: This would have a different type condition wasn't a constant
+    checkTernary("rawptr(nil) ?: 250");
+    ASSERT(type == U8Type);
+    ASSERT(info.isConstant);
+    ASSERT(info.val.u64 == 250);
+}
 
 void test_checkConstantCastExpression() {
     REINIT_COMPILER();
