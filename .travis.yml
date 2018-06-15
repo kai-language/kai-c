@@ -7,7 +7,7 @@ compiler:
     - clang
 
 before_install:
-    - brew install llvm@6
+    - brew install /homebrew/core/llvm
     - brew link llvm --overwrite
     - export PATH="/usr/local/opt/llvm/bin:$PATH"
 
