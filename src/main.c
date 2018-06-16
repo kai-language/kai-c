@@ -83,7 +83,7 @@ int main(int argc, const char **argv) {
         
         CheckerWork *work = QueueDequeue(&checkingQueue);
         if (work) {
-            b32 shouldRequeue = checkStmt(work->package, work->stmt);
+            b32 shouldRequeue = checkStmt(work->package, work->package->scope, work->stmt);
             if (shouldRequeue) {
                 QueueEnqueue(&checkingQueue, work);
             }

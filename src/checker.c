@@ -529,6 +529,7 @@ Symbol *Lookup(Scope *scope, const char *name) {
 }
 
 Type *checkExpr(Package *pkg, Expr *expr, ExprInfo *exprInfo);
+b32 checkStmt(Package *pkg, Scope *scope, Stmt *stmt);
 
 Type *checkExprIdent(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     Expr_Ident ident = expr->Ident;
@@ -720,8 +721,8 @@ error:
 
 Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
     Expr_LitFunction func = funcExpr->LitFunction;
-    Scope *scope = pushScope(pkg, exprInfo->scope);
-    ExprInfo funcInfo = { .scope = scope };
+    Scope *parameterScope = pushScope(pkg, exprInfo->scope);
+    ExprInfo funcInfo = { .scope = parameterScope };
 
     DynamicArray(Type *) paramTypes = NULL;
     DynamicArray(Type *) resultTypes = NULL;
@@ -740,7 +741,7 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
         }
 
         Symbol *symbol;
-        declareSymbol(pkg, scope, it->key->Ident.name, &symbol, 0, (Decl *) it);
+        declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, 0, (Decl *) it);
         ArrayPush(paramSymbols, symbol);
 
         Type *type = checkExpr(pkg, it->value, &funcInfo);
@@ -757,9 +758,12 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, ExprInfo *exprInfo) {
         ArrayPush(resultTypes, type);
     }
 
-    // TODO: call check for each stmt in body
+    Scope *bodyScope = pushScope(pkg, parameterScope);
+    ForEach(func.body->stmts, Stmt *) {
+        checkStmt(pkg, bodyScope, it);
+    }
 
-    exprInfo->mode = ExprMode_Type;
+    exprInfo->mode = ExprMode_Computed;
     return NewTypeFunction(typeFlags, paramTypes, resultTypes);
 }
 
@@ -1266,26 +1270,26 @@ b32 checkDeclVariable(Package *pkg, Scope *scope, b32 isGlobal, Decl *declStmt) 
     return false;
 }
 
-b32 checkImportDecl(Package *pkg, Decl *declStmt) {
+b32 checkDeclImport(Package *pkg, Decl *declStmt) {
 //    Decl_Import import = declStmt->Import;
     UNIMPLEMENTED();
     return false;
 }
 
-b32 checkStmt(Package *pkg, Stmt *stmt) {
+b32 checkStmt(Package *pkg, Scope *scope, Stmt *stmt) {
     b32 shouldRequeue;
 
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
-            shouldRequeue = checkDeclConstant(pkg, pkg->scope, (Decl *)stmt);
+            shouldRequeue = checkDeclConstant(pkg, scope, (Decl *)stmt);
             break;
 
         case StmtDeclKind_Variable:
-            shouldRequeue = checkDeclVariable(pkg, pkg->scope, true, (Decl *)stmt);
+            shouldRequeue = checkDeclVariable(pkg, scope, true, (Decl *)stmt);
             break;
 
         case StmtDeclKind_Import:
-            shouldRequeue = checkImportDecl(pkg, (Decl *)stmt);
+            shouldRequeue = checkDeclImport(pkg, (Decl *)stmt);
             break;
 
         default:
@@ -1339,7 +1343,7 @@ void test_checkConstantDeclarations() {
     ASSERT(queue.size == 0);
 
     Stmt *stmt = work->stmt;
-    b32 requeue = checkStmt(&pkg, stmt);
+    b32 requeue = checkStmt(&pkg, pkg.scope, stmt);
     ASSERT(!requeue);
 
     Symbol *sym = Lookup(pkg.scope, StrIntern("x"));
@@ -1358,7 +1362,7 @@ void test_coercionsAreMarked() {
     CheckerInfo* info;
 #define checkBasicExpr(_CODE) \
     stmt = resetAndParseSingleStmt(_CODE); \
-    checkStmt(&pkg, stmt); \
+    checkStmt(&pkg, pkg.scope, stmt); \
     info = CheckerInfoForStmt(&pkg, stmt)
 
     checkBasicExpr("x : u64 : 1 + 2");
