@@ -3,56 +3,56 @@ i64 evalUnarySigned(TokenKind op, Val val);
 u64 evalUnaryUnsigned(TokenKind op, Val val);
 f64 evalUnaryFloat(TokenKind op, Val val);
 
-b32 evalUnary(TokenKind op, Type *type, ExprInfo *info, b32 *isNegative) {
-    if (!info->isConstant) return false;
+b32 evalUnary(TokenKind op, Type *type, CheckerContext *ctx, b32 *isNegative) {
+    if (!ctx->isConstant) return false;
 
     if (IsInteger(type)) {
         if (IsSigned(type)) {
-            info->val.i64 = evalUnarySigned(op, info->val);
-            *isNegative = info->val.i64 < 0;
+            ctx->val.i64 = evalUnarySigned(op, ctx->val);
+            *isNegative = ctx->val.i64 < 0;
         } else {
-            info->val.u64 = evalUnaryUnsigned(op, info->val);
+            ctx->val.u64 = evalUnaryUnsigned(op, ctx->val);
             *isNegative = op == TK_Sub;
         }
     } else if (IsFloat(type)) {
-        info->val.f64 = evalUnaryFloat(op, info->val);
+        ctx->val.f64 = evalUnaryFloat(op, ctx->val);
     } else if (isBoolean(type)) {
-        info->val.u64 = evalUnaryUnsigned(op, info->val);
+        ctx->val.u64 = evalUnaryUnsigned(op, ctx->val);
     } else {
-        info->val.u64 = 0;
-        info->isConstant = false;
+        ctx->val.u64 = 0;
+        ctx->isConstant = false;
     }
 
-    if (op == TK_BNot) info->val.u64 &= BITMASK(u64, type->Width);
+    if (op == TK_BNot) ctx->val.u64 &= BITMASK(u64, type->Width);
 
-    return info->isConstant;
+    return ctx->isConstant;
 }
 
 i64 evalBinarySigned(TokenKind op, i64 left, i64 right);
 u64 evalBinaryUnsigned(TokenKind op, u64 left, u64 right);
 f64 evalBinaryFloat(TokenKind op, f64 left, f64 right);
 
-b32 evalBinary(TokenKind op, Type *type, Val lhsValue, Val rhsValue, ExprInfo *info, b32 *isNegative) {
-    if (!info->isConstant) return false;
+b32 evalBinary(TokenKind op, Type *type, Val lhsValue, Val rhsValue, CheckerContext *ctx, b32 *isNegative) {
+    if (!ctx->isConstant) return false;
 
     if (IsInteger(type)) {
         if (IsSigned(type)) {
-            info->val.i64 = evalBinarySigned(op, lhsValue.i64, rhsValue.i64);
-            *isNegative = info->val.i64 < 0;
+            ctx->val.i64 = evalBinarySigned(op, lhsValue.i64, rhsValue.i64);
+            *isNegative = ctx->val.i64 < 0;
         } else {
-            info->val.u64 = evalBinaryUnsigned(op, lhsValue.u64, rhsValue.u64);
+            ctx->val.u64 = evalBinaryUnsigned(op, lhsValue.u64, rhsValue.u64);
             *isNegative = false;
         }
     } else if (IsFloat(type)) {
-        info->val.f64 = evalBinaryFloat(op, lhsValue.f64, rhsValue.f64);
+        ctx->val.f64 = evalBinaryFloat(op, lhsValue.f64, rhsValue.f64);
     } else if (isBoolean(type)) {
-        info->val.u64 = evalBinaryUnsigned(op, lhsValue.u64, rhsValue.u64);
+        ctx->val.u64 = evalBinaryUnsigned(op, lhsValue.u64, rhsValue.u64);
     } else {
-        info->val.f64 = 0.f;
-        info->isConstant = false;
+        ctx->val.f64 = 0.f;
+        ctx->isConstant = false;
     }
 
-    return info->isConstant;
+    return ctx->isConstant;
 }
 
 i64 evalUnarySigned(TokenKind op, Val val) {
