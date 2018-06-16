@@ -976,6 +976,29 @@ error:
     return InvalidType;
 }
 
+Type *checkExprAutocast(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
+    if (!exprInfo->desiredType) {
+        ReportError(pkg, AutocastExpectsDesiredTypeError, expr->start,
+                    "Autocast expression requires a contextual type to convert to");
+        goto error;
+    }
+
+    Type *type = checkExpr(pkg, expr->Autocast.expr, exprInfo);
+
+    if (!cast(type, exprInfo->desiredType, exprInfo)) {
+        ReportError(pkg, InvalidConversionError, expr->Autocast.expr->start,
+                    "Cannot convert expression of type %s to type %s",
+                    DescribeType(type), DescribeType(exprInfo->desiredType));
+        goto error;
+    }
+
+    return type;
+
+error:
+    exprInfo->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
 Type *checkExprCall(Expr *expr, ExprInfo *exprInfo, Package *pkg) {
     ExprInfo calleeInfo = { .scope = exprInfo->scope };
     Type *calleeType = checkExpr(pkg, expr->Call.expr, &calleeInfo);

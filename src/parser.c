@@ -262,7 +262,7 @@ Expr *parseExprAtom(Parser *p) {
             break;
         }
 
-        caseCast: {
+        caseCast: { // See `case TK_Keyword:`
             Position start = p->tok.pos;
             nextToken();
             expectToken(p, TK_Lparen);
