@@ -756,12 +756,21 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, CheckerContext *ctx) {
         Type *type = checkExpr(pkg, it, &funcInfo);
         if (!expectType(pkg, type, &funcInfo, it->start)) continue;
         ArrayPush(resultTypes, type);
+        if (type == VoidType) {
+            if (ArrayLen(func.type->TypeFunction.result) > 1) {
+                ReportError(pkg, InvalidUseOfVoidError, it->start,
+                            "Void must be a functions only return type");
+            }
+        }
     }
 
     Scope *bodyScope = pushScope(pkg, parameterScope);
+    Type *tuple = VoidType;
+    if (resultTypes[0] != VoidType) {
+        tuple = NewTypeTuple(TypeFlag_None, resultTypes);
+    }
 
-    // TODO: Expected return types
-    CheckerContext bodyContext = { .scope = bodyScope };
+    CheckerContext bodyContext = { .scope = bodyScope, .desiredType = tuple };
     ForEach(func.body->stmts, Stmt *) {
         checkStmt(pkg, it, &bodyContext);
     }
@@ -781,7 +790,8 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     "'%s' is not a valid pointee type", DescribeType(type));
         goto error;
     } else if (type == VoidType) {
-        ReportError(pkg, TODOError, expr->TypePointer.type->start, "Kai does not use void * for raw pointers instead use rawptr");
+        ReportError(pkg, TODOError, expr->TypePointer.type->start,
+                    "Kai does not use void * for raw pointers instead use rawptr");
     }
 
     if (desiredType == RawptrType) type = RawptrType;
@@ -1276,6 +1286,31 @@ b32 checkDeclImport(Package *pkg, Decl *declStmt) {
     return false;
 }
 
+void checkStmtReturn(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
+    ASSERT(ctx->desiredType && ctx->desiredType->kind == TypeKind_Tuple);
+
+    size_t nTypes = ArrayLen(ctx->desiredType->Tuple.types);
+    size_t nExprs = ArrayLen(stmt->Return.exprs);
+
+    if (nExprs != nTypes) {
+        ReportError(pkg, WrongNumberOfReturnsError, stmt->start,
+                    "Wrong number of return expressions, expected %zu, got %zu",
+                    ArrayLen(ctx->desiredType->Tuple.types), ArrayLen(stmt->Return.exprs));
+    }
+    for (size_t i = 0; i < MIN(nTypes, nExprs); i++) {
+        Expr *expr = stmt->Return.exprs[i];
+        Type *expectedType = ctx->desiredType->Tuple.types[i];
+        CheckerContext exprCtx = { .scope = ctx->scope, .desiredType = expectedType };
+        Type *type = checkExpr(pkg, expr, &exprCtx);
+        if (!TypesIdentical(type, expectedType)) {
+            ReportError(pkg, TypeMismatchError, expr->start,
+                        "Expected type %s got type %s",
+                        DescribeType(expectedType), DescribeType(type));
+            return;
+        }
+    }
+}
+
 b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
     if (!ctx) {
         CheckerContext packageCtx = { .scope = pkg->scope};
@@ -1303,9 +1338,6 @@ b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
 
     return shouldRequeue;
 }
-
-
-
 
 #if TEST
 #define pkg checkerTestPackage

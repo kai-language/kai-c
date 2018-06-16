@@ -31,7 +31,6 @@ extern Symbol *TrueSymbol;
 
 #define TYPE_KINDS                  \
     FOR_EACH(Invalid, "invalid")    \
-    FOR_EACH(Void, "void")          \
     FOR_EACH(Int, "int")            \
     FOR_EACH(Float, "float")        \
     FOR_EACH(Pointer, "pointer")    \
@@ -42,6 +41,7 @@ extern Symbol *TrueSymbol;
     FOR_EACH(Union, "union")        \
     FOR_EACH(Enum, "enum")          \
     FOR_EACH(Function, "function")  \
+    FOR_EACH(Tuple, "tuple")        \
 
 typedef enum TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
@@ -58,9 +58,6 @@ typedef u8 TypeFlag;
 #define TypeFlag_None 0
 #define TypeFlag_Alias    0x80
 
-// Void
-#define TypeFlag_NoReturn 0x1
-
 // Integer
 #define TypeFlag_Signed   0x1
 #define TypeFlag_Boolean  0x2
@@ -71,6 +68,12 @@ typedef u8 TypeFlag;
 
 // Enum
 #define TypeFlag_EnumFlags 0x1
+
+// Struct
+#define TypeFlag_StructTuple 0x1
+
+// Tuple
+#define TypeFlag_NoReturn 0x1
 
 struct Type_Pointer {
     TypeFlag Flags;
@@ -110,12 +113,18 @@ struct Type_Enum {
     TypeFlag Flags;
 };
 
+struct Type_Tuple {
+    TypeFlag Flags;
+    DynamicArray(Type *) types;
+};
+
 STATIC_ASSERT(offsetof(Type_Pointer,  Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Array,    Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Slice,    Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Struct,   Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Union,    Flags) == 0, "Flags must be at offset 0");
 STATIC_ASSERT(offsetof(Type_Function, Flags) == 0, "Flags must be at offset 0");
+STATIC_ASSERT(offsetof(Type_Tuple,    Flags) == 0, "Flags must be at offset 0");
 
 struct Type {
     TypeKind kind;
@@ -132,6 +141,7 @@ struct Type {
         Type_Struct Struct;
         Type_Union Union;
         Type_Function Function;
+        Type_Tuple Tuple;
     };
 };
 

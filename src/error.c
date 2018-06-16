@@ -36,7 +36,9 @@
     FOR_EACH(BadCondition, "Expected a numeric or pointer type to act as a condition") \
     FOR_EACH(UnrepresentableValue, "The value could not be represented in the desired type without loss of information") \
     FOR_EACH(CastArgumentCount, "Cast did not receive exactly 1 expression") \
-    FOR_EACH(AutocastExpectsDesiredType, "Context did not provide an expected type for autocast")
+    FOR_EACH(AutocastExpectsDesiredType, "Context did not provide an expected type for autocast") \
+    FOR_EACH(InvalidUseOfVoid, "Void can only exist as only result type for a function") \
+    FOR_EACH(WrongNumberOfReturns, "Not enough return expressions")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,
