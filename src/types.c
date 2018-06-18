@@ -198,7 +198,7 @@ Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
 Map internFunctionTypes;
 
 Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
-    u64 hash = HashMix(HashBytes(params, ArrayLen(params)), HashBytes(results, ArrayLen(results)));
+    u64 hash = HashMix(HashBytes(params, ArrayLen(params) * sizeof(params)), HashBytes(results, ArrayLen(results) * sizeof(results)));
     u64 key = hash ? hash : 1;
     InternType *intern = MapGet(&internFunctionTypes, (void*) key);
     for (InternType *it = intern; it; it = it->next) {
@@ -216,7 +216,7 @@ Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(
     InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
     newIntern->type = type;
     newIntern->next = intern;
-    MapSet(&internArrayTypes, (void*) key, newIntern);
+    MapSet(&internFunctionTypes, (void*) key, newIntern);
     return type;
 }
 
@@ -365,7 +365,7 @@ const char *DescribeType(Type *type) {
         return type->Symbol->name;
     }
 
-    return DescribeTypeKind(TypeKind_Invalid);
+    return DescribeTypeKind(type->kind);
 }
 
 #if TEST

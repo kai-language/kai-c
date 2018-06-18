@@ -99,6 +99,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkConstantCastExpression();
 }
 
+- (void)test_checkExprLitFunction {
+    test_checkExprLitFunction();
+}
+
 @end
 
 //

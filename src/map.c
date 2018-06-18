@@ -10,6 +10,8 @@ u64 HashPtr(const void *ptr) {
     return HashU64((uintptr_t)ptr);
 }
 
+
+// FIXME: When 2 hashes are the same, they cancel out
 Inline
 u64 HashMix(u64 x, u64 y) {
     x ^= y;

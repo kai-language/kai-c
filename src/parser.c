@@ -574,34 +574,16 @@ Expr *parseType(Parser *p) {
     return parseExprAtom(p);
 }
 
-Expr_KeyValue *parseFunctionParam(Parser *p, u32 *nVarargs) {
-    Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
-    kv->start = p->tok.pos;
-    if (isToken(p, TK_Ident)) {
-        const char *name = parseIdent(p);
-        expectToken(p, TK_Colon);
-        kv->key = NewExprIdent(p->package, kv->start, name);
-    }
-    kv->value = parseType(p);
-    if (kv->value->kind == ExprKind_TypeVariadic) {
-        if (nVarargs) *nVarargs += 1;
-    }
-    return kv;
-}
-
-Expr *parseFunctionType(Parser *p) {
-    Position start = p->tok.pos;
-    nextToken();
+static void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, DynamicArray(Expr_KeyValue *) *params) {
     expectToken(p, TK_Lparen);
-    DynamicArray(Expr_KeyValue *) params = NULL;
-    u32 nVarargs = 0;
-    b32 namedParameters = false;
+    *nVarargs = 0;
+    *namedParameters = false;
     do {
         if (isToken(p, TK_Rparen)) break; // allow trailing ',' in parameter list
         DynamicArray(Expr *) exprs = parseExprList(p, false);
         Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
         if (matchToken(p, TK_Colon)) {
-            namedParameters = true;
+            *namedParameters = true;
             Expr *type = parseType(p);
             For (exprs) {
                 if (exprs[i]->kind != ExprKind_Ident) {
@@ -610,26 +592,41 @@ Expr *parseFunctionType(Parser *p) {
                 }
                 kv->key = exprs[i];
                 kv->value = type;
-                ArrayPush(params, kv);
+                ArrayPush(*params, kv);
             }
-        } else if (nVarargs <= 1) {
-            if (namedParameters) {
+            if (type->kind == ExprKind_TypeVariadic) {
+                *nVarargs += 1;
+                if (*nVarargs == 2) {
+                    ReportError(p->package, SyntaxError, type->start, "Expected at most 1 Variadic as the final parameter");
+                }
+            }
+        } else if (*nVarargs <= 1) {
+            if (*namedParameters) {
                 ReportError(p->package, SyntaxError, exprs[0]->start, "Mixture of named and unnamed parameters is unsupported");
             }
             // The parameters are unnamed and the user may have entered a second variadic
             For (exprs) {
                 if (exprs[i]->kind == ExprKind_TypeVariadic) {
-                    nVarargs += 1;
-                    if (nVarargs == 2) {
+                    *nVarargs += 1;
+                    if (*nVarargs == 2) {
                         ReportError(p->package, SyntaxError, exprs[i]->start, "Expected at most 1 Variadic as the final parameter");
                     }
                 }
                 kv->value = exprs[i];
-                ArrayPush(params, kv);
+                ArrayPush(*params, kv);
             }
         }
     } while (matchToken(p, TK_Comma));
     expectToken(p, TK_Rparen);
+}
+
+Expr *parseFunctionType(Parser *p) {
+    Position start = p->tok.pos;
+    nextToken();
+    DynamicArray(Expr_KeyValue *) params = NULL;
+    u32 nVarargs;
+    b32 namedParameters;
+    parseFunctionParameters(&nVarargs, &namedParameters, p, &params);
     expectToken(p, TK_RetArrow);
     DynamicArray(Expr *) results = NULL;
     if (matchToken(p, TK_Lparen)) {
@@ -897,7 +894,7 @@ Stmt *parseStmt(Parser *p) {
                 if (!isToken(p, TK_Terminator) && !isToken(p, TK_Rbrace)) {
                     exprs = parseExprList(p, false);
                 }
-                expectToken(p, TK_Terminator);
+                if (p->tok.kind != TK_Rbrace) expectToken(p, TK_Terminator);
                 return NewStmtReturn(pkg, start, exprs);
             }
             if (matchKeyword(p, Keyword_switch)) UNIMPLEMENTED();
