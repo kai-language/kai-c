@@ -574,7 +574,7 @@ Expr *parseType(Parser *p) {
     return parseExprAtom(p);
 }
 
-static void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, DynamicArray(Expr_KeyValue *) *params) {
+void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, DynamicArray(Expr_KeyValue *) *params) {
     expectToken(p, TK_Lparen);
     *nVarargs = 0;
     *namedParameters = false;

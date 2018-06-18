@@ -23,7 +23,7 @@ typedef struct ArrayHdr {
 
 #define ForEachWithIndex(AGG, IDX, TYPE, ITER) \
 size_t IDX = 0; \
-for (TYPE ITER = AGG[IDX]; IDX < ArrayLen(AGG); IDX++, ITER = AGG[IDX])
+for (TYPE ITER = AGG ? AGG[IDX] : NULL; IDX < ArrayLen(AGG); IDX++, ITER = AGG[IDX])
 
 #define CONCATENATE_DIRECT(x, y) x##y
 #define CONCATENATE(x, y) CONCATENATE_DIRECT(x, y)

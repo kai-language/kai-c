@@ -782,7 +782,9 @@ Type *checkExprLitFunction(Expr *funcExpr, CheckerContext *ctx, Package *pkg) {
 
 Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *desiredType = ctx->desiredType;
-    ctx->desiredType = isPointer(ctx->desiredType) ? ctx->desiredType->Pointer.pointeeType : NULL;
+    if (desiredType && isPointer(desiredType)) {
+        ctx->desiredType = desiredType->Pointer.pointeeType;
+    }
     Type *type = checkExpr(pkg, expr->TypePointer.type, ctx);
 
     expectType(pkg, type, ctx, expr->TypePointer.type->start);
@@ -1593,28 +1595,13 @@ void test_checkExprLitFunction() {
     checkFunction("fn (a, b: u64) -> u64, bool { return a }");
     ASSERT(type == typeFromParsing("fn(u64, u64) -> u64, bool"));
 
-    // See test_buggyVargs
-//    checkFunction("fn (fmt: *u8, args: ..any) -> i32");
-//    ASSERT(type == typeFromParsing("fn (fmt: *u8, args: ..any) -> i32"));
+    checkFunction("fn (fmt: *u8, args: ..any) -> i32 { return 0 }");
+    ASSERT(type == typeFromParsing("fn (fmt: *u8, args: ..any) -> i32"));
 }
 
 #undef pkg
 #endif
 
-/*
-void test_buggyVargs() {
-    REINIT_COMPILER();
-    Expr *expr;
-    CheckerContext ctx;
-    Type *type;
 
-#define checkFunction(_CODE) \
-    expr = (Expr *) resetAndParseSingleStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
-    type = checkExprLitFunction(expr, &ctx, &pkg);
 
-    checkFunction("fn (fmt: *u8, args: ..any) -> i32");
-    ASSERT(type == typeFromParsing("fn (fmt: *u8, args: ..any) -> i32"));
-}
-*/
 
