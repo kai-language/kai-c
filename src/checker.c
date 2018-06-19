@@ -663,7 +663,7 @@ error:
     return InvalidType;
 }
 
-Type *checkExprTypeVariadic(Package *pkg, Expr *expr, CheckerContext *ctx) {
+Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *type = checkExpr(pkg, expr->TypeVariadic.type, ctx);
     if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
     TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlagCVargs ? TypeFlag_CVargs : TypeFlag_None;
@@ -676,7 +676,7 @@ error:
     return InvalidType;
 }
 
-Type *checkExprTypeFunction(Package *pkg, Expr *expr, CheckerContext *ctx) {
+Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Expr_TypeFunction func = expr->TypeFunction;
     TypeFlag flags = TypeFlag_None;
 
@@ -719,7 +719,7 @@ error:
     return InvalidType;
 }
 
-Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, CheckerContext *ctx) {
+Type *checkExprLitFunction(Expr *funcExpr, CheckerContext *ctx, Package *pkg) {
     Expr_LitFunction func = funcExpr->LitFunction;
     Scope *parameterScope = pushScope(pkg, ctx->scope);
     CheckerContext funcInfo = { .scope = parameterScope };
@@ -746,6 +746,7 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, CheckerContext *ctx) {
 
         Type *type = checkExpr(pkg, it->value, &funcInfo);
         if (!expectType(pkg, type, &funcInfo, it->value->start)) continue;
+        markSymbolResolved(symbol, type);
 
         typeFlags |= type->Flags & TypeFlag_Variadic;
         typeFlags |= type->Flags & TypeFlag_CVargs;
@@ -756,23 +757,34 @@ Type *checkExprLitFunction(Package *pkg, Expr *funcExpr, CheckerContext *ctx) {
         Type *type = checkExpr(pkg, it, &funcInfo);
         if (!expectType(pkg, type, &funcInfo, it->start)) continue;
         ArrayPush(resultTypes, type);
+        if (type == VoidType) {
+            if (ArrayLen(func.type->TypeFunction.result) > 1) {
+                ReportError(pkg, InvalidUseOfVoidError, it->start,
+                            "Void must be a functions only return type");
+            }
+        }
     }
 
     Scope *bodyScope = pushScope(pkg, parameterScope);
+    Type *tuple = VoidType;
+    if (resultTypes[0] != VoidType) {
+        tuple = NewTypeTuple(TypeFlag_None, resultTypes);
+    }
 
-    // TODO: Expected return types
-    CheckerContext bodyContext = { .scope = bodyScope };
+    CheckerContext bodyContext = { .scope = bodyScope, .desiredType = tuple };
     ForEach(func.body->stmts, Stmt *) {
         checkStmt(pkg, it, &bodyContext);
     }
 
-    ctx->mode = ExprMode_Computed;
+    ctx->mode = ExprMode_Type;
     return NewTypeFunction(typeFlags, paramTypes, resultTypes);
 }
 
 Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *desiredType = ctx->desiredType;
-    ctx->desiredType = isPointer(ctx->desiredType) ? ctx->desiredType->Pointer.pointeeType : NULL;
+    if (desiredType && isPointer(desiredType)) {
+        ctx->desiredType = desiredType->Pointer.pointeeType;
+    }
     Type *type = checkExpr(pkg, expr->TypePointer.type, ctx);
 
     expectType(pkg, type, ctx, expr->TypePointer.type->start);
@@ -781,7 +793,8 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     "'%s' is not a valid pointee type", DescribeType(type));
         goto error;
     } else if (type == VoidType) {
-        ReportError(pkg, TODOError, expr->TypePointer.type->start, "Kai does not use void * for raw pointers instead use rawptr");
+        ReportError(pkg, TODOError, expr->TypePointer.type->start,
+                    "Kai does not use void * for raw pointers instead use rawptr");
     }
 
     if (desiredType == RawptrType) type = RawptrType;
@@ -1054,15 +1067,19 @@ Type *checkExpr(Package *pkg, Expr *expr, CheckerContext *ctx) {
             break;
 
         case ExprKind_LitFunction:
-            type = checkExprLitFunction(pkg, expr, ctx);
+            type = checkExprLitFunction(expr, ctx, pkg);
             break;
 
         case ExprKind_TypeVariadic:
-            type = checkExprTypeVariadic(pkg, expr, ctx);
+            type = checkExprTypeVariadic(expr, ctx, pkg);
             break;
 
         case ExprKind_TypePointer:
             type = checkExprTypePointer(expr, ctx, pkg);
+            break;
+
+        case ExprKind_TypeFunction:
+            type = checkExprTypeFunction(expr, ctx, pkg);
             break;
 
         case ExprKind_Unary:
@@ -1134,7 +1151,7 @@ b32 checkDeclConstant(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
     switch (value->kind) {
     case ExprKind_LitFunction: {
         Expr_LitFunction func = value->LitFunction;
-        Type *type = checkExprTypeFunction(pkg, func.type, ctx);
+        Type *type = checkExprTypeFunction(func.type, ctx, pkg);
         if (ctx->mode == ExprMode_Unresolved) return true;
 
         expectType(pkg, type, ctx, func.type->start);
@@ -1276,13 +1293,33 @@ b32 checkDeclImport(Package *pkg, Decl *declStmt) {
     return false;
 }
 
-b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
-    if (!ctx) {
-        CheckerContext packageCtx = { .scope = pkg->scope};
-        ctx = &packageCtx;
+void checkStmtReturn(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
+    ASSERT(ctx->desiredType && ctx->desiredType->kind == TypeKind_Tuple);
+
+    size_t nTypes = ArrayLen(ctx->desiredType->Tuple.types);
+    size_t nExprs = ArrayLen(stmt->Return.exprs);
+
+    if (nExprs != nTypes) {
+        ReportError(pkg, WrongNumberOfReturnsError, stmt->start,
+                    "Wrong number of return expressions, expected %zu, got %zu",
+                    ArrayLen(ctx->desiredType->Tuple.types), ArrayLen(stmt->Return.exprs));
     }
-    
-    b32 shouldRequeue;
+    for (size_t i = 0; i < MIN(nTypes, nExprs); i++) {
+        Expr *expr = stmt->Return.exprs[i];
+        Type *expectedType = ctx->desiredType->Tuple.types[i];
+        CheckerContext exprCtx = { .scope = ctx->scope, .desiredType = expectedType };
+        Type *type = checkExpr(pkg, expr, &exprCtx);
+        if (!TypesIdentical(type, expectedType)) {
+            ReportError(pkg, TypeMismatchError, expr->start,
+                        "Expected type %s got type %s",
+                        DescribeType(expectedType), DescribeType(type));
+            return;
+        }
+    }
+}
+
+b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
+    b32 shouldRequeue = false;
 
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
@@ -1297,6 +1334,10 @@ b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
             shouldRequeue = checkDeclImport(pkg, (Decl *)stmt);
             break;
 
+        case StmtKind_Return:
+            checkStmtReturn(pkg, stmt, ctx);
+            break;
+
         default:
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
@@ -1304,11 +1345,8 @@ b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
     return shouldRequeue;
 }
 
-
-
-
 #if TEST
-#define pkg checkerTestPackage
+//#define pkg checkerTestPackage
 Package pkg = {0};
 Queue resetAndParse(const char *code) {
     // reset package
@@ -1318,6 +1356,7 @@ Queue resetAndParse(const char *code) {
 
     ArenaFree(&pkg.arena);
     ArenaFree(&pkg.diagnostics.arena);
+    memset(&pkg, 0, sizeof(Package));
 
     ArenaFree(&parsingQueue.arena);
     memset(&checkingQueue, 0, sizeof(Queue));
@@ -1348,7 +1387,8 @@ void test_checkConstantDeclarations() {
     ASSERT(queue.size == 0);
 
     Stmt *stmt = work->stmt;
-    b32 requeue = checkStmt(&pkg, stmt, NULL);
+    CheckerContext ctx = { .scope = pkg.scope };
+    b32 requeue = checkStmt(&pkg, stmt, &ctx);
     ASSERT(!requeue);
 
     Symbol *sym = Lookup(pkg.scope, StrIntern("x"));
@@ -1365,13 +1405,20 @@ void test_coercionsAreMarked() {
     REINIT_COMPILER();
     Stmt *stmt;
     CheckerInfo* info;
+    CheckerContext ctx;
 #define checkBasicExpr(_CODE) \
     stmt = resetAndParseSingleStmt(_CODE); \
-    checkStmt(&pkg, stmt, NULL); \
+    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    checkStmt(&pkg, stmt, &ctx); \
     info = CheckerInfoForStmt(&pkg, stmt)
 
+    //              1   2     3 5 4
     checkBasicExpr("x : u64 : 1 + 2");
     ASSERT(info->Constant.symbol->name == StrIntern("x"));
+    ASSERT_MSG(pkg.astIdCount == 6, "Package was not fully reset as expected");
+    Conversion coerce = pkg.checkerInfo[5].BasicExpr.coerce;
+    ASSERT(coerce & ConversionClass_Same);
+    ASSERT(coerce & ConversionFlag_Extend);
 }
 
 void test_checkConstantUnaryExpressions() {
@@ -1523,5 +1570,38 @@ void test_checkConstantCastExpression() {
     ASSERT(ctx.val.u64 == 42);
 }
 
+Type *typeFromParsing(const char *code) {
+    pkg.scope = pushScope(&pkg, builtinPackage.scope);
+
+    Stmt *stmt = resetAndParseSingleStmt(code);
+    CheckerContext ctx = { .scope = pkg.scope };
+    return checkExpr(&pkg, (Expr *) stmt, &ctx);
+}
+
+void test_checkExprLitFunction() {
+    REINIT_COMPILER();
+    Expr *expr;
+    CheckerContext ctx;
+    Type *type;
+
+#define checkFunction(_CODE) \
+    expr = (Expr *) resetAndParseSingleStmt(_CODE); \
+    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    type = checkExprLitFunction(expr, &ctx, &pkg);
+
+    checkFunction("fn (a: u64) -> u64 { return a }");
+    ASSERT(type == typeFromParsing("fn(u64) -> u64"));
+
+    checkFunction("fn (a, b: u64) -> u64, bool { return a }");
+    ASSERT(type == typeFromParsing("fn(u64, u64) -> u64, bool"));
+
+    checkFunction("fn (fmt: *u8, args: ..any) -> i32 { return 0 }");
+    ASSERT(type == typeFromParsing("fn (fmt: *u8, args: ..any) -> i32"));
+}
+
 #undef pkg
 #endif
+
+
+
+

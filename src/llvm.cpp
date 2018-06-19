@@ -83,8 +83,11 @@ llvm::Value *emitUnaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(Chec
 
 llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
     switch (type->kind) {
-    case TypeKind_Void:
-        return llvm::Type::getVoidTy(gen->m->getContext());
+    case TypeKind_Tuple:
+        if (!type->Tuple.types) {
+            return llvm::Type::getVoidTy(gen->m->getContext());
+        }
+        UNIMPLEMENTED(); // Multiple returns
     case TypeKind_Int:
         return llvm::IntegerType::get(gen->m->getContext(), type->Width);
 
@@ -136,7 +139,7 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
         return type->Width == 32 ? types.f32 : types.f64;
     }
 
-    if (type->kind == TypeKind_Void) {
+    if (type->kind == TypeKind_Tuple && !type->Tuple.types) {
         return NULL;
     }
 
