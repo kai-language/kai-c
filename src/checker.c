@@ -532,6 +532,7 @@ Type *checkExpr(Package *pkg, Expr *expr, CheckerContext *ctx);
 b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx);
 
 Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Ident);
     Expr_Ident ident = expr->Ident;
     Symbol *symbol = Lookup(ctx->scope, ident.name);
     if (!symbol) {
@@ -567,6 +568,7 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
 }
 
 Type *checkExprLitInt(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_LitInt);
     Expr_LitInt lit = expr->LitInt;
 
     Type *type = SmallestIntTypeForPositiveValue(lit.val);
@@ -606,6 +608,7 @@ error:
 }
 
 Type *checkExprLitFloat(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_LitFloat);
     Expr_LitFloat lit = expr->LitFloat;
 
     Type *type = F64Type;
@@ -642,6 +645,7 @@ error:
 }
 
 Type *checkExprLitNil(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_LitNil);
     if (ctx->desiredType && !isNilable(ctx->desiredType)) {
         ReportError(pkg, NotNilableError, expr->start,
                     "'nil' is not convertable to '%s'", DescribeType(ctx->desiredType));
@@ -664,6 +668,7 @@ error:
 }
 
 Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeVariadic);
     Type *type = checkExpr(pkg, expr->TypeVariadic.type, ctx);
     if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
     TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlagCVargs ? TypeFlag_CVargs : TypeFlag_None;
@@ -677,6 +682,7 @@ error:
 }
 
 Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeFunction);
     Expr_TypeFunction func = expr->TypeFunction;
     TypeFlag flags = TypeFlag_None;
 
@@ -719,8 +725,9 @@ error:
     return InvalidType;
 }
 
-Type *checkExprLitFunction(Expr *funcExpr, CheckerContext *ctx, Package *pkg) {
-    Expr_LitFunction func = funcExpr->LitFunction;
+Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_LitFunction);
+    Expr_LitFunction func = expr->LitFunction;
     Scope *parameterScope = pushScope(pkg, ctx->scope);
     CheckerContext funcInfo = { .scope = parameterScope };
 
@@ -781,6 +788,7 @@ Type *checkExprLitFunction(Expr *funcExpr, CheckerContext *ctx, Package *pkg) {
 }
 
 Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypePointer);
     Type *desiredType = ctx->desiredType;
     if (desiredType && isPointer(desiredType)) {
         ctx->desiredType = desiredType->Pointer.pointeeType;
@@ -809,6 +817,7 @@ error:
 }
 
 Type *checkExprUnary(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Unary);
     Type *type = checkExpr(pkg, expr->Unary.expr, ctx);
     if (ctx->mode == ExprMode_Unresolved) return InvalidType;
 
@@ -852,6 +861,7 @@ error:
 }
 
 Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Binary);
     CheckerContext lhsInfo = { .scope = ctx->scope };
     CheckerContext rhsInfo = { .scope = ctx->scope };
     Type *lhs = checkExpr(pkg, expr->Binary.lhs, &lhsInfo);
@@ -919,7 +929,7 @@ error:
 }
 
 Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
-
+    ASSERT(expr->kind == ExprKind_Ternary);
     CheckerContext condInfo = { .scope = ctx->scope, .desiredType = BoolType };
     Type *cond = checkExpr(pkg, expr->Ternary.cond, &condInfo);
 
@@ -964,6 +974,7 @@ error:
 }
 
 Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Cast);
     CheckerContext targetInfo = { .scope = ctx->scope };
     Type *type = checkExpr(pkg, expr->Cast.type, &targetInfo);
 
@@ -997,6 +1008,7 @@ error:
 }
 
 Type *checkExprAutocast(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Autocast);
     if (!ctx->desiredType) {
         ReportError(pkg, AutocastExpectsDesiredTypeError, expr->start,
                     "Autocast expression requires a contextual type to convert to");
@@ -1020,6 +1032,7 @@ error:
 }
 
 Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Call);
     CheckerContext calleeInfo = { .scope = ctx->scope };
     Type *calleeType = checkExpr(pkg, expr->Call.expr, &calleeInfo);
     if (calleeInfo.mode == ExprMode_Type) {
@@ -1048,6 +1061,9 @@ error:
 }
 
 Type *checkExpr(Package *pkg, Expr *expr, CheckerContext *ctx) {
+#if defined(ASSERT)
+    Scope *checkExprScopePriorToCall = ctx->scope;
+#endif
     Type *type = NULL;
     switch (expr->kind) {
         case ExprKind_Ident:
@@ -1102,10 +1118,14 @@ Type *checkExpr(Package *pkg, Expr *expr, CheckerContext *ctx) {
             break;
     }
 
+#if defined(ASSERT)
+    ASSERT_MSG(checkExprScopePriorToCall == ctx->scope, "Functions *must* not change their contexts scope");
+#endif
     return type;
 }
 
 b32 checkDeclConstant(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
+    ASSERT(declStmt->kind == DeclKind_Constant);
     Decl_Constant decl = declStmt->Constant;
 
     if (ArrayLen(decl.names) != 1) {
@@ -1187,6 +1207,7 @@ b32 checkDeclConstant(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
 }
 
 b32 checkDeclVariable(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
+    ASSERT(declStmt->kind == DeclKind_Variable);
     Decl_Variable var = declStmt->Variable;
 
     Type *expectedType = NULL;
@@ -1288,12 +1309,14 @@ b32 checkDeclVariable(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
 }
 
 b32 checkDeclImport(Package *pkg, Decl *declStmt) {
+    ASSERT(declStmt->kind == DeclKind_Import);
 //    Decl_Import import = declStmt->Import;
     UNIMPLEMENTED();
     return false;
 }
 
 void checkStmtReturn(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
+    ASSERT(stmt->kind == StmtKind_Return);
     ASSERT(ctx->desiredType && ctx->desiredType->kind == TypeKind_Tuple);
 
     size_t nTypes = ArrayLen(ctx->desiredType->Tuple.types);
