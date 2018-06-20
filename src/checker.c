@@ -1381,6 +1381,9 @@ void checkStmtReturn(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
 }
 
 b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
+#if defined(ASSERT)
+    Scope *checkExprScopePriorToCall = ctx->scope;
+#endif
     b32 shouldRequeue = false;
 
     switch (stmt->kind) {
@@ -1408,6 +1411,9 @@ b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
 
+#if defined(ASSERT)
+    ASSERT_MSG(checkExprScopePriorToCall == ctx->scope, "Functions *must* not change their contexts scope");
+#endif
     return shouldRequeue;
 }
 
