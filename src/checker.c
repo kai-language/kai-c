@@ -109,11 +109,11 @@ b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol,
     return false;
 }
 
-b32 expectType(Package *pkg, Type *type, CheckerContext *info, Position pos) {
-    if (info->mode != ExprMode_Type) {
+b32 expectType(Package *pkg, Type *type, CheckerContext *ctx, Position pos) {
+    if (ctx->mode != ExprMode_Type) {
         ReportError(pkg, NotATypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
     }
-    return info->mode == ExprMode_Type;
+    return ctx->mode == ExprMode_Type;
 }
 
 b32 IsInteger(Type *type) {
@@ -222,7 +222,7 @@ b32 (*binaryPredicates[NUM_TOKEN_KINDS])(Type *) = {
     [TK_Lor]  = canBeUsedForLogical,
 };
 
-b32 canCoerce(Type *type, Type *target, CheckerContext *info) {
+b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
     if (TypesIdentical(type, target)) return true;
     if (target->kind == TypeKind_Any) return true;
 
@@ -233,8 +233,8 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *info) {
         if (IsSigned(type) && !IsSigned(target)) {
             // Signed to Unsigned
             // Source is a positive constant less than Target's Max Value
-            if (info->isConstant && info->val.u64 <= MaxValueForIntOrPointerType(target)) {
-                return SignExtend(type, target, info->val) >= 0;
+            if (ctx->isConstant && ctx->val.u64 <= MaxValueForIntOrPointerType(target)) {
+                return SignExtend(type, target, ctx->val) >= 0;
             }
             // Coercion from a signed integer to an unsigned requires a cast.
             return false;
@@ -243,7 +243,7 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *info) {
         if (!IsSigned(type) && IsSigned(target)) {
             // Unsigned to Signed
             // Source is a constant less than Target's Max Value
-            if (info->isConstant && info->val.u64 <= MaxValueForIntOrPointerType(target)) return true;
+            if (ctx->isConstant && ctx->val.u64 <= MaxValueForIntOrPointerType(target)) return true;
             // Target's Max Value is larger than the Source's
             return type->Width < target->Width;
         }
@@ -273,43 +273,43 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *info) {
 void test_canCoerce() {
     INIT_COMPILER();
 
-    CheckerContext info = {0};
+    CheckerContext ctx = {0}; // No need for scope
 
     Type *PtrToU8 = NewTypePointer(TypeFlag_None, U8Type);
 
-    ASSERT(canCoerce(I8Type, AnyType, &info));
-    ASSERT(canCoerce(PtrToU8, AnyType, &info));
-    ASSERT(canCoerce(F32Type, AnyType, &info));
+    ASSERT(canCoerce(I8Type, AnyType, &ctx));
+    ASSERT(canCoerce(PtrToU8, AnyType, &ctx));
+    ASSERT(canCoerce(F32Type, AnyType, &ctx));
 
-    ASSERT(canCoerce(I8Type, BoolType, &info));
-    ASSERT(canCoerce(F32Type, BoolType, &info));
-    ASSERT(canCoerce(PtrToU8, BoolType, &info));
+    ASSERT(canCoerce(I8Type, BoolType, &ctx));
+    ASSERT(canCoerce(F32Type, BoolType, &ctx));
+    ASSERT(canCoerce(PtrToU8, BoolType, &ctx));
 
-    ASSERT(canCoerce(I64Type, F32Type, &info));
+    ASSERT(canCoerce(I64Type, F32Type, &ctx));
 
-    ASSERT(canCoerce(I8Type, I16Type, &info));
-    ASSERT(canCoerce(U8Type, I16Type, &info));
+    ASSERT(canCoerce(I8Type, I16Type, &ctx));
+    ASSERT(canCoerce(U8Type, I16Type, &ctx));
 
-    ASSERT(canCoerce(UintType, UintptrType, &info));
-    ASSERT(!canCoerce(I8Type, U64Type, &info));
-    ASSERT(canCoerce(PtrToU8, RawptrType, &info));
-    ASSERT(canCoerce(RawptrType, PtrToU8, &info));
+    ASSERT(canCoerce(UintType, UintptrType, &ctx));
+    ASSERT(!canCoerce(I8Type, U64Type, &ctx));
+    ASSERT(canCoerce(PtrToU8, RawptrType, &ctx));
+    ASSERT(canCoerce(RawptrType, PtrToU8, &ctx));
     // TODO: Coercion to union
     // TODO: Coercion from enum
 
-    info.isConstant = true;
-    info.val.i8 = 100;
-    ASSERT(canCoerce(I8Type, U8Type, &info));
+    ctx.isConstant = true;
+    ctx.val.i8 = 100;
+    ASSERT(canCoerce(I8Type, U8Type, &ctx));
 
-    info.val.i8 = -100;
-    ASSERT(!canCoerce(I8Type, U8Type, &info));
+    ctx.val.i8 = -100;
+    ASSERT(!canCoerce(I8Type, U8Type, &ctx));
 
-    info.val.u64 = 100;
-    ASSERT(canCoerce(U64Type, I8Type, &info));
+    ctx.val.u64 = 100;
+    ASSERT(canCoerce(U64Type, I8Type, &ctx));
 }
 #endif
 
-b32 representValueSilently(CheckerContext *info, Expr *expr, Type *type, Type *target, Package *pkg) {
+b32 representValueSilently(CheckerContext *ctx, Expr *expr, Type *type, Type *target, Package *pkg) {
     // TODO: Implement this properly
     // Also tests for it.
     return true;
@@ -442,13 +442,13 @@ void convertValue(Type *type, Type *target, Val *val) {
     }
 }
 
-b32 coerceTypeSilently(Expr *expr, CheckerContext *info, Type **type, Type *target, Package *pkg) {
+b32 coerceTypeSilently(Expr *expr, CheckerContext *ctx, Type **type, Type *target, Package *pkg) {
     if (*type == InvalidType || target == InvalidType) return false;
     if (TypesIdentical(*type, target)) return true;
 
-    if (!canCoerce(*type, target, info)) return false;
+    if (!canCoerce(*type, target, ctx)) return false;
 
-    if (info->isConstant) convertValue(*type, target, &info->val);
+    if (ctx->isConstant) convertValue(*type, target, &ctx->val);
     changeTypeOrMarkConversionForExpr(expr, *type, target, pkg);
 
     *type = target;
@@ -456,9 +456,9 @@ b32 coerceTypeSilently(Expr *expr, CheckerContext *info, Type **type, Type *targ
     return true;
 }
 
-b32 coerceType(Expr *expr, CheckerContext *info, Type **type, Type *target, Package *pkg) {
+b32 coerceType(Expr *expr, CheckerContext *ctx, Type **type, Type *target, Package *pkg) {
 
-    b32 success = coerceTypeSilently(expr, info, type, target, pkg);
+    b32 success = coerceTypeSilently(expr, ctx, type, target, pkg);
     if (!success) {
         ReportError(pkg, InvalidConversionError, expr->start,
                     "Cannot convert %s to type %s", DescribeExpr(expr), DescribeType(target));
@@ -493,14 +493,14 @@ b32 canCast(Type *source, Type *target) {
     return false;
 }
 
-b32 cast(Type *source, Type *target, CheckerContext *info) {
+b32 cast(Type *source, Type *target, CheckerContext *ctx) {
     if (source == InvalidType || target == InvalidType) return false;
 
     if (!canCast(source, target)) return false;
 
-    if (info->isConstant) {
-        convertValue(source, target, &info->val);
-        info->val.u64 &= BITMASK(u64, target->Width);
+    if (ctx->isConstant) {
+        convertValue(source, target, &ctx->val);
+        ctx->val.u64 &= BITMASK(u64, target->Width);
     }
 
     return true;
@@ -691,10 +691,10 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     DynamicArray(Type *) params = NULL;
     ArrayFit(params, ArrayLen(func.params));
 
-    CheckerContext info = { .scope = pushScope(pkg, ctx->scope) };
+    CheckerContext paramCtx = { .scope = pushScope(pkg, ctx->scope) };
     For (func.params) {
-        Type *type = checkExpr(pkg, func.params[i]->value, &info);
-        if (!expectType(pkg, type, &info, func.params[i]->start)) isInvalid = true;
+        Type *type = checkExpr(pkg, func.params[i]->value, &paramCtx);
+        if (!expectType(pkg, type, &paramCtx, func.params[i]->start)) isInvalid = true;
 
         flags |= type->Flags & TypeFlag_Variadic;
         flags |= type->Flags & TypeFlag_CVargs;
@@ -705,8 +705,8 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ArrayFit(returnTypes, ArrayLen(func.result));
 
     ForEach(func.result, Expr *) {
-        Type *type = checkExpr(pkg, it, &info);
-        if (!expectType(pkg, type, &info, it->start)) {
+        Type *type = checkExpr(pkg, it, &paramCtx);
+        if (!expectType(pkg, type, &paramCtx, it->start)) {
             isInvalid = true;
         }
         ArrayPush(returnTypes, type);
@@ -729,7 +729,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_LitFunction);
     Expr_LitFunction func = expr->LitFunction;
     Scope *parameterScope = pushScope(pkg, ctx->scope);
-    CheckerContext funcInfo = { .scope = parameterScope };
+    CheckerContext paramCtx = { .scope = parameterScope };
 
     DynamicArray(Type *) paramTypes = NULL;
     DynamicArray(Type *) resultTypes = NULL;
@@ -751,8 +751,8 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, 0, (Decl *) it);
         ArrayPush(paramSymbols, symbol);
 
-        Type *type = checkExpr(pkg, it->value, &funcInfo);
-        if (!expectType(pkg, type, &funcInfo, it->value->start)) continue;
+        Type *type = checkExpr(pkg, it->value, &paramCtx);
+        if (!expectType(pkg, type, &paramCtx, it->value->start)) continue;
         markSymbolResolved(symbol, type);
 
         typeFlags |= type->Flags & TypeFlag_Variadic;
@@ -761,8 +761,8 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     ForEach(func.type->TypeFunction.result, Expr *) {
-        Type *type = checkExpr(pkg, it, &funcInfo);
-        if (!expectType(pkg, type, &funcInfo, it->start)) continue;
+        Type *type = checkExpr(pkg, it, &paramCtx);
+        if (!expectType(pkg, type, &paramCtx, it->start)) continue;
         ArrayPush(resultTypes, type);
         if (type == VoidType) {
             if (ArrayLen(func.type->TypeFunction.result) > 1) {
@@ -778,9 +778,9 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         tuple = NewTypeTuple(TypeFlag_None, resultTypes);
     }
 
-    CheckerContext bodyContext = { .scope = bodyScope, .desiredType = tuple };
+    CheckerContext bodyCtx = { .scope = bodyScope, .desiredType = tuple };
     ForEach(func.body->stmts, Stmt *) {
-        checkStmt(pkg, it, &bodyContext);
+        checkStmt(pkg, it, &bodyCtx);
     }
 
     ctx->mode = ExprMode_Type;
@@ -862,18 +862,18 @@ error:
 
 Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Binary);
-    CheckerContext lhsInfo = { .scope = ctx->scope };
-    CheckerContext rhsInfo = { .scope = ctx->scope };
-    Type *lhs = checkExpr(pkg, expr->Binary.lhs, &lhsInfo);
-    Type *rhs = checkExpr(pkg, expr->Binary.rhs, &rhsInfo);
+    CheckerContext lhsCtx = { .scope = ctx->scope };
+    CheckerContext rhsCtx = { .scope = ctx->scope };
+    Type *lhs = checkExpr(pkg, expr->Binary.lhs, &lhsCtx);
+    Type *rhs = checkExpr(pkg, expr->Binary.rhs, &rhsCtx);
 
-    if (lhsInfo.mode == ExprMode_Invalid || rhsInfo.mode == ExprMode_Invalid) {
+    if (lhsCtx.mode == ExprMode_Invalid || rhsCtx.mode == ExprMode_Invalid) {
         goto error;
     }
 
     // TODO: clean this up
-    if (!(coerceTypeSilently(expr->Binary.lhs, &lhsInfo, &lhs, rhs, pkg) ||
-          coerceTypeSilently(expr->Binary.rhs, &rhsInfo, &rhs, lhs, pkg))) {
+    if (!(coerceTypeSilently(expr->Binary.lhs, &lhsCtx, &lhs, rhs, pkg) ||
+          coerceTypeSilently(expr->Binary.rhs, &rhsCtx, &rhs, lhs, pkg))) {
         ReportError(pkg, TypeMismatchError, expr->start,
                     "No conversion possible to make %s and %s Identical types",
                     DescribeExpr(expr->Binary.lhs), DescribeExpr(expr->Binary.rhs));
@@ -909,13 +909,13 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
     }
 
-    if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && rhsInfo.isConstant && rhsInfo.val.i64 == 0) {
+    if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && rhsCtx.isConstant && rhsCtx.val.i64 == 0) {
         ReportError(pkg, DivisionByZeroError, expr->Binary.rhs->start, "Division by zero");
     }
 
-    ctx->isConstant = lhsInfo.isConstant && rhsInfo.isConstant;
+    ctx->isConstant = lhsCtx.isConstant && rhsCtx.isConstant;
     b32 isConstantNegative;
-    if (evalBinary(expr->Binary.op, type, lhsInfo.val, rhsInfo.val, ctx, &isConstantNegative)) {
+    if (evalBinary(expr->Binary.op, type, lhsCtx.val, rhsCtx.val, ctx, &isConstantNegative)) {
         changeTypeOrRecordCoercionIfNeeded(&type, expr, ctx, isConstantNegative, pkg);
     }
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -930,19 +930,19 @@ error:
 
 Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Ternary);
-    CheckerContext condInfo = { .scope = ctx->scope, .desiredType = BoolType };
-    Type *cond = checkExpr(pkg, expr->Ternary.cond, &condInfo);
+    CheckerContext condCtx = { .scope = ctx->scope, .desiredType = BoolType };
+    Type *cond = checkExpr(pkg, expr->Ternary.cond, &condCtx);
 
     Type *pass = cond;
-    CheckerContext passInfo = condInfo;
+    CheckerContext passCtx = condCtx;
     if (expr->Ternary.pass) {
-        passInfo.desiredType = ctx->desiredType;
-        pass = checkExpr(pkg, expr->Ternary.pass, &passInfo);
+        passCtx.desiredType = ctx->desiredType;
+        pass = checkExpr(pkg, expr->Ternary.pass, &passCtx);
     }
 
-    CheckerContext failInfo = { .scope = ctx->scope, .desiredType = ctx->desiredType };
-    Type *fail = checkExpr(pkg, expr->Ternary.fail, &failInfo);
-    if (failInfo.mode == ExprMode_Unresolved)
+    CheckerContext failCtx = { .scope = ctx->scope, .desiredType = ctx->desiredType };
+    Type *fail = checkExpr(pkg, expr->Ternary.fail, &failCtx);
+    if (failCtx.mode == ExprMode_Unresolved)
 
     if (!isBoolean(cond) && !isNumericOrPointer(cond)) {
         ReportError(pkg, BadConditionError, expr->start,
@@ -951,13 +951,13 @@ Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     Type *type = fail;
-    if (condInfo.isConstant && passInfo.isConstant && failInfo.isConstant) {
+    if (condCtx.isConstant && passCtx.isConstant && failCtx.isConstant) {
         ctx->isConstant = true;
-        ctx->val = condInfo.val.u64 ? passInfo.val : failInfo.val;
-        type = condInfo.val.u64 ? pass : fail;
+        ctx->val = condCtx.val.u64 ? passCtx.val : failCtx.val;
+        type = condCtx.val.u64 ? pass : fail;
     } else {
         // NOTE: If we coerce the type before doing handling constant evaluation, we lose signedness information.
-        if (!coerceType(expr->Ternary.fail, &failInfo, &fail, pass, pkg)) {
+        if (!coerceType(expr->Ternary.fail, &failCtx, &fail, pass, pkg)) {
             ReportError(pkg, TypeMismatchError, expr->Ternary.fail->start,
                         "Expected type %s got type %s", DescribeType(pass ? pass : cond), DescribeType(fail));
             goto error;
@@ -975,10 +975,10 @@ error:
 
 Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Cast);
-    CheckerContext targetInfo = { .scope = ctx->scope };
-    Type *type = checkExpr(pkg, expr->Cast.type, &targetInfo);
+    CheckerContext targetCtx = { .scope = ctx->scope };
+    Type *type = checkExpr(pkg, expr->Cast.type, &targetCtx);
 
-    if (targetInfo.mode != ExprMode_Type) {
+    if (targetCtx.mode != ExprMode_Type) {
         ReportError(pkg, NotATypeError, expr->start,
                     "Cannot cast to non type %s", DescribeExpr(expr->Cast.type));
         goto error;
@@ -1033,9 +1033,9 @@ error:
 
 Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Call);
-    CheckerContext calleeInfo = { .scope = ctx->scope };
-    Type *calleeType = checkExpr(pkg, expr->Call.expr, &calleeInfo);
-    if (calleeInfo.mode == ExprMode_Type) {
+    CheckerContext calleeCtx = { .scope = ctx->scope };
+    Type *calleeType = checkExpr(pkg, expr->Call.expr, &calleeCtx);
+    if (calleeCtx.mode == ExprMode_Type) {
 
         if (ArrayLen(expr->Call.args) < 1) {
             ReportError(pkg, CastArgumentCountError, expr->start,
