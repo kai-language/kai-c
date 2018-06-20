@@ -14,8 +14,8 @@ typedef enum ExprMode {
 
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {
+    Scope *const scope;
     Type *desiredType;
-    Scope *scope;
     ExprMode mode;
     b8 isConstant;
     Val val;
@@ -691,7 +691,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     DynamicArray(Type *) params = NULL;
     ArrayFit(params, ArrayLen(func.params));
 
-    CheckerContext paramCtx = { .scope = pushScope(pkg, ctx->scope) };
+    CheckerContext paramCtx = { pushScope(pkg, ctx->scope) };
     For (func.params) {
         Type *type = checkExpr(pkg, func.params[i]->value, &paramCtx);
         if (!expectType(pkg, type, &paramCtx, func.params[i]->start)) isInvalid = true;
@@ -729,7 +729,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_LitFunction);
     Expr_LitFunction func = expr->LitFunction;
     Scope *parameterScope = pushScope(pkg, ctx->scope);
-    CheckerContext paramCtx = { .scope = parameterScope };
+    CheckerContext paramCtx = { parameterScope };
 
     DynamicArray(Type *) paramTypes = NULL;
     DynamicArray(Type *) resultTypes = NULL;
@@ -778,7 +778,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         tuple = NewTypeTuple(TypeFlag_None, resultTypes);
     }
 
-    CheckerContext bodyCtx = { .scope = bodyScope, .desiredType = tuple };
+    CheckerContext bodyCtx = { bodyScope, .desiredType = tuple };
     ForEach(func.body->stmts, Stmt *) {
         checkStmt(pkg, it, &bodyCtx);
     }
@@ -862,8 +862,8 @@ error:
 
 Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Binary);
-    CheckerContext lhsCtx = { .scope = ctx->scope };
-    CheckerContext rhsCtx = { .scope = ctx->scope };
+    CheckerContext lhsCtx = { ctx->scope };
+    CheckerContext rhsCtx = { ctx->scope };
     Type *lhs = checkExpr(pkg, expr->Binary.lhs, &lhsCtx);
     Type *rhs = checkExpr(pkg, expr->Binary.rhs, &rhsCtx);
 
@@ -930,7 +930,7 @@ error:
 
 Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Ternary);
-    CheckerContext condCtx = { .scope = ctx->scope, .desiredType = BoolType };
+    CheckerContext condCtx = { ctx->scope, .desiredType = BoolType };
     Type *cond = checkExpr(pkg, expr->Ternary.cond, &condCtx);
 
     Type *pass = cond;
@@ -940,7 +940,7 @@ Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
         pass = checkExpr(pkg, expr->Ternary.pass, &passCtx);
     }
 
-    CheckerContext failCtx = { .scope = ctx->scope, .desiredType = ctx->desiredType };
+    CheckerContext failCtx = { ctx->scope, .desiredType = ctx->desiredType };
     Type *fail = checkExpr(pkg, expr->Ternary.fail, &failCtx);
     if (failCtx.mode == ExprMode_Unresolved)
 
@@ -975,7 +975,7 @@ error:
 
 Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Cast);
-    CheckerContext targetCtx = { .scope = ctx->scope };
+    CheckerContext targetCtx = { ctx->scope };
     Type *type = checkExpr(pkg, expr->Cast.type, &targetCtx);
 
     if (targetCtx.mode != ExprMode_Type) {
@@ -1033,7 +1033,7 @@ error:
 
 Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Call);
-    CheckerContext calleeCtx = { .scope = ctx->scope };
+    CheckerContext calleeCtx = { ctx->scope };
     Type *calleeType = checkExpr(pkg, expr->Call.expr, &calleeCtx);
     if (calleeCtx.mode == ExprMode_Type) {
 
@@ -1061,9 +1061,6 @@ error:
 }
 
 Type *checkExpr(Package *pkg, Expr *expr, CheckerContext *ctx) {
-#if defined(ASSERT)
-    Scope *checkExprScopePriorToCall = ctx->scope;
-#endif
     Type *type = NULL;
     switch (expr->kind) {
         case ExprKind_Ident:
@@ -1118,9 +1115,6 @@ Type *checkExpr(Package *pkg, Expr *expr, CheckerContext *ctx) {
             break;
     }
 
-#if defined(ASSERT)
-    ASSERT_MSG(checkExprScopePriorToCall == ctx->scope, "Functions *must* not change their contexts scope");
-#endif
     return type;
 }
 
@@ -1188,7 +1182,7 @@ b32 checkDeclConstant(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
             break;
     }
 
-    CheckerContext exprCtx = {.scope = ctx->scope, .desiredType = expectedType};
+    CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
     Type *type = checkExpr(pkg, value, &exprCtx);
     if (exprCtx.mode == ExprMode_Unresolved) return true;
 
@@ -1274,7 +1268,7 @@ b32 checkDeclVariable(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
         }
 
         // TODO(Brett): check for multi-value call
-        CheckerContext exprCtx = {.scope = ctx->scope, .desiredType = expectedType};
+        CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         For (var.names) {
             Type *type = checkExpr(pkg, var.values[i], &exprCtx);
             if (exprCtx.mode == ExprMode_Unresolved) {
@@ -1369,7 +1363,7 @@ void checkStmtReturn(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
     for (size_t i = 0; i < MIN(nTypes, nExprs); i++) {
         Expr *expr = stmt->Return.exprs[i];
         Type *expectedType = ctx->desiredType->Tuple.types[i];
-        CheckerContext exprCtx = { .scope = ctx->scope, .desiredType = expectedType };
+        CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         Type *type = checkExpr(pkg, expr, &exprCtx);
         if (!TypesIdentical(type, expectedType)) {
             ReportError(pkg, TypeMismatchError, expr->start,
@@ -1381,9 +1375,6 @@ void checkStmtReturn(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
 }
 
 b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
-#if defined(ASSERT)
-    Scope *checkExprScopePriorToCall = ctx->scope;
-#endif
     b32 shouldRequeue = false;
 
     switch (stmt->kind) {
@@ -1411,9 +1402,6 @@ b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
 
-#if defined(ASSERT)
-    ASSERT_MSG(checkExprScopePriorToCall == ctx->scope, "Functions *must* not change their contexts scope");
-#endif
     return shouldRequeue;
 }
 
@@ -1446,7 +1434,7 @@ Stmt *resetAndParseReturningLastStmt(const char *code) {
     ASSERT(queue.size > 0);
     while (queue.size > 1) {
         CheckerWork *work = QueueDequeue(&queue);
-        CheckerContext ctx = { .scope = work->package->scope };
+        CheckerContext ctx = { work->package->scope };
         checkStmt(work->package, work->stmt, &ctx);
     }
     CheckerWork *work = QueueDequeue(&queue);
@@ -1465,7 +1453,7 @@ void test_checkConstantDeclarations() {
     ASSERT(queue.size == 0);
 
     Stmt *stmt = work->stmt;
-    CheckerContext ctx = { .scope = pkg.scope };
+    CheckerContext ctx = { pkg.scope };
     b32 requeue = checkStmt(&pkg, stmt, &ctx);
     ASSERT(!requeue);
 
@@ -1486,7 +1474,7 @@ void test_coercionsAreMarked() {
     CheckerContext ctx;
 #define checkBasicExpr(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    ctx = (CheckerContext){ pkg.scope }; \
     checkStmt(&pkg, stmt, &ctx); \
     info = CheckerInfoForStmt(&pkg, stmt)
 
@@ -1506,7 +1494,7 @@ void test_checkConstantUnaryExpressions() {
     Type *type;
 #define checkUnary(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    ctx = (CheckerContext){ pkg.scope }; \
     type = checkExprUnary((Expr *) stmt, &ctx, &pkg)
 
     checkUnary("-100");
@@ -1539,7 +1527,7 @@ void test_checkConstantBinaryExpressions() {
     Type *type;
 #define checkBinary(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    ctx = (CheckerContext){ pkg.scope }; \
     type = checkExprBinary((Expr *) stmt, &ctx, &pkg)
 
     checkBinary("1 + 2");
@@ -1579,7 +1567,7 @@ void test_checkConstantTernaryExpression() {
     Type *type;
 #define checkTernary(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    ctx = (CheckerContext){ pkg.scope }; \
     type = checkExprTernary((Expr *) stmt, &ctx, &pkg)
 
     checkTernary("true ? 1 : 2");
@@ -1619,7 +1607,7 @@ void test_checkConstantCastExpression() {
     Type *type;
 #define checkCastUsingCallSyntax(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    ctx = (CheckerContext){ pkg.scope }; \
     type = checkExprCall((Expr *) stmt, &ctx, &pkg)
 
     checkCastUsingCallSyntax("i64(8)");
@@ -1634,7 +1622,7 @@ void test_checkConstantCastExpression() {
 
 #define checkCast(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    ctx = (CheckerContext){ pkg.scope }; \
     type = checkExprCast((Expr *) stmt, &ctx, &pkg)
 
     checkCast("cast(i64) 8");
@@ -1652,7 +1640,7 @@ Type *typeFromParsing(const char *code) {
     pkg.scope = pushScope(&pkg, builtinPackage.scope);
 
     Stmt *stmt = resetAndParseReturningLastStmt(code);
-    CheckerContext ctx = { .scope = pkg.scope };
+    CheckerContext ctx = { pkg.scope };
     return checkExpr(&pkg, (Expr *) stmt, &ctx);
 }
 
@@ -1664,7 +1652,7 @@ void test_checkExprLitFunction() {
 
 #define checkFunction(_CODE) \
     expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ .scope = pkg.scope }; \
+    ctx = (CheckerContext){ pkg.scope }; \
     type = checkExprLitFunction(expr, &ctx, &pkg);
 
     checkFunction("fn (a: u64) -> u64 { return a }");
@@ -1684,7 +1672,7 @@ void test_checkStmtAssign() {
 
 #define checkAssign(_CODE) \
 stmt = resetAndParseReturningLastStmt(_CODE); \
-ctx = (CheckerContext){ .scope = pkg.scope}; \
+ctx = (CheckerContext){ pkg.scope}; \
 checkStmtAssign(stmt, &ctx, &pkg)
 
     checkAssign("x := 1;"
