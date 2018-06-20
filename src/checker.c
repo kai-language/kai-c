@@ -1268,6 +1268,12 @@ b32 checkDeclVariable(Package *pkg, Decl *declStmt, CheckerContext *ctx) {
         }
 
         // TODO(Brett): check for multi-value call
+
+        if (var.values && var.values[0]->kind == ExprKind_Call) {
+            UNIMPLEMENTED();
+            return false;
+        }
+
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         For (var.names) {
             Type *type = checkExpr(pkg, var.values[i], &exprCtx);
@@ -1467,19 +1473,25 @@ void test_checkConstantDeclarations() {
     ASSERT(sym->val.u64 == 8);
 }
 
+#define RESET_CONTEXT(_CTX) \
+memset(((u8*) &_CTX) + sizeof(_CTX.scope), 0, sizeof(_CTX) - sizeof(_CTX.scope)); \
+memcpy((u8*) &ctx.scope, &pkg.scope, sizeof(pkg.scope));
+
+
 void test_coercionsAreMarked() {
     REINIT_COMPILER();
     Stmt *stmt;
     CheckerInfo* info;
-    CheckerContext ctx;
+    CheckerContext ctx = { pkg.scope };
 #define checkBasicExpr(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ pkg.scope }; \
+    RESET_CONTEXT(ctx); \
     checkStmt(&pkg, stmt, &ctx); \
     info = CheckerInfoForStmt(&pkg, stmt)
 
     //              1   2     3 5 4
     checkBasicExpr("x : u64 : 1 + 2");
+
     ASSERT(info->Constant.symbol->name == StrIntern("x"));
     ASSERT_MSG(pkg.astIdCount == 6, "Package was not fully reset as expected");
     Conversion coerce = pkg.checkerInfo[5].BasicExpr.coerce;
@@ -1490,11 +1502,11 @@ void test_coercionsAreMarked() {
 void test_checkConstantUnaryExpressions() {
     REINIT_COMPILER();
     Stmt *stmt;
-    CheckerContext ctx;
+    CheckerContext ctx = { pkg.scope };
     Type *type;
 #define checkUnary(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ pkg.scope }; \
+    RESET_CONTEXT(ctx); \
     type = checkExprUnary((Expr *) stmt, &ctx, &pkg)
 
     checkUnary("-100");
@@ -1523,11 +1535,11 @@ void test_checkConstantUnaryExpressions() {
 void test_checkConstantBinaryExpressions() {
     REINIT_COMPILER();
     Stmt *stmt;
-    CheckerContext ctx;
+    CheckerContext ctx = { pkg.scope };
     Type *type;
 #define checkBinary(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ pkg.scope }; \
+    RESET_CONTEXT(ctx); \
     type = checkExprBinary((Expr *) stmt, &ctx, &pkg)
 
     checkBinary("1 + 2");
@@ -1563,11 +1575,11 @@ void test_checkConstantBinaryExpressions() {
 void test_checkConstantTernaryExpression() {
     REINIT_COMPILER();
     Stmt *stmt;
-    CheckerContext ctx;
+    CheckerContext ctx = { pkg.scope };
     Type *type;
 #define checkTernary(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ pkg.scope }; \
+    RESET_CONTEXT(ctx); \
     type = checkExprTernary((Expr *) stmt, &ctx, &pkg)
 
     checkTernary("true ? 1 : 2");
@@ -1603,11 +1615,11 @@ void test_checkConstantTernaryExpression() {
 void test_checkConstantCastExpression() {
     REINIT_COMPILER();
     Stmt *stmt;
-    CheckerContext ctx;
+    CheckerContext ctx = { pkg.scope };
     Type *type;
 #define checkCastUsingCallSyntax(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ pkg.scope }; \
+    RESET_CONTEXT(ctx); \
     type = checkExprCall((Expr *) stmt, &ctx, &pkg)
 
     checkCastUsingCallSyntax("i64(8)");
@@ -1622,7 +1634,7 @@ void test_checkConstantCastExpression() {
 
 #define checkCast(_CODE) \
     stmt = resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ pkg.scope }; \
+    RESET_CONTEXT(ctx); \
     type = checkExprCast((Expr *) stmt, &ctx, &pkg)
 
     checkCast("cast(i64) 8");
@@ -1647,12 +1659,12 @@ Type *typeFromParsing(const char *code) {
 void test_checkExprLitFunction() {
     REINIT_COMPILER();
     Expr *expr;
-    CheckerContext ctx;
+    CheckerContext ctx = { pkg.scope };
     Type *type;
 
 #define checkFunction(_CODE) \
     expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
-    ctx = (CheckerContext){ pkg.scope }; \
+    RESET_CONTEXT(ctx); \
     type = checkExprLitFunction(expr, &ctx, &pkg);
 
     checkFunction("fn (a: u64) -> u64 { return a }");
@@ -1668,11 +1680,11 @@ void test_checkExprLitFunction() {
 void test_checkStmtAssign() {
     REINIT_COMPILER();
     Stmt *stmt;
-    CheckerContext ctx;
+    CheckerContext ctx = { pkg.scope };
 
 #define checkAssign(_CODE) \
 stmt = resetAndParseReturningLastStmt(_CODE); \
-ctx = (CheckerContext){ pkg.scope}; \
+RESET_CONTEXT(ctx); \
 checkStmtAssign(stmt, &ctx, &pkg)
 
     checkAssign("x := 1;"
