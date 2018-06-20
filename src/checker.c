@@ -1315,6 +1315,45 @@ b32 checkDeclImport(Package *pkg, Decl *declStmt) {
     return false;
 }
 
+void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    ASSERT(stmt->kind == StmtKind_Assign);
+    Stmt_Assign assign = stmt->Assign;
+
+    DynamicArray(Type *) lhsTypes = NULL;
+
+    ForEach(assign.lhs, Expr *) {
+        Type *type = checkExpr(pkg, it, ctx);
+        ArrayPush(lhsTypes, type);
+    }
+
+    if (assign.rhs[0]->kind == ExprKind_Call) {
+        // TODO: Handle void calls (empty tuple) (error)
+        // TODO: Handle single returns
+        // TODO: Handle multiple returns
+        UNIMPLEMENTED();
+        return;
+    }
+
+    ForEachWithIndex(assign.rhs, i, Expr *, expr) {
+        if (i >= ArrayLen(lhsTypes)) {
+            break;
+        }
+
+        ctx->desiredType = lhsTypes[i];
+        Type *type = checkExpr(pkg, expr, ctx);
+        if (!coerceType(expr, ctx, &type, lhsTypes[i], pkg)) {
+            ReportError(pkg, TypeMismatchError, expr->start,
+                        "Cannot assign %s to value of type %s", DescribeType(type), DescribeType(lhsTypes[i]));
+        }
+    }
+
+    if (ArrayLen(assign.rhs) != ArrayLen(assign.lhs)) {
+        ReportError(pkg, AssignmentCountMismatchError, stmt->start,
+                    "Left side has %zu values while right side %zu values",
+                    ArrayLen(assign.lhs), ArrayLen(assign.rhs));
+    }
+}
+
 void checkStmtReturn(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
     ASSERT(stmt->kind == StmtKind_Return);
     ASSERT(ctx->desiredType && ctx->desiredType->kind == TypeKind_Tuple);
@@ -1357,6 +1396,10 @@ b32 checkStmt(Package *pkg, Stmt *stmt, CheckerContext *ctx) {
             shouldRequeue = checkDeclImport(pkg, (Decl *)stmt);
             break;
 
+        case StmtKind_Assign:
+            checkStmtAssign(stmt, ctx, pkg);
+            break;
+
         case StmtKind_Return:
             checkStmtReturn(pkg, stmt, ctx);
             break;
@@ -1392,8 +1435,14 @@ Queue resetAndParse(const char *code) {
     return checkingQueue;
 }
 
-Stmt *resetAndParseSingleStmt(const char *code) {
+Stmt *resetAndParseReturningLastStmt(const char *code) {
     Queue queue = resetAndParse(code);
+    ASSERT(queue.size > 0);
+    while (queue.size > 1) {
+        CheckerWork *work = QueueDequeue(&queue);
+        CheckerContext ctx = { .scope = work->package->scope };
+        checkStmt(work->package, work->stmt, &ctx);
+    }
     CheckerWork *work = QueueDequeue(&queue);
     ASSERT(work);
     Stmt *stmt = work->stmt;
@@ -1430,7 +1479,7 @@ void test_coercionsAreMarked() {
     CheckerInfo* info;
     CheckerContext ctx;
 #define checkBasicExpr(_CODE) \
-    stmt = resetAndParseSingleStmt(_CODE); \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
     ctx = (CheckerContext){ .scope = pkg.scope }; \
     checkStmt(&pkg, stmt, &ctx); \
     info = CheckerInfoForStmt(&pkg, stmt)
@@ -1450,7 +1499,7 @@ void test_checkConstantUnaryExpressions() {
     CheckerContext ctx;
     Type *type;
 #define checkUnary(_CODE) \
-    stmt = resetAndParseSingleStmt(_CODE); \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
     ctx = (CheckerContext){ .scope = pkg.scope }; \
     type = checkExprUnary((Expr *) stmt, &ctx, &pkg)
 
@@ -1483,7 +1532,7 @@ void test_checkConstantBinaryExpressions() {
     CheckerContext ctx;
     Type *type;
 #define checkBinary(_CODE) \
-    stmt = resetAndParseSingleStmt(_CODE); \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
     ctx = (CheckerContext){ .scope = pkg.scope }; \
     type = checkExprBinary((Expr *) stmt, &ctx, &pkg)
 
@@ -1523,7 +1572,7 @@ void test_checkConstantTernaryExpression() {
     CheckerContext ctx;
     Type *type;
 #define checkTernary(_CODE) \
-    stmt = resetAndParseSingleStmt(_CODE); \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
     ctx = (CheckerContext){ .scope = pkg.scope }; \
     type = checkExprTernary((Expr *) stmt, &ctx, &pkg)
 
@@ -1563,7 +1612,7 @@ void test_checkConstantCastExpression() {
     CheckerContext ctx;
     Type *type;
 #define checkCastUsingCallSyntax(_CODE) \
-    stmt = resetAndParseSingleStmt(_CODE); \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
     ctx = (CheckerContext){ .scope = pkg.scope }; \
     type = checkExprCall((Expr *) stmt, &ctx, &pkg)
 
@@ -1578,7 +1627,7 @@ void test_checkConstantCastExpression() {
     ASSERT(ctx.val.u64 == 42);
 
 #define checkCast(_CODE) \
-    stmt = resetAndParseSingleStmt(_CODE); \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
     ctx = (CheckerContext){ .scope = pkg.scope }; \
     type = checkExprCast((Expr *) stmt, &ctx, &pkg)
 
@@ -1596,7 +1645,7 @@ void test_checkConstantCastExpression() {
 Type *typeFromParsing(const char *code) {
     pkg.scope = pushScope(&pkg, builtinPackage.scope);
 
-    Stmt *stmt = resetAndParseSingleStmt(code);
+    Stmt *stmt = resetAndParseReturningLastStmt(code);
     CheckerContext ctx = { .scope = pkg.scope };
     return checkExpr(&pkg, (Expr *) stmt, &ctx);
 }
@@ -1608,7 +1657,7 @@ void test_checkExprLitFunction() {
     Type *type;
 
 #define checkFunction(_CODE) \
-    expr = (Expr *) resetAndParseSingleStmt(_CODE); \
+    expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
     ctx = (CheckerContext){ .scope = pkg.scope }; \
     type = checkExprLitFunction(expr, &ctx, &pkg);
 
@@ -1620,6 +1669,23 @@ void test_checkExprLitFunction() {
 
     checkFunction("fn (fmt: *u8, args: ..any) -> i32 { return 0 }");
     ASSERT(type == typeFromParsing("fn (fmt: *u8, args: ..any) -> i32"));
+}
+
+void test_checkStmtAssign() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx;
+
+#define checkAssign(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+ctx = (CheckerContext){ .scope = pkg.scope}; \
+checkStmtAssign(stmt, &ctx, &pkg)
+
+    checkAssign("x := 1;"
+                "x  = 2;");
+
+    checkAssign("x, y := 1, 2;"
+                "x, y  = y, x;");
 }
 
 #undef pkg

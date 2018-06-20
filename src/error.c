@@ -38,7 +38,8 @@
     FOR_EACH(CastArgumentCount, "Cast did not receive exactly 1 expression") \
     FOR_EACH(AutocastExpectsDesiredType, "Context did not provide an expected type for autocast") \
     FOR_EACH(InvalidUseOfVoid, "Void can only exist as only result type for a function") \
-    FOR_EACH(WrongNumberOfReturns, "Not enough return expressions")
+    FOR_EACH(WrongNumberOfReturns, "Not enough return expressions") \
+    FOR_EACH(AssignmentCountMismatch, "Left and right hand sides had a different number of values")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,

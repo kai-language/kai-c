@@ -103,6 +103,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkExprLitFunction();
 }
 
+- (void)test_checkStmtAssign {
+    test_checkStmtAssign();
+}
+
 @end
 
 //
