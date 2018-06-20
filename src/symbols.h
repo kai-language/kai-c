@@ -1,10 +1,14 @@
 
 typedef enum SymbolKind {
     SymbolKind_Invalid,
+
+    SymbolKind_Import,
+    SymbolKind_Library,
+
     SymbolKind_Type,
-    SymbolKind_Package,
-    SymbolKind_Variable,
+
     SymbolKind_Constant,
+    SymbolKind_Variable,
 } SymbolKind;
 
 typedef enum SymbolState {
