@@ -1,5 +1,5 @@
 
-typedef enum __attribute__((packed)) ExprMode {
+typedef enum ExprMode {
     // Signals to the caller in the checker
     ExprMode_Invalid,
     ExprMode_Unresolved,
