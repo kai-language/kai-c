@@ -84,7 +84,7 @@ int main(int argc, const char **argv) {
         CheckerWork *work = QueueDequeue(&checkingQueue);
         if (work) {
             CheckerContext ctx = { .scope = work->package->scope };
-            b32 shouldRequeue = checkStmt(work->package, work->stmt, &ctx);
+            b32 shouldRequeue = checkStmt(work->stmt, &ctx, work->package);
             if (shouldRequeue) {
                 QueueEnqueue(&checkingQueue, work);
             }
