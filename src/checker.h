@@ -11,6 +11,7 @@ typedef enum CheckerInfoKind {
     CheckerInfoKind_Goto,
     CheckerInfoKind_For,
     CheckerInfoKind_Switch,
+    CheckerinfoKind_Case,
 } CheckerInfoKind;
 
 typedef u8 Conversion;
@@ -65,6 +66,8 @@ struct CheckerInfo_Label {
 
 typedef struct CheckerInfo_Goto CheckerInfo_Goto;
 struct CheckerInfo_Goto {
+    // NOTE: When the statement provides an expression this can be NULL. In this case the backend should generate the
+    //  expression value and branch to the address returned
     Symbol *target;
 };
 
@@ -78,6 +81,12 @@ struct CheckerInfo_For {
 typedef struct CheckerInfo_Switch CheckerInfo_Switch;
 struct CheckerInfo_Switch {
     Symbol *breakTarget;
+    // TODO
+};
+
+typedef struct CheckerInfo_Case CheckerInfo_Case;
+struct CheckerInfo_Case {
+    Symbol *fallthroughTarget;
     // TODO
 };
 
@@ -99,6 +108,7 @@ struct CheckerInfo {
         CheckerInfo_Goto Goto;
         CheckerInfo_For For;
         CheckerInfo_Switch Switch;
+        CheckerInfo_Case Case;
     };
 };
 

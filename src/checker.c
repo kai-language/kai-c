@@ -1511,7 +1511,28 @@ void checkStmtGoto(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     if (stmt->Goto.target) {
         Type *type = checkExpr(stmt->Goto.target, ctx, pkg);
         coerceType(stmt->Goto.target, ctx, &type, RawptrType, pkg);
+        // NULL indicates to the backend that there is an target and to emit it and branch there
+        storeInfoGoto(pkg, stmt, NULL);
+    } else if (stmt->Goto.keyword == Keyword_continue) {
+        Symbol *target = GetStmtInfo(pkg, ctx->loop)->For.continueTarget;
+        storeInfoGoto(pkg, stmt, target);
+    } else if (stmt->Goto.keyword == Keyword_fallthrough) {
+        Symbol *target = GetStmtInfo(pkg, ctx->nextCase)->Case.fallthroughTarget;
+        storeInfoGoto(pkg, stmt, target);
+    } else if (stmt->Goto.keyword == Keyword_break) {
+        Symbol *target;
+        if (ctx->flags & CheckerContextFlag_LoopClosest) {
+            target = GetStmtInfo(pkg, ctx->loop)->For.breakTarget;
+        } else {
+            target = GetStmtInfo(pkg, ctx->swtch)->Switch.breakTarget;
+        }
+        storeInfoGoto(pkg, stmt, target);
+    } else {
+        PANIC("Either no target expression for `goto` or unrecognized keyword");
     }
+
+error:
+    return;
 }
 
 b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
