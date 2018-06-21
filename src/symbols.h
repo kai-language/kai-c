@@ -5,6 +5,8 @@ typedef enum SymbolKind {
     SymbolKind_Import,
     SymbolKind_Library,
 
+    SymbolKind_Label,
+
     SymbolKind_Type,
 
     SymbolKind_Constant,
