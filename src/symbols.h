@@ -1,5 +1,6 @@
 
-typedef enum SymbolKind {
+typedef u8 SymbolKind;
+enum {
     SymbolKind_Invalid,
 
     SymbolKind_Import,
@@ -9,13 +10,14 @@ typedef enum SymbolKind {
 
     SymbolKind_Constant,
     SymbolKind_Variable,
-} SymbolKind;
+};
 
-typedef enum SymbolState {
+typedef u8 SymbolState;
+enum {
     SymbolState_Unresolved,
     SymbolState_Resolving,
     SymbolState_Resolved,
-} SymbolState;
+};
 
 typedef struct Decl Decl;
 typedef struct Type Type;

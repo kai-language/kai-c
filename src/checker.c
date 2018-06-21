@@ -1,5 +1,6 @@
 
-typedef enum __attribute__((packed)) ExprMode {
+typedef u8 ExprMode;
+enum {
     // Signals to the caller in the checker
     ExprMode_Invalid,
     ExprMode_Unresolved,
@@ -16,7 +17,7 @@ typedef enum __attribute__((packed)) ExprMode {
     ExprMode_Addressable,
 
     // NOTE: Order matters if anything is above addressable must also be addressable
-} ExprMode;
+};
 
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {

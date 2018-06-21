@@ -1,7 +1,7 @@
-#define EXPR_KIND_START       0x100
-#define STMT_KIND_START       0x200
-#define DECL_KIND_START       0x300
-#define AST_KIND_START        0x400
+
+#define EXPR_KIND_START       0x20
+#define STMT_KIND_START       0x40
+#define DECL_KIND_START       0x80
 
 #define EXPR_KINDS                                           \
     FOR_EACH(Ident, "identifier", true)                      \
@@ -53,7 +53,8 @@
     FOR_EACH(Constant, "constant", true) \
     FOR_EACH(Import, "import", true)
 
-typedef enum ExprKind {
+typedef u8 ExprKind;
+enum {
     ExprKind_Invalid = 0,
     
     _ExprKind_Start = EXPR_KIND_START,
@@ -61,31 +62,33 @@ typedef enum ExprKind {
     EXPR_KINDS
 #undef FOR_EACH
         _ExprKind_End,
-} ExprKind;
+};
 
-typedef enum StmtKind {
+typedef u8 StmtKind;
+enum StmtKind {
     StmtKind_Invalid = 0,
     
     _StmtKind_Start = STMT_KIND_START,
 #define FOR_EACH(kindName, ...) StmtKind_##kindName,
     STMT_KINDS
 #undef FOR_EACH
-        _StmtKind_End,
+    _StmtKind_End,
     
     _StmtExprKind_Start = EXPR_KIND_START,
 #define FOR_EACH(kindName, ...) StmtExprKind_##kindName,
     EXPR_KINDS
 #undef FOR_EACH
-        _StmtExprKind_End,
+    _StmtExprKind_End,
     
     _StmtDeclKind_Start = DECL_KIND_START,
 #define FOR_EACH(kindName, ...) StmtDeclKind_##kindName,
     DECL_KINDS
 #undef FOR_EACH
-        _StmtDeclKind_End
-} StmtKind;
+    _StmtDeclKind_End
+};
 
-typedef enum DeclKind {
+typedef u8 DeclKind;
+enum {
     DeclKind_Invalid = 0,
     
     _DeclKind_Start = DECL_KIND_START,
@@ -93,8 +96,11 @@ typedef enum DeclKind {
     DECL_KINDS
 #undef FOR_EACH
         _DeclKind_End,
-} DeclKind;
+};
 
+STATIC_ASSERT(_ExprKind_End < UINT8_MAX, "Enumeration stored in u8 has case past 255, overflow will occur");
+STATIC_ASSERT(_StmtKind_End < UINT8_MAX, "Enumeration stored in u8 has case past 255, overflow will occur");
+STATIC_ASSERT(_DeclKind_End < UINT8_MAX, "Enumeration stored in u8 has case past 255, overflow will occur");
 
 typedef struct Expr Expr;
 typedef struct Stmt Stmt;
@@ -191,15 +197,15 @@ struct Expr_Autocast {
     Expr *expr;
 };
 
-typedef enum KeyValueFlags {
-    KeyValueFlagIndex = 1,
-} KeyValueFlags;
+typedef u8 KeyValueFlag;
+enum {
+    KeyValueFlag_Index = 1,
+};
 struct Expr_KeyValue {
     Position start;
-    // TODO: We should add support for C style {['0'] = 0; ['1'] = 1; } which may will require a different key type
     Expr *key; 
     Expr *value;
-    u8 flags;
+    KeyValueFlag flags;
 };
 
 struct Expr_LocationDirective {
@@ -291,13 +297,14 @@ struct Expr_TypePolymorphic {
     const char *name;
 };
 
-typedef enum TypeVariadicFlags {
-    TypeVariadicFlagCVargs = 1,
-} TypeVariadicFlags;
+typedef u8 TypeVariadicFlag;
+enum {
+    TypeVariadicFlag_CVargs = 1,
+};
 struct Expr_TypeVariadic {
     Position start;
     Expr *type;
-    b8 flags;
+    TypeVariadicFlag flags;
 };
 
 struct Expr_TypeFunction {

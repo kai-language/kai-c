@@ -53,12 +53,15 @@
     FOR_EACH(Terminator, ";") \
     FOR_EACH(Keyword, "")
 
-typedef enum TokenKind {
+typedef u8 TokenKind;
+enum {
 #define FOR_EACH(e, s) TK_##e,
     TOKEN_KINDS
 #undef FOR_EACH
     NUM_TOKEN_KINDS,
-} TokenKind;
+};
+
+STATIC_ASSERT(NUM_TOKEN_KINDS < UINT8_MAX, "TokenKind is a u8 with more than 255 token kinds overflow will occur");
 
 #define TokenAssignOffset(Kind) Kind - (TK_AddAssign - TK_Add)
 
