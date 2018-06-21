@@ -837,10 +837,8 @@ Stmt *parseStmt(Parser *p) {
                     expectTerminator(p);
                     return NewStmtGoto(pkg, start, keyword, NULL);
                 }
-                Expr_Ident *ident = AllocAst(pkg, sizeof(Expr_Ident));
-                ident->start = p->tok.pos;
-                ident->name = parseIdent(p);
-                return NewStmtGoto(pkg, start, keyword, ident);
+                Expr *target = parseExpr(p, true);
+                return NewStmtGoto(pkg, start, keyword, target);
             }
             if (matchKeyword(p, Keyword_for)) {
                 if (isToken(p, TK_Lbrace)) {
@@ -937,7 +935,7 @@ void parsePackageCode(Package *pkg, const char *code) {
             case StmtDeclKind_Constant: {
                 ForEach(stmt->Constant.names, Expr_Ident *) {
                     // We iterate over, and declare all names of the constant despite only supporting a single name
-                    declareSymbol(pkg, pkg->scope, it->name, &symbol, stmt->id, (Decl *) stmt);
+                    declareSymbol(pkg, pkg->scope, it->name, &symbol, (Decl *) stmt);
                     symbol->kind = SymbolKind_Constant;
                     symbol->state = SymbolState_Unresolved;
                 }
@@ -945,7 +943,7 @@ void parsePackageCode(Package *pkg, const char *code) {
             }
             case StmtDeclKind_Variable: {
                 ForEach(stmt->Variable.names, Expr_Ident *) {
-                    declareSymbol(pkg, pkg->scope, it->name, &symbol, stmt->id, (Decl *) stmt);
+                    declareSymbol(pkg, pkg->scope, it->name, &symbol, (Decl *) stmt);
                     symbol->kind = SymbolKind_Variable;
                     symbol->state = SymbolState_Unresolved;
                 }

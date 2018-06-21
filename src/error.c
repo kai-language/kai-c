@@ -41,7 +41,13 @@
     FOR_EACH(WrongNumberOfReturns, "Not enough return expressions") \
     FOR_EACH(AssignmentCountMismatch, "Left and right hand sides had a different number of values") \
     FOR_EACH(ValueNotAssignable, "Left hand value could not be assigned to") \
-    FOR_EACH(NotAValue, "The expression provided is not a valid value")
+    FOR_EACH(NotAValue, "The expression provided is not a valid value") \
+    FOR_EACH(ReferenceToDeclaration, "The Identifier references is being declared and is yet to be initialized") \
+    FOR_EACH(GotoWithoutValue, "Goto statement requires a target") \
+    FOR_EACH(BreakNotPermitted, "Break is not permitted outside of a switch or loop body") \
+    FOR_EACH(ContinueNotPermitted, "Continue is not permitted outside of a loop body") \
+    FOR_EACH(FallthroughNotPermitted, "Fallthrough is not permitted outside of a switch body") \
+    FOR_EACH(FallthroughWithTarget, "Fallthrough statement cannot provide a target")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,

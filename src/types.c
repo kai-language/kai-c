@@ -240,10 +240,10 @@ Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
 }
 
 Scope *pushScope(Package *pkg, Scope *parent);
-b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl);
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl);
 
 void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Type *type, Val val) {
-    b32 dup = declareSymbol(&builtinPackage, builtinPackage.scope, StrIntern(name), symbol, 0, NULL);
+    b32 dup = declareSymbol(&builtinPackage, builtinPackage.scope, StrIntern(name), symbol, NULL);
     ASSERT(!dup);
     (*symbol)->type = type;
     (*symbol)->val = val;
@@ -255,7 +255,7 @@ void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Ty
 void declareBuiltinType(const char *name, Type *type) {
     name = StrIntern(name);
     Symbol *symbol;
-    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, 0, NULL);
+    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, NULL);
     symbol->state = SymbolState_Resolved;
     symbol->type = type;
     symbol->kind = SymbolKind_Type;

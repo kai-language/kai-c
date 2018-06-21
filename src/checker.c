@@ -18,11 +18,18 @@ typedef enum ExprMode {
     // NOTE: Order matters if anything is above addressable must also be addressable
 } ExprMode;
 
+typedef u8 CheckerContextFlag;
+#define CheckerContextFlag_Constant         0x1
+#define CheckerContextFlag_CanBreak         0x2
+#define CheckerContextFlag_CanContinue      0x4
+#define CheckerContextFlag_CanFallthrough   0x8
+
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {
     Scope *const scope;
     Type *desiredType;
     ExprMode mode;
+    CheckerContextFlag flags;
     b8 isConstant;
     Val val;
 };
@@ -74,6 +81,12 @@ void storeInfoIdent(Package *pkg, Expr *expr, Symbol *symbol) {
     pkg->checkerInfo[expr->id] = info;
 }
 
+void storeInfoGoto(Package *pkg, Stmt *stmt, Symbol *target) {
+    ASSERT(stmt->kind == StmtKind_Goto);
+    CheckerInfo info = {CheckerInfoKind_Goto, .Goto.target = target};
+    pkg->checkerInfo[stmt->id] = info;
+}
+
 void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type, CheckerContext *ctx) {
     CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
     info.BasicExpr.isConstant = ctx->isConstant;
@@ -93,7 +106,7 @@ CheckerInfo *CheckerInfoForDecl(Package *pkg, Decl *decl) {
     return &pkg->checkerInfo[decl->id];
 }
 
-b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, u64 declId, Decl *decl) {
+b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
     Symbol *old = Lookup(scope, name);
     if (old) {
         ReportError(pkg, RedefinitionError, decl->start, "Duplicate definition of symbol %s", name);
@@ -548,9 +561,20 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     symbol->used = true;
-    if (symbol->state != SymbolState_Resolved) {
-        ctx->mode = ExprMode_Unresolved;
-        return InvalidType;
+    switch (symbol->state) {
+        case SymbolState_Unresolved:
+            ctx->mode = ExprMode_Unresolved;
+            return InvalidType;
+
+        case SymbolState_Resolving:
+            // TODO: For cyclic types we need a ctx->hasIndirection to check and see if
+            // We have a cyclic reference error.
+            ReportError(pkg, ReferenceToDeclarationError, expr->start,
+                        "Declaration initial value refers to itself");
+            break;
+
+        case SymbolState_Resolved:
+            break;
     }
 
     storeInfoIdent(pkg, expr, symbol);
@@ -762,7 +786,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         }
 
         Symbol *symbol;
-        declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, 0, (Decl *) it);
+        declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, (Decl *) it);
         ArrayPush(paramSymbols, symbol);
 
         Type *type = checkExpr(it->value, &paramCtx, pkg);
@@ -1171,7 +1195,7 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         symbol = MapGet(&ctx->scope->members, ident->name);
         ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
     } else {
-        declareSymbol(pkg, ctx->scope, ident->name, &symbol, declStmt->id, declStmt);
+        declareSymbol(pkg, ctx->scope, ident->name, &symbol, declStmt);
     }
 
     symbol->state = SymbolState_Resolving;
@@ -1245,7 +1269,7 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         ForEach(var.names, Expr_Ident *) {
             Symbol *symbol;
             // FIXME(Brett): figure out how I want to recover from a duplicate
-            declareSymbol(pkg, ctx->scope, it->name, &symbol, declStmt->id, declStmt);
+            declareSymbol(pkg, ctx->scope, it->name, &symbol, declStmt);
             ArrayPush(symbols, symbol);
         }
     }
@@ -1337,6 +1361,16 @@ b32 checkDeclImport(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     return false;
 }
 
+void checkStmtLabel(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    ASSERT(stmt->kind == StmtKind_Label);
+    Stmt_Label label = stmt->Label;
+
+    Symbol *symbol;
+    declareSymbol(pkg, ctx->scope, label.name, &symbol, NULL);
+    symbol->kind = SymbolKind_Label;
+    markSymbolResolved(symbol, RawptrType);
+}
+
 void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(stmt->kind == StmtKind_Assign);
     Stmt_Assign assign = stmt->Assign;
@@ -1419,6 +1453,32 @@ void checkStmtDefer(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ctx->mode = deferCtx.mode;
 }
 
+void checkStmtGoto(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    ASSERT(stmt->kind == StmtKind_Goto);
+
+    if (stmt->Goto.keyword == Keyword_break && !(ctx->flags & CheckerContextFlag_CanBreak)) {
+        ReportError(pkg, BreakNotPermittedError, stmt->start,
+                    "Break is not permitted outside of a switch or loop body");
+    } else if (stmt->Goto.keyword == Keyword_continue && !(ctx->flags & CheckerContextFlag_CanContinue)) {
+        ReportError(pkg, ContinueNotPermittedError, stmt->start,
+                    "Continue is not permitted outside of a loop body");
+    } else if (stmt->Goto.keyword == Keyword_fallthrough) {
+        if (!(ctx->flags & CheckerContextFlag_CanFallthrough)) {
+            ReportError(pkg, FallthroughNotPermittedError, stmt->start,
+                        "Fallthrough is not permitted outside of a switch body");
+        }
+        if (stmt->Goto.target) {
+            ReportError(pkg, FallthroughWithTargetError, stmt->start,
+                        "Fallthrough statements cannot provide a target to fall through too");
+        }
+    }
+
+    if (stmt->Goto.target) {
+        Type *type = checkExpr(stmt->Goto.target, ctx, pkg);
+        coerceType(stmt->Goto.target, ctx, &type, RawptrType, pkg);
+    }
+}
+
 b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     b32 shouldRequeue = false;
 
@@ -1433,6 +1493,10 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         case StmtDeclKind_Import:
             shouldRequeue = checkDeclImport((Decl *) stmt, ctx, pkg);
+            break;
+
+        case StmtKind_Label:
+            checkStmtLabel(stmt, ctx, pkg);
             break;
 
         case StmtKind_Assign:

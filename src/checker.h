@@ -6,6 +6,7 @@ typedef enum CheckerInfoKind {
     CheckerInfoKind_Variable,
     CheckerInfoKind_Ident,
     CheckerInfoKind_Selector,
+    CheckerInfoKind_Goto,
     CheckerInfoKind_BasicExpr,
 } CheckerInfoKind;
 
@@ -46,6 +47,11 @@ struct CheckerInfo_Selector {
     Val constant;
 };
 
+typedef struct CheckerInfo_Goto CheckerInfo_Goto;
+struct CheckerInfo_Goto {
+    Symbol *target;
+};
+
 typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;
 struct CheckerInfo_BasicExpr {
     Conversion coerce;
@@ -67,6 +73,7 @@ struct CheckerInfo {
         CheckerInfo_Variable Variable;
         CheckerInfo_Selector Selector;
         CheckerInfo_Ident Ident;
+        CheckerInfo_Goto Goto;
         CheckerInfo_BasicExpr BasicExpr;
     };
 };

@@ -350,10 +350,10 @@ Stmt *NewStmtUsing(Package *package, Position start, Expr *expr) {
     return s;
 }
 
-Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr_Ident *label) {
+Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr *target) {
     Stmt *s = NewStmt(package, StmtKind_Goto, start);
     s->Goto.keyword = keyword;
-    s->Goto.label = label;
+    s->Goto.target = target;
     return s;
 }
 

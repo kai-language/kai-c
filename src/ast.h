@@ -339,7 +339,7 @@ struct Stmt_Using {
 struct Stmt_Goto {
     Position start;
     const char *keyword;
-    Expr_Ident *label;
+    Expr *target;
 };
 
 struct Stmt_Block {
@@ -536,7 +536,7 @@ Stmt *NewStmtAssign(Package *package, Position start, DynamicArray(Expr *) lhs, 
 Stmt *NewStmtReturn(Package *package, Position start, DynamicArray(Expr *) exprs);
 Stmt *NewStmtDefer(Package *package, Position start, Stmt *stmt);
 Stmt *NewStmtUsing(Package *package, Position start, Expr *expr);
-Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr_Ident *label);
+Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr *target);
 Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts, Position end);
 Stmt *NewStmtIf(Package *package, Position start, Expr *cond, Stmt *pass, Stmt *fail);
 Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body);
