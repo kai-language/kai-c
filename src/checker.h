@@ -8,6 +8,11 @@ enum {
     CheckerInfoKind_Ident,
     CheckerInfoKind_Selector,
     CheckerInfoKind_BasicExpr,
+    CheckerInfoKind_Label,
+    CheckerInfoKind_Goto,
+    CheckerInfoKind_For,
+    CheckerInfoKind_Switch,
+    CheckerinfoKind_Case,
     NUM_CHECKER_INFO_KINDS,
 };
 
@@ -58,6 +63,37 @@ struct CheckerInfo_BasicExpr {
     Val val;
 };
 
+typedef struct CheckerInfo_Label CheckerInfo_Label;
+struct CheckerInfo_Label {
+    Symbol *symbol;
+};
+
+typedef struct CheckerInfo_Goto CheckerInfo_Goto;
+struct CheckerInfo_Goto {
+    // NOTE: When the statement provides an expression this can be NULL. In this case the backend should generate the
+    //  expression value and branch to the address returned
+    Symbol *target;
+};
+
+typedef struct CheckerInfo_For CheckerInfo_For;
+struct CheckerInfo_For {
+    Symbol *continueTarget;
+    Symbol *breakTarget;
+    // TODO
+};
+
+typedef struct CheckerInfo_Switch CheckerInfo_Switch;
+struct CheckerInfo_Switch {
+    Symbol *breakTarget;
+    // TODO
+};
+
+typedef struct CheckerInfo_Case CheckerInfo_Case;
+struct CheckerInfo_Case {
+    Symbol *fallthroughTarget;
+    // TODO
+};
+
 STATIC_ASSERT(offsetof(CheckerInfo_Ident,     coerce) == 0, "conversion must be at offset 0 for expressions");
 STATIC_ASSERT(offsetof(CheckerInfo_Selector,  coerce) == 0, "conversion must be at offset 0 for expressions");
 STATIC_ASSERT(offsetof(CheckerInfo_BasicExpr, coerce) == 0, "conversion must be at offset 0 for expressions");
@@ -72,6 +108,11 @@ struct CheckerInfo {
         CheckerInfo_Selector Selector;
         CheckerInfo_Ident Ident;
         CheckerInfo_BasicExpr BasicExpr;
+        CheckerInfo_Label Label;
+        CheckerInfo_Goto Goto;
+        CheckerInfo_For For;
+        CheckerInfo_Switch Switch;
+        CheckerInfo_Case Case;
     };
 };
 

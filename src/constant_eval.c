@@ -4,7 +4,7 @@ u64 evalUnaryUnsigned(TokenKind op, Val val);
 f64 evalUnaryFloat(TokenKind op, Val val);
 
 b32 evalUnary(TokenKind op, Type *type, CheckerContext *ctx, b32 *isNegative) {
-    if (!ctx->isConstant) return false;
+    if (!IsConstant(ctx)) return false;
 
     if (IsInteger(type)) {
         if (IsSigned(type)) {
@@ -20,12 +20,13 @@ b32 evalUnary(TokenKind op, Type *type, CheckerContext *ctx, b32 *isNegative) {
         ctx->val.u64 = evalUnaryUnsigned(op, ctx->val);
     } else {
         ctx->val.u64 = 0;
-        ctx->isConstant = false;
+        ctx->flags &= ~CheckerContextFlag_Constant;
+        return false;
     }
 
     if (op == TK_BNot) ctx->val.u64 &= BITMASK(u64, type->Width);
 
-    return ctx->isConstant;
+    return true;
 }
 
 i64 evalBinarySigned(TokenKind op, i64 left, i64 right);
@@ -33,7 +34,7 @@ u64 evalBinaryUnsigned(TokenKind op, u64 left, u64 right);
 f64 evalBinaryFloat(TokenKind op, f64 left, f64 right);
 
 b32 evalBinary(TokenKind op, Type *type, Val lhsValue, Val rhsValue, CheckerContext *ctx, b32 *isNegative) {
-    if (!ctx->isConstant) return false;
+    if (!IsConstant(ctx)) return false;
 
     if (IsInteger(type)) {
         if (IsSigned(type)) {
@@ -49,10 +50,11 @@ b32 evalBinary(TokenKind op, Type *type, Val lhsValue, Val rhsValue, CheckerCont
         ctx->val.u64 = evalBinaryUnsigned(op, lhsValue.u64, rhsValue.u64);
     } else {
         ctx->val.f64 = 0.f;
-        ctx->isConstant = false;
+        ctx->flags &= ~CheckerContextFlag_Constant;
+        return false;
     }
 
-    return ctx->isConstant;
+    return true;
 }
 
 i64 evalUnarySigned(TokenKind op, Val val) {
