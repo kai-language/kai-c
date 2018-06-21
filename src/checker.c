@@ -1410,6 +1410,16 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     }
 }
 
+void checkStmtDefer(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    ASSERT(stmt->kind == StmtKind_Defer);
+
+    // NOTE: We set desiredType so that we can return within a `defer`
+    // TODO: Determine if we actually want to enable this sort of behaviour
+    CheckerContext deferCtx = { pushScope(pkg, ctx->scope), .desiredType = ctx->desiredType };
+    checkStmt(stmt->Defer.stmt, &deferCtx, pkg);
+    ctx->mode = deferCtx.mode;
+}
+
 b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     b32 shouldRequeue = false;
 
@@ -1432,6 +1442,10 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         case StmtKind_Return:
             checkStmtReturn(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_Defer:
+            checkStmtDefer(stmt, ctx, pkg);
             break;
 
         default:
