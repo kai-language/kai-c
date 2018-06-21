@@ -107,6 +107,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkStmtAssign();
 }
 
+- (void)test_checkStmtReturn {
+    test_checkStmtReturn();
+}
+
 @end
 
 //

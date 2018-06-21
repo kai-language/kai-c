@@ -837,6 +837,11 @@ Stmt *parseStmt(Parser *p) {
                     expectTerminator(p);
                     return NewStmtGoto(pkg, start, keyword, NULL);
                 }
+                if (keyword == Keyword_break || keyword == Keyword_continue) {
+                    if (matchToken(p, TK_Terminator) || isToken(p, TK_Eof)) {
+                        return NewStmtGoto(pkg, start, keyword, NULL);
+                    }
+                }
                 Expr *target = parseExpr(p, true);
                 return NewStmtGoto(pkg, start, keyword, target);
             }
@@ -889,10 +894,10 @@ Stmt *parseStmt(Parser *p) {
             }
             if (matchKeyword(p, Keyword_return)) {
                 DynamicArray(Expr *) exprs = NULL;
-                if (!isToken(p, TK_Terminator) && !isToken(p, TK_Rbrace)) {
+                if (!isToken(p, TK_Terminator) && !isToken(p, TK_Eof) && !isToken(p, TK_Rbrace)) {
                     exprs = parseExprList(p, false);
                 }
-                if (p->tok.kind != TK_Rbrace) expectToken(p, TK_Terminator);
+                if (p->tok.kind != TK_Rbrace) expectTerminator(p);
                 return NewStmtReturn(pkg, start, exprs);
             }
             if (matchKeyword(p, Keyword_switch)) UNIMPLEMENTED();
@@ -1184,6 +1189,42 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
     p = newTestParser("for a, b in foo {}");
     ASSERT_STMT_KIND(StmtKind_ForIn);
+
+    p = newTestParser("defer Free(mem)");
+    ASSERT_STMT_KIND(StmtKind_Defer);
+
+    p = newTestParser("break");
+    ASSERT_STMT_KIND(StmtKind_Goto);
+    ASSERT(stmt->Goto.keyword == Keyword_break);
+    ASSERT(stmt->Goto.target == NULL);
+
+    p = newTestParser("break label");
+    ASSERT_STMT_KIND(StmtKind_Goto);
+    ASSERT(stmt->Goto.keyword == Keyword_break);
+    ASSERT(stmt->Goto.target != NULL);
+
+    p = newTestParser("continue label");
+    ASSERT_STMT_KIND(StmtKind_Goto);
+    ASSERT(stmt->Goto.keyword == Keyword_continue);
+    ASSERT(stmt->Goto.target != NULL);
+
+    p = newTestParser("fallthrough");
+    ASSERT_STMT_KIND(StmtKind_Goto);
+    ASSERT(stmt->Goto.keyword == Keyword_fallthrough);
+    ASSERT(stmt->Goto.target == NULL);
+
+    p = newTestParser("goto label");
+    ASSERT_STMT_KIND(StmtKind_Goto);
+    ASSERT(stmt->Goto.keyword == Keyword_goto);
+    ASSERT(stmt->Goto.target != NULL);
+
+    p = newTestParser("return");
+    ASSERT_STMT_KIND(StmtKind_Return);
+    ASSERT(!stmt->Return.exprs);
+
+    p = newTestParser("return 1, 2, 3");
+    ASSERT_STMT_KIND(StmtKind_Return);
+    ASSERT(ArrayLen(stmt->Return.exprs) == 3);
 
 #undef ASSERT_STMT_KIND
 }

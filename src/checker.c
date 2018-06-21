@@ -1857,6 +1857,31 @@ checkStmtAssign(stmt, &ctx, &pkg)
                 "x, y  = y, x;");
 }
 
+void test_checkStmtReturn() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    DynamicArray(Type *) types = NULL;
+
+#define checkReturn(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+checkStmtReturn(stmt, &ctx, &pkg); \
+RESET_CONTEXT(ctx); \
+ArrayClear(types)
+
+    ArrayPush(types, I64Type);
+    ctx.desiredType = NewTypeTuple(TypeFlag_None, types);
+    checkReturn("return 42");
+    ASSERT(!pkg.diagnostics.errors);
+
+    ArrayPush(types, I64Type);
+    ArrayPush(types, I64Type);
+    ArrayPush(types, F64Type);
+    ctx.desiredType = NewTypeTuple(TypeFlag_None, types);
+    checkReturn("return 1, 2, 6.28");
+    ASSERT(!pkg.diagnostics.errors);
+}
+
 #undef pkg
 #endif
 
