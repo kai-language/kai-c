@@ -65,7 +65,7 @@ enum {
 };
 
 typedef u8 StmtKind;
-enum StmtKind {
+enum {
     StmtKind_Invalid = 0,
     
     _StmtKind_Start = STMT_KIND_START,
@@ -98,9 +98,9 @@ enum {
         _DeclKind_End,
 };
 
-STATIC_ASSERT(_ExprKind_End < UINT8_MAX, "Enumeration stored in u8 has case past 255, overflow will occur");
-STATIC_ASSERT(_StmtKind_End < UINT8_MAX, "Enumeration stored in u8 has case past 255, overflow will occur");
-STATIC_ASSERT(_DeclKind_End < UINT8_MAX, "Enumeration stored in u8 has case past 255, overflow will occur");
+STATIC_ASSERT(_ExprKind_End <= UINT8_MAX, "enum values overflow storage type");
+STATIC_ASSERT(_StmtKind_End <= UINT8_MAX, "enum values overflow storage type");
+STATIC_ASSERT(_DeclKind_End <= UINT8_MAX, "enum values overflow storage type");
 
 typedef struct Expr Expr;
 typedef struct Stmt Stmt;
@@ -203,7 +203,7 @@ enum {
 };
 struct Expr_KeyValue {
     Position start;
-    Expr *key; 
+    Expr *key;
     Expr *value;
     KeyValueFlag flags;
 };

@@ -686,7 +686,7 @@ Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeVariadic);
     Type *type = checkExpr(expr->TypeVariadic.type, ctx, pkg);
     if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
-    TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlagCVargs ? TypeFlag_CVargs : TypeFlag_None;
+    TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlag_CVargs ? TypeFlag_CVargs : TypeFlag_None;
     type = NewTypeSlice(flags, type);
     ctx->mode = ExprMode_Type;
     return type;

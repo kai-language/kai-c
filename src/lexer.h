@@ -61,7 +61,7 @@ enum {
     NUM_TOKEN_KINDS,
 };
 
-STATIC_ASSERT(NUM_TOKEN_KINDS < UINT8_MAX, "TokenKind is a u8 with more than 255 token kinds overflow will occur");
+STATIC_ASSERT(NUM_TOKEN_KINDS <= UINT8_MAX, "enum values overflow storage type");
 
 #define TokenAssignOffset(Kind) Kind - (TK_AddAssign - TK_Add)
 
