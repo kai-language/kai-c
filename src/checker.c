@@ -19,20 +19,30 @@ typedef enum ExprMode {
 } ExprMode;
 
 typedef u8 CheckerContextFlag;
-#define CheckerContextFlag_Constant         0x1
-#define CheckerContextFlag_CanBreak         0x2
-#define CheckerContextFlag_CanContinue      0x4
-#define CheckerContextFlag_CanFallthrough   0x8
+#define CheckerContextFlag_Constant         0x01
+#define CheckerContextFlag_CanBreak         0x02
+#define CheckerContextFlag_CanContinue      0x04
+#define CheckerContextFlag_CanFallthrough   0x08
+#define CheckerContextFlag_LoopClosest      0x10
 
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {
     Scope *const scope;
     Type *desiredType;
     ExprMode mode;
+
+    Stmt *swtch;
+    Stmt *nextCase;
+    Stmt *loop;
+
     CheckerContextFlag flags;
-    b8 isConstant;
+
     Val val;
 };
+
+b32 IsConstant(CheckerContext *ctx) {
+    return (ctx->flags & CheckerContextFlag_Constant) != 0;
+}
 
 void markSymbolInvalid(Symbol *symbol) {
     if (symbol) {
@@ -81,17 +91,35 @@ void storeInfoIdent(Package *pkg, Expr *expr, Symbol *symbol) {
     pkg->checkerInfo[expr->id] = info;
 }
 
+void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type, CheckerContext *ctx) {
+    CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
+    info.BasicExpr.isConstant = IsConstant(ctx);
+    info.BasicExpr.val = ctx->val;
+    pkg->checkerInfo[expr->id] = info;
+}
+
+void storeInfoLabel(Package *pkg, Stmt *stmt, Symbol *symbol) {
+    ASSERT(stmt->kind == StmtKind_Label);
+    CheckerInfo info = {CheckerInfoKind_Label, .Label.symbol = symbol};
+    pkg->checkerInfo[stmt->id] = info;
+}
+
 void storeInfoGoto(Package *pkg, Stmt *stmt, Symbol *target) {
     ASSERT(stmt->kind == StmtKind_Goto);
     CheckerInfo info = {CheckerInfoKind_Goto, .Goto.target = target};
     pkg->checkerInfo[stmt->id] = info;
 }
 
-void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type, CheckerContext *ctx) {
-    CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
-    info.BasicExpr.isConstant = ctx->isConstant;
-    info.BasicExpr.val = ctx->val;
-    pkg->checkerInfo[expr->id] = info;
+void storeInfoFor(Package *pkg, Stmt *stmt, Symbol *continueTarget, Symbol *breakTarget) {
+    ASSERT(stmt->kind == StmtKind_For);
+    CheckerInfo info = {CheckerInfoKind_For, .For.continueTarget = continueTarget, .For.breakTarget = breakTarget};
+    pkg->checkerInfo[stmt->id] = info;
+}
+
+void storeInfoSwitch(Package *pkg, Stmt *stmt, Symbol *breakTarget) {
+    ASSERT(stmt->kind == StmtKind_Switch);
+    CheckerInfo info = {CheckerInfoKind_Switch, .Switch.breakTarget = breakTarget};
+    pkg->checkerInfo[stmt->id] = info;
 }
 
 CheckerInfo *CheckerInfoForExpr(Package *pkg, Expr *expr) {
@@ -252,7 +280,7 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
         if (IsSigned(type) && !IsSigned(target)) {
             // Signed to Unsigned
             // Source is a positive constant less than Target's Max Value
-            if (ctx->isConstant && ctx->val.u64 <= MaxValueForIntOrPointerType(target)) {
+            if (IsConstant(ctx) && ctx->val.u64 <= MaxValueForIntOrPointerType(target)) {
                 return SignExtend(type, target, ctx->val) >= 0;
             }
             // Coercion from a signed integer to an unsigned requires a cast.
@@ -262,7 +290,7 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
         if (!IsSigned(type) && IsSigned(target)) {
             // Unsigned to Signed
             // Source is a constant less than Target's Max Value
-            if (ctx->isConstant && ctx->val.u64 <= MaxValueForIntOrPointerType(target)) return true;
+            if (IsConstant(ctx) && ctx->val.u64 <= MaxValueForIntOrPointerType(target)) return true;
             // Target's Max Value is larger than the Source's
             return type->Width < target->Width;
         }
@@ -316,7 +344,7 @@ void test_canCoerce() {
     // TODO: Coercion to union
     // TODO: Coercion from enum
 
-    ctx.isConstant = true;
+    ctx.flags |= CheckerContextFlag_Constant;
     ctx.val.i8 = 100;
     ASSERT(canCoerce(I8Type, U8Type, &ctx));
 
@@ -467,7 +495,7 @@ b32 coerceTypeSilently(Expr *expr, CheckerContext *ctx, Type **type, Type *targe
 
     if (!canCoerce(*type, target, ctx)) return false;
 
-    if (ctx->isConstant) convertValue(*type, target, &ctx->val);
+    if (IsConstant(ctx)) convertValue(*type, target, &ctx->val);
     changeTypeOrMarkConversionForExpr(expr, *type, target, pkg);
 
     *type = target;
@@ -517,7 +545,7 @@ b32 cast(Type *source, Type *target, CheckerContext *ctx) {
 
     if (!canCast(source, target)) return false;
 
-    if (ctx->isConstant) {
+    if (IsConstant(ctx)) {
         convertValue(source, target, &ctx->val);
         ctx->val.u64 &= BITMASK(u64, target->Width);
     }
@@ -594,7 +622,7 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         case SymbolKind_Constant:
             ctx->mode = ExprMode_Value;
-            ctx->isConstant = true;
+            ctx->flags |= CheckerContextFlag_Constant;
             break;
 
         default:
@@ -636,7 +664,7 @@ Type *checkExprLitInt(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     ctx->mode = ExprMode_Value;
-    ctx->isConstant = true;
+    ctx->flags |= CheckerContextFlag_Constant;
     storeInfoBasicExpr(pkg, expr, type, ctx);
     return type;
 
@@ -673,7 +701,7 @@ Type *checkExprLitFloat(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     ctx->mode = ExprMode_Value;
-    ctx->isConstant = true;
+    ctx->flags |= CheckerContextFlag_Constant;
     storeInfoBasicExpr(pkg, expr, type, ctx);
     return type;
 
@@ -694,7 +722,7 @@ Type *checkExprLitNil(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (!type) type = RawptrType;
 
     ctx->mode = ExprMode_Value;
-    ctx->isConstant = true;
+    ctx->flags |= CheckerContextFlag_Constant;
     ctx->val = (Val){ .u64 = 0 };
 
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -947,11 +975,11 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
     }
 
-    if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && rhsCtx.isConstant && rhsCtx.val.i64 == 0) {
+    if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && IsConstant(&rhsCtx) && rhsCtx.val.i64 == 0) {
         ReportError(pkg, DivisionByZeroError, expr->Binary.rhs->start, "Division by zero");
     }
 
-    ctx->isConstant = lhsCtx.isConstant && rhsCtx.isConstant;
+    ctx->flags |= lhsCtx.flags & rhsCtx.flags & CheckerContextFlag_Constant;
     b32 isConstantNegative;
     if (evalBinary(expr->Binary.op, type, lhsCtx.val, rhsCtx.val, ctx, &isConstantNegative)) {
         changeTypeOrRecordCoercionIfNeeded(&type, expr, ctx, isConstantNegative, pkg);
@@ -989,8 +1017,8 @@ Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     Type *type = fail;
-    if (condCtx.isConstant && passCtx.isConstant && failCtx.isConstant) {
-        ctx->isConstant = true;
+    if (condCtx.flags & passCtx.flags & failCtx.flags & CheckerContextFlag_Constant) {
+        ctx->flags |= CheckerContextFlag_Constant;
         ctx->val = condCtx.val.u64 ? passCtx.val : failCtx.val;
         type = condCtx.val.u64 ? pass : fail;
     } else {
@@ -1456,20 +1484,27 @@ void checkStmtDefer(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 void checkStmtGoto(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(stmt->kind == StmtKind_Goto);
 
-    if (stmt->Goto.keyword == Keyword_break && !(ctx->flags & CheckerContextFlag_CanBreak)) {
+    if (stmt->Goto.keyword == Keyword_break && !(ctx->loop || ctx->swtch)) {
         ReportError(pkg, BreakNotPermittedError, stmt->start,
                     "Break is not permitted outside of a switch or loop body");
-    } else if (stmt->Goto.keyword == Keyword_continue && !(ctx->flags & CheckerContextFlag_CanContinue)) {
+        goto error;
+    } else if (stmt->Goto.keyword == Keyword_continue && !ctx->loop) {
         ReportError(pkg, ContinueNotPermittedError, stmt->start,
                     "Continue is not permitted outside of a loop body");
+        goto error;
     } else if (stmt->Goto.keyword == Keyword_fallthrough) {
-        if (!(ctx->flags & CheckerContextFlag_CanFallthrough)) {
-            ReportError(pkg, FallthroughNotPermittedError, stmt->start,
-                        "Fallthrough is not permitted outside of a switch body");
-        }
         if (stmt->Goto.target) {
             ReportError(pkg, FallthroughWithTargetError, stmt->start,
                         "Fallthrough statements cannot provide a target to fall through too");
+            goto error;
+        } else if (!ctx->swtch) {
+            ReportError(pkg, FallthroughNotPermittedError, stmt->start,
+                        "Fallthrough is not permitted outside of a switch body");
+            goto error;
+        } else if (!ctx->nextCase) {
+            ReportError(pkg, FallthroughWithoutNextCaseError, stmt->start,
+                        "Cannot fallthrough from here. There is no next case");
+            goto error;
         }
     }
 
@@ -1618,22 +1653,22 @@ void test_checkConstantUnaryExpressions() {
 
     checkUnary("-100");
     ASSERT(type == I8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.i64 == -100);
 
     checkUnary("!false");
     ASSERT(type == BoolType);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.b32 == true);
 
     checkUnary("!!false");
     ASSERT(type == BoolType);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.b32 == false);
 
     checkUnary("~0xffff");
     ASSERT_MSG(type == U8Type, "Expected a u8 type to represent the value 0");
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u64 == 0);
 
 #undef checkUnary
@@ -1651,17 +1686,17 @@ void test_checkConstantBinaryExpressions() {
 
     checkBinary("1 + 2");
     ASSERT(type == U8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u64 == 3);
 
     checkBinary("1 + 2.0");
     ASSERT(type == F64Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.f64 == 3.0);
 
     checkBinary("1 + 2.0 - 3");
     ASSERT(type == F64Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.f64 == 0.f);
 
     checkBinary("1 / 0");
@@ -1670,12 +1705,12 @@ void test_checkConstantBinaryExpressions() {
 
     checkBinary("-1 + -8");
     ASSERT(type == I8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.i64 == -9);
 
     checkBinary("255 + 255");
     ASSERT(type == U16Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u16 == 510);
 }
 
@@ -1691,22 +1726,22 @@ void test_checkConstantTernaryExpression() {
 
     checkTernary("true ? 1 : 2");
     ASSERT(type == U8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.i64 == 1);
 
     checkTernary("false ? 1.5 : 2.5");
     ASSERT(type == F64Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.f64 == 2.5);
 
     checkTernary("0 ? 1 ? 2 : 3 : 4");
     ASSERT(type == U8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.i64 == 4);
 
     checkTernary("1 ? 1 ? 2 : 3 : 4");
     ASSERT(type == U8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.i64 == 2);
 
     checkTernary("false ? 100000 : 1");
@@ -1715,7 +1750,7 @@ void test_checkConstantTernaryExpression() {
     // NOTE: This would have a different type condition wasn't a constant
     checkTernary("rawptr(nil) ?: 250");
     ASSERT(type == U8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u64 == 250);
 }
 
@@ -1731,12 +1766,12 @@ void test_checkConstantCastExpression() {
 
     checkCastUsingCallSyntax("i64(8)");
     ASSERT(type == I64Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.i64 == 8);
 
     checkCastUsingCallSyntax("u8(100000000000042)");
     ASSERT(type == U8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u64 == 42);
 
 #define checkCast(_CODE) \
@@ -1746,12 +1781,12 @@ void test_checkConstantCastExpression() {
 
     checkCast("cast(i64) 8");
     ASSERT(type == I64Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.i64 == 8);
 
     checkCast("cast(u8) 100000000000042");
     ASSERT(type == U8Type);
-    ASSERT(ctx.isConstant);
+    ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u64 == 42);
 }
 

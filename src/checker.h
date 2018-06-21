@@ -6,8 +6,11 @@ typedef enum CheckerInfoKind {
     CheckerInfoKind_Variable,
     CheckerInfoKind_Ident,
     CheckerInfoKind_Selector,
-    CheckerInfoKind_Goto,
     CheckerInfoKind_BasicExpr,
+    CheckerInfoKind_Label,
+    CheckerInfoKind_Goto,
+    CheckerInfoKind_For,
+    CheckerInfoKind_Switch,
 } CheckerInfoKind;
 
 typedef u8 Conversion;
@@ -47,17 +50,35 @@ struct CheckerInfo_Selector {
     Val constant;
 };
 
-typedef struct CheckerInfo_Goto CheckerInfo_Goto;
-struct CheckerInfo_Goto {
-    Symbol *target;
-};
-
 typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;
 struct CheckerInfo_BasicExpr {
     Conversion coerce;
     Type *type;
     b8 isConstant;
     Val val;
+};
+
+typedef struct CheckerInfo_Label CheckerInfo_Label;
+struct CheckerInfo_Label {
+    Symbol *symbol;
+};
+
+typedef struct CheckerInfo_Goto CheckerInfo_Goto;
+struct CheckerInfo_Goto {
+    Symbol *target;
+};
+
+typedef struct CheckerInfo_For CheckerInfo_For;
+struct CheckerInfo_For {
+    Symbol *continueTarget;
+    Symbol *breakTarget;
+    // TODO
+};
+
+typedef struct CheckerInfo_Switch CheckerInfo_Switch;
+struct CheckerInfo_Switch {
+    Symbol *breakTarget;
+    // TODO
 };
 
 STATIC_ASSERT(offsetof(CheckerInfo_Ident,     coerce) == 0, "conversion must be at offset 0 for expressions");
@@ -73,8 +94,11 @@ struct CheckerInfo {
         CheckerInfo_Variable Variable;
         CheckerInfo_Selector Selector;
         CheckerInfo_Ident Ident;
-        CheckerInfo_Goto Goto;
         CheckerInfo_BasicExpr BasicExpr;
+        CheckerInfo_Label Label;
+        CheckerInfo_Goto Goto;
+        CheckerInfo_For For;
+        CheckerInfo_Switch Switch;
     };
 };
 
