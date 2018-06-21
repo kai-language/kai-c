@@ -43,12 +43,13 @@ extern Symbol *TrueSymbol;
     FOR_EACH(Function, "function")  \
     FOR_EACH(Tuple, "tuple")        \
 
-typedef enum TypeKind {
+typedef u8 TypeKind;
+enum {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
     TYPE_KINDS
 #undef FOR_EACH
     NUM_TYPE_KINDS,
-} TypeKind;
+};
 
 #define FOR_EACH(kind, ...) typedef struct Type_##kind Type_##kind;
     TYPE_KINDS

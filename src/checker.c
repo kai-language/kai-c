@@ -1,5 +1,6 @@
 
-typedef enum ExprMode {
+typedef u8 ExprMode;
+enum {
     // Signals to the caller in the checker
     ExprMode_Invalid,
     ExprMode_Unresolved,
@@ -16,7 +17,7 @@ typedef enum ExprMode {
     ExprMode_Addressable,
 
     // NOTE: Order matters if anything is above addressable must also be addressable
-} ExprMode;
+};
 
 typedef u8 CheckerContextFlag;
 #define CheckerContextFlag_Constant         0x01
@@ -737,7 +738,7 @@ Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeVariadic);
     Type *type = checkExpr(expr->TypeVariadic.type, ctx, pkg);
     if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
-    TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlagCVargs ? TypeFlag_CVargs : TypeFlag_None;
+    TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlag_CVargs ? TypeFlag_CVargs : TypeFlag_None;
     type = NewTypeSlice(flags, type);
     ctx->mode = ExprMode_Type;
     return type;

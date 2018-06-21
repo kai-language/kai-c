@@ -1,5 +1,6 @@
 
-typedef enum CheckerInfoKind {
+typedef u8 CheckerInfoKind;
+enum {
     // None is the zero value and so the default for zero initialized checker info.
     CheckerInfoKind_None,
     CheckerInfoKind_Constant,
@@ -12,7 +13,10 @@ typedef enum CheckerInfoKind {
     CheckerInfoKind_For,
     CheckerInfoKind_Switch,
     CheckerinfoKind_Case,
-} CheckerInfoKind;
+    NUM_CHECKER_INFO_KINDS,
+};
+
+STATIC_ASSERT(_StmtKind_End <= UINT8_MAX, "enum values overflow storage type");
 
 typedef u8 Conversion;
 #define ConversionClass_Mask 0x07  // Lower 3 bits denote the class

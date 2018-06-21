@@ -214,7 +214,7 @@ Expr *parseExprAtom(Parser *p) {
         caseEllipsis: // For `case TK_Directive` for #cvargs
         case TK_Ellipsis: {
             u8 flags = 0;
-            flags |= matchDirective(p, internCVargs) ? TypeVariadicFlagCVargs : 0;
+            flags |= matchDirective(p, internCVargs) ? TypeVariadicFlag_CVargs : 0;
             Position start = p->tok.pos;
             expectToken(p, TK_Ellipsis); // NOTE: We must expect here because we handle the case of having #cvargs prior
             return NewExprTypeVariadic(pkg, start, parseType(p), flags);
@@ -547,7 +547,7 @@ Expr_KeyValue *parseExprCompoundField(Parser *p) {
     Expr_KeyValue *field = AllocAst(p->package, sizeof(Expr_KeyValue));
     field->start = p->tok.pos;
     if (matchToken(p, TK_Lbrack)) {
-        field->flags = KeyValueFlagIndex;
+        field->flags = KeyValueFlag_Index;
         field->key = parseExpr(p, false);
         expectToken(p, TK_Rbrack);
         expectToken(p, TK_Colon);
@@ -1080,7 +1080,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     ASSERT(ArrayLen(expr->LitCompound.elements) == 3);
     ASSERT_EXPR_KIND(ExprKind_LitCompound);
     ASSERT(ArrayLen(expr->LitCompound.elements) == 3);
-    ASSERT(expr->LitCompound.elements[0]->flags & KeyValueFlagIndex);
+    ASSERT(expr->LitCompound.elements[0]->flags & KeyValueFlag_Index);
 
 #undef ASSERT_EXPR_KIND
 }
