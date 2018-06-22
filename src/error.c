@@ -48,7 +48,8 @@
     FOR_EACH(ContinueNotPermitted, "Continue is not permitted outside of a loop body") \
     FOR_EACH(FallthroughNotPermitted, "Fallthrough is not permitted outside of a switch body") \
     FOR_EACH(FallthroughWithTarget, "Fallthrough statement cannot provide a target") \
-    FOR_EACH(FallthroughWithoutNextCase, "Cannot fallthrough a case without a case following it")
+    FOR_EACH(FallthroughWithoutNextCase, "Cannot fallthrough a case without a case following it") \
+    FOR_EACH(CannotIterate, "Cannot iterate over a value of the given type")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,
