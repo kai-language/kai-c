@@ -1688,6 +1688,14 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             checkStmtIf(stmt, ctx, pkg);
             break;
 
+        case StmtKind_For:
+            checkStmtFor(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_ForIn:
+            checkStmtForIn(stmt, ctx, pkg);
+            break;
+
         default:
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
