@@ -390,10 +390,18 @@ Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr
     return s;
 }
 
-Stmt *NewStmtSwitch(Package *package, Position start, Expr *match, DynamicArray(SwitchCase *) cases) {
+Stmt *NewStmtSwitch(Package *package, Position start, Expr *match, DynamicArray(Stmt *) cases) {
     Stmt *s = NewStmt(package, StmtKind_Switch, start);
     s->Switch.match = match;
     s->Switch.cases = cases;
+    return s;
+}
+
+Stmt *NewStmtSwitchCase(Package *package, Position start, DynamicArray(Expr *) matches, Stmt_Block *block) {
+    Stmt *s = NewStmt(package, StmtKind_SwitchCase, start);
+    s->SwitchCase.start = start;
+    s->SwitchCase.matches = matches;
+    s->SwitchCase.block = block;
     return s;
 }
 

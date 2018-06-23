@@ -836,7 +836,7 @@ Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
     Expr *match = NULL;
     if (!isToken(p, TK_Lbrace)) match = parseExpr(p, true);
     expectToken(p, TK_Lbrace);
-    DynamicArray(SwitchCase *) cases = NULL;
+    DynamicArray(Stmt *) cases = NULL;
     for (;;) {
         if (!matchKeyword(p, Keyword_case)) break;
 
@@ -852,14 +852,11 @@ Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
             Stmt *stmt = parseStmt(p);
             ArrayPush(stmts, stmt);
         }
-
-        SwitchCase *scase = AllocAst(pkg, sizeof(SwitchCase));
-        scase->block = AllocAst(pkg, sizeof(Stmt_Block));
-        scase->block->start = caseStart;
-        scase->block->stmts = stmts;
-        scase->block->end = p->prevEnd;
-        scase->start = caseStart;
-        scase->matches = exprs;
+        Stmt_Block *block = AllocAst(pkg, sizeof(Stmt_Block));
+        block->start = caseStart;
+        block->stmts = stmts;
+        block->end = p->prevEnd;
+        Stmt *scase = NewStmtSwitchCase(pkg, caseStart, exprs, block);
         ArrayPush(cases, scase);
     }
 

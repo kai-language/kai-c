@@ -49,7 +49,9 @@
     FOR_EACH(FallthroughNotPermitted, "Fallthrough is not permitted outside of a switch body") \
     FOR_EACH(FallthroughWithTarget, "Fallthrough statement cannot provide a target") \
     FOR_EACH(FallthroughWithoutNextCase, "Cannot fallthrough a case without a case following it") \
-    FOR_EACH(CannotIterate, "Cannot iterate over a value of the given type")
+    FOR_EACH(CannotIterate, "Cannot iterate over a value of the given type") \
+    FOR_EACH(CannotSwitch, "Cannot switch on type") \
+    FOR_EACH(DefaultSwitchCaseNotLast, "The default switch case must also be the last case")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,
