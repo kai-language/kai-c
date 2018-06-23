@@ -568,6 +568,8 @@ repeat: ;
         default: {
             u32 cp = NextCodePoint(l);
             if (cp == FileEnd) {
+                // NextCodePoint advances the stream pointer, past the end of the buffer.
+                l->stream -= 1;
                 token.kind = TK_Eof;
                 break;
             }
