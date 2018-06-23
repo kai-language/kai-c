@@ -380,7 +380,7 @@ struct Stmt_ForIn {
 
 typedef struct SwitchCase SwitchCase;
 struct SwitchCase {
-    Token token;
+    Position start;
     DynamicArray(Expr *) matches;
     Stmt_Block *block;
 };
