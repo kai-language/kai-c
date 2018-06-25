@@ -83,6 +83,22 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_coercionsAreMarked();
 }
 
+- (void)test_checkTypeFunction {
+    test_checkTypeFunction();
+}
+
+- (void)test_checkTypePointer {
+    test_checkTypePointer();
+}
+
+- (void)test_checkTypeArray {
+    test_checkTypeArray();
+}
+
+- (void)test_checkTypeSlice {
+    test_checkTypeSlice();
+}
+
 - (void)test_checkConstantUnaryExpressions {
     test_checkConstantUnaryExpressions();
 }

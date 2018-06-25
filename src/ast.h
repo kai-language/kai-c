@@ -23,7 +23,7 @@
     FOR_EACH(LitString, "string literal", true)              \
     FOR_EACH(LitCompound, "compound literal", true)          \
     FOR_EACH(LitFunction, "function literal", true)          \
-    FOR_EACH(TypePointer, "pointer type", false)             \
+    FOR_EACH(TypePointer, "pointer type", true)              \
     FOR_EACH(TypeArray, "array type", true)                  \
     FOR_EACH(TypeSlice, "slice type", true)                  \
     FOR_EACH(TypeStruct, "struct type", true)                \

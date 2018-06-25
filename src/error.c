@@ -27,6 +27,9 @@
     FOR_EACH(TypeNotAnExpression, "A type is not a valid expression in the provided context") \
     FOR_EACH(NotNilable, "The type cannot be converted to nil") \
     FOR_EACH(InvalidPointeeType, "The pointee type is not a valid type") \
+    FOR_EACH(ZeroWidthArrayElement, "Arrays with zero width elements are not permitted") \
+    FOR_EACH(NonConstantArrayLength, "Array lengths must be constants") \
+    FOR_EACH(ZeroWidthSliceElement, "Slices with zero width elements are not permitted") \
     FOR_EACH(ParamNameMissing, "The parameter doesn't have a name") \
     FOR_EACH(AddressOfNonAddressable, "The expr could not have it's address taken") \
     FOR_EACH(InvalidUnaryOperation, "Unary operation invalid for type") \

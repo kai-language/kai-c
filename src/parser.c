@@ -633,7 +633,7 @@ Expr *parseFunctionType(Parser *p) {
         nVarargs = 0;
         namedParameters = false;
         do {
-            if (isToken(p, TK_Rparen) && results != NULL) break; // allow trailing ',' in parameter list
+            if (isToken(p, TK_Rparen) && results != NULL) break; // allow trailing ',' in result list
             DynamicArray(Expr *) exprs = parseExprList(p, false);
             if (matchToken(p, TK_Colon)) {
                 namedParameters = true;
@@ -660,6 +660,7 @@ Expr *parseFunctionType(Parser *p) {
                 }
             }
         } while (matchToken(p, TK_Comma));
+        expectToken(p, TK_Rparen);
     } else {
         ArrayPush(results, parseType(p));
         while (matchToken(p, TK_Comma)) {
@@ -1087,7 +1088,10 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     ASSERT_EXPR_KIND(ExprKind_TypeEnum);
 
     p = newTestParser("fn (a, b: u32, c: $T, d: #cvargs ..any) -> (a: u32, b: u32)"
-                      "fn (a, b: $T) -> (b, a: T)");
+                      "fn (a, b: $T) -> (b, a: T)"
+                      "fn (u8, u8) -> (u8, u8)");
+    ASSERT_EXPR_KIND(ExprKind_TypeFunction);
+    ASSERT_EXPR_KIND(ExprKind_TypeFunction);
     ASSERT_EXPR_KIND(ExprKind_TypeFunction);
 
 #undef ASSERT_EXPR_KIND

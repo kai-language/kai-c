@@ -62,7 +62,7 @@ CheckerInfo *GetStmtInfo(Package *pkg, Stmt *stmt) {
 }
 
 Inline
-CheckerInfo *GetCheckerContext(Package *pkg, Expr *expr) {
+CheckerInfo *GetExprInfo(Package *pkg, Expr *expr) {
     return GetStmtInfo(pkg, (Stmt *) expr);
 }
 
@@ -760,6 +760,7 @@ Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
     TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlag_CVargs ? TypeFlag_CVargs : TypeFlag_None;
     type = NewTypeSlice(flags, type);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
 
@@ -876,6 +877,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
 Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypePointer);
+    // TODO: Should we be doing desired type things for types themselves?
     Type *desiredType = ctx->desiredType;
     if (desiredType && isPointer(desiredType)) {
         ctx->desiredType = desiredType->Pointer.pointeeType;
@@ -888,19 +890,73 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     "'%s' is not a valid pointee type", DescribeType(type));
         goto error;
     } else if (type == VoidType) {
-        ReportError(pkg, TODOError, expr->TypePointer.type->start,
+        ReportError(pkg, InvalidPointeeTypeError, expr->TypePointer.type->start,
                     "Kai does not use void * for raw pointers instead use rawptr");
     }
 
     if (desiredType == RawptrType) type = RawptrType;
 
     type = NewTypePointer(TypeFlag_None, type);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
 
 error:
     ctx->mode = ExprMode_Invalid;
     return InvalidType;
+}
+
+Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeArray);
+    Type *type = checkExpr(expr->TypeArray.type, ctx, pkg);
+    expectType(pkg, type, ctx, expr->TypeArray.type->start);
+    if (ctx->mode != ExprMode_Type) {
+        goto error;
+    } else if (type->Width == 0) {
+        ReportError(pkg, ZeroWidthArrayElementError, expr->TypeArray.type->start,
+                    "Arrays of zero width elements are not permitted");
+    }
+
+    if (!expr->TypeArray.length) UNIMPLEMENTED();
+
+    ctx->desiredType = U64Type;
+    Type *lengthType = checkExpr(expr->TypeArray.length, ctx, pkg);
+    coerceType(expr->TypeArray.length, ctx, &lengthType, U64Type, pkg);
+    if (!(ctx->flags & CheckerContextFlag_Constant)) {
+        ReportError(pkg, NonConstantArrayLengthError, expr->TypeArray.length->start,
+                    "An arrays length must be a constant value");
+        ReportNote(pkg, expr->start, "To infer a length for the array type from the context use `..` as the length");
+    }
+
+    type = NewTypeArray(TypeFlag_None, ctx->val.u64, type);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    ctx->mode = ExprMode_Type;
+    return type;
+
+error:
+    ctx->mode = ExprMode_Invalid;
+    return type;
+}
+
+Type *checkExprTypeSlice(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeSlice);
+    Type *type = checkExpr(expr->TypeSlice.type, ctx, pkg);
+    expectType(pkg, type, ctx, expr->TypeSlice.type->start);
+    if (ctx->mode != ExprMode_Type) {
+        goto error;
+    } if (type->Width == 0) {
+        ReportError(pkg, ZeroWidthSliceElementError, expr->TypeSlice.type->start,
+                    "Slices of zero width elements are not permitted");
+    }
+
+    type = NewTypeSlice(TypeFlag_None, type);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    ctx->mode = ExprMode_Type;
+    return type;
+
+error:
+    ctx->mode = ExprMode_Invalid;
+    return type;
 }
 
 Type *checkExprUnary(Expr *expr, CheckerContext *ctx, Package *pkg) {
@@ -1180,6 +1236,14 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         case ExprKind_TypeFunction:
             type = checkExprTypeFunction(expr, ctx, pkg);
+            break;
+
+        case ExprKind_TypeArray:
+            type = checkExprTypeArray(expr, ctx, pkg);
+            break;
+
+        case ExprKind_TypeSlice:
+            type = checkExprTypeArray(expr, ctx, pkg);
             break;
 
         case ExprKind_Unary:
@@ -1858,6 +1922,94 @@ void test_coercionsAreMarked() {
     Conversion coerce = pkg.checkerInfo[5].BasicExpr.coerce;
     ASSERT(coerce & ConversionClass_Same);
     ASSERT(coerce & ConversionFlag_Extend);
+}
+
+void test_checkTypeFunction() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_BasicExpr info;
+#define checkTypeFunction(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+type = checkExprTypeFunction((Expr *) stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->BasicExpr
+
+    checkTypeFunction("fn () -> void");
+    ASSERT(type->kind == TypeKind_Function);
+    ASSERT(info.type == type);
+    ASSERT(ArrayLen(type->Function.params) == 0);
+    ASSERT(ArrayLen(type->Function.results) == 1);
+
+    checkTypeFunction("fn (u8, u8, u8, u8) -> (u8, u8, u8, u8)");
+    ASSERT(type->kind == TypeKind_Function);
+    ASSERT(info.type == type);
+    ASSERT(ArrayLen(type->Function.params) == 4);
+    ASSERT(ArrayLen(type->Function.results) == 4);
+}
+
+void test_checkTypePointer() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_BasicExpr info;
+#define checkTypePointer(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+type = checkExprTypePointer((Expr *) stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->BasicExpr
+
+    checkTypePointer("*u8");
+    ASSERT(type->kind == TypeKind_Pointer);
+    ASSERT(info.type == type);
+}
+
+void test_checkTypeArray() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_BasicExpr info;
+#define checkTypeArray(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+type = checkExprTypeArray((Expr *) stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->BasicExpr
+
+    checkTypeArray("[30]u8");
+    ASSERT(type->kind == TypeKind_Array);
+    ASSERT(type->Width == 30 * 8);
+    ASSERT(type->Array.length == 30);
+    ASSERT(type->Array.elementType == U8Type);
+    ASSERT(type->Array.Flags == TypeFlag_None);
+    ASSERT(info.type == type);
+
+    checkTypeArray("[1]void");
+    ASSERT(pkg.diagnostics.errors);
+}
+
+void test_checkTypeSlice() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_BasicExpr info;
+#define checkTypeSlice(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+type = checkExprTypeSlice((Expr *) stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->BasicExpr
+
+    checkTypeSlice("[]u8");
+    ASSERT(type->kind == TypeKind_Slice);
+    ASSERT(type->Slice.elementType == U8Type);
+    ASSERT(type->Slice.Flags == TypeFlag_None);
+    ASSERT(info.type == type);
+
+    checkTypeSlice("[]void");
+    ASSERT(pkg.diagnostics.errors);
 }
 
 void test_checkConstantUnaryExpressions() {

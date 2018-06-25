@@ -153,7 +153,7 @@ Map internSliceTypes;
 Type *NewTypeSlice(TypeFlag flags, Type *elementType)  {
     Type *type = MapGet(&internSliceTypes, elementType);
     if (!type) {
-        type = AllocType(TypeKind_Pointer);
+        type = AllocType(TypeKind_Slice);
         type->Width = RawptrType->Width;
         type->Flags = flags;
         type->Slice.elementType = elementType;
@@ -187,6 +187,7 @@ Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
     type->Align = elementType->Align;
     type->Flags = flags;
     type->Array.length = length;
+    type->Array.elementType = elementType;
 
     InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
     newIntern->type = type;
