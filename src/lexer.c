@@ -407,7 +407,7 @@ repeat: ;
     token.start = l->stream;
     token.pos = l->pos;
 
-    if (*token.start == '\n' && l->insertSemi) {
+    if ((*token.start == '\n') && l->insertSemi) {
         l->stream++;
         token.kind = TK_Terminator;
         token.val.ident = internNewline;
@@ -568,6 +568,8 @@ repeat: ;
         default: {
             u32 cp = NextCodePoint(l);
             if (cp == FileEnd) {
+                // NextCodePoint advances the stream pointer, past the end of the buffer.
+                l->stream -= 1;
                 token.kind = TK_Eof;
                 break;
             }
@@ -597,9 +599,7 @@ repeat: ;
             token.kind = TK_Ident;
             if (isStringKeyword(token.val.ident)) {
                 token.kind = TK_Keyword;
-                if (shouldInsertSemiAfterKeyword(token.val.ident)) {
-                    l->insertSemi = true;
-                }
+                l->insertSemi = shouldInsertSemiAfterKeyword(token.val.ident);
             } else {
                 l->insertSemi = true;
             }

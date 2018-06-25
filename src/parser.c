@@ -104,7 +104,7 @@ b32 expectToken(Parser *p, TokenKind kind) {
 }
 
 b32 expectTerminator(Parser *p) {
-    if (matchToken(p, TK_Terminator) || isToken(p, TK_Eof)) return true;
+    if (matchToken(p, TK_Terminator) || isToken(p, TK_Rbrace) || isToken(p, TK_Eof)) return true;
     ReportError(p->package, SyntaxError, p->tok.pos, "Expected terminator, got %s", DescribeToken(p->tok));
     return false;
 }
@@ -686,6 +686,7 @@ Stmt_Block *parseBlock(Parser *p) {
         ArrayPush(stmts, parseStmt(p));
     }
     expectToken(p, TK_Rbrace);
+    matchToken(p, TK_Terminator); // consume terminator if needed `if a {} else {}
     Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
     block->start = start;
     block->stmts = stmts;
@@ -784,6 +785,87 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
     return (Stmt *) exprs[0];
 }
 
+Stmt *parseStmtFor(Parser *p, Package *pkg, Position start) {
+    if (isToken(p, TK_Lbrace)) {
+        return NewStmtFor(pkg, start, NULL, NULL, NULL, parseBlock(p));
+    }
+    Stmt *s1, *s2, *s3;
+    s1 = s2 = s3 = NULL;
+    if (!isToken(p, TK_Lbrace) && !isToken(p, TK_Terminator)) {
+        b32 isIdentList = false;
+        s2 = parseSimpleStmt(p, true, &isIdentList);
+        if (isIdentList) {
+            DynamicArray(Expr_Ident *) idents = (DynamicArray(Expr_Ident *)) s2;
+            Expr *aggregate = NULL;
+            if (isTokenIdent(p, internIn)) {
+                nextToken();
+                Expr_Ident *valueName = NULL;
+                Expr_Ident *indexName = NULL;
+                if (ArrayLen(idents) > 0) valueName = idents[0];
+                if (ArrayLen(idents) > 1) indexName = idents[1];
+                if (ArrayLen(idents) > 2) {
+                    ReportError(p->package, SyntaxError, idents[2]->start, "For in iteration must provide at most 2 names to assign (value, index)");
+                }
+                aggregate = parseExpr(p, true);
+                Stmt_Block *body = parseBlock(p);
+                return NewStmtForIn(pkg, start, valueName, indexName, aggregate, body);
+            } else {
+                ReportError(p->package, SyntaxError, p->tok.pos, "Expected single expression or 'in' for iterator");
+            }
+        }
+    }
+    if (matchToken(p, TK_Terminator)) {
+        s1 = s2;
+        s2 = NULL;
+        if (!isToken(p, TK_Terminator)) {
+            s2 = parseSimpleStmt(p, true, NULL);
+        }
+        expectToken(p, TK_Terminator);
+        if (!isToken(p, TK_Rbrace) && !isToken(p, TK_Terminator)) {
+            s3 = parseSimpleStmt(p, true, NULL);
+        }
+    }
+    if (s2 && !isExpr(s2)) {
+        ReportError(p->package, SyntaxError, s2->start, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
+    }
+
+    Stmt_Block *body = parseBlock(p);
+    return NewStmtFor(pkg, start, s1, (Expr *) s2, s3, body);
+}
+
+Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
+    Expr *match = NULL;
+    if (!isToken(p, TK_Lbrace)) match = parseExpr(p, true);
+    expectToken(p, TK_Lbrace);
+    DynamicArray(Stmt *) cases = NULL;
+    for (;;) {
+        if (!matchKeyword(p, Keyword_case)) break;
+
+        Position caseStart = p->tok.pos;
+        DynamicArray(Expr *) exprs = NULL;
+        if (!matchToken(p, TK_Colon)) {
+            exprs = parseExprList(p, true);
+            expectToken(p, TK_Colon);
+        }
+
+        DynamicArray(Stmt *) stmts = NULL;
+        while (!(isKeyword(p, Keyword_case) || isToken(p, TK_Rbrace) || isTokenEof(p))) {
+            Stmt *stmt = parseStmt(p);
+            ArrayPush(stmts, stmt);
+        }
+        Stmt_Block *block = AllocAst(pkg, sizeof(Stmt_Block));
+        block->start = caseStart;
+        block->stmts = stmts;
+        block->end = p->prevEnd;
+        Stmt *scase = NewStmtSwitchCase(pkg, caseStart, exprs, block);
+        ArrayPush(cases, scase);
+    }
+
+    expectToken(p, TK_Rbrace);
+
+    return NewStmtSwitch(pkg, start, match, cases);
+}
+
 Stmt *parseStmt(Parser *p) {
     Package *pkg = p->package;
     Position start = p->tok.pos;
@@ -838,7 +920,7 @@ Stmt *parseStmt(Parser *p) {
                     return NewStmtGoto(pkg, start, keyword, NULL);
                 }
                 if (keyword == Keyword_break || keyword == Keyword_continue) {
-                    if (matchToken(p, TK_Terminator) || isToken(p, TK_Eof)) {
+                    if (matchToken(p, TK_Terminator) || isToken(p, TK_Rbrace) || isToken(p, TK_Eof)) {
                         return NewStmtGoto(pkg, start, keyword, NULL);
                     }
                 }
@@ -846,51 +928,7 @@ Stmt *parseStmt(Parser *p) {
                 return NewStmtGoto(pkg, start, keyword, target);
             }
             if (matchKeyword(p, Keyword_for)) {
-                if (isToken(p, TK_Lbrace)) {
-                    return NewStmtFor(pkg, start, NULL, NULL, NULL, parseBlock(p));
-                }
-                Stmt *s1, *s2, *s3;
-                s1 = s2 = s3 = NULL;
-                if (!isToken(p, TK_Lbrace) && !isToken(p, TK_Terminator)) {
-                    b32 isIdentList = false;
-                    s2 = parseSimpleStmt(p, true, &isIdentList);
-                    if (isIdentList) {
-                        DynamicArray(Expr_Ident *) idents = (DynamicArray(Expr_Ident *)) s2;
-                        Expr *aggregate = NULL;
-                        if (isTokenIdent(p, internIn)) {
-                            nextToken();
-                            Expr_Ident *valueName = NULL;
-                            Expr_Ident *indexName = NULL;
-                            if (ArrayLen(idents) > 0) valueName = idents[0];
-                            if (ArrayLen(idents) > 1) indexName = idents[1];
-                            if (ArrayLen(idents) > 2) {
-                                ReportError(p->package, SyntaxError, idents[2]->start, "For in iteration must provide at most 2 names to assign (value, index)");
-                            }
-                            aggregate = parseExpr(p, true);
-                            Stmt_Block *body = parseBlock(p);
-                            return NewStmtForIn(pkg, start, valueName, indexName, aggregate, body);
-                        } else {
-                            ReportError(p->package, SyntaxError, p->tok.pos, "Expected single expression or 'in' for iterator");
-                        }
-                    }
-                }
-                if (matchToken(p, TK_Terminator)) {
-                    s1 = s2;
-                    s2 = NULL;
-                    if (!isToken(p, TK_Terminator)) {
-                        s2 = parseSimpleStmt(p, true, NULL);
-                    }
-                    expectToken(p, TK_Terminator);
-                    if (!isToken(p, TK_Rbrace) && !isToken(p, TK_Terminator)) {
-                        s3 = parseSimpleStmt(p, true, NULL);
-                    }
-                }
-                if (!isExpr(s2)) {
-                    ReportError(p->package, SyntaxError, s2->start, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
-                }
-
-                Stmt_Block *body = parseBlock(p);
-                return NewStmtFor(pkg, start, s1, (Expr *) s2, s3, body);
+                return parseStmtFor(p, pkg, start);
             }
             if (matchKeyword(p, Keyword_return)) {
                 DynamicArray(Expr *) exprs = NULL;
@@ -900,12 +938,15 @@ Stmt *parseStmt(Parser *p) {
                 if (p->tok.kind != TK_Rbrace) expectTerminator(p);
                 return NewStmtReturn(pkg, start, exprs);
             }
-            if (matchKeyword(p, Keyword_switch)) UNIMPLEMENTED();
+            if (matchKeyword(p, Keyword_switch)) {
+                return parseStmtSwitch(p, pkg, start);
+            }
             if (matchKeyword(p, Keyword_using)) UNIMPLEMENTED();
 
             // Maybe the expression is the start of a stmt? Such as cast or autocast?
             return (Stmt *) parseExpr(p, false);
         }
+
         default:
             UNIMPLEMENTED();
             return NULL;
@@ -915,6 +956,14 @@ Stmt *parseStmt(Parser *p) {
 }
 
 DynamicArray(Stmt *) parseStmts(Parser *p) {
+    DynamicArray(Stmt *) stmts = NULL;
+    while (!isToken(p, TK_Rbrace) && !isTokenEof(p)) {
+        ArrayPush(stmts, parseStmt(p));
+    }
+    return stmts;
+}
+
+DynamicArray(Stmt *) parseStmtsUntilEof(Parser *p) {
     DynamicArray(Stmt *) stmts = NULL;
     while (!isTokenEof(p)) {
         ArrayPush(stmts, parseStmt(p));
@@ -926,7 +975,7 @@ void parsePackageCode(Package *pkg, const char *code) {
     Lexer lexer = MakeLexer(code, pkg->path);
     Token tok = NextToken(&lexer);
     Parser parser = {lexer, .tok = tok, pkg};
-    pkg->stmts = parseStmts(&parser);
+    pkg->stmts = parseStmtsUntilEof(&parser);
 
     if (HasErrors(pkg)) {
         return;
@@ -1184,7 +1233,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     p = newTestParser("a:");
     ASSERT_STMT_KIND(StmtKind_Label);
 
-    p = newTestParser("for a; b; c {}");
+    p = newTestParser("for a := 1; a < 2; a += 1 {}");
     ASSERT_STMT_KIND(StmtKind_For);
 
     p = newTestParser("for a, b in foo {}");
@@ -1218,6 +1267,31 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     ASSERT(stmt->Goto.keyword == Keyword_goto);
     ASSERT(stmt->Goto.target != NULL);
 
+    p = newTestParser("for { break }");
+    ASSERT_STMT_KIND(StmtKind_For);
+    ASSERT(ArrayLen(stmt->For.body->stmts) == 1);
+
+    p = newTestParser("if true {}");
+    ASSERT_STMT_KIND(StmtKind_If);
+    ASSERT(stmt->If.cond);
+    ASSERT(stmt->If.cond->kind == ExprKind_Ident);
+    ASSERT(stmt->If.pass);
+    ASSERT(stmt->If.pass->kind == StmtKind_Block);
+    ASSERT(!stmt->If.fail);
+
+    p = newTestParser("if true {} else {}");
+    ASSERT_STMT_KIND(StmtKind_If);
+    ASSERT(stmt->If.cond);
+    ASSERT(stmt->If.cond->kind == ExprKind_Ident);
+    ASSERT(stmt->If.pass);
+    ASSERT(stmt->If.pass->kind == StmtKind_Block);
+    ASSERT(stmt->If.fail);
+    ASSERT(stmt->If.fail->kind == StmtKind_Block);
+
+    p = newTestParser("error:");
+    ASSERT_STMT_KIND(StmtKind_Label);
+    ASSERT(stmt->Label.name == StrIntern("error"));
+
     p = newTestParser("return");
     ASSERT_STMT_KIND(StmtKind_Return);
     ASSERT(!stmt->Return.exprs);
@@ -1225,6 +1299,20 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     p = newTestParser("return 1, 2, 3");
     ASSERT_STMT_KIND(StmtKind_Return);
     ASSERT(ArrayLen(stmt->Return.exprs) == 3);
+
+    p = newTestParser("switch {"
+                      "}");
+    ASSERT_STMT_KIND(StmtKind_Switch);
+    ASSERT(!stmt->Switch.match);
+    ASSERT(!stmt->Switch.cases);
+
+    p = newTestParser("switch foo {\n"
+                      "case 1:\n"
+                      "case:\n"
+                      "}\n");
+    ASSERT_STMT_KIND(StmtKind_Switch);
+    ASSERT(stmt->Switch.match);
+    ASSERT(ArrayLen(stmt->Switch.cases) == 2);
 
 #undef ASSERT_STMT_KIND
 }

@@ -7,7 +7,7 @@
     FOR_EACH(Ident, "identifier", true)                      \
     FOR_EACH(Paren, "parenthesis", false)                    \
     FOR_EACH(Call, "call", true)                             \
-    FOR_EACH(Cast, "cast", false)                            \
+    FOR_EACH(Cast, "cast", true)                             \
     FOR_EACH(Selector, "selector", true)                     \
     FOR_EACH(Subscript, "subscript", true)                   \
     FOR_EACH(Slice, "slice", true)                           \
@@ -16,11 +16,11 @@
     FOR_EACH(Ternary, "ternary", true)                       \
     FOR_EACH(Autocast, "autocast", false)                    \
     FOR_EACH(KeyValue, "key value", false)                   \
-    FOR_EACH(LocationDirective, "location directive", false) \
+    FOR_EACH(LocationDirective, "location directive", true)  \
     FOR_EACH(LitNil, "nil literal", true)                    \
     FOR_EACH(LitInt, "integer literal", true)                \
     FOR_EACH(LitFloat, "float literal", true)                \
-    FOR_EACH(LitString, "string literal", false)             \
+    FOR_EACH(LitString, "string literal", true)              \
     FOR_EACH(LitCompound, "compound literal", true)          \
     FOR_EACH(LitFunction, "function literal", true)          \
     FOR_EACH(TypePointer, "pointer type", false)             \
@@ -35,20 +35,21 @@
 
 #define STMT_KINDS                        \
     FOR_EACH(Empty, "empty", false)       \
-    FOR_EACH(Label, "label", false)       \
+    FOR_EACH(Label, "label", true)        \
     FOR_EACH(Assign, "assignment", false) \
     FOR_EACH(Return, "return", false)     \
     FOR_EACH(Defer, "defer", false)       \
     FOR_EACH(Using, "using", false)       \
-    FOR_EACH(Goto, "goto", false)         \
+    FOR_EACH(Goto, "goto", true)          \
     FOR_EACH(Block, "block", false)       \
     FOR_EACH(If, "if", false)             \
-    FOR_EACH(For, "for", false)           \
-    FOR_EACH(ForIn, "for in", false)      \
-    FOR_EACH(Switch, "switch", false)
+    FOR_EACH(For, "for", true)            \
+    FOR_EACH(ForIn, "for in", true)       \
+    FOR_EACH(Switch, "switch", true)      \
+    FOR_EACH(SwitchCase, "case", true)
 
 // TODO: This needs to include some more directives (for example static asserts `#assert` should be supported at top level)
-#define DECL_KINDS                        \
+#define DECL_KINDS                       \
     FOR_EACH(Variable, "variable", true) \
     FOR_EACH(Constant, "constant", true) \
     FOR_EACH(Import, "import", true)
@@ -378,17 +379,16 @@ struct Stmt_ForIn {
     Stmt_Block *body;
 };
 
-typedef struct SwitchCase SwitchCase;
-struct SwitchCase {
-    Token token;
-    DynamicArray(Expr *) matches;
-    Stmt_Block *block;
-};
-
 struct Stmt_Switch {
     Position start;
     Expr *match;
-    DynamicArray(SwitchCase *) cases;
+    DynamicArray(Stmt *) cases;
+};
+
+struct Stmt_SwitchCase {
+    Position start;
+    DynamicArray(Expr *) matches;
+    Stmt_Block *block;
 };
 
 struct Decl_Variable {
@@ -548,7 +548,8 @@ Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts,
 Stmt *NewStmtIf(Package *package, Position start, Expr *cond, Stmt *pass, Stmt *fail);
 Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body);
 Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body);
-Stmt *NewStmtSwitch(Package *package, Position start, Expr *match, DynamicArray(SwitchCase *) cases);
+Stmt *NewStmtSwitch(Package *package, Position start, Expr *match, DynamicArray(Stmt *) cases);
+Stmt *NewStmtSwitchCase(Package *package, Position start, DynamicArray(Expr *) matches, Stmt_Block *block);
 
 // - MARK: Decls
 Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);

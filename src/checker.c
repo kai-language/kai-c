@@ -20,11 +20,8 @@ enum {
 };
 
 typedef u8 CheckerContextFlag;
-#define CheckerContextFlag_Constant         0x01
-#define CheckerContextFlag_CanBreak         0x02
-#define CheckerContextFlag_CanContinue      0x04
-#define CheckerContextFlag_CanFallthrough   0x08
-#define CheckerContextFlag_LoopClosest      0x10
+#define CheckerContextFlag_Constant     0x01
+#define CheckerContextFlag_LoopClosest  0x02
 
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {
@@ -140,7 +137,7 @@ b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol,
     if (old) {
         ReportError(pkg, RedefinitionError, decl->start, "Duplicate definition of symbol %s", name);
         ReportNote(pkg, old->decl->start, "Previous definition of %s", name);
-        *symbol = old;
+        if (symbol) *symbol = old;
         return true;
     }
 
@@ -152,9 +149,24 @@ b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol,
 
     MapSet(&scope->members, name, sym);
 
-    *symbol = sym;
+    if (symbol) *symbol = sym;
     
     return false;
+}
+
+Symbol *declareResolvedSymbol(Package *pkg, Scope *scope, Type *type, const char *name, Decl *decl) {
+    Symbol *symbol;
+    declareSymbol(pkg, scope, name, &symbol, decl);
+    markSymbolResolved(symbol, type);
+    return symbol;
+}
+
+Symbol *declareLabelSymbol(Package *pkg, Scope *scope, const char *name) {
+    Symbol *symbol;
+    declareSymbol(pkg, scope, name, &symbol, NULL);
+    symbol->kind = SymbolKind_Label;
+    markSymbolResolved(symbol, RawptrType);
+    return symbol;
 }
 
 b32 expectType(Package *pkg, Type *type, CheckerContext *ctx, Position pos) {
@@ -203,6 +215,14 @@ b32 isNumericOrPointer(Type *type) {
 
 b32 canBeUsedForLogical(Type *type) {
     return isBoolean(type) || IsInteger(type) || isPointer(type);
+}
+
+b32 isArray(Type *type) {
+    return type->kind == TypeKind_Array;
+}
+
+b32 isSlice(Type *type) {
+    return type->kind == TypeKind_Slice;
 }
 
 b32 isEnum(Type *type) {
@@ -1392,12 +1412,8 @@ b32 checkDeclImport(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
 
 void checkStmtLabel(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(stmt->kind == StmtKind_Label);
-    Stmt_Label label = stmt->Label;
-
-    Symbol *symbol;
-    declareSymbol(pkg, ctx->scope, label.name, &symbol, NULL);
-    symbol->kind = SymbolKind_Label;
-    markSymbolResolved(symbol, RawptrType);
+    Symbol *sym = declareLabelSymbol(pkg, ctx->scope, stmt->Label.name);
+    storeInfoLabel(pkg, stmt, sym);
 }
 
 void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
@@ -1536,6 +1552,163 @@ error:
     return;
 }
 
+void checkStmtBlock(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+
+    CheckerContext blockCtx = {
+        .scope = pushScope(pkg, ctx->scope),
+        .desiredType = ctx->desiredType,
+        .swtch = ctx->swtch,
+        .nextCase = ctx->nextCase,
+        .loop = ctx->loop,
+        .flags = ctx->flags & ~CheckerContextFlag_Constant,
+    };
+
+    ForEach(stmt->Block.stmts, Stmt *) {
+        checkStmt(it, &blockCtx, pkg);
+    }
+}
+
+void checkStmtIf(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    CheckerContext ifCtx = {
+        .scope = pushScope(pkg, ctx->scope),
+        .desiredType = BoolType,
+        .swtch = ctx->swtch,
+        .nextCase = ctx->nextCase,
+        .loop = ctx->loop,
+        .flags = ctx->flags & ~CheckerContextFlag_Constant,
+    };
+
+    Type *type = checkExpr(stmt->If.cond, &ifCtx, pkg);
+    if (!coerceType(stmt->If.cond, &ifCtx, &type, BoolType, pkg)) {
+        ReportError(pkg, TypeMismatchError, stmt->If.cond->start,
+                    "Expected type bool got type %s", DescribeType(type));
+    }
+    ifCtx.desiredType = NULL;
+    checkStmt(stmt->If.pass, &ifCtx, pkg);
+    if (stmt->If.fail) checkStmt(stmt->If.fail, &ifCtx, pkg);
+}
+
+void checkStmtFor(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    CheckerContext forCtx = {
+        .scope = pushScope(pkg, ctx->scope),
+        .swtch = ctx->swtch,
+        .nextCase = ctx->nextCase,
+        .loop = ctx->loop,
+        .flags = ctx->flags & ~CheckerContextFlag_Constant,
+    };
+
+    // NOTE: The following 2 strings aren't interned and that's fine, they are just placeholder anyway
+    GetStmtInfo(pkg, stmt)->For.breakTarget = declareLabelSymbol(pkg, ctx->scope, "$break");
+    GetStmtInfo(pkg, stmt)->For.continueTarget = declareLabelSymbol(pkg, ctx->scope, "$continue");
+
+    if (stmt->For.init) checkStmt(stmt->For.init, &forCtx, pkg);
+    if (stmt->For.step) checkStmt(stmt->For.step, &forCtx, pkg);
+    forCtx.desiredType = BoolType;
+    if (stmt->For.cond) {
+        Type *type = checkExpr(stmt->For.cond, &forCtx, pkg);
+        coerceType(stmt->For.cond, &forCtx, &type, BoolType, pkg);
+    }
+
+    forCtx.loop = stmt;
+    forCtx.flags |= CheckerContextFlag_LoopClosest;
+
+    forCtx.desiredType = NULL;
+    ForEach(stmt->For.body->stmts, Stmt *) {
+        checkStmt(it, &forCtx, pkg);
+    }
+}
+
+void checkStmtForIn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    CheckerContext forCtx = {
+        .scope = pushScope(pkg, ctx->scope),
+        .swtch = ctx->swtch,
+        .nextCase = ctx->nextCase,
+        .loop = ctx->loop,
+        .flags = ctx->flags & ~CheckerContextFlag_Constant,
+    };
+
+    // NOTE: The following 2 strings aren't interned and that's fine, they are just placeholder anyway
+    GetStmtInfo(pkg, stmt)->For.breakTarget = declareLabelSymbol(pkg, ctx->scope, "$break");
+    GetStmtInfo(pkg, stmt)->For.continueTarget = declareLabelSymbol(pkg, ctx->scope, "$continue");
+
+    Type *type = checkExpr(stmt->ForIn.aggregate, ctx, pkg);
+    if (isArray(type)) {
+        type = type->Array.elementType;
+    } else if (isSlice(type)) {
+        type = type->Slice.elementType;
+    } else {
+        ReportError(pkg, CannotIterateError, stmt->ForIn.aggregate->start,
+                    "Cannot iterate over %s (type %s) ", DescribeExpr(stmt->ForIn.aggregate), DescribeType(type));
+        return;
+    }
+
+    if (stmt->ForIn.valueName) declareResolvedSymbol(pkg, forCtx.scope, type, stmt->ForIn.valueName->name, NULL);
+    if (stmt->ForIn.valueName) declareResolvedSymbol(pkg, forCtx.scope, type, stmt->ForIn.indexName->name, NULL);
+
+    forCtx.loop = stmt;
+    forCtx.flags |= CheckerContextFlag_LoopClosest;
+
+    forCtx.desiredType = NULL;
+    ForEach(stmt->For.body->stmts, Stmt *) {
+        checkStmt(it, &forCtx, pkg);
+    }
+}
+
+void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+    CheckerContext switchCtx = {
+        .scope = pushScope(pkg, ctx->scope),
+        .swtch = stmt,
+        .nextCase = NULL,
+        .loop = ctx->loop,
+        .flags = ctx->flags & ~CheckerContextFlag_Constant &  ~CheckerContextFlag_LoopClosest,
+    };
+
+    Type *switchType = BoolType;
+    if (stmt->Switch.match) {
+        switchType = checkExpr(stmt->Switch.match, &switchCtx, pkg);
+        if (!isNumericOrPointer(switchType) && !isBoolean(switchType)) {
+            ReportError(pkg, CannotSwitchError, stmt->Switch.match->start,
+                        "Cannot switch on value of type %s", DescribeType(switchType));
+        }
+    }
+
+    Symbol *breakTarget = declareLabelSymbol(pkg, switchCtx.scope, "$break");
+    storeInfoSwitch(pkg, stmt, breakTarget);
+
+    ForEachWithIndex(stmt->Switch.cases, i, Stmt *, switchCase) {
+        ForEach(switchCase->SwitchCase.matches, Expr *) {
+            Type *type = checkExpr(it, &switchCtx, pkg);
+            if (!coerceType(it, &switchCtx, &type, switchType, pkg)) {
+                ReportError(pkg, TypeMismatchError, it->start, "Cannot convert %s to type %s",
+                            DescribeType(type), DescribeType(switchType));
+            }
+        }
+        if (!switchCase->SwitchCase.matches && i + 1 != ArrayLen(stmt->Switch.cases)) {
+            ReportError(pkg, DefaultSwitchCaseNotLastError, switchCase->start,
+                        "The default switch case must be the final case");
+        }
+
+        CheckerContext caseCtx = {
+            .scope = pushScope(pkg, switchCtx.scope),
+            .swtch = stmt,
+            .nextCase = NULL,
+            .loop = switchCtx.loop,
+            .flags = switchCtx.flags & ~CheckerContextFlag_Constant,
+        };
+
+        // Create a target for fallthough
+        if (i + 1 < ArrayLen(stmt->Switch.cases)) {
+            CheckerInfo_Case *nextCase = &GetStmtInfo(pkg, stmt->Switch.cases[i + 1])->Case;
+            nextCase->fallthroughTarget = declareLabelSymbol(pkg, caseCtx.scope, "$fallthrough");
+            caseCtx.nextCase = stmt->Switch.cases[i + 1];
+        }
+
+        ForEach(switchCase->SwitchCase.block->stmts, Stmt *) {
+            checkStmt(it, &caseCtx, pkg);
+        }
+    }
+}
+
 b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     b32 shouldRequeue = false;
 
@@ -1566,6 +1739,30 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         case StmtKind_Defer:
             checkStmtDefer(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_Goto:
+            checkStmtGoto(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_Block:
+            checkStmtBlock(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_If:
+            checkStmtIf(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_For:
+            checkStmtFor(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_ForIn:
+            checkStmtForIn(stmt, ctx, pkg);
+            break;
+
+        case StmtKind_Switch:
+            checkStmtSwitch(stmt, ctx, pkg);
             break;
 
         default:
@@ -1858,6 +2055,135 @@ checkStmtAssign(stmt, &ctx, &pkg)
                 "x, y  = y, x;");
 }
 
+void test_checkStmtBlock() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+
+#define checkBlock(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtBlock(stmt, &ctx, &pkg)
+
+    checkBlock("{" "\n"
+               "}" "\n");
+    ASSERT(!pkg.diagnostics.errors);
+}
+
+void test_checkStmtDefer() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+
+#define checkDefer(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtDefer(stmt, &ctx, &pkg)
+
+    checkDefer("defer { }");
+    ASSERT(!pkg.diagnostics.errors);
+}
+
+void test_checkStmtFor() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    CheckerInfo_For info;
+
+#define checkFor(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtFor(stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->For
+
+    checkFor("for { }");
+    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(info.breakTarget);
+    ASSERT(info.continueTarget);
+
+    checkFor("for 1 < 2 { }");
+    ASSERT(!pkg.diagnostics.errors);
+
+    checkFor("for x := 0; x < 10; x += 1 { }");
+    ASSERT(!pkg.diagnostics.errors);
+}
+
+void test_checkStmtForIn() {
+//    REINIT_COMPILER();
+//    Stmt *stmt;
+//    CheckerContext ctx = { pkg.scope };
+//    CheckerInfo_For info;
+
+#define checkForIn(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtForIn(stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->For
+
+    // TODO: Need to implement array types
+//    checkForIn("arr: []u8" "\n"
+//             "for el in arr { }");
+//    ASSERT(!pkg.diagnostics.errors);
+//    ASSERT(info.breakTarget);
+//    ASSERT(info.continueTarget);
+}
+
+void test_checkStmtGoto() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    CheckerInfo_For info;
+
+#define checkFor(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtFor(stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->For
+
+    checkFor("for { continue }");
+    ASSERT(!pkg.diagnostics.errors);
+
+    checkFor("for { break }");
+    ASSERT(!pkg.diagnostics.errors);
+
+    // TODO: Goto & fallthrough
+}
+
+void test_checkStmtIf() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+
+#define checkIf(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtIf(stmt, &ctx, &pkg)
+
+    checkIf("if true {}");
+    ASSERT(!pkg.diagnostics.errors);
+
+    checkIf("if true { } else { }");
+    ASSERT(!pkg.diagnostics.errors);
+}
+
+void test_checkStmtLabel() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    CheckerInfo_Label info;
+
+#define checkLabel(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtLabel(stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->Label
+
+    checkLabel("error:");
+    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(info.symbol);
+    ASSERT(info.symbol->kind == SymbolKind_Label);
+}
+
 void test_checkStmtReturn() {
     REINIT_COMPILER();
     Stmt *stmt;
@@ -1881,6 +2207,33 @@ ArrayClear(types)
     ctx.desiredType = NewTypeTuple(TypeFlag_None, types);
     checkReturn("return 1, 2, 6.28");
     ASSERT(!pkg.diagnostics.errors);
+}
+
+void test_checkStmtSwitch() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    CheckerInfo_Switch info;
+
+#define checkSwitch(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+checkStmtSwitch(stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->Switch
+
+    checkSwitch("switch {}");
+    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(info.breakTarget);
+    ASSERT(info.breakTarget->kind == SymbolKind_Label);
+
+    checkSwitch("switch 8 {"            "\n"
+                "case 1:"               "\n"
+                "case 2: fallthrough"   "\n"
+                "case: break"           "\n"
+                "}");
+    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(info.breakTarget);
+    ASSERT(info.breakTarget->kind == SymbolKind_Label);
 }
 
 #undef pkg
