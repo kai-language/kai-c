@@ -104,7 +104,7 @@ b32 expectToken(Parser *p, TokenKind kind) {
 }
 
 b32 expectTerminator(Parser *p) {
-    if (matchToken(p, TK_Terminator) || isToken(p, TK_Eof)) return true;
+    if (matchToken(p, TK_Terminator) || isToken(p, TK_Rbrace) || isToken(p, TK_Eof)) return true;
     ReportError(p->package, SyntaxError, p->tok.pos, "Expected terminator, got %s", DescribeToken(p->tok));
     return false;
 }
@@ -686,6 +686,7 @@ Stmt_Block *parseBlock(Parser *p) {
         ArrayPush(stmts, parseStmt(p));
     }
     expectToken(p, TK_Rbrace);
+    matchToken(p, TK_Terminator); // consume terminator if needed `if a {} else {}
     Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
     block->start = start;
     block->stmts = stmts;
@@ -824,7 +825,7 @@ Stmt *parseStmtFor(Parser *p, Package *pkg, Position start) {
             s3 = parseSimpleStmt(p, true, NULL);
         }
     }
-    if (!isExpr(s2)) {
+    if (s2 && !isExpr(s2)) {
         ReportError(p->package, SyntaxError, s2->start, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
     }
 
@@ -919,7 +920,7 @@ Stmt *parseStmt(Parser *p) {
                     return NewStmtGoto(pkg, start, keyword, NULL);
                 }
                 if (keyword == Keyword_break || keyword == Keyword_continue) {
-                    if (matchToken(p, TK_Terminator) || isToken(p, TK_Eof)) {
+                    if (matchToken(p, TK_Terminator) || isToken(p, TK_Rbrace) || isToken(p, TK_Eof)) {
                         return NewStmtGoto(pkg, start, keyword, NULL);
                     }
                 }
@@ -945,6 +946,7 @@ Stmt *parseStmt(Parser *p) {
             // Maybe the expression is the start of a stmt? Such as cast or autocast?
             return (Stmt *) parseExpr(p, false);
         }
+
         default:
             UNIMPLEMENTED();
             return NULL;
@@ -954,6 +956,14 @@ Stmt *parseStmt(Parser *p) {
 }
 
 DynamicArray(Stmt *) parseStmts(Parser *p) {
+    DynamicArray(Stmt *) stmts = NULL;
+    while (!isToken(p, TK_Rbrace) && !isTokenEof(p)) {
+        ArrayPush(stmts, parseStmt(p));
+    }
+    return stmts;
+}
+
+DynamicArray(Stmt *) parseStmtsUntilEof(Parser *p) {
     DynamicArray(Stmt *) stmts = NULL;
     while (!isTokenEof(p)) {
         ArrayPush(stmts, parseStmt(p));
@@ -965,7 +975,7 @@ void parsePackageCode(Package *pkg, const char *code) {
     Lexer lexer = MakeLexer(code, pkg->path);
     Token tok = NextToken(&lexer);
     Parser parser = {lexer, .tok = tok, pkg};
-    pkg->stmts = parseStmts(&parser);
+    pkg->stmts = parseStmtsUntilEof(&parser);
 
     if (HasErrors(pkg)) {
         return;
@@ -1256,6 +1266,31 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     ASSERT_STMT_KIND(StmtKind_Goto);
     ASSERT(stmt->Goto.keyword == Keyword_goto);
     ASSERT(stmt->Goto.target != NULL);
+
+    p = newTestParser("for { break }");
+    ASSERT_STMT_KIND(StmtKind_For);
+    ASSERT(ArrayLen(stmt->For.body->stmts) == 1);
+
+    p = newTestParser("if true {}");
+    ASSERT_STMT_KIND(StmtKind_If);
+    ASSERT(stmt->If.cond);
+    ASSERT(stmt->If.cond->kind == ExprKind_Ident);
+    ASSERT(stmt->If.pass);
+    ASSERT(stmt->If.pass->kind == StmtKind_Block);
+    ASSERT(!stmt->If.fail);
+
+    p = newTestParser("if true {} else {}");
+    ASSERT_STMT_KIND(StmtKind_If);
+    ASSERT(stmt->If.cond);
+    ASSERT(stmt->If.cond->kind == ExprKind_Ident);
+    ASSERT(stmt->If.pass);
+    ASSERT(stmt->If.pass->kind == StmtKind_Block);
+    ASSERT(stmt->If.fail);
+    ASSERT(stmt->If.fail->kind == StmtKind_Block);
+
+    p = newTestParser("error:");
+    ASSERT_STMT_KIND(StmtKind_Label);
+    ASSERT(stmt->Label.name == StrIntern("error"));
 
     p = newTestParser("return");
     ASSERT_STMT_KIND(StmtKind_Return);

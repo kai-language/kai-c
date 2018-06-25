@@ -407,7 +407,7 @@ repeat: ;
     token.start = l->stream;
     token.pos = l->pos;
 
-    if (*token.start == '\n' && l->insertSemi) {
+    if ((*token.start == '\n') && l->insertSemi) {
         l->stream++;
         token.kind = TK_Terminator;
         token.val.ident = internNewline;
@@ -599,9 +599,7 @@ repeat: ;
             token.kind = TK_Ident;
             if (isStringKeyword(token.val.ident)) {
                 token.kind = TK_Keyword;
-                if (shouldInsertSemiAfterKeyword(token.val.ident)) {
-                    l->insertSemi = true;
-                }
+                l->insertSemi = shouldInsertSemiAfterKeyword(token.val.ident);
             } else {
                 l->insertSemi = true;
             }

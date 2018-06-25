@@ -107,8 +107,40 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkStmtAssign();
 }
 
+- (void)test_checkStmtBlock {
+    test_checkStmtBlock();
+}
+
+- (void)test_checkStmtDefer {
+    test_checkStmtDefer();
+}
+
+- (void)test_checkStmtFor {
+    test_checkStmtFor();
+}
+
+- (void)test_checkStmtForIn {
+    test_checkStmtForIn();
+}
+
+- (void)test_checkStmtGoto {
+    test_checkStmtGoto();
+}
+
+- (void)test_checkStmtIf {
+    test_checkStmtIf();
+}
+
+- (void)test_checkStmtLabel {
+    test_checkStmtLabel();
+}
+
 - (void)test_checkStmtReturn {
     test_checkStmtReturn();
+}
+
+- (void)test_checkStmtSwitch {
+    test_checkStmtSwitch();
 }
 
 @end
