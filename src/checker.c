@@ -875,6 +875,66 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     return NewTypeFunction(typeFlags, paramTypes, resultTypes);
 }
 
+STATIC_ASSERT(offsetof(Type_Array, elementType) == offsetof(Type_Slice, elementType), "elementTypes must be at equal offset");
+Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_LitCompound);
+    Type *type = ctx->desiredType;
+
+    if (expr->LitCompound.type) {
+        type = checkExpr(expr->LitCompound.type, ctx, pkg);
+        expectType(pkg, type, ctx, expr->LitCompound.type->start);
+    }
+
+    size_t currentIndex = 0;
+    ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
+        Type *expectedValueType = NULL;
+        if (it->key) {
+            switch (type->kind) {
+                case TypeKind_Array:
+                case TypeKind_Slice:
+                    if (!(it->flags & KeyValueFlag_Index)) {
+                        ReportError(pkg, ArrayCompoundMissingIndexError, it->key->start,
+                                    "Array or Slice key should be surrounded in `[]`");
+                        goto checkValue;
+                    }
+
+                    CheckerContext indexCtx = { ctx->scope, .desiredType = U64Type };
+
+                    Type *indexType = checkExpr(it->key, &indexCtx, pkg);
+                    coerceType(it->key, &indexCtx, &indexType, U64Type, pkg);
+
+                    // TODO: Should we support non constants?
+                    // On one hand if we have literals for dictionaries we would expect runtime keys, and then
+                    //  you'd expect them here too.
+                    // On the other hand you would go from static values where the KeyValue pair after a pair with [4]
+                    //  would be 5 if no key is specified. Would it be wise to make this true for runtime values too?
+                    if (indexCtx.flags & CheckerContextFlag_Constant) {
+                        UNIMPLEMENTED();
+                    }
+                    currentIndex = (size_t) indexCtx.val.u64;
+
+                    expectedValueType = type->Slice.elementType;
+                    break;
+
+                // TODO: @Struct
+            }
+        }
+
+checkValue:
+
+        ctx->desiredType = expectedValueType;
+        Type *valueType = checkExpr(it->value, ctx, pkg);
+        coerceType(it->value, ctx, &valueType, expectedValueType, pkg);
+        currentIndex += 1;
+    }
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    return type;
+
+error:
+    ctx->mode = ExprMode_Invalid;
+    return type;
+}
+
 Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypePointer);
     // TODO: Should we be doing desired type things for types themselves?
@@ -1252,6 +1312,10 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             type = checkExprLitFunction(expr, ctx, pkg);
             break;
 
+        case ExprKind_LitCompound:
+            type = checkExprLitCompound(expr, ctx, pkg);
+            break;
+
         case ExprKind_TypeVariadic:
             type = checkExprTypeVariadic(expr, ctx, pkg);
             break;
@@ -1294,7 +1358,6 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
         case ExprKind_Ternary:
             type = checkExprTernary(expr, ctx, pkg);
             break;
-
 
         case ExprKind_LocationDirective:
             type = checkExprLocationDirective(expr, ctx, pkg);

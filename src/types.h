@@ -88,8 +88,8 @@ struct Type_Slice {
 
 struct Type_Array {
     TypeFlag Flags;
-    u64 length;
     Type *elementType;
+    u64 length;
 };
 
 struct Type_Function {

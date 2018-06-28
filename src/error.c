@@ -54,7 +54,8 @@
     FOR_EACH(FallthroughWithoutNextCase, "Cannot fallthrough a case without a case following it") \
     FOR_EACH(CannotIterate, "Cannot iterate over a value of the given type") \
     FOR_EACH(CannotSwitch, "Cannot switch on type") \
-    FOR_EACH(DefaultSwitchCaseNotLast, "The default switch case must also be the last case")
+    FOR_EACH(DefaultSwitchCaseNotLast, "The default switch case must also be the last case") \
+    FOR_EACH(ArrayCompoundMissingIndex, "Array or slice compound literals expect indexes to be surrounded in `[]`")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,
