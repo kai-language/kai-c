@@ -917,6 +917,7 @@ Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     "Arrays of zero width elements are not permitted");
     }
 
+    // TODO: Implement implicitely sized arrays
     if (!expr->TypeArray.length) UNIMPLEMENTED();
 
     ctx->desiredType = U64Type;
@@ -956,6 +957,13 @@ Type *checkExprTypeSlice(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
 error:
     ctx->mode = ExprMode_Invalid;
+    return type;
+}
+
+Type *checkExprParen(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Paren);
+    Type *type = checkExpr(expr->Paren.expr, ctx, pkg);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
     return type;
 }
 
@@ -1116,6 +1124,23 @@ error:
     return InvalidType;
 }
 
+Type *checkExprLocationDirective(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    Type *type = InvalidType;
+    ctx->flags |= CheckerContextFlag_Constant;
+    if (expr->LocationDirective.name == internLine) {
+        type = U32Type;
+        ctx->val.u32 = expr->start.line;
+    } else if (expr->LocationDirective.name == internFile) {
+        // TODO: @Strings
+    } else if (expr->LocationDirective.name == internLocation) {
+        // TODO: @Structs
+    } else if (expr->LocationDirective.name == internFunction) {
+        // TODO: @Strings
+    }
+
+    return type;
+}
+
 Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Cast);
     CheckerContext targetCtx = { ctx->scope };
@@ -1196,6 +1221,7 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
+    // TODO: Implement checking for calls
     UNIMPLEMENTED();
 
 error:
@@ -1243,7 +1269,18 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_TypeSlice:
-            type = checkExprTypeArray(expr, ctx, pkg);
+            type = checkExprTypeSlice(expr, ctx, pkg);
+            break;
+
+        case ExprKind_TypeStruct:
+        case ExprKind_TypeEnum:
+        case ExprKind_TypeUnion:
+        case ExprKind_TypePolymorphic:
+            UNIMPLEMENTED();
+            break;
+
+        case ExprKind_Paren:
+            type = checkExprParen(expr, ctx, pkg);
             break;
 
         case ExprKind_Unary:
@@ -1258,8 +1295,29 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             type = checkExprTernary(expr, ctx, pkg);
             break;
 
+
+        case ExprKind_LocationDirective:
+            type = checkExprLocationDirective(expr, ctx, pkg);
+            break;
+
         case ExprKind_Call:
             type = checkExprCall(expr, ctx, pkg);
+            break;
+
+        case ExprKind_Cast:
+            type = checkExprCast(expr, ctx, pkg);
+            break;
+
+        case ExprKind_Selector:
+            UNIMPLEMENTED();
+            break;
+
+        case ExprKind_Subscript:
+            UNIMPLEMENTED();
+            break;
+
+        case ExprKind_Slice:
+            UNIMPLEMENTED();
             break;
 
         default:
