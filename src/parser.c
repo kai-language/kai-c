@@ -460,6 +460,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                     while (matchToken(p, TK_Comma)) {
                         if (isToken(p, TK_Rparen)) break; // Allow trailing comma in argument list
 
+                        arg = AllocAst(pkg, sizeof(Expr_KeyValue));
                         arg->start = p->tok.pos;
                         arg->value = parseExpr(p, noCompoundLiteral);
                         if (isToken(p, TK_Colon) && arg->value->kind == ExprKind_Ident) {
@@ -476,8 +477,18 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
 
             case TK_Lbrace: {
                 if (x->kind == ExprKind_TypeFunction) {
-                    Stmt_Block *body = parseBlock(p);
-                    x = NewExprLitFunction(pkg, x, body, 0);
+                    Position startOfBlock = p->tok.pos;
+                    nextToken();
+                    DynamicArray(Stmt *) stmts = NULL;
+                    while (isNotRbraceOrEOF(p)) {
+                        ArrayPush(stmts, parseStmt(p));
+                    }
+                    expectToken(p, TK_Rbrace);
+                    Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
+                    block->start = startOfBlock;
+                    block->stmts = stmts;
+                    block->end = p->prevEnd;
+                    x = NewExprLitFunction(pkg, x, block, 0);
                     continue;
                 }
                 if (noCompoundLiteral) return x;
@@ -581,7 +592,6 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
     do {
         if (isToken(p, TK_Rparen)) break; // allow trailing ',' in parameter list
         DynamicArray(Expr *) exprs = parseExprList(p, false);
-        Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
         if (matchToken(p, TK_Colon)) {
             *namedParameters = true;
             Expr *type = parseType(p);
@@ -590,6 +600,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                     ReportError(p->package, SyntaxError, exprs[i]->start, "Expected identifier");
                     continue;
                 }
+                Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
                 kv->key = exprs[i];
                 kv->value = type;
                 ArrayPush(*params, kv);
@@ -612,6 +623,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                         ReportError(p->package, SyntaxError, exprs[i]->start, "Expected at most 1 Variadic as the final parameter");
                     }
                 }
+                Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
                 kv->value = exprs[i];
                 ArrayPush(*params, kv);
             }
@@ -1319,6 +1331,15 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     ASSERT(ArrayLen(stmt->Switch.cases) == 2);
 
 #undef ASSERT_STMT_KIND
+}
+
+void test_automaticTerminatorAfterFunction() {
+    REINIT_COMPILER();
+
+    Parser p = newTestParser("a :: fn() -> void {}" "\n"
+                      "b :: fn() -> void {}" "\n");
+    parseStmts(&p);
+    ASSERT(!parserTestPackage.diagnostics.errors);
 }
 
 void test_parseStruct() {

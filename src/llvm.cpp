@@ -65,66 +65,67 @@ typedef struct Debug {
     llvm::DIScope *scope;
 } Debug;
 
-typedef struct LLVMGen {
+typedef struct Context Context;
+struct Context {
+    DynamicArray(CheckerInfo) checkerInfo;
     llvm::Module *m;
-    llvm::Function *currentFunc;
-    Debug *d;
-} LLVMGen;
+    llvm::IRBuilder<> b;
+    llvm::Function *fn;
+    Debug d;
+};
 
 
-/*
- * @Forward declarations
- */
+void debugPos(Context *ctx, Position pos);
+b32 emitObjectFile(Package *p, char *name, Context *ctx);
+llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType = nullptr);
+llvm::Value *emitExprBinary(Context *ctx, Expr *expr);
+llvm::Value *emitExprUnary(Context *ctx, Expr *expr);
+void emitStmt(Context *ctx, Stmt *stmt);
 
-void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos);
-b32 emitObjectFile(Package *p, char *name, LLVMGen *gen);
-llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr);
-llvm::Value *emitUnaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr);
-
-llvm::Type *canonicalize(LLVMGen *gen, Type *type) {
+llvm::Type *canonicalize(Context *ctx, Type *type) {
     switch (type->kind) {
-    case TypeKind_Tuple:
-        if (!type->Tuple.types) {
-            return llvm::Type::getVoidTy(gen->m->getContext());
-        }
-        UNIMPLEMENTED(); // Multiple returns
-    case TypeKind_Int:
-        return llvm::IntegerType::get(gen->m->getContext(), type->Width);
+        case TypeKind_Tuple:
+            if (!type->Tuple.types) {
+                return llvm::Type::getVoidTy(ctx->m->getContext());
+            }
+            UNIMPLEMENTED(); // Multiple returns
+        case TypeKind_Int:
+            return llvm::IntegerType::get(ctx->m->getContext(), type->Width);
 
-    case TypeKind_Float: {
-        if (type->Width == 32) {
-            return llvm::Type::getFloatTy(gen->m->getContext());
-        } else if (type->Width == 64) {
-            return llvm::Type::getDoubleTy(gen->m->getContext());
-        } else {
-            ASSERT(false);
-        }
-    } break;
+        case TypeKind_Float: {
+            if (type->Width == 32) {
+                return llvm::Type::getFloatTy(ctx->m->getContext());
+            } else if (type->Width == 64) {
+                return llvm::Type::getDoubleTy(ctx->m->getContext());
+            } else {
+                ASSERT(false);
+            }
+        } break;
 
-    case TypeKind_Pointer: {
-        return llvm::PointerType::get(canonicalize(gen, type->Pointer.pointeeType), 0);
-    } break;
+        case TypeKind_Pointer: {
+            return llvm::PointerType::get(canonicalize(ctx, type->Pointer.pointeeType), 0);
+        } break;
 
-    case TypeKind_Function: {
-        ASSERT_MSG(ArrayLen(type->Function.results) == 1, "Currently we don't support multi-return");
-        std::vector<llvm::Type *> params;
-        For(type->Function.params) {
-            llvm::Type *paramType = canonicalize(gen, type);
-            params.push_back(paramType);
-        }
+        case TypeKind_Function: {
+            ASSERT_MSG(ArrayLen(type->Function.results) == 1, "Currently we don't support multi-return");
+            std::vector<llvm::Type *> params;
+            For(type->Function.params) {
+                llvm::Type *paramType = canonicalize(ctx, type->Function.params[i]);
+                params.push_back(paramType);
+            }
 
-        // TODO(Brett): canonicalize multi-return and Kai vargs
-        llvm::Type *returnType = canonicalize(gen, type->Function.results[0]);
-        return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
-    } break;
+            // TODO(Brett): canonicalize multi-return and Kai vargs
+            llvm::Type *returnType = canonicalize(ctx, type->Function.results[0]);
+            return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
+        } break;
     }
 
     ASSERT_MSG_VA(false, "Unable to canonicalize type %s", DescribeType(type));
     return NULL;
 }
 
-llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
-    DebugTypes types = gen->d->types;
+llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
+    DebugTypes types = ctx->d.types;
 
     if (type->kind == TypeKind_Int) {
         switch (type->Width) {
@@ -144,9 +145,9 @@ llvm::DIType *debugCanonicalize(LLVMGen *gen, Type *type) {
     }
 
     if (type->kind == TypeKind_Pointer) {
-        return gen->d->builder->createPointerType(
-            debugCanonicalize(gen, type->Pointer.pointeeType),
-            64
+        return ctx->d.builder->createPointerType(
+            debugCanonicalize(ctx, type->Pointer.pointeeType),
+            ctx->m->getDataLayout().getPointerSize()
         );
     }
 
@@ -171,179 +172,269 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
     types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
 }
 
-llvm::AllocaInst *createEntryBlockAlloca(llvm::Function *func, llvm::Type *type, const char *name) {
-    llvm::IRBuilder<> b(&func->getEntryBlock(), func->getEntryBlock().begin());
-    return b.CreateAlloca(type, 0, name);
+llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Symbol *sym) {
+    auto type = canonicalize(ctx, sym->type);
+    llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
+    auto alloca = b.CreateAlloca(type, 0, sym->name);
+    alloca->setAlignment(sym->type->Align);
+    return alloca;
 }
 
-llvm::Value *emitExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
+llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
+    switch (conversion & ConversionKind_Mask) {
+        case ConversionKind_None:
+            return value;
 
-    debugPos(gen, b, expr->start);
+        case ConversionKind_Same: {
+            bool extend = conversion & ConversionFlag_Extend;
+            if (conversion & ConversionFlag_Float) {
+                return extend ? ctx->b.CreateFPExt(value, target) : ctx->b.CreateFPTrunc(value, target);
+            }
+            if (extend) {
+                bool isSigned = conversion & ConversionFlag_Signed;
+                return isSigned ? ctx->b.CreateSExt(value, target) : ctx->b.CreateZExt(value, target);
+            } else {
+                return ctx->b.CreateTrunc(value, target);
+            }
+        }
 
+        case ConversionKind_FtoI:
+            if (conversion & ConversionFlag_Extend) {
+                return ctx->b.CreateFPExt(value, target);
+            } else {
+                return ctx->b.CreateFPTrunc(value, target);
+            }
+
+        case ConversionKind_ItoF:
+            if (conversion & ConversionFlag_Extend) {
+                bool isSigned = conversion & ConversionFlag_Signed;
+                return isSigned ? ctx->b.CreateSExt(value, target) : ctx->b.CreateZExt(value, target);
+            } else {
+                return ctx->b.CreateTrunc(value, target);
+            }
+
+        case ConversionKind_PtoI:
+            return ctx->b.CreatePtrToInt(value, target);
+
+        case ConversionKind_ItoP:
+            return ctx->b.CreateIntToPtr(value, target);
+
+        case ConversionKind_Bool:
+            if (conversion & ConversionFlag_Float) {
+                return ctx->b.CreateFCmpONE(value, llvm::ConstantFP::get(value->getType(), 0));
+            } else if (value->getType()->isPointerTy()) {
+                auto intptr = ctx->m->getDataLayout().getIntPtrType(ctx->m->getContext());
+                value = ctx->b.CreatePtrToInt(value, intptr);
+                return ctx->b.CreateICmpNE(value, llvm::ConstantInt::get(intptr, 0));
+            } else {
+                ASSERT(value->getType()->isIntegerTy());
+                return ctx->b.CreateICmpNE(value, llvm::ConstantInt::get(value->getType(), 0));
+            }
+
+        case ConversionKind_Any:
+            // TODO: Implement conversion to Any type
+            UNIMPLEMENTED();
+            return NULL;
+
+        default:
+            return NULL;
+    }
+}
+
+llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_Call);
+    auto fnType = TypeFromCheckerInfo(ctx->checkerInfo[expr->Call.expr->id]);
+
+    std::vector<llvm::Value *> args;
+    ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
+        auto irArgType = canonicalize(ctx, fnType->Function.params[i]);
+        auto irArg = emitExpr(ctx, expr->Call.args[i]->value, irArgType);
+        args.push_back(irArg);
+    }
+    auto irFunc = emitExpr(ctx, expr->Call.expr);
+    return ctx->b.CreateCall(irFunc, args);
+}
+
+llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
+    debugPos(ctx, expr->start);
+
+    llvm::Value *value = NULL;
     switch (expr->kind) {
-    case ExprKind_LitInt: {
-        Expr_LitInt lit = expr->LitInt;
-        CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.BasicExpr.type;
-        return llvm::ConstantInt::get(
-            canonicalize(gen, type), 
-            lit.val, 
-            type->Flags & TypeFlag_Signed
-        );
-    };
+        case ExprKind_LitInt: {
+            Expr_LitInt lit = expr->LitInt;
+            CheckerInfo info = ctx->checkerInfo[expr->id];
+            Type *type = info.BasicExpr.type;
+            value = llvm::ConstantInt::get(canonicalize(ctx, type), lit.val, type->Flags & TypeFlag_Signed);
+            break;
+        }
 
-    case ExprKind_LitFloat: {
-        Expr_LitFloat lit = expr->LitFloat;
-        CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.BasicExpr.type;
-        return llvm::ConstantFP::get(canonicalize(gen, type), lit.val);
-    };
+        case ExprKind_LitFloat: {
+            Expr_LitFloat lit = expr->LitFloat;
+            CheckerInfo info = ctx->checkerInfo[expr->id];
+            Type *type = info.BasicExpr.type;
+            value = llvm::ConstantFP::get(canonicalize(ctx, type), lit.val);
+            break;
+        }
 
-    case ExprKind_LitNil: {
-        CheckerInfo info = checkerInfo[expr->id];
-        Type *type = info.BasicExpr.type;
-        return llvm::ConstantPointerNull::get((llvm::PointerType *)canonicalize(gen, type));
-    } break;
+        case ExprKind_LitNil: {
+            CheckerInfo info = ctx->checkerInfo[expr->id];
+            Type *type = info.BasicExpr.type;
+            value = llvm::ConstantPointerNull::get((llvm::PointerType *) canonicalize(ctx, type));
+            break;
+        }
 
-    case ExprKind_Ident: {
-        CheckerInfo info = checkerInfo[expr->id];
-        Symbol *symbol = info.Ident.symbol;
-        // TODO(Brett): check for return address
-        return b->CreateLoad((llvm::Value *)symbol->backendUserdata);
-    };
+        case ExprKind_Ident: {
+            CheckerInfo info = ctx->checkerInfo[expr->id];
+            Symbol *symbol = info.Ident.symbol;
+            value = (llvm::Value *) symbol->backendUserdata;
+            // TODO(Brett): check for return address
+            if (symbol->kind == SymbolKind_Variable) {
+                value = ctx->b.CreateLoad((llvm::Value *) symbol->backendUserdata);
+            }
+            break;
+        }
 
-    case ExprKind_Unary: {
-        return emitUnaryExpr(gen, b, checkerInfo, expr);
-    };
+        case ExprKind_Unary:
+            value = emitExprUnary(ctx, expr);
+            break;
 
-    case ExprKind_Binary: {
-        return emitBinaryExpr(gen, b, checkerInfo, expr);
-    };
+        case ExprKind_Binary:
+            value = emitExprBinary(ctx, expr);
+            break;
+
+        case ExprKind_Call:
+            value = emitExprCall(ctx, expr);
+            break;
+    }
+
+    if (ctx->checkerInfo[expr->id].coerce != ConversionKind_None) {
+        value = coerceValue(ctx, ctx->checkerInfo[expr->id].coerce, value, desiredType);
+    }
+
+    return value;
+}
+
+llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_Unary);
+    Expr_Unary unary = expr->Unary;
+    llvm::Value *val = emitExpr(ctx, unary.expr);
+
+    switch (unary.op) {
+        case TK_Add:
+        case TK_And:
+            return val;
+        case TK_Sub:
+            return ctx->b.CreateNeg(val);
+        case TK_Not:
+        case TK_BNot:
+            return ctx->b.CreateNot(val);
+
+        case TK_Lss: {
+            // TODO: check for return address
+            return ctx->b.CreateLoad(val);
+        };
     }
 
     ASSERT(false);
     return NULL;
 }
 
-llvm::Value *emitUnaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
-     Expr_Unary unary = expr->Unary;
-     llvm::Value *val = emitExpr(gen, b, checkerInfo, unary.expr);
-
-     switch (unary.op) {
-        case TK_Add:
-        case TK_And:
-            return val;
-        case TK_Sub:
-            return b->CreateNeg(val);
-        case TK_Not:
-        case TK_BNot:
-            return b->CreateNot(val);
-
-        case TK_Lss: {
-            // TODO: check for return address
-            return b->CreateLoad(val);
-        };
-     }
-
-     ASSERT(false);
-     return NULL;
-}
-llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Expr *expr) {
-    Expr_Binary binary = expr->Binary;
-    Type *type = checkerInfo[expr->id].BasicExpr.type;
+llvm::Value *emitExprBinary(Context *ctx, Expr *expr) {
+    Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->Binary.lhs->id]);
+    auto ty = canonicalize(ctx, type);
     b32 isInt = IsInteger(type);
 
     llvm::Value *lhs, *rhs;
-    lhs = emitExpr(gen, b, checkerInfo, binary.lhs);
-    rhs = emitExpr(gen, b, checkerInfo, binary.rhs);
+    lhs = emitExpr(ctx, expr->Binary.lhs, /*desiredType:*/ ty);
+    rhs = emitExpr(ctx, expr->Binary.rhs, /*desiredType:*/ ty);
 
-    switch (binary.op) {
+    switch (expr->Binary.op) {
         case TK_Add:
-            return isInt ? b->CreateAdd(lhs, rhs) : b->CreateFAdd(lhs, rhs);
+            return isInt ? ctx->b.CreateAdd(lhs, rhs) : ctx->b.CreateFAdd(lhs, rhs);
         case TK_Sub:
-            return isInt ? b->CreateSub(lhs, rhs) : b->CreateFSub(lhs, rhs);
+            return isInt ? ctx->b.CreateSub(lhs, rhs) : ctx->b.CreateFSub(lhs, rhs);
         case TK_Mul:
-            return isInt ? b->CreateMul(lhs, rhs) : b->CreateFMul(lhs, rhs);
+            return isInt ? ctx->b.CreateMul(lhs, rhs) : ctx->b.CreateFMul(lhs, rhs);
 
         case TK_And:
-            return b->CreateAnd(lhs, rhs);
+            return ctx->b.CreateAnd(lhs, rhs);
         case TK_Or:
-            return b->CreateOr(lhs, rhs);
+            return ctx->b.CreateOr(lhs, rhs);
         case TK_Xor:
-            return b->CreateXor(lhs, rhs);
-        
+            return ctx->b.CreateXor(lhs, rhs);
+
         case TK_Div: {
             if (isInt) {
-                return IsSigned(type) ? b->CreateSDiv(lhs, rhs) : b->CreateUDiv(lhs, rhs);
+                return IsSigned(type) ? ctx->b.CreateSDiv(lhs, rhs) : ctx->b.CreateUDiv(lhs, rhs);
             } else {
-                return b->CreateFDiv(lhs, rhs);
+                return ctx->b.CreateFDiv(lhs, rhs);
             }
         };
 
         case TK_Rem: {
             if (isInt) {
-                return IsSigned(type) ? b->CreateSRem(lhs, rhs) : b->CreateSRem(lhs, rhs);
+                return IsSigned(type) ? ctx->b.CreateSRem(lhs, rhs) : ctx->b.CreateSRem(lhs, rhs);
             } else {
-                return b->CreateFRem(lhs, rhs);
+                return ctx->b.CreateFRem(lhs, rhs);
             }
         };
 
         case TK_Land: {
-            llvm::Value *x = b->CreateAnd(lhs, rhs);
-            return b->CreateTruncOrBitCast(x, canonicalize(gen, BoolType));
+            llvm::Value *x = ctx->b.CreateAnd(lhs, rhs);
+            return ctx->b.CreateTruncOrBitCast(x, canonicalize(ctx, BoolType));
         };
 
         case TK_Lor: {
-            llvm::Value *x = b->CreateOr(lhs, rhs);
-            return b->CreateTruncOrBitCast(x, canonicalize(gen, BoolType));
+            llvm::Value *x = ctx->b.CreateOr(lhs, rhs);
+            return ctx->b.CreateTruncOrBitCast(x, canonicalize(ctx, BoolType));
         };
 
         case TK_Shl: {
-            return b->CreateShl(lhs, rhs);
+            return ctx->b.CreateShl(lhs, rhs);
         };
 
         case TK_Shr: {
-            return IsSigned(type) ? b->CreateAShr(lhs, rhs) : b->CreateLShr(lhs, rhs);
+            return IsSigned(type) ? ctx->b.CreateAShr(lhs, rhs) : ctx->b.CreateLShr(lhs, rhs);
         };
 
         case TK_Lss: {
             if (isInt) {
-                return IsSigned(type) ? b->CreateICmpSLT(lhs, rhs) : b->CreateICmpULT(lhs, rhs);
+                return IsSigned(type) ? ctx->b.CreateICmpSLT(lhs, rhs) : ctx->b.CreateICmpULT(lhs, rhs);
             } else {
-                return b->CreateFCmpOLT(lhs, rhs);
+                return ctx->b.CreateFCmpOLT(lhs, rhs);
             }
         };
 
         case TK_Gtr: {
             if (isInt) {
-                return IsSigned(type) ? b->CreateICmpSGT(lhs, rhs) : b->CreateICmpUGT(lhs, rhs);
+                return IsSigned(type) ? ctx->b.CreateICmpSGT(lhs, rhs) : ctx->b.CreateICmpUGT(lhs, rhs);
             } else {
-                return b->CreateFCmpOGT(lhs, rhs);
+                return ctx->b.CreateFCmpOGT(lhs, rhs);
             }
         };
 
         case TK_Leq: {
             if (isInt) {
-                return IsSigned(type) ? b->CreateICmpSLE(lhs, rhs) : b->CreateICmpULE(lhs, rhs);
+                return IsSigned(type) ? ctx->b.CreateICmpSLE(lhs, rhs) : ctx->b.CreateICmpULE(lhs, rhs);
             } else {
-                return b->CreateFCmpOLE(lhs, rhs);
+                return ctx->b.CreateFCmpOLE(lhs, rhs);
             }
         };
 
         case TK_Geq: {
             if (isInt) {
-                return IsSigned(type) ? b->CreateICmpSGE(lhs, rhs) : b->CreateICmpUGE(lhs, rhs);
+                return IsSigned(type) ? ctx->b.CreateICmpSGE(lhs, rhs) : ctx->b.CreateICmpUGE(lhs, rhs);
             } else {
-                return b->CreateFCmpOGE(lhs, rhs);
+                return ctx->b.CreateFCmpOGE(lhs, rhs);
             }
         };
 
         case TK_Eql: {
-            return isInt ? b->CreateICmpEQ(lhs, rhs) : b->CreateFCmpOEQ(lhs, rhs);
+            return isInt ? ctx->b.CreateICmpEQ(lhs, rhs) : ctx->b.CreateFCmpOEQ(lhs, rhs);
         };
 
         case TK_Neq: {
-            return isInt ? b->CreateICmpNE(lhs, rhs) : b->CreateFCmpONE(lhs, rhs);
+            return isInt ? ctx->b.CreateICmpNE(lhs, rhs) : ctx->b.CreateFCmpONE(lhs, rhs);
         };
     }
 
@@ -351,76 +442,224 @@ llvm::Value *emitBinaryExpr(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(Che
     return NULL;
 }
 
-void emitStmt(LLVMGen *gen, llvm::IRBuilder<> *b, DynamicArray(CheckerInfo) checkerInfo, Stmt *stmt, bool isGlobal) {
-    switch (stmt->kind) {
-    case StmtDeclKind_Constant: {
-        CheckerInfo info = checkerInfo[stmt->id];
-        Decl_Constant decl = stmt->Constant;
-        Symbol *symbol = info.Constant.symbol;
+llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn = nullptr) {
+    CheckerInfo info = ctx->checkerInfo[expr->id];
 
-        if (symbol->type->kind == TypeKind_Function) {
-            UNIMPLEMENTED();
-        } else {
-            llvm::Type *type = canonicalize(gen, symbol->type);
+    if (!fn) {
+        llvm::FunctionType *type = (llvm::FunctionType *) canonicalize(ctx, info.BasicExpr.type);
+        fn = llvm::Function::Create(type, llvm::Function::LinkageTypes::ExternalLinkage, llvm::StringRef(), ctx->m);
+    }
+    
+    fn->setCallingConv(llvm::CallingConv::C);
+    llvm::BasicBlock *entry = llvm::BasicBlock::Create(ctx->m->getContext(), "entry", fn);
+    ctx->b.SetInsertPoint(entry);
+    ctx->fn = fn;
+    if (FlagDebug) {
 
-            llvm::GlobalVariable *global = new llvm::GlobalVariable(
-                *gen->m,
-                type,
-                /*isConstant:*/true,
-                isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
-                0,
-                symbol->name
-            );
+        llvm::DISubprogram *sub = ctx->d.builder->createFunction(
+            ctx->d.file,
+            llvm::StringRef(),
+            llvm::StringRef(),
+            ctx->d.file,
+            expr->start.line,
+            ctx->d.builder->createSubroutineType(
+                ctx->d.builder->getOrCreateTypeArray(std::vector<llvm::Metadata *>())
+            ),
+            false,
+            true,
+            0,
+            llvm::DINode::FlagPrototyped,
+            false
+        );
+        fn->setSubprogram(sub);
+        ctx->d.scope = sub;
+    }
 
-            symbol->backendUserdata = global;
+    llvm::Function::arg_iterator args = fn->arg_begin();
 
-            debugPos(gen, b, stmt->start);
+    ForEachWithIndex(expr->LitFunction.type->TypeFunction.params, i, auto, it) {
+        // TODO: Support unnamed parameters ($0, $1, $2)
+        CheckerInfo paramInfo = ctx->checkerInfo[it->key->id];
+        auto param = args++;
+        param->setName(paramInfo.Ident.symbol->name);
+        debugPos(ctx, paramInfo.Ident.symbol->decl->start);
+        auto storage = createEntryBlockAlloca(ctx, paramInfo.Ident.symbol);
+        paramInfo.Ident.symbol->backendUserdata = storage;
+        ctx->b.CreateStore(param, storage);
 
-            llvm::Value *value = emitExpr(gen, b, checkerInfo, decl.values[0]);
-            global->setInitializer((llvm::Constant *)value);
-        }
-    } break;
+        auto dbg = ctx->d.builder->createParameterVariable(
+            ctx->d.scope,
+            paramInfo.Ident.symbol->name,
+            (u32) i,
+            ctx->d.file,
+            it->start.line,
+            debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
+            true
+        );
+        ctx->d.builder->insertDeclare(
+            param,
+            dbg,
+            ctx->d.builder->createExpression(),
+            ctx->b.getCurrentDebugLocation(),
+            ctx->b.GetInsertBlock()
+        );
+    }
+    fn->arg_end();
 
-    case StmtDeclKind_Variable: {
-        CheckerInfo info = checkerInfo[stmt->id];
+    ForEach(expr->LitFunction.body->stmts, Stmt *) {
+        emitStmt(ctx, it);
+    }
+
+    // TODO: Create a new scope?
+    ctx->d.scope = ctx->d.file;
+
+    if (FlagDebug) {
+        ctx->d.builder->finalizeSubprogram(fn->getSubprogram());
+    }
+
+#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+    if (llvm::verifyFunction(*fn, &llvm::errs())) {
+        ctx->m->print(llvm::errs(), nullptr);
+        ASSERT(false);
+    }
+#endif
+
+    return fn;
+}
+
+void emitDeclConstant(Context *ctx, Decl *decl) {
+    ASSERT(decl->kind == DeclKind_Constant);
+    CheckerInfo info = ctx->checkerInfo[decl->id];
+    Symbol *symbol = info.Constant.symbol;
+
+    if (symbol->type->kind == TypeKind_Function && decl->Constant.values[0]->kind == ExprKind_LitFunction) {
+
+        CheckerInfo info = ctx->checkerInfo[decl->Constant.values[0]->id];
+
+        const char *name = symbol->externalName ? symbol->externalName : symbol->name;
+        auto type = (llvm::FunctionType *) canonicalize(ctx, info.BasicExpr.type);
+        auto fn = llvm::Function::Create(type, llvm::Function::LinkageTypes::ExternalLinkage, name, ctx->m);
+        symbol->backendUserdata = fn;
+        ctx->fn = fn;
+
+        // FIXME: We need to start using external name correctly, it should be always set
+
+        emitExprLitFunction(ctx, decl->Constant.values[0], fn);
+
+        // TODO: Set the debug name to symbol->name
+        debugPos(ctx, decl->start);
+
+    } else {
+        llvm::Type *type = canonicalize(ctx, symbol->type);
+
+        bool isGlobal = ctx->fn == NULL;
+        llvm::GlobalVariable *global = new llvm::GlobalVariable(
+            *ctx->m,
+            type,
+            /*isConstant:*/true,
+            isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+            0,
+            symbol->name
+        );
+
+        symbol->backendUserdata = global;
+
+        debugPos(ctx, decl->start);
+
+        llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
+        global->setInitializer((llvm::Constant *) value);
+    }
+}
+
+void emitDeclVariable(Context *ctx, Decl *decl) {
+    ASSERT(decl->kind == DeclKind_Variable);
+    CheckerInfo info = ctx->checkerInfo[decl->id];
         DynamicArray(Symbol *) symbols = info.Variable.symbols;
-        Decl_Variable var = stmt->Variable;
+        Decl_Variable var = decl->Variable;
 
         For (symbols) {
             Symbol *symbol = symbols[i];
-            llvm::Type *type = canonicalize(gen, symbol->type);
-            llvm::AllocaInst *alloca = createEntryBlockAlloca(gen->currentFunc, type, symbol->name);
+            // FIXME: Global variables
+            llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
 
             symbol->backendUserdata = alloca;
 
-            debugPos(gen, b, var.names[i]->start);
+            debugPos(ctx, var.names[i]->start);
 
             if (FlagDebug) {
-                llvm::DILocalVariable *d = gen->d->builder->createParameterVariable(
-                    gen->d->scope,
+                auto d = ctx->d.builder->createAutoVariable(
+                    ctx->d.scope,
                     symbol->name,
-                    0,
-                    gen->d->file,
-                    stmt->start.line,
-                    debugCanonicalize(gen, symbol->type),
-                    true
+                    ctx->d.file,
+                    decl->start.line,
+                    debugCanonicalize(ctx, symbol->type)
                 );
-
-                gen->d->builder->insertDeclare(
+                ctx->d.builder->insertDeclare(
                     alloca,
                     d,
-                    gen->d->builder->createExpression(),
-                    llvm::DebugLoc::get(stmt->start.line, stmt->start.column, gen->d->scope),
-                    b->GetInsertBlock()
+                    ctx->d.builder->createExpression(),
+                    llvm::DebugLoc::get(decl->start.line, decl->start.column, ctx->d.scope),
+                    ctx->b.GetInsertBlock()
                 );
             }
 
             if (ArrayLen(var.values)) {
-                llvm::Value *value = emitExpr(gen, b, checkerInfo, var.values[i]);
-                b->CreateStore(value, alloca);
+                llvm::Value *value = emitExpr(ctx, var.values[i]);
+                ctx->b.CreateStore(value, alloca);
             }
         }
-    } break;
+}
+
+void emitStmtIf(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_If);
+    auto pass = llvm::BasicBlock::Create(ctx->m->getContext(), "if.pass", ctx->fn);
+    auto fail = stmt->If.fail ? llvm::BasicBlock::Create(ctx->m->getContext(), "if.fail", ctx->fn) : nullptr;
+    auto post = llvm::BasicBlock::Create(ctx->m->getContext(), "if.post", ctx->fn);
+
+    auto cond = emitExpr(ctx, stmt->If.cond, llvm::IntegerType::get(ctx->m->getContext(), 1));
+    ctx->b.CreateCondBr(cond, pass, fail ? fail : post);
+
+    ctx->b.SetInsertPoint(pass);
+    emitStmt(ctx, stmt->If.pass);
+    if (!pass->getTerminator()) ctx->b.CreateBr(post);
+
+    if (stmt->If.fail) {
+        ctx->b.SetInsertPoint(fail);
+        emitStmt(ctx, stmt->If.fail);
+        if (!fail->getTerminator()) ctx->b.CreateBr(post);
+    }
+    ctx->b.SetInsertPoint(post);
+}
+
+void emitStmtReturn(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Return);
+    if (ArrayLen(stmt->Return.exprs) != 1) UNIMPLEMENTED();
+    std::vector<llvm::Value *> values;
+    ForEach(stmt->Return.exprs, Expr *) {
+        // FIXME: getReturnType will no suffice when we support multireturn
+        auto value = emitExpr(ctx, it, ctx->fn->getReturnType());
+        values.push_back(value);
+    }
+    ctx->b.CreateRet(values[0]);
+}
+
+void emitStmt(Context *ctx, Stmt *stmt) {
+    switch (stmt->kind) {
+        case StmtDeclKind_Constant:
+            emitDeclConstant(ctx, (Decl *) stmt);
+            break;
+
+        case StmtDeclKind_Variable:
+            emitDeclVariable(ctx, (Decl *) stmt);
+            break;
+
+        case StmtKind_If:
+            emitStmtIf(ctx, stmt);
+            break;
+
+        case StmtKind_Return:
+            emitStmtReturn(ctx, stmt);
+            break;
     }
 } 
 
@@ -432,10 +671,11 @@ b32 CodegenLLVM(Package *p) {
     char *dir;
     char *name = GetFileName(p->path, &buff[0], &dir);
 
-    Debug _debug;
-    Debug *debug = NULL;
+    Debug debug;
     if (FlagDebug) {
         llvm::DIBuilder *builder = new llvm::DIBuilder(*module);
+
+        // TODO: Absolute path for dir
         llvm::DIFile *file = builder->createFile(name, dir);
 
         llvm::DICompileUnit *unit = builder->createCompileUnit(
@@ -448,50 +688,17 @@ b32 CodegenLLVM(Package *p) {
         DebugTypes types;
         initDebugTypes(builder, &types);
 
-        _debug = {builder, unit, file, types, unit};
-        debug = &_debug;
+        debug = {builder, unit, file, types, unit};
     }
-
-    LLVMGen _gen = {
-        module,
-        nullptr,
-        debug
-    };
-
-    LLVMGen *gen = &_gen;
 
     llvm::IRBuilder<> b(context);
-
-    std::vector<llvm::Type *> mainArgs;
-    llvm::FunctionType *mainType = llvm::FunctionType::get(
-        llvm::Type::getVoidTy(context),
-        mainArgs,
-        false
-    );
-
-    llvm::Function *main = (llvm::Function *)module->getOrInsertFunction("main", mainType);
-    main->setCallingConv(llvm::CallingConv::C);
-    llvm::BasicBlock *entry = llvm::BasicBlock::Create(module->getContext(), "entry", main, 0);
-    b.SetInsertPoint(entry);
-    gen->currentFunc = main;
-
-    if (FlagDebug) {
-        llvm::DISubprogram *sub = debug->builder->createFunction(
-            debug->unit,
-            "main", 
-            llvm::StringRef() /* link name */,
-            debug->file,
-            0,
-            debug->builder->createSubroutineType(
-                debug->builder->getOrCreateTypeArray(std::vector<llvm::Metadata *>())
-            ),
-            false, true, 0,
-            llvm::DINode::FlagPrototyped,
-            false
-        );
-        main->setSubprogram(sub);
-        debug->scope = sub;
-    }
+    Context ctx = {
+        .checkerInfo = p->checkerInfo,
+        .m = module,
+        .b = b,
+        .fn = nullptr,
+        .d = debug,
+    };
 
     // NOTE: Unset the location for the prologue emission (leading instructions
     // with nolocation in a function are considered part of the prologue and the
@@ -499,31 +706,24 @@ b32 CodegenLLVM(Package *p) {
     Position pos;
     pos.line = 0;
     pos.column = 0;
-    debugPos(gen, &b, pos);
+    debugPos(&ctx, pos);
 
     For (p->stmts) {
-        emitStmt(gen, &b, p->checkerInfo, p->stmts[i], true);
-    }
-
-    b.CreateRetVoid();
-    
-    debug->scope = debug->unit;
-
-    if (FlagDebug) {
-        debug->builder->finalize();
+        emitStmt(&ctx, p->stmts[i]);
     }
 
 #if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
-    if (llvm::verifyFunction(*main, &llvm::errs()) || llvm::verifyModule(*module, &llvm::errs())) {
+    if (llvm::verifyModule(*module, &llvm::errs())) {
+        module->print(llvm::errs(), nullptr);
         ASSERT(false);
     }
 #endif
 
     if (FlagDumpIR) {
-        gen->m->print(llvm::errs(), nullptr);
+        module->print(llvm::errs(), nullptr);
         return 0;
     } else {
-        return emitObjectFile(p, name, gen);
+        return emitObjectFile(p, name, &ctx);
     }
 }
 
@@ -540,7 +740,7 @@ void setupTargetInfo() {
     init = true;
 }
 
-b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
+b32 emitObjectFile(Package *p, char *name, Context *ctx) {
     setupTargetInfo();
 
     char *objectName = KaiToObjectExtension(name);
@@ -571,8 +771,8 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
         rm
     );
 
-    gen->m->setDataLayout(targetMachine->createDataLayout());
-    gen->m->setTargetTriple(targetTriple);
+    ctx->m->setDataLayout(targetMachine->createDataLayout());
+    ctx->m->setTargetTriple(targetTriple);
 
     std::error_code ec;
     llvm::raw_fd_ostream dest(objectName, ec, llvm::sys::fs::F_None);
@@ -589,7 +789,7 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
         return 1;
     }
 
-    pass.run(*gen->m);
+    pass.run(*ctx->m);
     dest.flush();
 
     // Linking and debug symbols
@@ -619,9 +819,17 @@ b32 emitObjectFile(Package *p, char *name, LLVMGen *gen) {
     return 0;
 }
 
-void debugPos(LLVMGen *gen, llvm::IRBuilder<> *b, Position pos) {
-    if (!FlagDebug) { return; }
-    b->SetCurrentDebugLocation(llvm::DebugLoc::get(pos.line, pos.column, gen->d->scope));
+void debugPos(Context *ctx, Position pos) {
+    if (!FlagDebug) return;
+    ctx->b.SetCurrentDebugLocation(llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope));
+}
+
+void printIR(llvm::Value *value) {
+    value->print(llvm::outs());
+}
+
+void printIR(llvm::Type *value) {
+    value->print(llvm::outs());
 }
 
 #pragma clang diagnostic pop

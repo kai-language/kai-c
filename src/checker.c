@@ -189,6 +189,10 @@ b32 IsFloat(Type *type) {
     return type->kind == TypeKind_Float;
 }
 
+b32 isFunction(Type *type) {
+    return type->kind == TypeKind_Function;
+}
+
 b32 isNumeric(Type *type) {
     return IsInteger(type) || IsFloat(type);
 }
@@ -215,6 +219,10 @@ b32 isNumericOrPointer(Type *type) {
 
 b32 canBeUsedForLogical(Type *type) {
     return isBoolean(type) || IsInteger(type) || isPointer(type);
+}
+
+b32 isTuple(Type *type) {
+    return type->kind == TypeKind_Tuple;
 }
 
 b32 isArray(Type *type) {
@@ -294,6 +302,10 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
     if (TypesIdentical(type, target)) return true;
     if (target->kind == TypeKind_Any) return true;
 
+    if (isTuple(type) && ArrayLen(type->Tuple.types) == 1) {
+        return canCoerce(type->Tuple.types[0], target, ctx);
+    }
+
     // Any numeric or pointer type can coerce to Bool type
     if (isNumericOrPointer(type) && isBoolean(target)) return true;
 
@@ -357,6 +369,10 @@ void test_canCoerce() {
 
     ASSERT(canCoerce(I8Type, I16Type, &ctx));
     ASSERT(canCoerce(U8Type, I16Type, &ctx));
+    ASSERT(canCoerce(U8Type, I32Type, &ctx));
+
+    ASSERT(canCoerce(I32Type, IntType, &ctx));
+    ASSERT(canCoerce(IntType, I32Type, &ctx));
 
     ASSERT(canCoerce(UintType, UintptrType, &ctx));
     ASSERT(!canCoerce(I8Type, U64Type, &ctx));
@@ -384,51 +400,56 @@ b32 representValueSilently(CheckerContext *ctx, Expr *expr, Type *type, Type *ta
 }
 
 Conversion conversion(Type *type, Type *target) {
-    Conversion conversion = 0;
+    Conversion result = 0;
     if (type->kind == target->kind) {
-        conversion |= ConversionClass_Same;
+        result |= ConversionKind_Same;
         switch (type->kind) {
             case TypeKind_Float:
-                if (type->Width < target->Width) conversion |= ConversionFlag_Extend;
-                return conversion;
+                result |= ConversionFlag_Float;
+                if (type->Width < target->Width) result |= ConversionFlag_Extend;
+                return result;
 
             case TypeKind_Int:
-                if (type->Width < target->Width) conversion |= ConversionFlag_Extend;
-                if (IsSigned(type)) conversion |= ConversionFlag_Signed;
-                return conversion;
+                if (type->Width < target->Width) result |= ConversionFlag_Extend;
+                if (IsSigned(type)) result |= ConversionFlag_Signed;
+                return result;
 
             default:
-                return conversion;
+                return result;
         }
     }
 
+    if (type->kind == TypeKind_Tuple && ArrayLen(type->Tuple.types) == 1) {
+        return conversion(type->Tuple.types[0], target);
+    }
+
     if (isBoolean(target)) {
-        conversion |= ConversionClass_Bool;
-        return conversion;
+        result |= ConversionKind_Bool;
+        return result;
     }
 
     // TODO: All to Union
 
     if (IsInteger(type) && IsFloat(target)) {
-        conversion |= ConversionClass_FtoI;
-        if (IsSigned(type)) conversion |= ConversionFlag_Signed;
-        return conversion;
+        result |= ConversionKind_ItoF;
+        if (IsSigned(type)) result |= ConversionFlag_Signed;
+        return result;
     }
 
     if (IsFloat(type) && IsInteger(target)) {
-        conversion |= ConversionClass_FtoI;
-        if (IsSigned(type)) conversion |= ConversionFlag_Signed;
-        return conversion;
+        result |= ConversionKind_FtoI & ConversionFlag_Float;
+        if (IsSigned(type)) result |= ConversionFlag_Signed;
+        return result;
     }
 
     if (isPointer(type) && IsInteger(target)) {
-        conversion |= ConversionClass_PtoI;
-        return conversion;
+        result |= ConversionKind_PtoI;
+        return result;
     }
 
     if (IsInteger(target) && isPointer(type)) {
-        conversion |= ConversionClass_ItoP;
-        return conversion;
+        result |= ConversionKind_ItoP;
+        return result;
     }
 
     // TODO: Integer to enum and vica versa
@@ -555,7 +576,7 @@ b32 canCast(Type *source, Type *target) {
     if (IsInteger(source) &&
         (TypesIdentical(target, IntptrType) || TypesIdentical(target, UintptrType))) return true;
 
-    // TODO: Function <-> Pointer
+    if ((isFunction(source) || isFunction(target)) && (isPointer(source) || isPointer(target))) return true;
     // TODO: Enum <-> Integer
 
     return false;
@@ -594,6 +615,18 @@ Symbol *Lookup(Scope *scope, const char *name) {
     } while (scope);
 
     return NULL;
+}
+
+Type *TypeFromCheckerInfo(CheckerInfo info) {
+    switch (info.kind) {
+        case CheckerInfoKind_BasicExpr:
+            return info.BasicExpr.type;
+        case CheckerInfoKind_Ident:
+            return info.Ident.symbol->type;
+            // FIXME: Fill in
+        default:
+            return NULL;
+    }
 }
 
 Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg);
@@ -671,15 +704,7 @@ Type *checkExprLitInt(Expr *expr, CheckerContext *ctx, Package *pkg) {
             }
         } else if (IsFloat(ctx->desiredType)) {
             ctx->val.f64 = (f64)lit.val;
-        } else {
-            ReportError(pkg, InvalidConversionError, expr->start,
-                        "Unable to coerce %s to expected type %s",
-                        DescribeExpr(expr), DescribeType(ctx->desiredType));
-            // TODO: Check if it's possible through casting and add note that you can cast to make the conversion occur
-            goto error;
         }
-
-        type = ctx->desiredType;
     } else {
         ctx->val.u64 = lit.val;
     }
@@ -837,11 +862,15 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         Symbol *symbol;
         declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, (Decl *) it);
+        symbol->kind = SymbolKind_Variable;
         ArrayPush(paramSymbols, symbol);
 
         Type *type = checkExpr(it->value, &paramCtx, pkg);
         if (!expectType(pkg, type, &paramCtx, it->value->start)) continue;
         markSymbolResolved(symbol, type);
+
+        // TODO: Support unnamed parameters ($0, $1, $2)
+        storeInfoIdent(pkg, it->key, symbol);
 
         typeFlags |= type->Flags & TypeFlag_Variadic;
         typeFlags |= type->Flags & TypeFlag_CVargs;
@@ -871,8 +900,11 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         checkStmt(it, &bodyCtx, pkg);
     }
 
+    Type *type = NewTypeFunction(typeFlags, paramTypes, resultTypes);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+
     ctx->mode = ExprMode_Type;
-    return NewTypeFunction(typeFlags, paramTypes, resultTypes);
+    return type;
 }
 
 STATIC_ASSERT(offsetof(Type_Array, elementType) == offsetof(Type_Slice, elementType), "elementTypes must be at equal offset");
@@ -921,10 +953,9 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
         }
 
 checkValue:
-
         ctx->desiredType = expectedValueType;
         Type *valueType = checkExpr(it->value, ctx, pkg);
-        coerceType(it->value, ctx, &valueType, expectedValueType, pkg);
+        if (expectedValueType) coerceType(it->value, ctx, &valueType, expectedValueType, pkg);
         currentIndex += 1;
     }
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1281,8 +1312,15 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
+    ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
+        ctx->desiredType = calleeType->Function.params[i];
+        Type *type = checkExpr(arg->value, ctx, pkg);
+        coerceType(arg->value, ctx, &type, calleeType->Function.params[i], pkg);
+    }
     // TODO: Implement checking for calls
-    UNIMPLEMENTED();
+    Type *type = NewTypeTuple(TypeFlag_None, calleeType->Function.results);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    return type;
 
 error:
     ctx->mode = ExprMode_Invalid;
@@ -1653,6 +1691,7 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
     size_t nTypes = ArrayLen(ctx->desiredType->Tuple.types);
     size_t nExprs = ArrayLen(stmt->Return.exprs);
+    // FIXME: What about returns that are tuples? We need a nice splat helper
 
     if (nExprs != nTypes) {
         ReportError(pkg, WrongNumberOfReturnsError, stmt->start,
@@ -1664,12 +1703,7 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         Type *expectedType = ctx->desiredType->Tuple.types[i];
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         Type *type = checkExpr(expr, &exprCtx, pkg);
-        if (!TypesIdentical(type, expectedType)) {
-            ReportError(pkg, TypeMismatchError, expr->start,
-                        "Expected type %s got type %s",
-                        DescribeType(expectedType), DescribeType(type));
-            return;
-        }
+        coerceType(expr, &exprCtx, &type, expectedType, pkg);
     }
 }
 
@@ -1768,7 +1802,7 @@ void checkStmtIf(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         ReportError(pkg, TypeMismatchError, stmt->If.cond->start,
                     "Expected type bool got type %s", DescribeType(type));
     }
-    ifCtx.desiredType = NULL;
+    ifCtx.desiredType = ctx->desiredType;
     checkStmt(stmt->If.pass, &ifCtx, pkg);
     if (stmt->If.fail) checkStmt(stmt->If.fail, &ifCtx, pkg);
 }
@@ -2041,7 +2075,7 @@ void test_coercionsAreMarked() {
     ASSERT(info->Constant.symbol->name == StrIntern("x"));
     ASSERT_MSG(pkg.astIdCount == 6, "Package was not fully reset as expected");
     Conversion coerce = pkg.checkerInfo[5].BasicExpr.coerce;
-    ASSERT(coerce & ConversionClass_Same);
+    ASSERT(coerce & ConversionKind_Same);
     ASSERT(coerce & ConversionFlag_Extend);
 }
 
@@ -2290,6 +2324,24 @@ Type *typeFromParsing(const char *code) {
     return checkExpr((Expr *) stmt, &ctx, &pkg);
 }
 
+void test_checkExprLitInteger() {
+    REINIT_COMPILER();
+    Expr *expr;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_BasicExpr info;
+
+#define checkInteger(_CODE) \
+expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+type = checkExprLitInt(expr, &ctx, &pkg); \
+info = GetExprInfo(&pkg, expr)->BasicExpr
+
+    checkInteger("5");
+    ASSERT(type == U8Type);
+    ASSERT(info.val.u64 == 5);
+}
+
 void test_checkExprLitFunction() {
     REINIT_COMPILER();
     Expr *expr;
@@ -2309,6 +2361,23 @@ void test_checkExprLitFunction() {
 
     checkFunction("fn (fmt: *u8, args: ..any) -> i32 { return 0 }");
     ASSERT(type == typeFromParsing("fn (fmt: *u8, args: ..any) -> i32"));
+}
+
+void test_checkExprLitCompound() {
+    REINIT_COMPILER();
+    Expr *expr;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+
+#define checkCompound(_CODE) \
+    expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
+    RESET_CONTEXT(ctx); \
+    type = checkExprLitCompound(expr, &ctx, &pkg);
+
+    checkCompound("[5]i8{1, 2, 3, 4, 5}");
+    ASSERT(type == typeFromParsing("[5]i8"));
+
+    // TODO: @Structs
 }
 
 void test_checkStmtAssign() {
