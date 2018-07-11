@@ -69,12 +69,16 @@ typedef struct Context Context;
 struct Context {
     DynamicArray(CheckerInfo) checkerInfo;
     llvm::Module *m;
+    llvm::TargetMachine *targetMachine;
     llvm::IRBuilder<> b;
     llvm::Function *fn;
+    llvm::BasicBlock *retBlock;
+    llvm::Value *retValue;
     Debug d;
 };
 
 
+void clearDebugPos(Context *ctx);
 void debugPos(Context *ctx, Position pos);
 b32 emitObjectFile(Package *p, char *name, Context *ctx);
 llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType = nullptr);
@@ -265,6 +269,7 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
         args.push_back(irArg);
     }
     auto irFunc = emitExpr(ctx, expr->Call.expr);
+    debugPos(ctx, expr->Call.start);
     return ctx->b.CreateCall(irFunc, args);
 }
 
@@ -332,6 +337,7 @@ llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
     Expr_Unary unary = expr->Unary;
     llvm::Value *val = emitExpr(ctx, unary.expr);
 
+    debugPos(ctx, expr->Unary.start);
     switch (unary.op) {
         case TK_Add:
         case TK_And:
@@ -361,6 +367,7 @@ llvm::Value *emitExprBinary(Context *ctx, Expr *expr) {
     lhs = emitExpr(ctx, expr->Binary.lhs, /*desiredType:*/ ty);
     rhs = emitExpr(ctx, expr->Binary.rhs, /*desiredType:*/ ty);
 
+    debugPos(ctx, expr->Binary.pos);
     switch (expr->Binary.op) {
         case TK_Add:
             return isInt ? ctx->b.CreateAdd(lhs, rhs) : ctx->b.CreateFAdd(lhs, rhs);
@@ -473,7 +480,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         auto dbgType = (llvm::DISubroutineType *)debugCanonicalize(ctx, info.BasicExpr.type);
         llvm::DISubprogram *sub = ctx->d.builder->createFunction(
             ctx->d.file,
-            fn->getName(), // Name (will be set correctly by the caller)
+            fn->getName(), // Name (will be set correctly by the caller) (TODO)
             fn->getName(), // LinkageName
             ctx->d.file,
             expr->start.line,
@@ -485,8 +492,18 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
             false
         );
         fn->setSubprogram(sub);
-        ctx->d.scope = sub;
+
+        auto scope = ctx->d.builder->createLexicalBlock(sub, ctx->d.file,
+                                                        expr->LitFunction.body->start.line,
+                                                        expr->LitFunction.body->start.column);
+
+        ctx->d.scope = scope;
     }
+
+    // Unset the location for the prologue emission (leading instructions with no
+    // location in a function are considered part of the prologue and the debugger
+    // will run past them when breaking on a function)
+    clearDebugPos(ctx);
 
     llvm::Function::arg_iterator args = fn->arg_begin();
 
@@ -495,7 +512,6 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         CheckerInfo paramInfo = ctx->checkerInfo[it->key->id];
         auto param = args++;
         param->setName(paramInfo.Ident.symbol->name);
-        debugPos(ctx, paramInfo.Ident.symbol->decl->start);
         auto storage = createEntryBlockAlloca(ctx, paramInfo.Ident.symbol);
         paramInfo.Ident.symbol->backendUserdata = storage;
         ctx->b.CreateStore(param, storage);
@@ -509,22 +525,38 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
             debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
             true
         );
+        auto pos = paramInfo.Ident.symbol->decl->start;
         ctx->d.builder->insertDeclare(
             storage,
             dbg,
             ctx->d.builder->createExpression(),
-            ctx->b.getCurrentDebugLocation(),
+            llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope),
             ctx->b.GetInsertBlock()
         );
     }
     fn->arg_end();
 
+    // Setup return block
+    ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return", fn);
+    ctx->retValue = ctx->b.CreateAlloca(fn->getReturnType());
+    ctx->b.SetInsertPoint(ctx->retBlock);
+    if (fn->getReturnType()->isVoidTy()) {
+        ctx->b.CreateRetVoid();
+    } else {
+        auto retValue = ctx->b.CreateLoad(ctx->retValue);
+        ctx->b.CreateRet(retValue);
+    }
+    ctx->b.SetInsertPoint(&fn->getEntryBlock());
+
     ForEach(expr->LitFunction.body->stmts, Stmt *) {
         emitStmt(ctx, it);
     }
 
-    // TODO: Create a new scope?
+    // FIXME: Return to previous scope
     ctx->d.scope = ctx->d.file;
+
+    // Move the return block to the end, just for readability
+    ctx->retBlock->moveAfter(ctx->b.GetInsertBlock());
 
     if (FlagDebug) {
         ctx->d.builder->finalizeSubprogram(fn->getSubprogram());
@@ -592,11 +624,11 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
         For (symbols) {
             Symbol *symbol = symbols[i];
             // FIXME: Global variables
-            llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
+            debugPos(ctx, var.names[i]->start);
 
+            llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
             symbol->backendUserdata = alloca;
 
-            debugPos(ctx, var.names[i]->start);
 
             if (FlagDebug) {
                 auto d = ctx->d.builder->createAutoVariable(
@@ -629,6 +661,7 @@ void emitStmtIf(Context *ctx, Stmt *stmt) {
     auto post = llvm::BasicBlock::Create(ctx->m->getContext(), "if.post", ctx->fn);
 
     auto cond = emitExpr(ctx, stmt->If.cond, llvm::IntegerType::get(ctx->m->getContext(), 1));
+    debugPos(ctx, stmt->If.start);
     ctx->b.CreateCondBr(cond, pass, fail ? fail : post);
 
     ctx->b.SetInsertPoint(pass);
@@ -652,7 +685,16 @@ void emitStmtReturn(Context *ctx, Stmt *stmt) {
         auto value = emitExpr(ctx, it, ctx->fn->getReturnType());
         values.push_back(value);
     }
-    ctx->b.CreateRet(values[0]);
+    clearDebugPos(ctx);
+    if (values.size() > 1) {
+        for (u32 idx = 0; idx < values.size(); idx++) {
+            std::vector<u32> idxs = {0, idx};
+            ctx->retValue = ctx->b.CreateInsertValue(ctx->retValue, values[idx], idxs);
+        }
+    } else if (values.size() == 1) {
+        ctx->b.CreateStore(values[0], ctx->retValue);
+    }
+    ctx->b.CreateBr(ctx->retBlock);
 }
 
 void emitStmt(Context *ctx, Stmt *stmt) {
@@ -673,11 +715,55 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             emitStmtReturn(ctx, stmt);
             break;
     }
-} 
+}
+
+
+void setupTargetInfo() {
+    static b32 init = false;
+    if (init) return;
+
+    // TODO: If no target is specified we can get away with initializing just the native target.
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+
+    init = true;
+}
 
 b32 CodegenLLVM(Package *p) {
     llvm::LLVMContext context;
     llvm::Module *module = new llvm::Module(p->path, context);
+
+    setupTargetInfo();
+
+    std::string error;
+    auto triple = llvm::sys::getDefaultTargetTriple();
+    auto target = llvm::TargetRegistry::lookupTarget(triple, error);
+
+    if (!target) {
+        llvm::errs() << error;
+        return 1;
+    }
+
+    if (FlagVerbose) printf("Target: %s\n", triple.c_str());
+
+    const char *cpu = "generic";
+    const char *features = "";
+
+    llvm::TargetOptions opt;
+    llvm::Optional<llvm::Reloc::Model> rm = llvm::Optional<llvm::Reloc::Model>();
+    llvm::TargetMachine *targetMachine = target->createTargetMachine(triple, cpu, features, opt, rm);
+
+    targetMachine->setO0WantsFastISel(true);
+
+    // TODO: Handle targets correctly by using TargetOs & TargetArch globals
+    module->setTargetTriple(triple);
+    module->setDataLayout(targetMachine->createDataLayout());
+    module->getOrInsertModuleFlagsMetadata();
+    module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
+    module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
 
     char buff[MAX_PATH];
     char *dir;
@@ -694,7 +780,9 @@ b32 CodegenLLVM(Package *p) {
             llvm::dwarf::DW_LANG_C,
             file,
             "Kai programming language",
-            0, "", 0
+            /* isOptimized:*/ false,
+            "",
+            /* RuntimeVersion:*/ 0
         );
 
         DebugTypes types;
@@ -707,6 +795,7 @@ b32 CodegenLLVM(Package *p) {
     Context ctx = {
         .checkerInfo = p->checkerInfo,
         .m = module,
+        .targetMachine = targetMachine,
         .b = b,
         .fn = nullptr,
         .d = debug,
@@ -724,6 +813,8 @@ b32 CodegenLLVM(Package *p) {
         emitStmt(&ctx, p->stmts[i]);
     }
 
+    ctx.d.builder->finalize();
+
 #if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
     if (llvm::verifyModule(*module, &llvm::errs())) {
         module->print(llvm::errs(), nullptr);
@@ -739,52 +830,10 @@ b32 CodegenLLVM(Package *p) {
     }
 }
 
-void setupTargetInfo() {
-    static b32 init = false;
-    if (init) return;
-
-    llvm::InitializeAllTargetInfos();
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmParsers();
-    llvm::InitializeAllAsmPrinters();
-
-    init = true;
-}
 
 b32 emitObjectFile(Package *p, char *name, Context *ctx) {
-    setupTargetInfo();
 
     char *objectName = KaiToObjectExtension(name);
-
-    std::string targetTriple, error;
-    targetTriple = llvm::sys::getDefaultTargetTriple();
-    const llvm::Target *target = llvm::TargetRegistry::lookupTarget(targetTriple, error);
-
-    if (!target) {
-        llvm::errs() << error;
-        return 1;
-    }
-
-    if (FlagVerbose) {
-        printf("Target: %s\n", targetTriple.c_str());
-    }
-
-    const char *cpu = "generic";
-    const char *features = "";
-
-    llvm::TargetOptions opt;
-    llvm::Optional<llvm::Reloc::Model> rm = llvm::Optional<llvm::Reloc::Model>();
-    llvm::TargetMachine *targetMachine = target->createTargetMachine(
-        targetTriple,
-        cpu,
-        features,
-        opt,
-        rm
-    );
-
-    ctx->m->setDataLayout(targetMachine->createDataLayout());
-    ctx->m->setTargetTriple(targetTriple);
 
     std::error_code ec;
     llvm::raw_fd_ostream dest(objectName, ec, llvm::sys::fs::F_None);
@@ -796,7 +845,7 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
 
     llvm::legacy::PassManager pass;
     llvm::TargetMachine::CodeGenFileType fileType = llvm::TargetMachine::CGFT_ObjectFile;
-    if (targetMachine->addPassesToEmitFile(pass, dest, fileType)) {
+    if (ctx->targetMachine->addPassesToEmitFile(pass, dest, fileType)) {
         llvm::errs() << "TargetMachine can't emit a file of this type";
         return 1;
     }
@@ -829,6 +878,11 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
 #endif
 
     return 0;
+}
+
+void clearDebugPos(Context *ctx) {
+    if (!FlagDebug) return;
+    ctx->b.SetCurrentDebugLocation(llvm::DebugLoc());
 }
 
 void debugPos(Context *ctx, Position pos) {
