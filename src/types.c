@@ -300,15 +300,13 @@ void InitBuiltins() {
     _global = Alloc(DefaultAllocator, sizeof(Type)); \
     memcpy(_global, _alias, sizeof(Type)); \
     _global->Symbol = _alias->Symbol; \
-    _global->Flags |= TypeFlag_Alias
+    _global->Flags |= TypeFlag_Alias; \
+    declareBuiltinType(_name, _alias)
 
     TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
     nextTypeId--;
 
     // @IMPORTANT: The order is important here as it sets up the TypeId's
-    // The TypeId's are used to rank numeric types for type promotion
-    //  We can promote compatible types upwards (as ordered below) provided there can be no loss of information
-    //
     TYPE(AnyType,   "any",  Any, 128, TypeFlag_None); // typeid = 1
     TYPE(VoidType, "void", Tuple, 0, TypeFlag_None);
 

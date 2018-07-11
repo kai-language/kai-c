@@ -115,8 +115,16 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkConstantCastExpression();
 }
 
+- (void)test_checkExprLitInteger {
+    test_checkExprLitInteger();
+}
+
 - (void)test_checkExprLitFunction {
     test_checkExprLitFunction();
+}
+
+- (void)test_checkExprLitCompound {
+    test_checkExprLitCompound();
 }
 
 - (void)test_checkStmtAssign {
@@ -355,6 +363,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
 
 - (void)test_parseStmt {
     test_parseStmt();
+}
+
+- (void)test_automaticTerminatorAfterFunction {
+    test_automaticTerminatorAfterFunction();
 }
 
 - (void)test_parseStruct {
