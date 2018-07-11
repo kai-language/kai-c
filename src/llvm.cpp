@@ -151,6 +151,19 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         );
     }
 
+    if (type->kind == TypeKind_Function) {
+        // NOTE: Clang just uses a derived type that is a pointer
+        // !44 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !9, size: 64)
+        std::vector<llvm::Metadata *> parameterTypes;
+        ForEach(type->Function.params, Type *) {
+            auto type = debugCanonicalize(ctx, it);
+            parameterTypes.push_back(type);
+        }
+
+        auto pTypes = ctx->d.builder->getOrCreateTypeArray(parameterTypes);
+        return ctx->d.builder->createSubroutineType(pTypes);
+    }
+
     ASSERT(false);
     return NULL;
 }
@@ -444,6 +457,7 @@ llvm::Value *emitExprBinary(Context *ctx, Expr *expr) {
 
 llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn = nullptr) {
     CheckerInfo info = ctx->checkerInfo[expr->id];
+    debugPos(ctx, expr->start);
 
     if (!fn) {
         llvm::FunctionType *type = (llvm::FunctionType *) canonicalize(ctx, info.BasicExpr.type);
@@ -456,18 +470,17 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     ctx->fn = fn;
     if (FlagDebug) {
 
+        auto dbgType = (llvm::DISubroutineType *)debugCanonicalize(ctx, info.BasicExpr.type);
         llvm::DISubprogram *sub = ctx->d.builder->createFunction(
             ctx->d.file,
-            llvm::StringRef(),
-            llvm::StringRef(),
+            fn->getName(), // Name (will be set correctly by the caller)
+            fn->getName(), // LinkageName
             ctx->d.file,
             expr->start.line,
-            ctx->d.builder->createSubroutineType(
-                ctx->d.builder->getOrCreateTypeArray(std::vector<llvm::Metadata *>())
-            ),
+            dbgType,
             false,
             true,
-            0,
+            expr->LitFunction.body->start.line,
             llvm::DINode::FlagPrototyped,
             false
         );
@@ -497,7 +510,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
             true
         );
         ctx->d.builder->insertDeclare(
-            param,
+            storage,
             dbg,
             ctx->d.builder->createExpression(),
             ctx->b.getCurrentDebugLocation(),
@@ -532,6 +545,7 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
     CheckerInfo info = ctx->checkerInfo[decl->id];
     Symbol *symbol = info.Constant.symbol;
 
+    debugPos(ctx, decl->start);
     if (symbol->type->kind == TypeKind_Function && decl->Constant.values[0]->kind == ExprKind_LitFunction) {
 
         CheckerInfo info = ctx->checkerInfo[decl->Constant.values[0]->id];
@@ -545,9 +559,9 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
         // FIXME: We need to start using external name correctly, it should be always set
 
         emitExprLitFunction(ctx, decl->Constant.values[0], fn);
-
-        // TODO: Set the debug name to symbol->name
-        debugPos(ctx, decl->start);
+        // FIXME: we need to set the debug info subprogram's actual name. Right now it will be set to the mangled name.
+        // The reason we didn't do this initially is that there is no setName on DISubprogram. We will maybe need to
+        //  provide the non mangled name directly to emitExprLitFunction :/
 
     } else {
         llvm::Type *type = canonicalize(ctx, symbol->type);
@@ -563,8 +577,6 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
         );
 
         symbol->backendUserdata = global;
-
-        debugPos(ctx, decl->start);
 
         llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
         global->setInitializer((llvm::Constant *) value);
