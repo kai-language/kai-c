@@ -307,7 +307,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             value = (llvm::Value *) symbol->backendUserdata;
             // TODO(Brett): check for return address
             if (symbol->kind == SymbolKind_Variable) {
-                value = ctx->b.CreateLoad((llvm::Value *) symbol->backendUserdata);
+                value = ctx->b.CreateLoad(value);
             }
             break;
         }
@@ -764,10 +764,13 @@ b32 CodegenLLVM(Package *p) {
     module->getOrInsertModuleFlagsMetadata();
     module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
     module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
+    // See https://llvm.org/docs/LangRef.html#c-type-width-module-flags-metadata
+    module->addModuleFlag(llvm::Module::Warning, "short_enum", 1);
 
+    char *path = AbsolutePath(p->path, NULL);
     char buff[MAX_PATH];
     char *dir;
-    char *name = GetFileName(p->path, &buff[0], &dir);
+    char *name = GetFileName(path, buff, &dir);
 
     Debug debug;
     if (FlagDebug) {
