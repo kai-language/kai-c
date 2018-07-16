@@ -77,8 +77,9 @@ struct Context {
     llvm::Value *retValue;
     bool returnAddress;
     Debug d;
-};
 
+    std::vector<llvm::BasicBlock *> deferStack;
+};
 
 void clearDebugPos(Context *ctx);
 void debugPos(Context *ctx, Position pos);
@@ -480,7 +481,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         llvm::FunctionType *type = (llvm::FunctionType *) canonicalize(ctx, info.BasicExpr.type);
         fn = llvm::Function::Create(type, llvm::Function::LinkageTypes::ExternalLinkage, llvm::StringRef(), ctx->m);
     }
-    
+
     fn->setCallingConv(llvm::CallingConv::C);
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(ctx->m->getContext(), "entry", fn);
     ctx->b.SetInsertPoint(entry);
@@ -542,22 +543,47 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     }
     fn->arg_end();
 
+    // FIXME: In order to support nested functions we must restore retBlock, deferStack, retValue ...
+
     // Setup return block
+
+    // TODO: multiple returns (we should change TypeFunction to have a single possibly tuple return type)
+    Type *retType = info.BasicExpr.type->Function.results[0];
     ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return", fn);
+    if (!fn->getReturnType()->isVoidTy()) {
+        ctx->retValue = createEntryBlockAlloca(ctx, retType, "result");
+    }
+    ForEach(expr->LitFunction.body->stmts, Stmt *) {
+        emitStmt(ctx, it);
+    }
+
+    // Set insert point to the return block
     ctx->b.SetInsertPoint(ctx->retBlock);
+    if (!ctx->deferStack.empty()) {
+        ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return_post_defer", fn);
+        ctx->b.CreateBr(ctx->deferStack[0]);
+    }
+
+    for (size_t i = 0; i < ctx->deferStack.size(); i++) {
+        printf("%zu\n", ctx->deferStack.size());
+        llvm::BasicBlock *block = ctx->deferStack[i];
+        ctx->b.SetInsertPoint(block);
+        if (i < ctx->deferStack.size() - 1) {
+            ctx->b.CreateBr(ctx->deferStack[i + 1]);
+        } else {
+            ctx->b.CreateBr(ctx->retBlock);
+        }
+    }
+
+    if (!ctx->deferStack.empty()) {
+        ctx->b.SetInsertPoint(ctx->retBlock);
+    }
+
     if (fn->getReturnType()->isVoidTy()) {
         ctx->b.CreateRetVoid();
     } else {
-        // TODO: multiple returns (we should change TypeFunction to have a single possibly tuple return type)
-        Type *retType = info.BasicExpr.type->Function.results[0];
-        ctx->retValue = createEntryBlockAlloca(ctx, retType, "result");
         auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, BytesFromBits(retType->Align));
         ctx->b.CreateRet(retValue);
-    }
-    ctx->b.SetInsertPoint(&fn->getEntryBlock());
-
-    ForEach(expr->LitFunction.body->stmts, Stmt *) {
-        emitStmt(ctx, it);
     }
 
     // FIXME: Return to previous scope
@@ -733,6 +759,19 @@ void emitStmtReturn(Context *ctx, Stmt *stmt) {
     ctx->b.CreateBr(ctx->retBlock);
 }
 
+void emitStmtDefer(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Defer);
+
+    llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "defer", ctx->fn);
+    ctx->deferStack.push_back(block);
+
+    llvm::BasicBlock *prevBlock = ctx->b.GetInsertBlock();
+    ctx->b.SetInsertPoint(block);
+
+    emitStmt(ctx, stmt->Defer.stmt);
+    ctx->b.SetInsertPoint(prevBlock);
+}
+
 void emitStmt(Context *ctx, Stmt *stmt) {
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
@@ -757,6 +796,10 @@ void emitStmt(Context *ctx, Stmt *stmt) {
 
         case StmtKind_Return:
             emitStmtReturn(ctx, stmt);
+            break;
+
+        case StmtKind_Defer:
+            emitStmtDefer(ctx, stmt);
             break;
     }
 }

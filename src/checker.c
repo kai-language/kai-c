@@ -1988,6 +1988,10 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             break;
 
         default:
+            if (isExpr(stmt)) {
+                checkExpr((Expr *) stmt, ctx, pkg);
+                break;
+            }
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
 
