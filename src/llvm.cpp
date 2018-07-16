@@ -1,3 +1,4 @@
+
 #include "common.h"
 #include "symbols.h"
 #include "compiler.h"
@@ -74,6 +75,7 @@ struct Context {
     llvm::Function *fn;
     llvm::BasicBlock *retBlock;
     llvm::Value *retValue;
+    bool returnAddress;
     Debug d;
 };
 
@@ -189,11 +191,18 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
     types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
 }
 
+llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Type *type, const char *name) {
+    llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
+    llvm::AllocaInst *alloca = b.CreateAlloca(canonicalize(ctx, type), 0, name);
+    alloca->setAlignment(BytesFromBits(type->Align));
+    return alloca;
+}
+
 llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Symbol *sym) {
     auto type = canonicalize(ctx, sym->type);
     llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
     auto alloca = b.CreateAlloca(type, 0, sym->name);
-    alloca->setAlignment(sym->type->Align);
+    alloca->setAlignment(BytesFromBits(sym->type->Align));
     return alloca;
 }
 
@@ -305,9 +314,10 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Symbol *symbol = info.Ident.symbol;
             value = (llvm::Value *) symbol->backendUserdata;
-            // TODO(Brett): check for return address
             if (symbol->kind == SymbolKind_Variable) {
-                value = ctx->b.CreateLoad(value);
+                if (!ctx->returnAddress) {
+                    value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
+                }
             }
             break;
         }
@@ -350,7 +360,7 @@ llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
 
         case TK_Lss: {
             // TODO: check for return address
-            return ctx->b.CreateLoad(val);
+            return ctx->b.CreateAlignedLoad(val, BytesFromBits(ctx->checkerInfo[expr->id].BasicExpr.type->Align));
         };
     }
 
@@ -493,11 +503,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         );
         fn->setSubprogram(sub);
 
-        auto scope = ctx->d.builder->createLexicalBlock(sub, ctx->d.file,
-                                                        expr->LitFunction.body->start.line,
-                                                        expr->LitFunction.body->start.column);
-
-        ctx->d.scope = scope;
+        ctx->d.scope = sub;
     }
 
     // Unset the location for the prologue emission (leading instructions with no
@@ -514,7 +520,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         param->setName(paramInfo.Ident.symbol->name);
         auto storage = createEntryBlockAlloca(ctx, paramInfo.Ident.symbol);
         paramInfo.Ident.symbol->backendUserdata = storage;
-        ctx->b.CreateStore(param, storage);
+        ctx->b.CreateAlignedStore(param, storage, BytesFromBits(paramInfo.Ident.symbol->type->Align));
 
         auto dbg = ctx->d.builder->createParameterVariable(
             ctx->d.scope,
@@ -525,7 +531,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
             debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
             true
         );
-        auto pos = paramInfo.Ident.symbol->decl->start;
+        auto pos = ((Expr_KeyValue *) paramInfo.Ident.symbol->decl)->start;
         ctx->d.builder->insertDeclare(
             storage,
             dbg,
@@ -538,12 +544,14 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 
     // Setup return block
     ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return", fn);
-    ctx->retValue = ctx->b.CreateAlloca(fn->getReturnType());
     ctx->b.SetInsertPoint(ctx->retBlock);
     if (fn->getReturnType()->isVoidTy()) {
         ctx->b.CreateRetVoid();
     } else {
-        auto retValue = ctx->b.CreateLoad(ctx->retValue);
+        // TODO: multiple returns (we should change TypeFunction to have a single possibly tuple return type)
+        Type *retType = info.BasicExpr.type->Function.results[0];
+        ctx->retValue = createEntryBlockAlloca(ctx, retType, "result");
+        auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, BytesFromBits(retType->Align));
         ctx->b.CreateRet(retValue);
     }
     ctx->b.SetInsertPoint(&fn->getEntryBlock());
@@ -629,7 +637,6 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
             llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
             symbol->backendUserdata = alloca;
 
-
             if (FlagDebug) {
                 auto d = ctx->d.builder->createAutoVariable(
                     ctx->d.scope,
@@ -647,11 +654,39 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
                 );
             }
 
-            if (ArrayLen(var.values)) {
+            if (ArrayLen(var.values) >= i) {
+                Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
                 llvm::Value *value = emitExpr(ctx, var.values[i]);
-                ctx->b.CreateStore(value, alloca);
+                ctx->b.CreateAlignedStore(value, alloca, BytesFromBits(type->Align));
             }
         }
+}
+
+void emitStmtLabel(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Label);
+    CheckerInfo_Label info = ctx->checkerInfo[stmt->id].Label;
+    auto block = llvm::BasicBlock::Create(ctx->m->getContext(), info.symbol->name, ctx->fn);
+    ctx->b.SetInsertPoint(block);
+    info.symbol->backendUserdata = block;
+}
+
+void emitStmtAssign(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Assign);
+    Stmt_Assign assign = stmt->Assign;
+
+    if (ArrayLen(assign.lhs) > 1 && ArrayLen(assign.rhs) == 1 && assign.rhs[0]->kind == ExprKind_Call) {
+//        llvm::Value *value = emitExpr(ctx, assign.rhs[0]);
+        UNIMPLEMENTED();
+    }
+    ForEachWithIndex(assign.lhs, i, Expr *, it) {
+        ctx->returnAddress = true;
+        llvm::Value *lhs = emitExpr(ctx, it);
+        ctx->returnAddress = false;
+        llvm::Value *rhs = emitExpr(ctx, assign.rhs[i]);
+        Type *type = TypeFromCheckerInfo(ctx->checkerInfo[assign.lhs[i]->id]);
+        debugPos(ctx, assign.start);
+        ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(type->Align));
+    }
 }
 
 void emitStmtIf(Context *ctx, Stmt *stmt) {
@@ -694,6 +729,7 @@ void emitStmtReturn(Context *ctx, Stmt *stmt) {
     } else if (values.size() == 1) {
         ctx->b.CreateStore(values[0], ctx->retValue);
     }
+    debugPos(ctx, stmt->start);
     ctx->b.CreateBr(ctx->retBlock);
 }
 
@@ -707,6 +743,14 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             emitDeclVariable(ctx, (Decl *) stmt);
             break;
 
+        case StmtKind_Label:
+            emitStmtLabel(ctx, stmt);
+            break;
+
+        case StmtKind_Assign:
+            emitStmtAssign(ctx, stmt);
+            break;
+
         case StmtKind_If:
             emitStmtIf(ctx, stmt);
             break;
@@ -716,7 +760,6 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             break;
     }
 }
-
 
 void setupTargetInfo() {
     static b32 init = false;
@@ -756,6 +799,7 @@ b32 CodegenLLVM(Package *p) {
     llvm::Optional<llvm::Reloc::Model> rm = llvm::Optional<llvm::Reloc::Model>();
     llvm::TargetMachine *targetMachine = target->createTargetMachine(triple, cpu, features, opt, rm);
 
+    // TODO: Only on unoptimized builds
     targetMachine->setO0WantsFastISel(true);
 
     // TODO: Handle targets correctly by using TargetOs & TargetArch globals
@@ -766,6 +810,11 @@ b32 CodegenLLVM(Package *p) {
     module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
     // See https://llvm.org/docs/LangRef.html#c-type-width-module-flags-metadata
     module->addModuleFlag(llvm::Module::Warning, "short_enum", 1);
+    // TODO: Include details about the kai compiler version in the module metadata. clang has the following:
+    /*
+     !llvm.ident = !{!1}
+     !1 = !{!"clang version 6.0.0 (tags/RELEASE_600/final)"}
+     */
 
     char *path = AbsolutePath(p->path, NULL);
     char buff[MAX_PATH];
@@ -826,7 +875,7 @@ b32 CodegenLLVM(Package *p) {
 #endif
 
     if (FlagDumpIR) {
-        module->print(llvm::errs(), nullptr);
+        module->print(llvm::outs(), nullptr);
         return 0;
     } else {
         return emitObjectFile(p, name, &ctx);

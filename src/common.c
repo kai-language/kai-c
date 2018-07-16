@@ -236,6 +236,10 @@ u64 IntegerPower(u64 base, u64 exp) {
     return result;
 }
 
+u32 BytesFromBits(u32 bits) {
+    return (bits + 7) / 8;
+}
+
 #if TEST
 void test_GetFileName() {
     char buff[MAX_PATH];
