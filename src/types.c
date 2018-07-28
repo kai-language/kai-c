@@ -30,6 +30,8 @@ Type *IntptrType;
 Type *UintptrType;
 Type *RawptrType;
 
+Type *StringType;
+
 // TODO: Mechanism to lookup type by their ID
 u32 nextTypeId = 1;
 
@@ -230,8 +232,12 @@ Type *NewTypeTuple(TypeFlag flags, DynamicArray(Type *) types) {
     return type;
 }
 
-Type *NewTypeStruct(TypeFlag flags, DynamicArray(Type *) members) {
-    UNIMPLEMENTED();
+Type *NewTypeStruct(u32 Align, u32 Width, TypeFlag flags, DynamicArray(TypeField *) members) {
+    Type *type = AllocType(TypeKind_Struct);
+    type->Align = Align;
+    type->Width = Width;
+    type->Flags = flags;
+    type->Struct.members = members;
     return NULL;
 }
 
@@ -331,6 +337,8 @@ void InitBuiltins() {
     // Aliases behave in promotion just as the types they alias do.
     TYPEALIAS(IntType,   "int", I32Type);
     TYPEALIAS(UintType, "uint", U32Type);
+
+    TYPE(StringType, "string", Struct, 128, TypeFlag_None);
 
     switch (TargetTypeMetrics[TargetMetrics_Pointer].Width) {
         case 32:

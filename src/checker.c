@@ -22,6 +22,7 @@ enum {
 typedef u8 CheckerContextFlag;
 #define CheckerContextFlag_Constant     0x01
 #define CheckerContextFlag_LoopClosest  0x02
+#define CheckerContextFlag_UnresolvedOk 0x04
 
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {
@@ -973,6 +974,8 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (desiredType && isPointer(desiredType)) {
         ctx->desiredType = desiredType->Pointer.pointeeType;
     }
+    CheckerContextFlag prevFlags = ctx->flags;
+    ctx->flags |= CheckerContextFlag_UnresolvedOk;
     Type *type = checkExpr(expr->TypePointer.type, ctx, pkg);
 
     expectType(pkg, type, ctx, expr->TypePointer.type->start);
@@ -986,6 +989,8 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     if (desiredType == RawptrType) type = RawptrType;
+
+    ctx->flags = prevFlags;
 
     type = NewTypePointer(TypeFlag_None, type);
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1049,6 +1054,38 @@ Type *checkExprTypeSlice(Expr *expr, CheckerContext *ctx, Package *pkg) {
 error:
     ctx->mode = ExprMode_Invalid;
     return type;
+}
+
+Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeStruct);
+
+    DynamicArray(TypeField *) fields = NULL;
+    ArrayFit(fields, ArrayLen(expr->TypeStruct.items));
+
+    u32 align = 0;
+    u32 width = 0;
+    for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
+        AggregateItem item = expr->TypeStruct.items[i];
+        TypeField *field = AllocAst(pkg, sizeof(TypeField));
+        ArrayPush(fields, field);
+
+        Type *type = checkExpr(item.type, ctx, pkg);
+        align = MAX(align, type->Align);
+        for (size_t j = 0; j < ArrayLen(item.names); j++) {
+            field->name = item.names[j];
+            field->type = type;
+            field->offset = width;
+            width = type->Width + ALIGN_UP(width, type->Align);
+        }
+    }
+
+    Type *type = NewTypeStruct(align, width, TypeFlag_None, fields);
+    ctx->mode = ExprMode_Type;
+    return type;
+
+error:
+    ctx->mode = ExprMode_Invalid;
+    return InvalidType;
 }
 
 Type *checkExprParen(Expr *expr, CheckerContext *ctx, Package *pkg) {
@@ -1441,6 +1478,9 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_TypeStruct:
+            type = checkExprTypeStruct(expr, ctx, pkg);
+            break;
+
         case ExprKind_TypeEnum:
         case ExprKind_TypeUnion:
         case ExprKind_TypePolymorphic:
@@ -1549,7 +1589,10 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         markSymbolResolved(symbol, type);
     } break;
 
-    case ExprKind_TypeStruct:
+    case ExprKind_TypeStruct: {
+        symbol->state = SymbolState_Resolving;
+        break;
+    }
     case ExprKind_TypeUnion:
     case ExprKind_TypeEnum: {
         UNIMPLEMENTED();

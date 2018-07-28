@@ -98,9 +98,16 @@ struct Type_Function {
     DynamicArray(Type *) results;
 };
 
+typedef struct TypeField TypeField;
+struct TypeField {
+    const char *name;
+    Type *type;
+    u32 offset;
+};
+
 struct Type_Struct {
     TypeFlag Flags;
-    DynamicArray(Type *) members;
+    DynamicArray(TypeField *) members;
 };
 
 struct Type_Union {

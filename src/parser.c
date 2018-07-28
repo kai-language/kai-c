@@ -1361,10 +1361,6 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     Expr *expr;
     Parser p;
 
-    /*
-     *  A mini-test-suite for structs
-     */
-
     p = newTestParser("struct { a, b, c: u32 }");
     ASSERT_EXPR_KIND(ExprKind_TypeStruct);
 }
@@ -1379,10 +1375,6 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
     Parser p;
-
-    /*
-     *  A mini-test-suite for unions
-     */
 
     p = newTestParser("union { a, b, c: u32 }");
     ASSERT_EXPR_KIND(ExprKind_TypeUnion);
