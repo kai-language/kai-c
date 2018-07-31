@@ -106,6 +106,10 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
             }
         } break;
 
+        case TypeKind_Array: {
+            return llvm::ArrayType::get(canonicalize(ctx, type->Array.elementType), type->Array.length);
+        } break;
+
         case TypeKind_Pointer: {
             return llvm::PointerType::get(canonicalize(ctx, type->Pointer.pointeeType), 0);
         } break;
@@ -153,6 +157,18 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
             debugCanonicalize(ctx, type->Pointer.pointeeType),
             ctx->m->getDataLayout().getPointerSize()
         );
+    }
+
+    if (type->kind == TypeKind_Array) {
+        std::vector<llvm::Metadata *> subscripts;
+        Type *elementType = type;
+        while (elementType->kind == TypeKind_Array) {
+            subscripts.push_back(ctx->d.builder->getOrCreateSubrange(0, type->Array.length));
+            elementType = elementType->Array.elementType;
+        }
+
+        llvm::DINodeArray subscriptsArray = ctx->d.builder->getOrCreateArray(subscripts);
+        return ctx->d.builder->createArrayType(type->Width, type->Align, debugCanonicalize(ctx, elementType), subscriptsArray);
     }
 
     if (type->kind == TypeKind_Function) {
@@ -298,6 +314,12 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
             value = llvm::ConstantPointerNull::get((llvm::PointerType *) canonicalize(ctx, type));
+            break;
+        }
+
+        case ExprKind_LitCompound: {
+            CheckerInfo info = ctx->checkerInfo[expr->id];
+            ASSERT(false);
             break;
         }
 

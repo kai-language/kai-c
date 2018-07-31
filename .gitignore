@@ -2,6 +2,7 @@ kai
 stream.todo.md
 core.o
 llvm.o
+out_*
 */xcuserdata/*
 .DS_Store
 *.xcuserstate

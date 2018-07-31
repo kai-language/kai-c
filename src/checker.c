@@ -737,7 +737,7 @@ Type *checkExprLitFloat(Expr *expr, CheckerContext *ctx, Package *pkg) {
             ReportError(pkg, InvalidConversionError, expr->start,
                         "Unable to coerce %s to expected type %s",
                         DescribeExpr(expr), DescribeType(ctx->desiredType));
-            // TODO: Check if it's possible through casting and add note that you can cast to make the conversion occur
+            // TODO: Check if it's possible through casting and add note that you can cast to make the conversion occur @ErrorQuality
             goto error;
         }
 
