@@ -319,7 +319,29 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
 
         case ExprKind_LitCompound: {
             CheckerInfo info = ctx->checkerInfo[expr->id];
-            ASSERT(false);
+            Type *type = info.BasicExpr.type;
+            switch (type->kind) {
+            case TypeKind_Array: {
+                llvm::Type *elementType = canonicalize(ctx, type->Array.elementType);
+                llvm::Type *irType = canonicalize(ctx, type);
+
+                if (ArrayLen(expr->LitCompound.elements) == 0) {
+                    value = llvm::Constant::getNullValue(irType);
+                } else {
+                    value = llvm::UndefValue::get(irType);
+                    ForEachWithIndex(expr->LitCompound.elements, i, Expr_KeyValue *, element) {
+                        // TODO(Brett): if there's a key and it's an integer we need to change
+                        // its offset to be the key
+                        llvm::Value *el = emitExpr(ctx, element->value, elementType);
+                        value = ctx->b.CreateInsertValue(value, el, i);
+                    }
+                }
+                break;
+            };
+
+            default:
+                ASSERT(false);
+            }
             break;
         }
 
