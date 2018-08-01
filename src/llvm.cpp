@@ -510,15 +510,6 @@ llvm::Value *emitExprBinary(Context *ctx, Expr *expr) {
     return NULL;
 }
 
-// FIXME(Brett): find the original and use it instead of this
-Type *getTypeForInfo(CheckerInfo *info) {
-    switch (info->kind) {
-    case CheckerInfoKind_Ident: return info->Ident.symbol->type;
-    case CheckerInfoKind_BasicExpr: return info->BasicExpr.type;
-    default: ASSERT(false);
-    }
-}
-
 llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress) {
     CheckerInfo recvInfo = ctx->checkerInfo[expr->Subscript.expr->id];
     CheckerInfo indexInfo = ctx->checkerInfo[expr->Subscript.index->id];
@@ -527,7 +518,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress) {
     std::vector<llvm::Value *> indicies;
 
     llvm::Value *index = emitExpr(ctx, expr->Subscript.index);
-    Type *indexType = getTypeForInfo(&indexInfo);
+    Type *indexType = TypeFromCheckerInfo(indexInfo);
 
     // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
     // of an unsigned integer would get wrapped and become negative. We can
@@ -536,7 +527,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress) {
         index = ctx->b.CreateZExt(index, canonicalize(ctx, I64Type));
     }
 
-    Type *recvType = getTypeForInfo(&recvInfo);
+    Type *recvType = TypeFromCheckerInfo(recvInfo);
     switch (recvType->kind) {
     case TypeKind_Array: {
         aggregate = emitExpr(ctx, expr->Subscript.expr, NULL, true);
