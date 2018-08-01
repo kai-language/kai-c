@@ -528,7 +528,11 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress) {
 
     llvm::Value *index = emitExpr(ctx, expr->Subscript.index);
     Type *indexType = getTypeForInfo(&indexInfo);
-    if (indexType->Width < 64) {
+
+    // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
+    // of an unsigned integer would get wrapped and become negative. We can
+    // prevent this by ZExt-ing the index
+    if (indexType->Width < 64 && !IsSigned(indexType)) {
         index = ctx->b.CreateZExt(index, canonicalize(ctx, I64Type));
     }
 
