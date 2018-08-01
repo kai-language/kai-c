@@ -81,9 +81,10 @@ struct Context {
 void clearDebugPos(Context *ctx);
 void debugPos(Context *ctx, Position pos);
 b32 emitObjectFile(Package *p, char *name, Context *ctx);
-llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType = nullptr);
+llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType = nullptr, b32 returnAddress = false);
 llvm::Value *emitExprBinary(Context *ctx, Expr *expr);
 llvm::Value *emitExprUnary(Context *ctx, Expr *expr);
+llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress);
 void emitStmt(Context *ctx, Stmt *stmt);
 
 llvm::Type *canonicalize(Context *ctx, Type *type) {
@@ -289,7 +290,7 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
     return ctx->b.CreateCall(irFunc, args);
 }
 
-llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
+llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType, b32 returnAddress) {
     debugPos(ctx, expr->start);
 
     llvm::Value *value = NULL;
@@ -333,7 +334,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
                         // TODO(Brett): if there's a key and it's an integer we need to change
                         // its offset to be the key
                         llvm::Value *el = emitExpr(ctx, element->value, elementType);
-                        value = ctx->b.CreateInsertValue(value, el, i);
+                        value = ctx->b.CreateInsertValue(value, el, (u32)i);
                     }
                 }
                 break;
@@ -349,8 +350,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Symbol *symbol = info.Ident.symbol;
             value = (llvm::Value *) symbol->backendUserdata;
-            // TODO(Brett): check for return address
-            if (symbol->kind == SymbolKind_Variable) {
+            if (symbol->kind == SymbolKind_Variable && !returnAddress) {
                 value = ctx->b.CreateLoad((llvm::Value *) symbol->backendUserdata);
             }
             break;
@@ -362,6 +362,10 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
 
         case ExprKind_Binary:
             value = emitExprBinary(ctx, expr);
+            break;
+
+        case ExprKind_Subscript:
+            value = emitExprSubscript(ctx, expr, returnAddress);
             break;
 
         case ExprKind_Call:
@@ -379,7 +383,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
 llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_Unary);
     Expr_Unary unary = expr->Unary;
-    llvm::Value *val = emitExpr(ctx, unary.expr);
+    llvm::Value *val = emitExpr(ctx, unary.expr, NULL, unary.op == TK_And);
 
     debugPos(ctx, expr->Unary.start);
     switch (unary.op) {
@@ -504,6 +508,46 @@ llvm::Value *emitExprBinary(Context *ctx, Expr *expr) {
 
     ASSERT(false);
     return NULL;
+}
+
+// FIXME(Brett): find the original and use it instead of this
+Type *getTypeForInfo(CheckerInfo *info) {
+    switch (info->kind) {
+    case CheckerInfoKind_Ident: return info->Ident.symbol->type;
+    case CheckerInfoKind_BasicExpr: return info->BasicExpr.type;
+    default: ASSERT(false);
+    }
+}
+
+llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress) {
+    CheckerInfo recvInfo = ctx->checkerInfo[expr->Subscript.expr->id];
+    CheckerInfo indexInfo = ctx->checkerInfo[expr->Subscript.index->id];
+    llvm::Value *aggregate;
+
+    std::vector<llvm::Value *> indicies;
+
+    // TODO(Brett): zext index
+    llvm::Value *index = emitExpr(ctx, expr->Subscript.index);
+
+    Type *recvType = getTypeForInfo(&recvInfo);
+    switch (recvType->kind) {
+    case TypeKind_Array: {
+        aggregate = emitExpr(ctx, expr->Subscript.expr, NULL, true);
+        // TODO(Brett): zext will change this slightly
+        indicies.push_back(llvm::ConstantInt::get(canonicalize(ctx, getTypeForInfo(&indexInfo)), 0));
+        indicies.push_back(index);
+    }break;
+
+    default:
+        ASSERT(false);
+    }
+
+    llvm::Value *val = ctx->b.CreateInBoundsGEP(aggregate, indicies);
+    if (returnAddress) {
+        return val;
+    }
+
+    return ctx->b.CreateLoad(val);
 }
 
 llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn = nullptr) {

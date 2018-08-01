@@ -55,7 +55,10 @@
     FOR_EACH(CannotIterate, "Cannot iterate over a value of the given type") \
     FOR_EACH(CannotSwitch, "Cannot switch on type") \
     FOR_EACH(DefaultSwitchCaseNotLast, "The default switch case must also be the last case") \
-    FOR_EACH(ArrayCompoundMissingIndex, "Array or slice compound literals expect indexes to be surrounded in `[]`")
+    FOR_EACH(ArrayCompoundMissingIndex, "Array or slice compound literals expect indexes to be surrounded in `[]`") \
+    FOR_EACH(InvalidSubscriptIndexType, "The type of the subscript index is not a valid index type") \
+    FOR_EACH(UnsupportedSubscript, "Subscript is unsupported for the provided type") \
+    FOR_EACH(OutOfBounds, "The subscript is out of bounds")
 
 typedef enum ErrorCode {
 #define FOR_EACH(e, s) e##Error,
