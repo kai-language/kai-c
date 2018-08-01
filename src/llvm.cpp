@@ -526,15 +526,17 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress) {
 
     std::vector<llvm::Value *> indicies;
 
-    // TODO(Brett): zext index
     llvm::Value *index = emitExpr(ctx, expr->Subscript.index);
+    Type *indexType = getTypeForInfo(&indexInfo);
+    if (indexType->Width < 64) {
+        index = ctx->b.CreateZExt(index, canonicalize(ctx, I64Type));
+    }
 
     Type *recvType = getTypeForInfo(&recvInfo);
     switch (recvType->kind) {
     case TypeKind_Array: {
         aggregate = emitExpr(ctx, expr->Subscript.expr, NULL, true);
-        // TODO(Brett): zext will change this slightly
-        indicies.push_back(llvm::ConstantInt::get(canonicalize(ctx, getTypeForInfo(&indexInfo)), 0));
+        indicies.push_back(llvm::ConstantInt::get(canonicalize(ctx, I64Type), 0));
         indicies.push_back(index);
     }break;
 
