@@ -1,15 +1,13 @@
 kai
 stream.todo.md
-core.o
-llvm.o
+*.o
+out_*
 */xcuserdata/*
 .DS_Store
 *.xcuserstate
 *.so
 *.dSYM
 test/wip.kai
-out_wip
-wip.o
 tools/genTests
 tools/genXCTests
 kai_tests*

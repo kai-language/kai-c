@@ -737,7 +737,7 @@ Type *checkExprLitFloat(Expr *expr, CheckerContext *ctx, Package *pkg) {
             ReportError(pkg, InvalidConversionError, expr->start,
                         "Unable to coerce %s to expected type %s",
                         DescribeExpr(expr), DescribeType(ctx->desiredType));
-            // TODO: Check if it's possible through casting and add note that you can cast to make the conversion occur
+            // TODO: Check if it's possible through casting and add note that you can cast to make the conversion occur @ErrorQuality
             goto error;
         }
 
@@ -953,9 +953,9 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
         }
 
 checkValue:
-        ctx->desiredType = expectedValueType;
+        ctx->desiredType = expectedValueType ? expectedValueType : type->Slice.elementType;
         Type *valueType = checkExpr(it->value, ctx, pkg);
-        if (expectedValueType) coerceType(it->value, ctx, &valueType, expectedValueType, pkg);
+        coerceType(it->value, ctx, &valueType, ctx->desiredType, pkg);
         currentIndex += 1;
     }
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1290,6 +1290,72 @@ error:
     return InvalidType;
 }
 
+Type *checkExprSubscript(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Subscript);
+    CheckerContext targetCtx = { ctx->scope };
+    CheckerContext indexCtx = { ctx->scope };
+    Type *recv = checkExpr(expr->Subscript.expr, &targetCtx, pkg);
+    if (targetCtx.mode == ExprMode_Invalid) {
+        goto error;
+    }
+
+    Type *index = checkExpr(expr->Subscript.index, &indexCtx, pkg);
+    if (indexCtx.mode == ExprMode_Invalid) {
+        goto error;
+    }
+
+    if (!IsInteger(index)) {
+        ReportError(pkg, InvalidSubscriptIndexTypeError, expr->Subscript.index->start,
+                    "Cannot subscript with non-integer type '%s'",
+                    DescribeType(index));
+        goto error;
+    }
+
+    // TODO(Brett): constant folding of constant arrays and constant indices
+    Type *type;
+    switch (recv->kind) {
+    case TypeKind_Array: {
+        type = recv->Array.elementType;
+        if (IsConstant(&indexCtx)) {
+            i64 i = indexCtx.val.i64;
+            if (i < 0 || (u64)i >= recv->Array.length) {
+                const char *message = i < 0 ? "before the start" : "after the end of";
+                ReportError(pkg, OutOfBoundsError, expr->Subscript.index->start,
+                            "Index %d is %s of the array (%lu elements)",
+                            i, message, recv->Array.length);
+                goto error;
+            }
+        }
+    } break;
+
+    case TypeKind_Slice: {
+        type = recv->Slice.elementType;
+    } break;
+
+    case TypeKind_Pointer: {
+        type = recv->Pointer.pointeeType;
+    } break;
+
+    default:
+        if (recv != InvalidType) {
+            ReportError(pkg, UnsupportedSubscriptError, expr->Subscript.expr->start,
+                        "Unable to subscript type '%s'",
+                        DescribeType(recv));
+        }
+
+        goto error;
+    }
+
+    ctx->mode = ExprMode_Addressable;
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+
+    return type;
+
+error:
+    ctx->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
 Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Call);
     CheckerContext calleeCtx = { ctx->scope };
@@ -1414,7 +1480,7 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_Subscript:
-            UNIMPLEMENTED();
+            type = checkExprSubscript(expr, ctx, pkg);
             break;
 
         case ExprKind_Slice:
@@ -1502,6 +1568,7 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     }
 
     symbol->val = exprCtx.val;
+    symbol->kind = SymbolKind_Constant;
 
     if (expectedType && !coerceType(value, &exprCtx, &type, expectedType, pkg)) {
         ReportError(pkg, InvalidConversionError, value->start,

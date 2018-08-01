@@ -192,7 +192,9 @@ Expr *parseExprAtom(Parser *p) {
         case TK_Lbrace: {
             Position start = p->tok.pos;
             nextToken();
+
             DynamicArray(Expr_KeyValue *) elements = NULL;
+
             if (!isToken(p, TK_Rbrace)) {
                 ArrayPush(elements, parseExprCompoundField(p));
                 while (matchToken(p, TK_Comma)) {
@@ -200,6 +202,7 @@ Expr *parseExprAtom(Parser *p) {
                     ArrayPush(elements, parseExprCompoundField(p));
                 }
             }
+
             expectToken(p, TK_Rbrace);
             return NewExprLitCompound(pkg, start, NULL, elements, p->prevEnd);
         }
@@ -493,12 +496,16 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                 }
                 if (noCompoundLiteral) return x;
                 nextToken();
+
+                matchToken(p, TK_Terminator);
+
                 DynamicArray(Expr_KeyValue *) elements = NULL;
                 if (!isToken(p, TK_Rbrace)) {
                     ArrayPush(elements, parseExprCompoundField(p));
                     while (matchToken(p, TK_Comma)) {
                         if (isToken(p, TK_Rbrace)) break;
                         ArrayPush(elements, parseExprCompoundField(p));
+                        matchToken(p, TK_Terminator);
                     }
                 }
                 expectToken(p, TK_Rbrace);
