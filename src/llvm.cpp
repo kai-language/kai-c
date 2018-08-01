@@ -533,7 +533,19 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr, b32 returnAddress) {
         aggregate = emitExpr(ctx, expr->Subscript.expr, NULL, true);
         indicies.push_back(llvm::ConstantInt::get(canonicalize(ctx, I64Type), 0));
         indicies.push_back(index);
-    }break;
+    } break;
+
+    case TypeKind_Slice: {
+        llvm::Value *structPtr = emitExpr(ctx, expr->Subscript.expr, NULL, true);
+        llvm::Value *arrayPtr = ctx->b.CreateStructGEP(NULL, structPtr, 0);
+        aggregate = ctx->b.CreateLoad(arrayPtr);
+        indicies.push_back(index);
+    } break;
+
+    case TypeKind_Pointer: {
+        aggregate = emitExpr(ctx, expr->Subscript.expr);
+        indicies.push_back(index);
+    } break;
 
     default:
         ASSERT(false);
