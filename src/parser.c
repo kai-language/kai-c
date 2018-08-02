@@ -608,6 +608,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                     continue;
                 }
                 Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
+                kv->start = exprs[i]->start;
                 kv->key = exprs[i];
                 kv->value = type;
                 ArrayPush(*params, kv);

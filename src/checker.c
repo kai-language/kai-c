@@ -1729,6 +1729,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         return;
     }
 
+    Type *prevDesiredType = ctx->desiredType;
     ForEachWithIndex(assign.rhs, i, Expr *, expr) {
         if (i >= ArrayLen(lhsTypes)) {
             break;
@@ -1745,6 +1746,8 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
                         "Cannot assign %s to value of type %s", DescribeType(type), DescribeType(lhsTypes[i]));
         }
     }
+
+    ctx->desiredType = prevDesiredType;
 
     if (ArrayLen(assign.rhs) != ArrayLen(assign.lhs)) {
         ReportError(pkg, AssignmentCountMismatchError, stmt->start,
@@ -2052,6 +2055,10 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             break;
 
         default:
+            if (isExpr(stmt)) {
+                checkExpr((Expr *) stmt, ctx, pkg);
+                break;
+            }
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
 
