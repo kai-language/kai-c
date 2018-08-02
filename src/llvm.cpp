@@ -416,7 +416,9 @@ llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
             return ctx->b.CreateNot(val);
 
         case TK_Lss: {
-            // TODO: check for return address
+            if (ctx->returnAddress)
+                return val;
+
             return ctx->b.CreateAlignedLoad(val, BytesFromBits(ctx->checkerInfo[expr->id].BasicExpr.type->Align));
         };
     }
@@ -639,23 +641,25 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         paramInfo.Ident.symbol->backendUserdata = storage;
         ctx->b.CreateAlignedStore(param, storage, BytesFromBits(paramInfo.Ident.symbol->type->Align));
 
-        auto dbg = ctx->d.builder->createParameterVariable(
-            ctx->d.scope,
-            paramInfo.Ident.symbol->name,
-            (u32) i,
-            ctx->d.file,
-            it->start.line,
-            debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
-            true
-        );
-        auto pos = ((Expr_KeyValue *) paramInfo.Ident.symbol->decl)->start;
-        ctx->d.builder->insertDeclare(
-            storage,
-            dbg,
-            ctx->d.builder->createExpression(),
-            llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope),
-            ctx->b.GetInsertBlock()
-        );
+        if (FlagDebug) {
+            auto dbg = ctx->d.builder->createParameterVariable(
+                ctx->d.scope,
+                paramInfo.Ident.symbol->name,
+                (u32) i,
+                ctx->d.file,
+                it->start.line,
+                debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
+                true
+            );
+            auto pos = ((Expr_KeyValue *) paramInfo.Ident.symbol->decl)->start;
+            ctx->d.builder->insertDeclare(
+                storage,
+                dbg,
+                ctx->d.builder->createExpression(),
+                llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope),
+                ctx->b.GetInsertBlock()
+            );
+        }
     }
     fn->arg_end();
 
@@ -671,6 +675,10 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     }
     ForEach(expr->LitFunction.body->stmts, Stmt *) {
         emitStmt(ctx, it);
+    }
+
+    if (ctx->b.GetInsertBlock()->getTerminator() == NULL) {
+        ctx->b.CreateBr(ctx->retBlock);
     }
 
     // Set insert point to the return block
@@ -888,6 +896,142 @@ void emitStmtDefer(Context *ctx, Stmt *stmt) {
     ctx->b.SetInsertPoint(prevBlock);
 }
 
+void emitStmtFor(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_For);
+
+    Stmt_For fore = stmt->For;
+
+    llvm::Function *currentFunc = ctx->b.GetInsertBlock()->getParent();
+    llvm::BasicBlock *body, *post, *cond, *step;
+    body = post = cond = step = NULL;
+
+    llvm::DIScope *oldScope = NULL;
+    if (FlagDebug) {
+        oldScope = ctx->d.scope;
+        ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, stmt->start.line, stmt->start.column);
+    }
+
+    if (fore.init) {
+        debugPos(ctx, fore.init->start);
+        emitStmt(ctx, fore.init);
+    }
+
+    if (fore.cond) {
+        cond = llvm::BasicBlock::Create(ctx->m->getContext(), "for.cond", currentFunc);
+        if (fore.step) {
+            step = llvm::BasicBlock::Create(ctx->m->getContext(), "for.step", currentFunc);
+        }
+
+        body = llvm::BasicBlock::Create(ctx->m->getContext(), "for.body", currentFunc);
+        post = llvm::BasicBlock::Create(ctx->m->getContext(), "for.post", currentFunc);
+
+        ctx->b.CreateBr(cond);
+        ctx->b.SetInsertPoint(cond);
+
+        llvm::Value *condVal = emitExpr(ctx, fore.cond);
+        condVal = ctx->b.CreateTruncOrBitCast(condVal, llvm::IntegerType::get(ctx->m->getContext(), 1));
+        ctx->b.CreateCondBr(condVal, body, post);
+    } else {
+        if (fore.step) {
+            step = llvm::BasicBlock::Create(ctx->m->getContext(), "for.step", currentFunc);
+        }
+
+        body = llvm::BasicBlock::Create(ctx->m->getContext(), "for.body", currentFunc);
+        post = llvm::BasicBlock::Create(ctx->m->getContext(), "for.post", currentFunc);
+
+        ctx->b.CreateBr(body);
+    }
+
+    { // Body
+        ctx->b.SetInsertPoint(body);
+
+        llvm::DIScope *oldScope = NULL;
+        if (FlagDebug) {
+            oldScope = ctx->d.scope;
+            ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, fore.body->start.line, fore.body->start.column);
+        }
+
+        ForEachWithIndex(fore.body->stmts, i, Stmt *, stmt) {
+            emitStmt(ctx, stmt);
+        }
+
+        if (FlagDebug) {
+            ctx->d.scope = oldScope;
+        }
+    }
+
+    b32 hasJump = ctx->b.GetInsertBlock()->getTerminator() != NULL;
+    if (fore.step) {
+        if (!hasJump) {
+            ctx->b.CreateBr(step);
+        }
+
+        ctx->b.SetInsertPoint(step);
+        emitStmt(ctx, fore.step);
+        ctx->b.CreateBr(cond);
+    } else if (cond) {
+        // `for x < 5 { /* ... */ }` || `for i := 1; x < 5; { /* ... */ }`
+        if (!hasJump) {
+            ctx->b.CreateBr(cond);
+        }
+    } else {
+         // `for { /* ... */ }`
+        if (!hasJump) {
+            ctx->b.CreateBr(body);
+        }
+    }
+
+    ctx->b.SetInsertPoint(post);
+
+    if (FlagDebug) {
+        ctx->d.scope = oldScope;
+    }
+}
+
+void emitStmtSwitch(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Switch);
+    Stmt_Switch swt = stmt->Switch;
+
+    CheckerInfo_Switch info = ctx->checkerInfo[stmt->id].Switch;
+
+    if (!swt.match) {
+        UNIMPLEMENTED(); // TODO: Boolean-esque switch
+    }
+
+    llvm::BasicBlock *currentBlock = ctx->b.GetInsertBlock();
+    llvm::Function   *currentFunc = currentBlock->getParent();
+
+    llvm::BasicBlock *post = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.post", currentFunc);
+
+    // TODO: labels
+    std::vector<llvm::BasicBlock *> thenBlocks;
+    ForEachWithIndex(swt.cases, i, Stmt *, c) {
+        if (ArrayLen(c->SwitchCase.matches)) {
+            llvm::BasicBlock *then = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.then.case", currentFunc); // TODO: number cases
+            thenBlocks.push_back(then);
+        } else {
+            llvm::BasicBlock *then = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.default", currentFunc);
+            thenBlocks.push_back(then);
+        }
+    }
+
+    llvm::Value *value;
+    llvm::Value *tag = NULL;
+
+    // TODO: unions and any support
+    if (swt.match) {
+        value = emitExpr(ctx, swt.match);
+    } else {
+        value = llvm::ConstantInt::get(canonicalize(ctx, BoolType), 1);
+    }
+
+    std::vector<std::vector<llvm::Value *>> matches;
+    ForEachWithIndex(swt.cases, j, Stmt *, c) {
+        CheckerInfo_Case caseInfo = ctx->checkerInfo[c->id].Case;
+        Stmt_SwitchCase caseStmt = c->SwitchCase;
+    }
+}
+
 void emitStmt(Context *ctx, Stmt *stmt) {
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
@@ -917,6 +1061,13 @@ void emitStmt(Context *ctx, Stmt *stmt) {
         case StmtKind_Defer:
             emitStmtDefer(ctx, stmt);
             break;
+        case StmtKind_For:
+            emitStmtFor(ctx, stmt);
+            break;
+        case StmtKind_Switch:
+            emitStmtSwitch(ctx, stmt);
+        default:
+            ASSERT(false);
     }
 }
 
@@ -1011,6 +1162,10 @@ b32 CodegenLLVM(Package *p) {
         .fn = nullptr,
         .d = debug,
     };
+
+    // TODO: Figure out where and how we want to handle these
+    TrueSymbol->backendUserdata = llvm::ConstantInt::get(canonicalize(&ctx, BoolType), 1);
+    FalseSymbol->backendUserdata = llvm::ConstantInt::get(canonicalize(&ctx, BoolType), 0);
 
     // NOTE: Unset the location for the prologue emission (leading instructions
     // with nolocation in a function are considered part of the prologue and the

@@ -485,6 +485,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                     DynamicArray(Stmt *) stmts = NULL;
                     while (isNotRbraceOrEOF(p)) {
                         ArrayPush(stmts, parseStmt(p));
+                        matchToken(p, TK_Terminator);
                     }
                     expectToken(p, TK_Rbrace);
                     Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
