@@ -49,11 +49,29 @@ struct CheckerInfo_Ident {
     Symbol *symbol;
 };
 
+typedef u8 SelectorKind;
+#define SelectorKind_None   0x0
+#define SelectorKind_Struct 0x1
+
+typedef struct Selector_Struct Selector_Struct;
+struct Selector_Struct {
+    u32 offset;
+};
+
+typedef union SelectorValue SelectorValue;
+union SelectorValue {
+    Selector_Struct Struct;
+};
+
 typedef struct CheckerInfo_Selector CheckerInfo_Selector;
 struct CheckerInfo_Selector {
     Conversion coerce;
-    u32 levelsOfIndirection;
-    Val constant;
+    Type *type;
+    b8 isConstant;
+    Val val;
+    
+    SelectorKind kind;
+    SelectorValue value;
 };
 
 typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;

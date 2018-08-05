@@ -97,6 +97,15 @@ void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type, CheckerContext *ct
     pkg->checkerInfo[expr->id] = info;
 }
 
+void storeInfoSelector(Package *pkg, Expr *expr, Type *type, SelectorKind kind, SelectorValue value, CheckerContext *ctx) {
+    CheckerInfo info = {CheckerInfoKind_Selector, .Selector.type = type};
+    info.Selector.kind = kind;
+    info.Selector.value = value;
+    info.Selector.isConstant = IsConstant(ctx);
+    info.Selector.val = ctx->val;
+    pkg->checkerInfo[expr->id] = info;
+}
+
 void storeInfoLabel(Package *pkg, Stmt *stmt, Symbol *symbol) {
     ASSERT(stmt->kind == StmtKind_Label);
     CheckerInfo info = {CheckerInfoKind_Label, .Label.symbol = symbol};
@@ -1080,6 +1089,7 @@ Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     Type *type = NewTypeStruct(align, width, TypeFlag_None, fields);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
 
@@ -1393,6 +1403,39 @@ error:
     return InvalidType;
 }
 
+Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Selector);
+    
+    Type *type;
+    Type *base = checkExpr(expr->Selector.expr, ctx, pkg);
+    switch (base->kind) {
+        case TypeKind_Struct: {
+            TypeField *field = StructFieldLookup(base->Struct, expr->Selector.name);
+            if (!field) {
+                ReportError(pkg, TODOError, expr->Selector.start, "Struct %s has no member named %s",
+                            DescribeType(base), expr->Selector.name);
+                goto error;
+            }
+            SelectorValue val = {.Struct.offset = field->offset};
+            storeInfoSelector(pkg, expr, field->type, SelectorKind_Struct, val, ctx);
+            type = field->type;
+            ctx->mode = ExprMode_Addressable;
+            // TODO: Constant evaluation for struct types.
+        }
+
+        default: {
+            ReportError(pkg, TODOError, expr->start, "%s has no member '%s'", DescribeExpr(expr->Selector.expr), expr->Selector.name);
+            goto error;
+        }
+    }
+    
+    return type;
+    
+error:
+    ctx->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
 Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Call);
     CheckerContext calleeCtx = { ctx->scope };
@@ -1516,7 +1559,7 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_Selector:
-            UNIMPLEMENTED();
+            type = checkExprSelector(expr, ctx, pkg);
             break;
 
         case ExprKind_Subscript:
@@ -2282,6 +2325,32 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeSlice("[]void");
     ASSERT(pkg.diagnostics.errors);
+}
+
+void test_checkTypeStruct() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_BasicExpr info;
+#define checkTypeStruct(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+type = checkExprTypeStruct((Expr *) stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->BasicExpr
+    
+    checkTypeStruct("struct {a: u8}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.Flags == TypeFlag_None);
+    ASSERT(type->Align == 8);
+    ASSERT(type->Width == 8);
+    ASSERT(info.type == type);
+    
+    checkTypeStruct("struct {}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(!type->Struct.members);
+    ASSERT(!pkg.diagnostics.errors);
 }
 
 void test_checkConstantUnaryExpressions() {

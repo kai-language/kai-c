@@ -163,5 +163,6 @@ i64 SignExtend(Type *type, Type *target, Val val);
 i64 SignExtendTo64Bits(Type *source, Val val);
 b32 TypesIdentical(Type *type, Type *target);
 u64 MaxValueForIntOrPointerType(Type *type);
+TypeField *StructFieldLookup(Type_Struct type, const char *name);
 }
 #endif

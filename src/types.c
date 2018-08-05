@@ -113,6 +113,14 @@ b32 TypesIdentical(Type *type, Type *target) {
     return type == target;
 }
 
+TypeField *StructFieldLookup(Type_Struct type, const char *name) {
+    ForEach(type.members, TypeField *) {
+        if (it->name == name) return it;
+    }
+    
+    return NULL;
+}
+
 #if TEST
 void test_SmallestIntTypeForValue() {
     INIT_COMPILER();
@@ -238,7 +246,7 @@ Type *NewTypeStruct(u32 Align, u32 Width, TypeFlag flags, DynamicArray(TypeField
     type->Width = Width;
     type->Flags = flags;
     type->Struct.members = members;
-    return NULL;
+    return type;
 }
 
 Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
