@@ -89,6 +89,7 @@ llvm::Value *emitExprBinary(Context *ctx, Expr *expr);
 llvm::Value *emitExprUnary(Context *ctx, Expr *expr);
 llvm::Value *emitExprSubscript(Context *ctx, Expr *expr);
 void emitStmt(Context *ctx, Stmt *stmt);
+void emitScopeExit(Context *ctx);
 
 llvm::Type *canonicalize(Context *ctx, Type *type) {
     switch (type->kind) {
@@ -727,6 +728,8 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
     CheckerInfo info = ctx->checkerInfo[decl->id];
     Symbol *symbol = info.Constant.symbol;
 
+    // TODO: CreateLifetimeStart for all symbols in this scope. (if applicable)
+
     debugPos(ctx, decl->start);
     if (symbol->type->kind == TypeKind_Function && decl->Constant.values[0]->kind == ExprKind_LitFunction) {
 
@@ -767,6 +770,8 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
 
 void emitDeclVariable(Context *ctx, Decl *decl) {
     ASSERT(decl->kind == DeclKind_Variable);
+
+    // TODO: CreateLifetimeStart for all symbols in this scope.
     CheckerInfo info = ctx->checkerInfo[decl->id];
         DynamicArray(Symbol *) symbols = info.Variable.symbols;
         Decl_Variable var = decl->Variable;
@@ -888,6 +893,26 @@ void emitStmtDefer(Context *ctx, Stmt *stmt) {
     ctx->b.SetInsertPoint(prevBlock);
 }
 
+void emitStmtBlock(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Block);
+
+    llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
+    ctx->b.CreateBr(block);
+    ctx->b.SetInsertPoint(block);
+
+    std::vector<llvm::BasicBlock *> prevDeferStack = ctx->deferStack;
+    ctx->deferStack = {};
+
+    ForEach(stmt->Block.stmts, Stmt *) {
+        emitStmt(ctx, it);
+    }
+
+    emitScopeExit(ctx);
+
+    // restore the previous scopes defer stack.
+    ctx->deferStack = prevDeferStack;
+}
+
 void emitStmt(Context *ctx, Stmt *stmt) {
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
@@ -917,7 +942,26 @@ void emitStmt(Context *ctx, Stmt *stmt) {
         case StmtKind_Defer:
             emitStmtDefer(ctx, stmt);
             break;
+
+        case StmtKind_Block:
+            emitStmtBlock(ctx, stmt);
+            break;
     }
+}
+
+void emitScopeExit(Context *ctx) {
+
+    while (!ctx->deferStack.empty()) {
+        llvm::BasicBlock *deferBlock = ctx->deferStack.back();
+        ctx->deferStack.pop_back();
+
+        ASSERT(deferBlock->getTerminator() == nullptr);
+
+        ctx->b.CreateBr(deferBlock);
+        ctx->b.SetInsertPoint(deferBlock);
+
+    }
+    // TODO: CreateLifetimeEnd for all symbols in this scope. (if applicable)
 }
 
 void setupTargetInfo() {
