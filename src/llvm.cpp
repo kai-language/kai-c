@@ -727,6 +727,8 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
     CheckerInfo info = ctx->checkerInfo[decl->id];
     Symbol *symbol = info.Constant.symbol;
 
+    // TODO: CreateLifetimeStart for this symbol (if applicable)
+
     debugPos(ctx, decl->start);
     if (symbol->type->kind == TypeKind_Function && decl->Constant.values[0]->kind == ExprKind_LitFunction) {
 
@@ -767,6 +769,8 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
 
 void emitDeclVariable(Context *ctx, Decl *decl) {
     ASSERT(decl->kind == DeclKind_Variable);
+
+    // TODO: CreateLifetimeStart for this symbol
     CheckerInfo info = ctx->checkerInfo[decl->id];
         DynamicArray(Symbol *) symbols = info.Variable.symbols;
         Decl_Variable var = decl->Variable;
@@ -888,6 +892,18 @@ void emitStmtDefer(Context *ctx, Stmt *stmt) {
     ctx->b.SetInsertPoint(prevBlock);
 }
 
+void emitStmtBlock(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Block);
+
+    llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
+    ctx->b.CreateBr(block);
+    ctx->b.SetInsertPoint(block);
+
+    ForEach(stmt->Block.stmts, Stmt *) {
+        emitStmt(ctx, it);
+    }
+}
+
 void emitStmt(Context *ctx, Stmt *stmt) {
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
@@ -916,6 +932,10 @@ void emitStmt(Context *ctx, Stmt *stmt) {
 
         case StmtKind_Defer:
             emitStmtDefer(ctx, stmt);
+            break;
+
+        case StmtKind_Block:
+            emitStmtBlock(ctx, stmt);
             break;
     }
 }
