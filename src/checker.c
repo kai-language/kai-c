@@ -54,6 +54,9 @@ Inline
 void markSymbolResolved(Symbol *symbol, Type *type) {
     symbol->state = SymbolState_Resolved;
     symbol->type = type;
+    if (symbol->kind == SymbolKind_Type) {
+        type->Symbol = symbol;
+    }
 }
 
 Inline
@@ -958,16 +961,21 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     expectedValueType = type->Slice.elementType;
                     break;
 
-                // TODO: @Struct
+                case TypeKind_Struct:
+                    UNIMPLEMENTED();
+                    break;
             }
         }
 
-checkValue:
+    checkValue:
         ctx->desiredType = expectedValueType ? expectedValueType : type->Slice.elementType;
         Type *valueType = checkExpr(it->value, ctx, pkg);
         coerceType(it->value, ctx, &valueType, ctx->desiredType, pkg);
         currentIndex += 1;
     }
+
+    ctx->mode = ExprMode_Value; // TODO: We want to make &Foo{} possible, does that mean we should make this addressable
+    ctx->flags &= ~CheckerContextFlag_Constant; // NOTE: Currently constant composite literals are unsupported
     storeInfoBasicExpr(pkg, expr, type, ctx);
     return type;
 
@@ -1081,10 +1089,11 @@ Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
         Type *type = checkExpr(item.type, ctx, pkg);
         align = MAX(align, type->Align);
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
+            // TODO: Check for duplicate names!
             field->name = item.names[j];
             field->type = type;
-            field->offset = width;
-            width = type->Width + ALIGN_UP(width, type->Align);
+            field->offset = ALIGN_UP(width, type->Align);
+            width = field->offset + type->Width;
         }
     }
 
@@ -1269,9 +1278,9 @@ Type *checkExprLocationDirective(Expr *expr, CheckerContext *ctx, Package *pkg) 
         type = U32Type;
         ctx->val.u32 = expr->start.line;
     } else if (expr->LocationDirective.name == internFile) {
-        // TODO: @Strings
+        // TODO: @Strings @Builtins
     } else if (expr->LocationDirective.name == internLocation) {
-        // TODO: @Structs
+        // TODO: @Structs @Builtins
     } else if (expr->LocationDirective.name == internFunction) {
         // TODO: @Strings
     }
@@ -1410,17 +1419,19 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *base = checkExpr(expr->Selector.expr, ctx, pkg);
     switch (base->kind) {
         case TypeKind_Struct: {
-            TypeField *field = StructFieldLookup(base->Struct, expr->Selector.name);
-            if (!field) {
+            StructFieldLookupResult result = StructFieldLookup(base->Struct, expr->Selector.name);
+            if (!result.field) {
                 ReportError(pkg, TODOError, expr->Selector.start, "Struct %s has no member named %s",
                             DescribeType(base), expr->Selector.name);
                 goto error;
             }
-            SelectorValue val = {.Struct.offset = field->offset};
-            storeInfoSelector(pkg, expr, field->type, SelectorKind_Struct, val, ctx);
-            type = field->type;
+            SelectorValue val = {.Struct.index = result.offset, .Struct.offset = result.field->offset};
+            storeInfoSelector(pkg, expr, result.field->type, SelectorKind_Struct, val, ctx);
+            type = result.field->type;
             ctx->mode = ExprMode_Addressable;
+            ctx->flags &= ~CheckerContextFlag_Constant;
             // TODO: Constant evaluation for struct types.
+            break;
         }
 
         default: {
@@ -1428,7 +1439,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
             goto error;
         }
     }
-    
+
     return type;
     
 error:
@@ -1634,6 +1645,7 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
 
     case ExprKind_TypeStruct: {
         symbol->state = SymbolState_Resolving;
+        symbol->kind = SymbolKind_Type;
         break;
     }
     case ExprKind_TypeUnion:
@@ -1648,7 +1660,9 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     Type *type = checkExpr(value, &exprCtx, pkg);
     if (exprCtx.mode == ExprMode_Unresolved) {
         return true;
-    } else if (exprCtx.mode < ExprMode_Type) {
+    } else if (exprCtx.mode < ExprMode_Type || (((exprCtx.flags & CheckerContextFlag_Constant) == 0) && (exprCtx.mode != ExprMode_Type))) {
+        // The above checks that the expression is constant
+        // TODO: Simplify the above ... possibly by shifting around the ExprMode orders so that Addressable is lesser then Value.
         ReportError(pkg, NotAValueError, value->start,
                     "Expected a type or value but got %s (type %s)", DescribeExpr(value), DescribeType(type));
     }
@@ -2338,7 +2352,12 @@ stmt = resetAndParseReturningLastStmt(_CODE); \
 RESET_CONTEXT(ctx); \
 type = checkExprTypeStruct((Expr *) stmt, &ctx, &pkg); \
 info = GetStmtInfo(&pkg, stmt)->BasicExpr
-    
+
+    checkTypeStruct("struct {}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(!type->Struct.members);
+    ASSERT(!pkg.diagnostics.errors);
+
     checkTypeStruct("struct {a: u8}");
     ASSERT(type->kind == TypeKind_Struct);
     ASSERT(type->Struct.members[0]->type == U8Type);
@@ -2346,11 +2365,34 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
     ASSERT(type->Align == 8);
     ASSERT(type->Width == 8);
     ASSERT(info.type == type);
-    
-    checkTypeStruct("struct {}");
+
+    checkTypeStruct("struct {a: u8; b: u16}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(!type->Struct.members);
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.members[1]->type == U16Type);
+    ASSERT_MSG(type->Struct.members[1]->offset == 16, "Fields should be aligned to at least their size");
+    ASSERT(type->Struct.Flags == TypeFlag_None);
+    ASSERT(type->Align == 16);
+    ASSERT(type->Width == 32);
+    ASSERT(info.type == type);
+
+    checkTypeStruct("struct {a: u8; b: u8; b: u16; c: u32; d: u32}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.members[1]->type == U8Type);
+    ASSERT(type->Struct.members[2]->type == U16Type);
+    ASSERT(type->Struct.members[3]->type == U32Type);
+    ASSERT(type->Struct.members[4]->type == U32Type);
+
+    ASSERT_MSG(type->Struct.members[0]->offset == 0, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[1]->offset == 8, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[2]->offset == 16, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[3]->offset == 32, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[4]->offset == 64, "Fields should be aligned to at least their size");
+    ASSERT(type->Struct.Flags == TypeFlag_None);
+    ASSERT(type->Align == 32);
+    ASSERT(type->Width == 96);
+    ASSERT(info.type == type);
 }
 
 void test_checkConstantUnaryExpressions() {
@@ -2502,6 +2544,26 @@ void test_checkConstantCastExpression() {
     ASSERT(ctx.val.u64 == 42);
 }
 
+void test_checkExprSelector() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_Selector info;
+
+#define checkSelector(_CODE) \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
+    RESET_CONTEXT(ctx); \
+    type = checkExprSelector((Expr *) stmt, &ctx, &pkg); \
+    info = GetStmtInfo(&pkg, stmt)->Selector
+
+    checkSelector("Foo :: struct {a: u8; b: u16};"
+                  "foo := Foo{};"
+                  "foo.b;");
+    ASSERT(type == U16Type);
+    ASSERT(type == info.type);
+}
+
 Type *typeFromParsing(const char *code) {
     pkg.scope = pushScope(&pkg, builtinPackage.scope);
 
@@ -2554,16 +2616,36 @@ void test_checkExprLitCompound() {
     Expr *expr;
     CheckerContext ctx = { pkg.scope };
     Type *type;
+    CheckerInfo *info;
 
 #define checkCompound(_CODE) \
     expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
     RESET_CONTEXT(ctx); \
-    type = checkExprLitCompound(expr, &ctx, &pkg);
+    type = checkExprLitCompound(expr, &ctx, &pkg); \
+    info = CheckerInfoForExpr(&pkg, expr);
 
     checkCompound("[5]i8{1, 2, 3, 4, 5}");
+    ASSERT(info->BasicExpr.type == type);
     ASSERT(type == typeFromParsing("[5]i8"));
 
-    // TODO: @Structs
+    checkCompound("Foo :: struct {a: u8; b: u16};"
+                  "Foo{};");
+    ASSERT(info->BasicExpr.type == type);
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Symbol->name == StrIntern("Foo"));
+
+    // TODO: @Struct composite literals with named members
+
+    // NOTE: The below is fairly different because the last stmt is a declaration. It checks that the desired type can
+    //  be used in place of explicitly providing the type for a compound literal
+    Stmt *stmt = resetAndParseReturningLastStmt("Foo :: struct {a: u8; b: u16};"
+                  "foo : Foo = {};");
+    checkStmt(stmt, &ctx, &pkg);
+    expr = stmt->Variable.values[0];
+    info = CheckerInfoForExpr(&pkg, expr);
+    type = TypeFromCheckerInfo(*info);
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Symbol->name == StrIntern("Foo"));
 }
 
 void test_checkStmtAssign() {

@@ -153,8 +153,15 @@ struct Type {
     };
 };
 
+typedef struct StructFieldLookupResult StructFieldLookupResult;
+struct StructFieldLookupResult {
+    u32 offset;
+    TypeField *field;
+};
+
 #ifdef __cplusplus
 extern "C" {
+#endif
 const char *DescribeType(Type *type);
 const char *DescribeTypeKind(TypeKind kind);
 Type *SmallestIntTypeForPositiveValue(u64 val);
@@ -163,6 +170,7 @@ i64 SignExtend(Type *type, Type *target, Val val);
 i64 SignExtendTo64Bits(Type *source, Val val);
 b32 TypesIdentical(Type *type, Type *target);
 u64 MaxValueForIntOrPointerType(Type *type);
-TypeField *StructFieldLookup(Type_Struct type, const char *name);
+StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name);
+#ifdef __cplusplus
 }
 #endif

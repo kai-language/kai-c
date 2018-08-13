@@ -55,7 +55,7 @@
     FOR_EACH(Import, "import", true)
 
 typedef u8 ExprKind;
-enum {
+enum Enum_ExprKind {
     ExprKind_Invalid = 0,
     
     _ExprKind_Start = EXPR_KIND_START,
@@ -66,7 +66,7 @@ enum {
 };
 
 typedef u8 StmtKind;
-enum {
+enum Enum_StmtKind {
     StmtKind_Invalid = 0,
     
     _StmtKind_Start = STMT_KIND_START,
@@ -89,7 +89,7 @@ enum {
 };
 
 typedef u8 DeclKind;
-enum {
+enum Enum_DeclKind {
     DeclKind_Invalid = 0,
     
     _DeclKind_Start = DECL_KIND_START,

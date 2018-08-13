@@ -119,6 +119,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkConstantCastExpression();
 }
 
+- (void)test_checkExprSelector {
+    test_checkExprSelector();
+}
+
 - (void)test_checkExprLitInteger {
     test_checkExprLitInteger();
 }

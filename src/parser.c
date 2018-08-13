@@ -314,6 +314,7 @@ Expr *parseExprAtom(Parser *p) {
                 }
 
                 expectTerminator(p);
+                if (isTokenEof(p)) break;
             }
 
             expectToken(p, TK_Rbrace);
@@ -348,6 +349,7 @@ Expr *parseExprAtom(Parser *p) {
                 }
 
                 expectTerminator(p);
+                if (isTokenEof(p)) break;
             }
 
             expectToken(p, TK_Rbrace);
@@ -393,6 +395,7 @@ Expr *parseExprAtom(Parser *p) {
                 }
 
                 expectTerminator(p);
+                if (isTokenEof(p)) break;
             }
 
             expectToken(p, TK_Rbrace);

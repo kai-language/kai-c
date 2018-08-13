@@ -55,7 +55,8 @@ typedef u8 SelectorKind;
 
 typedef struct Selector_Struct Selector_Struct;
 struct Selector_Struct {
-    u32 offset;
+    u32 index;  // The member index in the structure
+    u32 offset; // The member offset in the structure (in bits)
 };
 
 typedef union SelectorValue SelectorValue;
