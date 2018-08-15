@@ -15,7 +15,7 @@
     FOR_EACH(Binary, "binary", true)                         \
     FOR_EACH(Ternary, "ternary", true)                       \
     FOR_EACH(Autocast, "autocast", false)                    \
-    FOR_EACH(KeyValue, "key value", false)                   \
+    FOR_EACH(KeyValue, "key value", true)                    \
     FOR_EACH(LocationDirective, "location directive", true)  \
     FOR_EACH(LitNil, "nil literal", true)                    \
     FOR_EACH(LitInt, "integer literal", true)                \
@@ -207,6 +207,12 @@ struct Expr_KeyValue {
     Expr *key;
     Expr *value;
     KeyValueFlag flags;
+    void *info;
+    // info is set by the checker. This is the only node to have checker info
+    // inlined onto the node instead of using an Expr id. The reason for this
+    // is that KeyValues are inlined directly for both composite literals and
+    // function literals. This will actually save space because the id is 64
+    // bits and there is also a union tag that this doesn't have.
 };
 
 struct Expr_LocationDirective {

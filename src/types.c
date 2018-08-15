@@ -115,17 +115,17 @@ b32 TypesIdentical(Type *type, Type *target) {
 
 StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name) {
 
-    u32 offset = 0;
+    u32 index = 0;
     TypeField *field = NULL;
     ForEachWithIndex(type.members, i, TypeField *, it) {
         if (it->name == name) {
-            offset = i;
+            index = (u32) i;
             field = it;
             break;
         }
     }
     
-    return (StructFieldLookupResult){offset, field};
+    return (StructFieldLookupResult){index, field};
 }
 
 #if TEST

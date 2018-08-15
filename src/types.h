@@ -155,7 +155,7 @@ struct Type {
 
 typedef struct StructFieldLookupResult StructFieldLookupResult;
 struct StructFieldLookupResult {
-    u32 offset;
+    u32 index;
     TypeField *field;
 };
 

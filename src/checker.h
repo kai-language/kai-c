@@ -7,6 +7,7 @@ enum CheckerInfoKindEnum {
     CheckerInfoKind_Variable,
     CheckerInfoKind_Ident,
     CheckerInfoKind_Selector,
+    CheckerInfoKind_StructKey, // The keys in CompositeLiteral corresponding to struct member names
     CheckerInfoKind_BasicExpr,
     CheckerInfoKind_Label,
     CheckerInfoKind_Goto,
@@ -83,6 +84,11 @@ struct CheckerInfo_BasicExpr {
     Val val;
 };
 
+typedef struct CheckerInfo_StructKey CheckerInfo_StructKey;
+struct CheckerInfo_StructKey {
+    TypeField *field;
+};
+
 typedef struct CheckerInfo_Label CheckerInfo_Label;
 struct CheckerInfo_Label {
     Symbol *symbol;
@@ -123,6 +129,7 @@ struct CheckerInfo {
         CheckerInfo_Constant Constant;
         CheckerInfo_Variable Variable;
         CheckerInfo_Selector Selector;
+        CheckerInfo_StructKey StructKey;
         CheckerInfo_Ident Ident;
         CheckerInfo_BasicExpr BasicExpr;
         CheckerInfo_Label Label;

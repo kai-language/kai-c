@@ -962,8 +962,37 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     break;
 
                 case TypeKind_Struct:
-                    UNIMPLEMENTED();
+                    if (it->flags & KeyValueFlag_Index) {
+                        ReportError(pkg, TODOError, it->key->start, "Cannot initalize struct members using index");
+                        goto checkValue;
+                    }
+
+                    if (it->key->kind != ExprKind_Ident) {
+                        ReportError(pkg, TODOError, it->key->start,
+                                    "Expected identifier for field name for type %s", DescribeType(type));
+                        goto checkValue;
+                    }
+
+                    const char *fieldName = it->key->Ident.name;
+
+                    StructFieldLookupResult result = StructFieldLookup(type->Struct, fieldName);
+                    if (!result.field) {
+                        ReportError(pkg, TODOError, it->key->start,
+                                    "Type %s has no field named %s", DescribeType(type), fieldName);
+                    }
+
+                    it->info = result.field;
+                    expectedValueType = result.field->type;
                     break;
+            }
+        } else {
+            switch (type->kind) {
+                case TypeKind_Struct: {
+                    TypeField *field = type->Struct.members[currentIndex];
+                    it->info = field;
+                    expectedValueType = field->type;
+                    break;
+                }
             }
         }
 
@@ -1090,6 +1119,7 @@ Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
         align = MAX(align, type->Align);
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
             // TODO: Check for duplicate names!
+            // TODO: Check the max alignment of the Target Arch and cap alignment requirements to that
             field->name = item.names[j];
             field->type = type;
             field->offset = ALIGN_UP(width, type->Align);
@@ -1425,7 +1455,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
                             DescribeType(base), expr->Selector.name);
                 goto error;
             }
-            SelectorValue val = {.Struct.index = result.offset, .Struct.offset = result.field->offset};
+            SelectorValue val = {.Struct.index = result.index, .Struct.offset = result.field->offset};
             storeInfoSelector(pkg, expr, result.field->type, SelectorKind_Struct, val, ctx);
             type = result.field->type;
             ctx->mode = ExprMode_Addressable;
