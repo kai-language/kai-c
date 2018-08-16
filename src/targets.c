@@ -55,7 +55,7 @@ typedef struct TargetMetrics {
     u32 Align;
 } TargetMetrics;
 
-enum {
+enum Enum_TargetMetrics {
     TargetMetrics_Pointer,
 };
 

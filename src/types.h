@@ -44,7 +44,7 @@ extern Symbol *TrueSymbol;
     FOR_EACH(Tuple, "tuple")        \
 
 typedef u8 TypeKind;
-enum TypeKindEnum {
+enum Enum_TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
     TYPE_KINDS
 #undef FOR_EACH

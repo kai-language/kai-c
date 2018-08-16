@@ -1,6 +1,6 @@
 
 typedef u8 ExprMode;
-enum {
+enum Enum_ExprMode {
     // Signals to the caller in the checker
     ExprMode_Invalid,
     ExprMode_Unresolved,
@@ -23,6 +23,7 @@ typedef u8 CheckerContextFlag;
 #define CheckerContextFlag_Constant     0x01
 #define CheckerContextFlag_LoopClosest  0x02
 #define CheckerContextFlag_UnresolvedOk 0x04
+#define CheckerContextFlag_ArrayLength  0x08
 
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {
@@ -930,6 +931,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
         expectType(pkg, type, ctx, expr->LitCompound.type->start);
     }
 
+    size_t maxIndex = 0;
     size_t currentIndex = 0;
     ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
         Type *expectedValueType = NULL;
@@ -953,12 +955,20 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     //  you'd expect them here too.
                     // On the other hand you would go from static values where the KeyValue pair after a pair with [4]
                     //  would be 5 if no key is specified. Would it be wise to make this true for runtime values too?
-                    if (indexCtx.flags & CheckerContextFlag_Constant) {
+                    if (!(indexCtx.flags & CheckerContextFlag_Constant)) {
                         UNIMPLEMENTED();
                     }
                     currentIndex = (size_t) indexCtx.val.u64;
 
+                    // Allow 0 length arrays to be indexed freely
+                    if (type->kind == TypeKind_Array && type->Array.length && type->Array.length <= currentIndex) {
+                        ReportError(pkg, TODOError, it->value->start,
+                                    "Array index %llu is beyond the max index of %llu for type %s",
+                                    currentIndex, type->Array.length - 1, DescribeType(type));
+                    }
+
                     expectedValueType = type->Slice.elementType;
+                    it->info = (void *) currentIndex;
                     break;
 
                 case TypeKind_Struct:
@@ -992,14 +1002,28 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     it->info = field;
                     expectedValueType = field->type;
                     break;
+                case TypeKind_Array:
+                    // Allow 0 length arrays to be indexed freely
+                    if (type->Array.length && type->Array.length <= currentIndex) {
+                        ReportError(pkg, TODOError, it->value->start,
+                                    "Array index %llu is beyond the max index of %llu for type %s",
+                                    currentIndex, type->Array.length - 1, DescribeType(type));
+                    }
+                    // fallthrough
+                case TypeKind_Slice:
+                    it->info = (void *) currentIndex;
+                    break;
                 }
             }
         }
 
-    checkValue:
+    checkValue:;
+        Type *previousDesiredType = ctx->desiredType;
         ctx->desiredType = expectedValueType ? expectedValueType : type->Slice.elementType;
         Type *valueType = checkExpr(it->value, ctx, pkg);
         coerceType(it->value, ctx, &valueType, ctx->desiredType, pkg);
+        ctx->desiredType = previousDesiredType;
+        maxIndex = MAX(maxIndex, currentIndex);
         currentIndex += 1;
     }
 
@@ -1050,6 +1074,10 @@ error:
 
 Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeArray);
+
+    // NOTE: Later on we will check ctx->Flags & CheckerContextFlag_ValIsArrayLength
+    u64 length = ctx->val.u64;
+
     Type *type = checkExpr(expr->TypeArray.type, ctx, pkg);
     expectType(pkg, type, ctx, expr->TypeArray.type->start);
     if (ctx->mode != ExprMode_Type) {
@@ -1059,19 +1087,38 @@ Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     "Arrays of zero width elements are not permitted");
     }
 
-    // TODO: Implement implicitely sized arrays
-    if (!expr->TypeArray.length) UNIMPLEMENTED();
+    TypeFlag flags = TypeFlag_None;
+    if (expr->TypeArray.length) {
+        Type *previousDesiredType = ctx->desiredType;
+        ctx->desiredType = U64Type;
+        Type *lengthType = checkExpr(expr->TypeArray.length, ctx, pkg);
+        ctx->desiredType = previousDesiredType;
+        coerceType(expr->TypeArray.length, ctx, &lengthType, U64Type, pkg);
+        length = ctx->val.u64;
 
-    ctx->desiredType = U64Type;
-    Type *lengthType = checkExpr(expr->TypeArray.length, ctx, pkg);
-    coerceType(expr->TypeArray.length, ctx, &lengthType, U64Type, pkg);
-    if (!(ctx->flags & CheckerContextFlag_Constant)) {
-        ReportError(pkg, NonConstantArrayLengthError, expr->TypeArray.length->start,
-                    "An arrays length must be a constant value");
-        ReportNote(pkg, expr->start, "To infer a length for the array type from the context use `..` as the length");
+        if (!(ctx->flags & CheckerContextFlag_Constant)) {
+            ReportError(pkg, NonConstantArrayLengthError, expr->TypeArray.length->start,
+                        "An arrays length must be a constant value");
+            ReportNote(pkg, expr->start, "To infer a length for the array type from the context use `..` as the length");
+        }
+    } else {
+        // NOTE: We need someway to pass down the length from the caller because we cannot create and later on update
+        //  a Type. We must also add no flag to indicate the array's ImplicitLength to it's Type as we wish the type of
+        //  [..]u8{1} to be equal to [1]u8.
+        //  The reason this wasn't implemented at the time of the comment was because in order to determine the length
+        //  of the array you must first check all of a composite literals KeyValue pairs (as the key's can make the
+        //  length != ArrayLen(LitComposite.elements)). This meant that checkExprLitComposite had to awkwardly check the
+        //  array's element type & then check all of the KeyValue pairs to determine a length then pass this length down
+        //  to a call to checkExprTypeArray. This alone is fine for expressions of the form
+        //    [..]u8{1, 2}
+        //  but in the form
+        //    array: [..]u8 = {1, 2, 3, 4}
+        //  this approach would not work and the checkDeclVariable (and checkDeclConstant) functions would also need to
+        //  implement this sort of special logic.
+        UNIMPLEMENTED();
     }
 
-    type = NewTypeArray(TypeFlag_None, ctx->val.u64, type);
+    type = NewTypeArray(flags, length, type);
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
@@ -1663,27 +1710,32 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     symbol->state = SymbolState_Resolving;
 
     switch (value->kind) {
-    case ExprKind_LitFunction: {
-        Expr_LitFunction func = value->LitFunction;
-        Type *type = checkExprTypeFunction(func.type, ctx, pkg);
-        if (ctx->mode == ExprMode_Unresolved) return true;
+        case ExprKind_LitFunction: {
+            Expr_LitFunction func = value->LitFunction;
+            Type *type = checkExprTypeFunction(func.type, ctx, pkg);
+            if (ctx->mode == ExprMode_Unresolved) return true;
 
-        expectType(pkg, type, ctx, func.type->start);
+            expectType(pkg, type, ctx, func.type->start);
 
-        markSymbolResolved(symbol, type);
-    } break;
+            markSymbolResolved(symbol, type);
+            symbol->kind = SymbolKind_Constant;
+        } break;
 
-    case ExprKind_TypeStruct: {
-        symbol->state = SymbolState_Resolving;
-        symbol->kind = SymbolKind_Type;
-        break;
-    }
-    case ExprKind_TypeUnion:
-    case ExprKind_TypeEnum: {
-        UNIMPLEMENTED();
-    } break;
-        default:
+        case ExprKind_TypeStruct: {
+            symbol->state = SymbolState_Resolving;
+            symbol->kind = SymbolKind_Type;
             break;
+        }
+
+        case ExprKind_TypeUnion:
+        case ExprKind_TypeEnum: {
+            UNIMPLEMENTED();
+        } break;
+
+        default: {
+            symbol->kind = SymbolKind_Constant;
+            break;
+        }
     }
 
     CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
@@ -1698,7 +1750,6 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     }
 
     symbol->val = exprCtx.val;
-    symbol->kind = SymbolKind_Constant;
 
     if (expectedType && !coerceType(value, &exprCtx, &type, expectedType, pkg)) {
         ReportError(pkg, InvalidConversionError, value->start,
@@ -1749,13 +1800,6 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         ForEach(symbols, Symbol *) {
             it->type = expectedType;
             it->state = SymbolState_Resolved;
-        }
-
-        if (expectedType->kind == TypeKind_Array && expectedType->Array.length == -1) {
-            ReportError(
-                pkg, UninitImplicitArrayError, var.type->start, 
-                "Implicit-length array must have an initial value"
-            );
         }
 
         if (expectedType->kind == TypeKind_Function) {
@@ -2347,6 +2391,8 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeArray("[1]void");
     ASSERT(pkg.diagnostics.errors);
+
+    // TODO: Implicitly sized array's should error without context.
 }
 
 void test_checkTypeSlice() {
@@ -2664,7 +2710,16 @@ void test_checkExprLitCompound() {
     ASSERT(type->kind == TypeKind_Struct);
     ASSERT(type->Symbol->name == StrIntern("Foo"));
 
-    // TODO: @Struct composite literals with named members
+    checkCompound("Foo :: struct {a: u8; b: u16};"
+                  "Foo{a: 4, b: 89};");
+    ASSERT(info->BasicExpr.type == type);
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Symbol->name == StrIntern("Foo"));
+
+    // TODO: Implicitely sized array's should be the size of their maxIndex (not just the number of elements)
+//    checkCompound("[..]u8{1, 2, 3, [9]: 4, 5}");
+//    ASSERT(info->BasicExpr.type == type);
+//    ASSERT(type == typeFromParsing("[10]u8"));
 
     // NOTE: The below is fairly different because the last stmt is a declaration. It checks that the desired type can
     //  be used in place of explicitly providing the type for a compound literal

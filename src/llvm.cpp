@@ -368,6 +368,7 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
         case TypeKind_Struct: {
             llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
 
+            // FIXME: Determine if, like C all uninitialized Struct members are zero'd or left undefined
             llvm::Value *agg = llvm::UndefValue::get(type);
             ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
                 TypeField *field = (TypeField *) it->info;
@@ -380,6 +381,28 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
             if (ctx->returnAddress) UNIMPLEMENTED();
             return agg;
         };
+
+        case TypeKind_Array: {
+            llvm::Type *elementType = canonicalize(ctx, info.type->Array.elementType);
+            llvm::Type *irType = canonicalize(ctx, info.type);
+
+            llvm::Value *value;
+            if (!expr->LitCompound.elements) {
+                value = llvm::Constant::getNullValue(irType);
+            } else {
+                // FIXME: Determine if, like C all uninitialized Array members are zero'd or left undefined
+                value = llvm::UndefValue::get(irType);
+                ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
+                    // For both Array and Slice type Compound Literals the info on KeyValue is the constant index
+                    u64 index = (u64) it->info;
+                    llvm::Value *el = emitExpr(ctx, it->value, elementType);
+                    value = ctx->b.CreateInsertValue(value, el, (u32) index);
+                }
+            }
+
+            if (ctx->returnAddress) UNIMPLEMENTED();
+            return value;
+        }
 
         case TypeKind_Union: case TypeKind_Enum: case TypeKind_Slice:
             UNIMPLEMENTED();
@@ -444,34 +467,6 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
             value = llvm::ConstantPointerNull::get((llvm::PointerType *) canonicalize(ctx, type));
-            break;
-        }
-
-        case ExprKind_LitCompound: {
-            CheckerInfo info = ctx->checkerInfo[expr->id];
-            Type *type = info.BasicExpr.type;
-            switch (type->kind) {
-            case TypeKind_Array: {
-                llvm::Type *elementType = canonicalize(ctx, type->Array.elementType);
-                llvm::Type *irType = canonicalize(ctx, type);
-
-                if (ArrayLen(expr->LitCompound.elements) == 0) {
-                    value = llvm::Constant::getNullValue(irType);
-                } else {
-                    value = llvm::UndefValue::get(irType);
-                    ForEachWithIndex(expr->LitCompound.elements, i, Expr_KeyValue *, element) {
-                        // TODO(Brett): if there's a key and it's an integer we need to change
-                        // its offset to be the key
-                        llvm::Value *el = emitExpr(ctx, element->value, elementType);
-                        value = ctx->b.CreateInsertValue(value, el, (u32)i);
-                    }
-                }
-                break;
-            };
-
-            default:
-                ASSERT(false);
-            }
             break;
         }
 
