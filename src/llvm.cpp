@@ -71,14 +71,22 @@ struct Context {
     DynamicArray(CheckerInfo) checkerInfo;
     llvm::Module *m;
     llvm::TargetMachine *targetMachine;
+    llvm::DataLayout dataLayout;
     llvm::IRBuilder<> b;
     llvm::Function *fn;
     llvm::BasicBlock *retBlock;
     llvm::Value *retValue;
     bool returnAddress;
     Debug d;
+    Arena arena;
 
     std::vector<llvm::BasicBlock *> deferStack;
+};
+
+typedef struct BackendStructUserdata BackendStructUserdata;
+struct BackendStructUserdata {
+    llvm::Type *type;
+    llvm::DIType *debugType;
 };
 
 void clearDebugPos(Context *ctx);
@@ -130,6 +138,20 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
             llvm::Type *returnType = canonicalize(ctx, type->Function.results[0]);
             return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
         } break;
+
+        case TypeKind_Struct: {
+            if (type->Symbol && type->Symbol->backendUserdata) {
+                return ((BackendStructUserdata *) type->Symbol->backendUserdata)->type;
+            }
+
+            std::vector<llvm::Type *> elements;
+            ForEachWithIndex(type->Struct.members, index, TypeField *, it) {
+                llvm::Type *type = canonicalize(ctx, it->type);
+                elements.push_back(type);
+            }
+
+            return llvm::StructType::create(ctx->m->getContext(), elements);
+        } break;
     }
 
     ASSERT_MSG_VA(false, "Unable to canonicalize type %s", DescribeType(type));
@@ -180,12 +202,50 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         // !44 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !9, size: 64)
         std::vector<llvm::Metadata *> parameterTypes;
         ForEach(type->Function.params, Type *) {
-            auto type = debugCanonicalize(ctx, it);
+            llvm::DIType *type = debugCanonicalize(ctx, it);
             parameterTypes.push_back(type);
         }
 
         auto pTypes = ctx->d.builder->getOrCreateTypeArray(parameterTypes);
         return ctx->d.builder->createSubroutineType(pTypes);
+    }
+
+    if (type->kind == TypeKind_Struct) {
+        if (type->Symbol && type->Symbol->backendUserdata) {
+            return ((BackendStructUserdata *) type->Symbol->backendUserdata)->debugType;
+        }
+
+        std::vector<llvm::Metadata *> elementTypes;
+        ForEach(type->Struct.members, TypeField *) {
+            llvm::DIType *dtype = debugCanonicalize(ctx, it->type);
+
+            auto member = ctx->d.builder->createMemberType(
+                ctx->d.scope,
+                it->name,
+                ctx->d.file,
+                0, // TODO: LineNo for struct members
+                it->type->Width,
+                it->type->Align,
+                it->offset,
+                llvm::DINode::DIFlags::FlagZero,
+                dtype
+            );
+
+            elementTypes.push_back(member);
+        }
+
+        auto elements = ctx->d.builder->getOrCreateArray(elementTypes);
+        return ctx->d.builder->createStructType(
+            ctx->d.scope,
+            type->Symbol->name,
+            ctx->d.file,
+            type->Symbol->decl->start.line,
+            type->Width,
+            type->Align,
+            llvm::DINode::DIFlags::FlagZero,
+            NULL, // DerivedFrom
+            elements
+        );
     }
 
     ASSERT(false);
@@ -300,6 +360,88 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
     return ctx->b.CreateCall(irFunc, args);
 }
 
+llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_LitCompound);
+    CheckerInfo_BasicExpr info = ctx->checkerInfo[expr->id].BasicExpr;
+
+    switch (info.type->kind) {
+        case TypeKind_Struct: {
+            llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
+
+            // FIXME: Determine if, like C all uninitialized Struct members are zero'd or left undefined
+            llvm::Value *agg = llvm::UndefValue::get(type);
+            ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
+                TypeField *field = (TypeField *) it->info;
+                u64 index = (field - info.type->Struct.members[0]);
+                llvm::Value *val = emitExpr(ctx, it->value);
+
+                agg = ctx->b.CreateInsertValue(agg, val, (u32) index);
+            }
+
+            if (ctx->returnAddress) UNIMPLEMENTED();
+            return agg;
+        };
+
+        case TypeKind_Array: {
+            llvm::Type *elementType = canonicalize(ctx, info.type->Array.elementType);
+            llvm::Type *irType = canonicalize(ctx, info.type);
+
+            llvm::Value *value;
+            if (!expr->LitCompound.elements) {
+                value = llvm::Constant::getNullValue(irType);
+            } else {
+                // FIXME: Determine if, like C all uninitialized Array members are zero'd or left undefined
+                value = llvm::UndefValue::get(irType);
+                ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
+                    // For both Array and Slice type Compound Literals the info on KeyValue is the constant index
+                    u64 index = (u64) it->info;
+                    llvm::Value *el = emitExpr(ctx, it->value, elementType);
+                    value = ctx->b.CreateInsertValue(value, el, (u32) index);
+                }
+            }
+
+            if (ctx->returnAddress) UNIMPLEMENTED();
+            return value;
+        }
+
+        case TypeKind_Union: case TypeKind_Enum: case TypeKind_Slice:
+            UNIMPLEMENTED();
+            break;
+    }
+
+    ASSERT(false);
+    return NULL;
+}
+
+llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_Selector);
+    CheckerInfo_Selector info = ctx->checkerInfo[expr->id].Selector;
+
+    switch (info.kind) {
+        case SelectorKind_Struct: {
+            bool previousReturnAddress = ctx->returnAddress;
+            ctx->returnAddress = true;
+            llvm::Value *value = emitExpr(ctx, expr->Selector.expr);
+            ctx->returnAddress = previousReturnAddress;
+
+            llvm::Type *indexType = llvm::IntegerType::get(ctx->m->getContext(), 32);
+            llvm::Value *idxs[2] = {
+                llvm::ConstantInt::get(indexType, 0),
+                llvm::ConstantInt::get(indexType, info.value.Struct.index),
+            };
+
+            llvm::ArrayRef<llvm::Value *> idxList = llvm::ArrayRef<llvm::Value *>(idxs, 2);
+            llvm::Value *addr = ctx->b.CreateGEP(value, idxList);
+
+            if (ctx->returnAddress) return addr;
+            return ctx->b.CreateAlignedLoad(addr, BytesFromBits(info.value.Struct.index));
+        }
+    }
+
+    ASSERT(false);
+    return NULL;
+}
+
 llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
     debugPos(ctx, expr->start);
 
@@ -328,34 +470,6 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             break;
         }
 
-        case ExprKind_LitCompound: {
-            CheckerInfo info = ctx->checkerInfo[expr->id];
-            Type *type = info.BasicExpr.type;
-            switch (type->kind) {
-            case TypeKind_Array: {
-                llvm::Type *elementType = canonicalize(ctx, type->Array.elementType);
-                llvm::Type *irType = canonicalize(ctx, type);
-
-                if (ArrayLen(expr->LitCompound.elements) == 0) {
-                    value = llvm::Constant::getNullValue(irType);
-                } else {
-                    value = llvm::UndefValue::get(irType);
-                    ForEachWithIndex(expr->LitCompound.elements, i, Expr_KeyValue *, element) {
-                        // TODO(Brett): if there's a key and it's an integer we need to change
-                        // its offset to be the key
-                        llvm::Value *el = emitExpr(ctx, element->value, elementType);
-                        value = ctx->b.CreateInsertValue(value, el, (u32)i);
-                    }
-                }
-                break;
-            };
-
-            default:
-                ASSERT(false);
-            }
-            break;
-        }
-
         case ExprKind_Ident: {
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Symbol *symbol = info.Ident.symbol;
@@ -365,6 +479,15 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             }
             break;
         }
+
+        case ExprKind_LitCompound: {
+            value = emitExprLitCompound(ctx, expr);
+            break;
+        }
+
+        case ExprKind_Selector:
+            value = emitExprSelector(ctx, expr);
+            break;
 
         case ExprKind_Unary:
             value = emitExprUnary(ctx, expr);
@@ -722,6 +845,78 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     return fn;
 }
 
+llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_TypeStruct);
+
+    Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
+
+    std::vector<llvm::Type *> elementTypes;
+    std::vector<llvm::Metadata *> debugMembers;
+
+    u32 index = 0;
+    for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
+        AggregateItem item = expr->TypeStruct.items[i];
+        Type *fieldType = type->Struct.members[index]->type;
+
+        llvm::Type *ty = canonicalize(ctx, fieldType);
+        llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
+        for (size_t j = 0; j < ArrayLen(item.names); j++) {
+            llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
+                ctx->d.scope,
+                item.names[j],
+                ctx->d.file,
+                item.start.line,
+                fieldType->Width,
+                fieldType->Align,
+                type->Struct.members[index]->offset,
+                llvm::DINode::DIFlags::FlagZero,
+                dty
+            );
+
+            elementTypes.push_back(ty);
+            debugMembers.push_back(member);
+
+            index += 1;
+        }
+    }
+
+    llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
+
+    llvm::DICompositeType *debugType = ctx->d.builder->createStructType(
+        ctx->d.scope,
+        type->Symbol->name,
+        ctx->d.file,
+        type->Symbol->decl->start.line,
+        type->Width,
+        type->Align,
+        llvm::DINode::DIFlags::FlagZero,
+        NULL, // DerivedFrom
+        ctx->d.builder->getOrCreateArray(debugMembers)
+    );
+
+    if (type->Symbol) {
+        ty->setName(type->Symbol->name);
+
+        BackendStructUserdata *userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+        userdata->type = ty;
+        userdata->debugType = debugType;
+        type->Symbol->backendUserdata = userdata;
+    }
+
+#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+    // Checks the frontend layout matches the llvm backend
+    const llvm::StructLayout *layout = ctx->dataLayout.getStructLayout(ty);
+    size_t numElements = ArrayLen(type->Struct.members);
+    for (u32 i = 0; i < numElements; i++) {
+        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i]->offset);
+        ASSERT(layout->getSizeInBits() == type->Width);
+        ASSERT(layout->getAlignment() == type->Align / 8);
+    }
+#endif
+
+    return ty;
+}
+
 void emitDeclConstant(Context *ctx, Decl *decl) {
     ASSERT(decl->kind == DeclKind_Constant);
     CheckerInfo info = ctx->checkerInfo[decl->id];
@@ -747,23 +942,34 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
         // The reason we didn't do this initially is that there is no setName on DISubprogram. We will maybe need to
         //  provide the non mangled name directly to emitExprLitFunction :/
 
-    } else {
-        llvm::Type *type = canonicalize(ctx, symbol->type);
+        return;
+    }
 
-        bool isGlobal = ctx->fn == NULL;
-        llvm::GlobalVariable *global = new llvm::GlobalVariable(
-            *ctx->m,
-            type,
-            /*isConstant:*/true,
-            isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
-            0,
-            symbol->name
-        );
+    switch (decl->Constant.values[0]->kind) {
+        case ExprKind_TypeStruct: {
+            emitExprTypeStruct(ctx, decl->Constant.values[0]);
+            break;
+        }
 
-        symbol->backendUserdata = global;
+        default: {
+            llvm::Type *type = canonicalize(ctx, symbol->type);
 
-        llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
-        global->setInitializer((llvm::Constant *) value);
+            bool isGlobal = ctx->fn == NULL;
+            llvm::GlobalVariable *global = new llvm::GlobalVariable(
+                *ctx->m,
+                type,
+                true, // IsConstant
+                isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+                0,
+                symbol->name
+            );
+
+            symbol->backendUserdata = global;
+
+            llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
+            global->setInitializer((llvm::Constant *) value);
+            break;
+        }
     }
 }
 
@@ -981,9 +1187,11 @@ b32 CodegenLLVM(Package *p) {
     // TODO: Only on unoptimized builds
     targetMachine->setO0WantsFastISel(true);
 
+    llvm::DataLayout dataLayout = targetMachine->createDataLayout();
+
     // TODO: Handle targets correctly by using TargetOs & TargetArch globals
     module->setTargetTriple(triple);
-    module->setDataLayout(targetMachine->createDataLayout());
+    module->setDataLayout(dataLayout);
     module->getOrInsertModuleFlagsMetadata();
     module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
     module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
@@ -1027,6 +1235,7 @@ b32 CodegenLLVM(Package *p) {
         .checkerInfo = p->checkerInfo,
         .m = module,
         .targetMachine = targetMachine,
+        .dataLayout = dataLayout,
         .b = b,
         .fn = nullptr,
         .d = debug,

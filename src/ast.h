@@ -55,7 +55,7 @@
     FOR_EACH(Import, "import", true)
 
 typedef u8 ExprKind;
-enum {
+enum Enum_ExprKind {
     ExprKind_Invalid = 0,
     
     _ExprKind_Start = EXPR_KIND_START,
@@ -66,7 +66,7 @@ enum {
 };
 
 typedef u8 StmtKind;
-enum {
+enum Enum_StmtKind {
     StmtKind_Invalid = 0,
     
     _StmtKind_Start = STMT_KIND_START,
@@ -89,7 +89,7 @@ enum {
 };
 
 typedef u8 DeclKind;
-enum {
+enum Enum_DeclKind {
     DeclKind_Invalid = 0,
     
     _DeclKind_Start = DECL_KIND_START,
@@ -199,7 +199,7 @@ struct Expr_Autocast {
 };
 
 typedef u8 KeyValueFlag;
-enum {
+enum Enum_KeyValueFlag {
     KeyValueFlag_Index = 1,
 };
 struct Expr_KeyValue {
@@ -207,6 +207,15 @@ struct Expr_KeyValue {
     Expr *key;
     Expr *value;
     KeyValueFlag flags;
+
+    // info is set by the checker. This is the only node to have checker info
+    // inlined onto the node instead of using an Expr id. The reason for this
+    // is that KeyValues are inlined directly for both composite literals and
+    // function literals. This will actually save space because the id is 64
+    // bits and there is also a union tag that this doesn't have.
+    void *info;
+    // LitCompound is Array -> u64
+    // LitCompound is Struct -> TypeField*
 };
 
 struct Expr_LocationDirective {
@@ -299,7 +308,7 @@ struct Expr_TypePolymorphic {
 };
 
 typedef u8 TypeVariadicFlag;
-enum {
+enum Enum_TypeVariadicFlag {
     TypeVariadicFlag_CVargs = 1,
 };
 struct Expr_TypeVariadic {

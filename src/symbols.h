@@ -1,6 +1,6 @@
 
 typedef u8 SymbolKind;
-enum {
+enum Enum_SymbolKind {
     SymbolKind_Invalid,
 
     SymbolKind_Import,
@@ -15,7 +15,7 @@ enum {
 };
 
 typedef u8 SymbolState;
-enum {
+enum Enum_SymbolState {
     SymbolState_Unresolved,
     SymbolState_Resolving,
     SymbolState_Resolved,
