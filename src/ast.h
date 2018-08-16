@@ -15,7 +15,7 @@
     FOR_EACH(Binary, "binary", true)                         \
     FOR_EACH(Ternary, "ternary", true)                       \
     FOR_EACH(Autocast, "autocast", false)                    \
-    FOR_EACH(KeyValue, "key value", true)                    \
+    FOR_EACH(KeyValue, "key value", false)                   \
     FOR_EACH(LocationDirective, "location directive", true)  \
     FOR_EACH(LitNil, "nil literal", true)                    \
     FOR_EACH(LitInt, "integer literal", true)                \
