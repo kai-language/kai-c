@@ -38,6 +38,9 @@ const char *internCVargs;
 const char *internForeign;
 const char *internFunction;
 const char *internLocation;
+const char *internCallConv;
+const char *internLinkName;
+const char *internLinkPrefix;
 
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
@@ -85,6 +88,9 @@ void InitKeywords() {
     internForeign = StrIntern("foreign");
     internFunction = StrIntern("function");
     internLocation = StrIntern("location");
+    internCallConv = StrIntern("callconv");
+    internLinkName = StrIntern("linkname");
+    internLinkPrefix = StrIntern("linkprefix");
 }
 
 #undef KEYWORD

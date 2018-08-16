@@ -421,6 +421,14 @@ Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident 
     return d;
 }
 
+Decl *NewDeclForeign(Package *package, Position start, Expr *library, Expr_Ident *name, Expr *type, const char *linkname) {
+    Decl *d = NewDecl(package, DeclKind_Foreign, start);
+    d->Foreign.library = library;
+    d->Foreign.name = name;
+    d->Foreign.linkname = linkname;
+    return d;
+}
+
 Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias) {
     Decl *d = NewDecl(package, DeclKind_Import, start);
     d->Import.path = path;
