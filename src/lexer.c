@@ -42,6 +42,8 @@ const char *internCallConv;
 const char *internLinkName;
 const char *internLinkPrefix;
 
+const char *internCallConv_C;
+
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
 bool HaveInitializedKeywords = false;
@@ -91,6 +93,8 @@ void InitKeywords() {
     internCallConv = StrIntern("callconv");
     internLinkName = StrIntern("linkname");
     internLinkPrefix = StrIntern("linkprefix");
+
+    internCallConv_C = StrIntern("c");
 }
 
 #undef KEYWORD

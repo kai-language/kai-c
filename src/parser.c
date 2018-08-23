@@ -955,9 +955,10 @@ SuffixDirectives parseSuffixDirectives(Parser *p) {
 Decl *parseForeignDecl(Parser *p, Position start, Expr *library) {
     const char *name = parseIdent(p);
 
+    bool isConstant = false;
     expectToken(p, TK_Colon);
     if (matchToken(p, TK_Colon)) {
-        // TODO: set isConstant or something
+        isConstant = true;
     }
     Expr *type = parseType(p);
 
@@ -972,13 +973,57 @@ Decl *parseForeignDecl(Parser *p, Position start, Expr *library) {
         char *temp = Alloc(DefaultAllocator, prefixLen + nameLen + 1);
         temp = strncpy(temp, p->linkPrefix, prefixLen);
         temp = strncpy(temp + prefixLen, name, nameLen + 1);
-        linkname = StrIntern(temp);
+        linkname = StrInternRange(temp, temp + prefixLen + nameLen);
         Free(DefaultAllocator, temp); // TODO: Some sort of scratch allocator on the package?
     } else {
         linkname = name;
     }
 
-    return NewDeclForeign(p->package, start, library, name, type, linkname);
+    return NewDeclForeign(p->package, start, library, isConstant, name, type, linkname, p->callingConvention);
+}
+
+Decl *parseForeignDeclBlock(Parser *p, Position start, Expr *library) {
+
+    DynamicArray(char) tempStringBuffer = NULL;
+    DynamicArray(Decl_ForeignBlockMember) members = NULL;
+
+    while (!isToken(p, TK_Rbrace) && !isTokenEof(p)) {
+
+        Position start = p->tok.pos;
+        const char *name = parseIdent(p);
+
+        bool isConstant = false;
+        expectToken(p, TK_Colon);
+        if (matchToken(p, TK_Colon)) {
+            isConstant = true;
+        }
+        Expr *type = parseType(p);
+
+        SuffixDirectives suffixDirectives = parseSuffixDirectives(p);
+
+        const char *linkname;
+        if (suffixDirectives.linkname) {
+            linkname = suffixDirectives.linkname;
+        } else  if (p->linkPrefix) {
+            size_t prefixLen = strlen(p->linkPrefix);
+            size_t nameLen = strlen(name);
+            tempStringBuffer = ArrayFit(tempStringBuffer, prefixLen + nameLen + 1);
+            strncpy(tempStringBuffer, p->linkPrefix, prefixLen);
+            strncpy(tempStringBuffer + prefixLen, name, nameLen + 1);
+            linkname = StrInternRange(tempStringBuffer, tempStringBuffer + prefixLen + nameLen);
+        } else {
+            linkname = name;
+        }
+
+        expectTerminator(p);
+
+        Decl_ForeignBlockMember member = {start, name, isConstant, type, linkname};
+        ArrayPush(members, member);
+    }
+
+    expectToken(p, TK_Rbrace);
+
+    return NewDeclForeignBlock(p->package, start, library, p->callingConvention, members);
 }
 
 Stmt *parseStmt(Parser *p) {
@@ -1022,8 +1067,8 @@ Stmt *parseStmt(Parser *p) {
 
                 Decl *decl;
                 if (matchToken(p, TK_Lbrace)) {
-                    // TODO: Parse multiple foreign decls
-                    UNIMPLEMENTED();
+
+                    decl = parseForeignDeclBlock(p, start, library);
                 } else {
                     if (p->linkPrefix) {
                         // FIXME: Position should be the linkPrefix position
@@ -1155,10 +1200,23 @@ void parsePackageCode(Package *pkg, const char *code) {
             }
             case StmtDeclKind_Foreign: {
                 declareSymbol(pkg, pkg->scope, stmt->Foreign.name, &symbol, (Decl *) stmt);
-//                symbol->kind = SymbolKind_Constant;
+                symbol->kind = stmt->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
                 symbol->state = SymbolState_Unresolved;
                 break;
             }
+            case StmtDeclKind_ForeignBlock: {
+                Decl_ForeignBlock block = stmt->ForeignBlock;
+                size_t len = ArrayLen(block.members);
+                for (size_t i = 0; i < len; i++) {
+                    Decl_ForeignBlockMember *it = &block.members[i];
+                    declareSymbol(pkg, pkg->scope, it->name, &symbol, (Decl *) stmt);
+                    symbol->kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+                    symbol->state = SymbolState_Unresolved;
+                    it->symbol = symbol;
+                }
+                break;
+            }
+
             case StmtDeclKind_Import:
                 // TODO(Brett): collect import
                 UNIMPLEMENTED();

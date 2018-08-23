@@ -1905,11 +1905,27 @@ b32 checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
         declareSymbol(pkg, ctx->scope, decl->Foreign.name, &symbol, decl);
     }
 
-    symbol->state = SymbolState_Resolving;
     symbol->externalName = decl->Foreign.linkname;
 
     markSymbolResolved(symbol, type);
     storeInfoForeign(pkg, decl, symbol);
+    return false;
+}
+
+b32 checkDeclForeignBlock(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_ForeignBlock);
+
+    for (size_t i = 0; i < ArrayLen(decl->ForeignBlock.members); i++) {
+        Decl_ForeignBlockMember it = decl->ForeignBlock.members[i];
+
+        Type *type = checkExpr(it.type, ctx, pkg);
+        expectType(pkg, type, ctx, it.type->start);
+
+        Symbol *symbol = it.symbol;
+        symbol->externalName = it.linkname;
+        markSymbolResolved(symbol, type);
+    }
+
     return false;
 }
 
@@ -2232,6 +2248,10 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         case StmtDeclKind_Foreign:
             shouldRequeue = checkDeclForeign((Decl *) stmt, ctx, pkg);
+            break;
+
+        case StmtDeclKind_ForeignBlock:
+            shouldRequeue = checkDeclForeignBlock((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtDeclKind_Import:

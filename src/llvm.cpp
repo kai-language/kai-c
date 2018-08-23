@@ -269,6 +269,12 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
     types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
 }
 
+void setCallingConvention(llvm::Function *fn, const char *name) {
+    if (name == internCallConv_C) {
+        fn->setCallingConv(llvm::CallingConv::C);
+    }
+}
+
 llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Type *type, const char *name) {
     llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
     llvm::AllocaInst *alloca = b.CreateAlloca(canonicalize(ctx, type), 0, name);
@@ -727,7 +733,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         fn = llvm::Function::Create(type, llvm::Function::LinkageTypes::ExternalLinkage, llvm::StringRef(), ctx->m);
     }
 
-    fn->setCallingConv(llvm::CallingConv::C);
+    // TODO: Set calling convention
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(ctx->m->getContext(), "entry", fn);
     ctx->b.SetInsertPoint(entry);
     ctx->fn = fn;
@@ -1021,7 +1027,7 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
 }
 
 void emitDeclForeign(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == StmtDeclKind_Foreign);
+    ASSERT(decl->kind == DeclKind_Foreign);
     CheckerInfo info = ctx->checkerInfo[decl->id];
 
     debugPos(ctx, decl->start);
@@ -1035,7 +1041,7 @@ void emitDeclForeign(Context *ctx, Decl *decl) {
                 info.Foreign.symbol->externalName,
                 ctx->m
             );
-            fn->setCallingConv(llvm::CallingConv::C); // TODO: Proper
+            setCallingConvention(fn, decl->Foreign.callingConvention);
             info.Foreign.symbol->backendUserdata = fn;
             break;
         }
@@ -1045,7 +1051,39 @@ void emitDeclForeign(Context *ctx, Decl *decl) {
             llvm::GlobalVariable *global = (llvm::GlobalVariable *) val;
             global->setExternallyInitialized(true);
             info.Foreign.symbol->backendUserdata = global;
-//            global->setConstant(<#bool Val#>) // TODO:
+            global->setConstant(decl->Foreign.isConstant);
+        }
+    }
+}
+
+void emitDeclForeignBlock(Context *ctx, Decl *decl) {
+    ASSERT(decl->kind == DeclKind_ForeignBlock);
+
+    size_t len = ArrayLen(decl->ForeignBlock.members);
+    for (size_t i = 0; i < len; i++) {
+        Decl_ForeignBlockMember it = decl->ForeignBlock.members[i];
+        debugPos(ctx, it.start);
+        llvm::Type *type = canonicalize(ctx, it.symbol->type);
+
+        switch (it.symbol->type->kind) {
+            case TypeKind_Function: {
+                llvm::Function *fn = llvm::Function::Create(
+                    (llvm::FunctionType *) type,
+                    llvm::Function::LinkageTypes::ExternalLinkage,
+                    it.symbol->externalName,
+                    ctx->m
+                );
+                setCallingConvention(fn, decl->Foreign.callingConvention);
+                it.symbol->backendUserdata = fn;
+                break;
+            }
+
+            default: {
+                auto global = (llvm::GlobalVariable *) ctx->m->getOrInsertGlobal(it.symbol->externalName, type);
+                global->setExternallyInitialized(true);
+                it.symbol->backendUserdata = global;
+                global->setConstant(it.isConstant);
+            }
         }
     }
 }
@@ -1164,6 +1202,10 @@ void emitStmt(Context *ctx, Stmt *stmt) {
 
         case StmtDeclKind_Foreign:
             emitDeclForeign(ctx, (Decl *) stmt);
+            break;
+
+        case StmtDeclKind_ForeignBlock:
+            emitDeclForeignBlock(ctx, (Decl *) stmt);
             break;
 
         case StmtKind_Label:

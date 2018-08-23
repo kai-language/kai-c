@@ -96,3 +96,4 @@ struct Lexer {
 const char *DescribeTokenKind(TokenKind tk);
 const char *DescribeToken(Token tok);
 
+extern const char *internCallConv_C;

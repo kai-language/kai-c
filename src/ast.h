@@ -53,6 +53,7 @@
     FOR_EACH(Variable, "variable", true) \
     FOR_EACH(Constant, "constant", true) \
     FOR_EACH(Foreign, "foreign", true)   \
+    FOR_EACH(ForeignBlock, "foreign block", false) \
     FOR_EACH(Import, "import", true)
 
 typedef u8 ExprKind;
@@ -418,13 +419,28 @@ struct Decl_Constant {
 struct Decl_Foreign {
     Position start;
     Expr *library;
+    bool isConstant;
     const char *name;
     Expr *type;
     const char *linkname;
+    const char *callingConvention;
+};
+
+typedef struct Decl_ForeignBlockMember Decl_ForeignBlockMember;
+struct Decl_ForeignBlockMember {
+    Position start;
+    const char *name;
+    bool isConstant;
+    Expr *type;
+    const char *linkname;
+    Symbol *symbol;
 };
 
 struct Decl_ForeignBlock {
-
+    Position start;
+    Expr *library;
+    const char *callingConvention;
+    DynamicArray(Decl_ForeignBlockMember) members;
 };
 
 struct Decl_Import {
@@ -577,5 +593,6 @@ Stmt *NewStmtSwitchCase(Package *package, Position start, DynamicArray(Expr *) m
 // - MARK: Decls
 Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
 Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
-Decl *NewDeclForeign(Package *package, Position start, Expr *library, const char *name, Expr *type, const char *linkname);
+Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
+Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
 Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias);
