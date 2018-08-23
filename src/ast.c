@@ -421,10 +421,11 @@ Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident 
     return d;
 }
 
-Decl *NewDeclForeign(Package *package, Position start, Expr *library, Expr_Ident *name, Expr *type, const char *linkname) {
+Decl *NewDeclForeign(Package *package, Position start, Expr *library, const char *name, Expr *type, const char *linkname) {
     Decl *d = NewDecl(package, DeclKind_Foreign, start);
     d->Foreign.library = library;
     d->Foreign.name = name;
+    d->Foreign.type = type;
     d->Foreign.linkname = linkname;
     return d;
 }

@@ -88,6 +88,12 @@ void storeInfoVariable(Package *pkg, Decl *decl, Symbol **symbols) {
     pkg->checkerInfo[decl->id] = info;
 }
 
+void storeInfoForeign(Package *pkg, Decl *decl, Symbol *symbol) {
+    ASSERT(decl->kind == DeclKind_Foreign);
+    CheckerInfo info = {CheckerInfoKind_Foreign, .Foreign.symbol = symbol};
+    pkg->checkerInfo[decl->id] = info;
+}
+
 void storeInfoIdent(Package *pkg, Expr *expr, Symbol *symbol) {
     ASSERT(expr->kind == ExprKind_Ident);
     CheckerInfo info = {CheckerInfoKind_Ident, .Ident.symbol = symbol};
@@ -791,6 +797,19 @@ Type *checkExprLitNil(Expr *expr, CheckerContext *ctx, Package *pkg) {
 error:
     ctx->mode = ExprMode_Invalid;
     return InvalidType;
+}
+
+Type *checkExprLitString(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_LitString);
+    Type *type = StringType;
+    if (TypesIdentical(RawptrType, ctx->desiredType)) {
+        type = ctx->desiredType;
+    }
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    // TODO: Constant support for String literals @Strings
+    ctx->flags &= ~CheckerContextFlag_Constant;
+    ctx->mode = ExprMode_Value;
+    return type;
 }
 
 Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
@@ -1546,11 +1565,13 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
+    Type *previousDesiredType = ctx->desiredType;
     ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
         ctx->desiredType = calleeType->Function.params[i];
         Type *type = checkExpr(arg->value, ctx, pkg);
         coerceType(arg->value, ctx, &type, calleeType->Function.params[i], pkg);
     }
+    ctx->desiredType = previousDesiredType;
     // TODO: Implement checking for calls
     Type *type = NewTypeTuple(TypeFlag_None, calleeType->Function.results);
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1578,6 +1599,10 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         case ExprKind_LitNil:
             type = checkExprLitNil(expr, ctx, pkg);
+            break;
+
+        case ExprKind_LitString:
+            type = checkExprLitString(expr, ctx, pkg);
             break;
 
         case ExprKind_LitFunction:
@@ -1863,7 +1888,28 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     }
 
     storeInfoVariable(pkg, declStmt, symbols);
+    return false;
+}
 
+b32 checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_Foreign);
+
+    Type *type = checkExpr(decl->Foreign.type, ctx, pkg);
+    expectType(pkg, type, ctx, decl->Foreign.type->start);
+
+    Symbol *symbol;
+    if (ctx->scope == pkg->scope) {
+        symbol = MapGet(&ctx->scope->members, decl->Foreign.name);
+        ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
+    } else {
+        declareSymbol(pkg, ctx->scope, decl->Foreign.name, &symbol, decl);
+    }
+
+    symbol->state = SymbolState_Resolving;
+    symbol->externalName = decl->Foreign.linkname;
+
+    markSymbolResolved(symbol, type);
+    storeInfoForeign(pkg, decl, symbol);
     return false;
 }
 
@@ -2182,6 +2228,10 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         case StmtDeclKind_Variable:
             shouldRequeue = checkDeclVariable((Decl *) stmt, ctx, pkg);
+            break;
+
+        case StmtDeclKind_Foreign:
+            shouldRequeue = checkDeclForeign((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtDeclKind_Import:

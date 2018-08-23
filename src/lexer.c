@@ -260,7 +260,8 @@ const char *scanString(Lexer *l) {
 
     ArrayPush(_scanStringTempBuffer, 0); // Nul term
 
-    return _scanStringTempBuffer;
+    // TODO: @performance use StrInternRange
+    return StrIntern(_scanStringTempBuffer);
 }
 
 double scanFloat(Lexer *l) {

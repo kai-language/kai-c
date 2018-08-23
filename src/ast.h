@@ -418,9 +418,13 @@ struct Decl_Constant {
 struct Decl_Foreign {
     Position start;
     Expr *library;
-    Expr_Ident *name;
+    const char *name;
     Expr *type;
     const char *linkname;
+};
+
+struct Decl_ForeignBlock {
+
 };
 
 struct Decl_Import {
@@ -573,5 +577,5 @@ Stmt *NewStmtSwitchCase(Package *package, Position start, DynamicArray(Expr *) m
 // - MARK: Decls
 Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
 Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
-Decl *NewDeclForeign(Package *package, Position start, Expr *library, Expr_Ident *name, Expr *type, const char *linkname);
+Decl *NewDeclForeign(Package *package, Position start, Expr *library, const char *name, Expr *type, const char *linkname);
 Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias);

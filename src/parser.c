@@ -953,9 +953,7 @@ SuffixDirectives parseSuffixDirectives(Parser *p) {
 }
 
 Decl *parseForeignDecl(Parser *p, Position start, Expr *library) {
-    Expr_Ident *name = AllocAst(p->package, sizeof(Expr_Ident));
-    name->start = p->tok.pos;
-    name->name = parseIdent(p);
+    const char *name = parseIdent(p);
 
     expectToken(p, TK_Colon);
     if (matchToken(p, TK_Colon)) {
@@ -970,14 +968,14 @@ Decl *parseForeignDecl(Parser *p, Position start, Expr *library) {
         linkname = suffixDirectives.linkname;
     } else if (p->linkPrefix) {
         size_t prefixLen = strlen(p->linkPrefix);
-        size_t nameLen = strlen(name->name);
+        size_t nameLen = strlen(name);
         char *temp = Alloc(DefaultAllocator, prefixLen + nameLen + 1);
         temp = strncpy(temp, p->linkPrefix, prefixLen);
-        temp = strncpy(temp + prefixLen, name->name, nameLen + 1);
+        temp = strncpy(temp + prefixLen, name, nameLen + 1);
         linkname = StrIntern(temp);
         Free(DefaultAllocator, temp); // TODO: Some sort of scratch allocator on the package?
     } else {
-        linkname = name->name;
+        linkname = name;
     }
 
     return NewDeclForeign(p->package, start, library, name, type, linkname);
@@ -1017,6 +1015,7 @@ Stmt *parseStmt(Parser *p) {
                 // #foreign glfw #callconv "c" #linkprefix "glfw"
                 nextToken();
                 Expr *library = parseExpr(p, false);
+                matchToken(p, TK_Terminator);
 
                 // This will update the parser state, setting callingConvention and linkPrefix
                 parsePrefixDirectives(p);
@@ -1152,6 +1151,12 @@ void parsePackageCode(Package *pkg, const char *code) {
                     symbol->kind = SymbolKind_Variable;
                     symbol->state = SymbolState_Unresolved;
                 }
+                break;
+            }
+            case StmtDeclKind_Foreign: {
+                declareSymbol(pkg, pkg->scope, stmt->Foreign.name, &symbol, (Decl *) stmt);
+//                symbol->kind = SymbolKind_Constant;
+                symbol->state = SymbolState_Unresolved;
                 break;
             }
             case StmtDeclKind_Import:

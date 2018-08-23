@@ -5,6 +5,7 @@ enum CheckerInfoKindEnum {
     CheckerInfoKind_None,
     CheckerInfoKind_Constant,
     CheckerInfoKind_Variable,
+    CheckerInfoKind_Foreign,
     CheckerInfoKind_Ident,
     CheckerInfoKind_Selector,
     CheckerInfoKind_BasicExpr,
@@ -41,6 +42,11 @@ struct CheckerInfo_Constant {
 typedef struct CheckerInfo_Variable CheckerInfo_Variable;
 struct CheckerInfo_Variable {
     DynamicArray(Symbol *) symbols;
+};
+
+typedef struct CheckerInfo_Foreign CheckerInfo_Foreign;
+struct CheckerInfo_Foreign {
+    Symbol *symbol;
 };
 
 typedef struct CheckerInfo_Ident CheckerInfo_Ident;
@@ -122,6 +128,7 @@ struct CheckerInfo {
         Conversion coerce; // Present when CheckerInfo is for an expression
         CheckerInfo_Constant Constant;
         CheckerInfo_Variable Variable;
+        CheckerInfo_Foreign Foreign;
         CheckerInfo_Selector Selector;
         CheckerInfo_Ident Ident;
         CheckerInfo_BasicExpr BasicExpr;

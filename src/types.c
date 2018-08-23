@@ -372,6 +372,8 @@ void InitBuiltins() {
     declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
     declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
 
+    RawptrType->Pointer.pointeeType = U8Type;
+
     AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
     AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;
 
