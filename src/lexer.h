@@ -54,7 +54,7 @@
     FOR_EACH(Keyword, "")
 
 typedef u8 TokenKind;
-enum TokenKindEnum {
+enum Enum_TokenKind {
 #define FOR_EACH(e, s) TK_##e,
     TOKEN_KINDS
 #undef FOR_EACH

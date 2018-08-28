@@ -1260,10 +1260,7 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext rhsCtx = { ctx->scope };
     Type *lhs = checkExpr(expr->Binary.lhs, &lhsCtx, pkg);
     Type *rhs = checkExpr(expr->Binary.rhs, &rhsCtx, pkg);
-
-    if (lhsCtx.mode == ExprMode_Invalid || rhsCtx.mode == ExprMode_Invalid) {
-        goto error;
-    }
+    if (lhsCtx.mode == ExprMode_Invalid || rhsCtx.mode == ExprMode_Invalid) goto error;
 
     // TODO: clean this up
     if (!(coerceTypeSilently(expr->Binary.lhs, &lhsCtx, &lhs, rhs, pkg) ||
@@ -1338,13 +1335,15 @@ Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *fail = checkExpr(expr->Ternary.fail, &failCtx, pkg);
     if (failCtx.mode == ExprMode_Unresolved)
 
-    if (!isBoolean(cond) && !isNumericOrPointer(cond)) {
+    if (condCtx.mode != ExprMode_Invalid && !isBoolean(cond) && !isNumericOrPointer(cond)) {
         ReportError(pkg, BadConditionError, expr->start,
                     "Expected a numeric or pointer type to act as a condition in the ternary expression");
         goto error;
     }
 
     Type *type = fail;
+    // This check bypasses the type compatibility check?
+    //  Should that be allowed just because we know the result at compile time?
     if (condCtx.flags & passCtx.flags & failCtx.flags & CheckerContextFlag_Constant) {
         ctx->flags |= CheckerContextFlag_Constant;
         ctx->val = condCtx.val.u64 ? passCtx.val : failCtx.val;
@@ -1399,6 +1398,7 @@ Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     ctx->desiredType = type;
     Type *exprType = checkExpr(expr->Cast.expr, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
 
     if (!cast(exprType, type, ctx)) {
         ReportError(pkg, InvalidConversionError, expr->start,
@@ -1406,6 +1406,7 @@ Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
         goto error;
     }
 
+    // Should we let the caller do this?...
     if (callersDesiredType) coerceType(expr, ctx, &type, callersDesiredType, pkg);
 
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1427,6 +1428,7 @@ Type *checkExprAutocast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     Type *type = checkExpr(expr->Autocast.expr, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
 
     if (!cast(type, ctx->desiredType, ctx)) {
         ReportError(pkg, InvalidConversionError, expr->Autocast.expr->start,
@@ -1447,14 +1449,10 @@ Type *checkExprSubscript(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext targetCtx = { ctx->scope };
     CheckerContext indexCtx = { ctx->scope };
     Type *recv = checkExpr(expr->Subscript.expr, &targetCtx, pkg);
-    if (targetCtx.mode == ExprMode_Invalid) {
-        goto error;
-    }
+    if (targetCtx.mode == ExprMode_Invalid) goto error;
 
     Type *index = checkExpr(expr->Subscript.index, &indexCtx, pkg);
-    if (indexCtx.mode == ExprMode_Invalid) {
-        goto error;
-    }
+    if (indexCtx.mode == ExprMode_Invalid) goto error;
 
     if (!IsInteger(index)) {
         ReportError(pkg, InvalidSubscriptIndexTypeError, expr->Subscript.index->start,
@@ -1513,6 +1511,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
     
     Type *type;
     Type *base = checkExpr(expr->Selector.expr, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
     switch (base->kind) {
         case TypeKind_Struct: {
             StructFieldLookupResult result = StructFieldLookup(base->Struct, expr->Selector.name);
@@ -1547,6 +1546,8 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Call);
     CheckerContext calleeCtx = { ctx->scope };
     Type *calleeType = checkExpr(expr->Call.expr, &calleeCtx, pkg);
+    if (calleeCtx.mode == ExprMode_Invalid) goto error;
+
     if (calleeCtx.mode == ExprMode_Type) {
 
         if (ArrayLen(expr->Call.args) < 1) {
@@ -1951,7 +1952,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ForEach(assign.lhs, Expr *) {
         Type *type = checkExpr(it, ctx, pkg);
         ArrayPush(lhsTypes, type);
-        if (ctx->mode < ExprMode_Addressable) {
+        if (ctx->mode < ExprMode_Addressable && ctx->mode != ExprMode_Invalid) {
             ReportError(pkg, ValueNotAssignableError, it->start,
                         "Cannot assign to value %s of type %s", DescribeExpr(it), DescribeType(type));
         }
@@ -2009,6 +2010,7 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         Type *expectedType = ctx->desiredType->Tuple.types[i];
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         Type *type = checkExpr(expr, &exprCtx, pkg);
+        if (exprCtx.mode == ExprMode_Invalid) continue;
         coerceType(expr, &exprCtx, &type, expectedType, pkg);
     }
 }
