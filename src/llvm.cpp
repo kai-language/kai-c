@@ -808,6 +808,10 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         emitStmt(ctx, it);
     }
 
+    if (!ctx->b.GetInsertBlock()->getTerminator()) {
+        ctx->b.CreateBr(ctx->retBlock);
+    }
+
     // Set insert point to the return block
     ctx->b.SetInsertPoint(ctx->retBlock);
     if (!ctx->deferStack.empty()) {
