@@ -35,6 +35,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5D405841212E4EF3007A7E8F /* string.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = string.h; path = src/string.h; sourceTree = "<group>"; };
 		5D41B51720CA0591005E9A8E /* constant_eval.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = constant_eval.c; path = src/constant_eval.c; sourceTree = "<group>"; };
 		5D41B51D20CA365A005E9A8E /* testGen */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = testGen; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D41B52820CAD07D005E9A8E /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
@@ -137,6 +138,7 @@
 				B25AB22520B987D0002E1440 /* array.h */,
 				B25AB22620B987D0002E1440 /* ast.h */,
 				B25AB22B20B987D1002E1440 /* checker.h */,
+				5D405841212E4EF3007A7E8F /* string.h */,
 				B25AB22720B987D0002E1440 /* common.h */,
 				B25AB23020B987D2002E1440 /* compiler.h */,
 				B25AB22820B987D1002E1440 /* flags.h */,

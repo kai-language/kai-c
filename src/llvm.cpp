@@ -269,6 +269,12 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
     types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
 }
 
+void setCallingConvention(llvm::Function *fn, const char *name) {
+    if (name == internCallConv_C) {
+        fn->setCallingConv(llvm::CallingConv::C);
+    }
+}
+
 llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Type *type, const char *name) {
     llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
     llvm::AllocaInst *alloca = b.CreateAlloca(canonicalize(ctx, type), 0, name);
@@ -467,6 +473,12 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
             value = llvm::ConstantPointerNull::get((llvm::PointerType *) canonicalize(ctx, type));
+            break;
+        }
+
+        case ExprKind_LitString:{
+            value = ctx->b.CreateGlobalStringPtr(expr->LitString.val);
+            // TODO: @Strings
             break;
         }
 
@@ -721,7 +733,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         fn = llvm::Function::Create(type, llvm::Function::LinkageTypes::ExternalLinkage, llvm::StringRef(), ctx->m);
     }
 
-    fn->setCallingConv(llvm::CallingConv::C);
+    // TODO: Set calling convention
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(ctx->m->getContext(), "entry", fn);
     ctx->b.SetInsertPoint(entry);
     ctx->fn = fn;
@@ -794,6 +806,10 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     }
     ForEach(expr->LitFunction.body->stmts, Stmt *) {
         emitStmt(ctx, it);
+    }
+
+    if (!ctx->b.GetInsertBlock()->getTerminator()) {
+        ctx->b.CreateBr(ctx->retBlock);
     }
 
     // Set insert point to the return block
@@ -978,40 +994,102 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
 
     // TODO: CreateLifetimeStart for this symbol
     CheckerInfo info = ctx->checkerInfo[decl->id];
-        DynamicArray(Symbol *) symbols = info.Variable.symbols;
-        Decl_Variable var = decl->Variable;
+    DynamicArray(Symbol *) symbols = info.Variable.symbols;
+    Decl_Variable var = decl->Variable;
 
-        For (symbols) {
-            Symbol *symbol = symbols[i];
-            // FIXME: Global variables
-            debugPos(ctx, var.names[i]->start);
+    For (symbols) {
+        Symbol *symbol = symbols[i];
+        // FIXME: Global variables
+        debugPos(ctx, var.names[i]->start);
 
-            llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
-            symbol->backendUserdata = alloca;
+        llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
+        symbol->backendUserdata = alloca;
 
-            if (FlagDebug) {
-                auto d = ctx->d.builder->createAutoVariable(
-                    ctx->d.scope,
-                    symbol->name,
-                    ctx->d.file,
-                    decl->start.line,
-                    debugCanonicalize(ctx, symbol->type)
+        if (FlagDebug) {
+            auto d = ctx->d.builder->createAutoVariable(
+                ctx->d.scope,
+                symbol->name,
+                ctx->d.file,
+                decl->start.line,
+                debugCanonicalize(ctx, symbol->type)
+            );
+            ctx->d.builder->insertDeclare(
+                alloca,
+                d,
+                ctx->d.builder->createExpression(),
+                llvm::DebugLoc::get(decl->start.line, decl->start.column, ctx->d.scope),
+                ctx->b.GetInsertBlock()
+            );
+        }
+
+        if (ArrayLen(var.values) >= i) {
+            Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
+            llvm::Value *value = emitExpr(ctx, var.values[i]);
+            ctx->b.CreateAlignedStore(value, alloca, BytesFromBits(type->Align));
+        }
+    }
+}
+
+void emitDeclForeign(Context *ctx, Decl *decl) {
+    ASSERT(decl->kind == DeclKind_Foreign);
+    CheckerInfo info = ctx->checkerInfo[decl->id];
+
+    debugPos(ctx, decl->start);
+    llvm::Type *type = canonicalize(ctx, info.Foreign.symbol->type);
+
+    switch (info.Foreign.symbol->type->kind) {
+        case TypeKind_Function: {
+            llvm::Function *fn = llvm::Function::Create(
+                (llvm::FunctionType *) type,
+                llvm::Function::LinkageTypes::ExternalLinkage,
+                info.Foreign.symbol->externalName,
+                ctx->m
+            );
+            setCallingConvention(fn, decl->Foreign.callingConvention);
+            info.Foreign.symbol->backendUserdata = fn;
+            break;
+        }
+
+        default: {
+            llvm::Constant *val = ctx->m->getOrInsertGlobal(info.Foreign.symbol->externalName, type);
+            llvm::GlobalVariable *global = (llvm::GlobalVariable *) val;
+            global->setExternallyInitialized(true);
+            info.Foreign.symbol->backendUserdata = global;
+            global->setConstant(decl->Foreign.isConstant);
+        }
+    }
+}
+
+void emitDeclForeignBlock(Context *ctx, Decl *decl) {
+    ASSERT(decl->kind == DeclKind_ForeignBlock);
+
+    size_t len = ArrayLen(decl->ForeignBlock.members);
+    for (size_t i = 0; i < len; i++) {
+        Decl_ForeignBlockMember it = decl->ForeignBlock.members[i];
+        debugPos(ctx, it.start);
+        llvm::Type *type = canonicalize(ctx, it.symbol->type);
+
+        switch (it.symbol->type->kind) {
+            case TypeKind_Function: {
+                llvm::Function *fn = llvm::Function::Create(
+                    (llvm::FunctionType *) type,
+                    llvm::Function::LinkageTypes::ExternalLinkage,
+                    it.symbol->externalName,
+                    ctx->m
                 );
-                ctx->d.builder->insertDeclare(
-                    alloca,
-                    d,
-                    ctx->d.builder->createExpression(),
-                    llvm::DebugLoc::get(decl->start.line, decl->start.column, ctx->d.scope),
-                    ctx->b.GetInsertBlock()
-                );
+                setCallingConvention(fn, decl->Foreign.callingConvention);
+                it.symbol->backendUserdata = fn;
+                break;
             }
 
-            if (ArrayLen(var.values) >= i) {
-                Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
-                llvm::Value *value = emitExpr(ctx, var.values[i]);
-                ctx->b.CreateAlignedStore(value, alloca, BytesFromBits(type->Align));
+            default: {
+                auto global = (llvm::GlobalVariable *) ctx->m->getOrInsertGlobal(it.symbol->externalName, type);
+                global->setExternallyInitialized(true);
+                it.symbol->backendUserdata = global;
+                global->setConstant(it.isConstant);
             }
         }
+    }
 }
 
 void emitStmtLabel(Context *ctx, Stmt *stmt) {
@@ -1111,6 +1189,12 @@ void emitStmtBlock(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmt(Context *ctx, Stmt *stmt) {
+
+    if (stmt->kind > _StmtExprKind_Start && stmt->kind < _StmtExprKind_End) {
+        emitExpr(ctx, (Expr *) stmt);
+        return;
+    }
+
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
             emitDeclConstant(ctx, (Decl *) stmt);
@@ -1118,6 +1202,14 @@ void emitStmt(Context *ctx, Stmt *stmt) {
 
         case StmtDeclKind_Variable:
             emitDeclVariable(ctx, (Decl *) stmt);
+            break;
+
+        case StmtDeclKind_Foreign:
+            emitDeclForeign(ctx, (Decl *) stmt);
+            break;
+
+        case StmtDeclKind_ForeignBlock:
+            emitDeclForeignBlock(ctx, (Decl *) stmt);
             break;
 
         case StmtKind_Label:

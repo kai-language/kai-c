@@ -54,7 +54,7 @@
     FOR_EACH(Keyword, "")
 
 typedef u8 TokenKind;
-enum TokenKindEnum {
+enum Enum_TokenKind {
 #define FOR_EACH(e, s) TK_##e,
     TOKEN_KINDS
 #undef FOR_EACH
@@ -96,3 +96,4 @@ struct Lexer {
 const char *DescribeTokenKind(TokenKind tk);
 const char *DescribeToken(Token tok);
 
+extern const char *internCallConv_C;

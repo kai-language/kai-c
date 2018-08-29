@@ -38,6 +38,11 @@ const char *internCVargs;
 const char *internForeign;
 const char *internFunction;
 const char *internLocation;
+const char *internCallConv;
+const char *internLinkName;
+const char *internLinkPrefix;
+
+const char *internCallConv_C;
 
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
@@ -85,6 +90,11 @@ void InitKeywords() {
     internForeign = StrIntern("foreign");
     internFunction = StrIntern("function");
     internLocation = StrIntern("location");
+    internCallConv = StrIntern("callconv");
+    internLinkName = StrIntern("linkname");
+    internLinkPrefix = StrIntern("linkprefix");
+
+    internCallConv_C = StrIntern("c");
 }
 
 #undef KEYWORD
@@ -254,7 +264,8 @@ const char *scanString(Lexer *l) {
 
     ArrayPush(_scanStringTempBuffer, 0); // Nul term
 
-    return _scanStringTempBuffer;
+    // TODO: @performance use StrInternRange
+    return StrIntern(_scanStringTempBuffer);
 }
 
 double scanFloat(Lexer *l) {
