@@ -933,7 +933,7 @@ struct SuffixDirectives {
 };
 
 SuffixDirectives parseSuffixDirectives(Parser *p) {
-    SuffixDirectives val = {};
+    SuffixDirectives val = {0};
     while (isSuffixDirective(p) && !isTokenEof(p)) {
         Position start = p->tok.pos;
         if (p->tok.val.ident == internLinkName) {
