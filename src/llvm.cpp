@@ -1326,18 +1326,17 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
             matches.push_back(vals);
         }
 
-        emitStmt(ctx, (Stmt *)caseStmt.block);
-        
+        void emitStmtBlock(Context *ctx, Stmt_Block *stmt);
+        emitStmtBlock(ctx, caseStmt.block);
+    }
 }
 
-void emitStmtBlock(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Block);
-
+void emitStmtBlock(Context *ctx, Stmt_Block *blockStmt) {
     llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
     ctx->b.CreateBr(block);
     ctx->b.SetInsertPoint(block);
 
-    ForEach(stmt->Block.stmts, Stmt *) {
+    ForEach(blockStmt->stmts, Stmt *) {
         emitStmt(ctx, it);
     }
 }
@@ -1387,7 +1386,7 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             break;
         
         case StmtKind_Block:
-            emitStmtBlock(ctx, stmt);
+            emitStmtBlock(ctx, &stmt->Block);
             break;
 
         case StmtKind_For:
