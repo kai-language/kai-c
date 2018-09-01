@@ -10,8 +10,16 @@ extern bool FlagDebug;
 
 extern const char *InputName;
 extern const char *OutputName;
+
 extern int TargetOs;
 extern int TargetArch;
+extern int OutputType;
+
+typedef enum OutputTypes {
+    OutputType_Exec = 0,
+    OutputType_Static,
+    OutputType_Dynamic
+} OutputTypes;
 
 typedef enum CLIFlagKind {
     CLIFlagKind_Bool,

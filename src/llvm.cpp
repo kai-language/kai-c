@@ -1304,7 +1304,6 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     info.breakTarget->backendUserdata = post;
     llvm::BasicBlock *defaultBlock = NULL;
 
-    // TODO: labels
     std::vector<llvm::BasicBlock *> thenBlocks;
     ForEachWithIndex(swt.cases, i, Stmt *, c) {
         if (ArrayLen(c->SwitchCase.matches)) {
@@ -1602,15 +1601,27 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
 
     // Linking and debug symbols
 #ifdef SYSTEM_OSX
+    const char *outputType;
+    switch (OutputType) {
+    case OutputType_Exec:    outputType = "execute"; break;
+    case OutputType_Dynamic: outputType = "dynamic"; break;
+    }
+
+    bool isStatic = OutputType == OutputType_Static;
+
     DynamicArray(u8) linkerFlags = NULL;
-    ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -macosx_version_min 10.13", objectName, OutputName);
+    if (isStatic) {
+        ArrayPrintf(linkerFlags, "libtool -static -o %s %s", objectName, OutputName);
+    } else {
+        ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -%s -macosx_version_min 10.13", objectName, OutputName, outputType);
+    }
 
     if (FlagVerbose) {
         printf("%s\n", linkerFlags);
     }
     system((char *)linkerFlags);
 
-    if (FlagDebug) {
+    if (FlagDebug && !isStatic) {
         DynamicArray(u8) symutilFlags = NULL;
         ArrayPrintf(symutilFlags, "dsymutil %s", OutputName);
 
