@@ -73,10 +73,13 @@ struct Context {
     llvm::TargetMachine *targetMachine;
     llvm::DataLayout dataLayout;
     llvm::IRBuilder<> b;
+
     llvm::Function *fn;
+
     llvm::BasicBlock *retBlock;
     llvm::Value *retValue;
     bool returnAddress;
+
     Debug d;
     Arena arena;
 
@@ -1298,6 +1301,7 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     llvm::Function   *currentFunc = currentBlock->getParent();
 
     llvm::BasicBlock *post = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.post", currentFunc);
+    info.breakTarget->backendUserdata = post;
     llvm::BasicBlock *defaultBlock = NULL;
 
     // TODO: labels
@@ -1322,9 +1326,14 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
         value = llvm::ConstantInt::get(canonicalize(ctx, BoolType), 1);
     }
 
+    size_t caseCount = ArrayLen(swt.cases);
     std::vector<std::vector<llvm::Value *>> matches;
     ForEachWithIndex(swt.cases, j, Stmt *, c) {
-        CheckerInfo_Case caseInfo = ctx->checkerInfo[c->id].Case;
+        if (j+1 < caseCount) {
+            CheckerInfo_Case nextCase = ctx->checkerInfo[swt.cases[j+1]->id].Case;
+            nextCase.fallthroughTarget->backendUserdata = thenBlocks[j+1];;
+        }
+
         Stmt_SwitchCase caseStmt = c->SwitchCase;
 
         llvm::BasicBlock *thenBlock = thenBlocks[j];
@@ -1424,7 +1433,17 @@ void emitStmt(Context *ctx, Stmt *stmt) {
         case StmtKind_Switch:
             emitStmtSwitch(ctx, stmt);
             break;
-        
+
+        case StmtKind_Goto: {
+            CheckerInfo_Goto info = ctx->checkerInfo[stmt->id].Goto;
+            if (!info.target) {
+                UNIMPLEMENTED();
+            }
+
+            ASSERT(info.target->backendUserdata);
+            ctx->b.CreateBr((llvm::BasicBlock *)info.target->backendUserdata);
+        } break;
+
         default:
             ASSERT(false);
     }
