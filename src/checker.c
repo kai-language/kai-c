@@ -1980,6 +1980,7 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         CheckerContext caseCtx = {
             .scope = pushScope(pkg, switchCtx.scope),
             .swtch = stmt,
+            .desiredType = ctx->desiredType,
             .nextCase = NULL,
             .loop = switchCtx.loop,
             .flags = switchCtx.flags & ~CheckerContextFlag_Constant,

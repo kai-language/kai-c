@@ -1018,7 +1018,6 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     llvm::Value *value;
     llvm::Value *tag = NULL;
 
-    // TODO: unions and any support
     if (swt.match) {
         value = emitExpr(ctx, swt.match);
     } else {
@@ -1029,6 +1028,21 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     ForEachWithIndex(swt.cases, j, Stmt *, c) {
         CheckerInfo_Case caseInfo = ctx->checkerInfo[c->id].Case;
         Stmt_SwitchCase caseStmt = c->SwitchCase;
+
+        llvm::BasicBlock *thenBlock = thenBlocks[j];
+        ctx->b.SetInsertPoint(thenBlock);
+
+        // TODO: unions and any support
+        if (ArrayLen(caseStmt.matches)) {
+            std::vector<llvm::Value *> vals;
+            For(caseStmt.matches) {
+                vals.push_back(emitExpr(ctx, caseStmt.matches[i]));
+            }
+
+            matches.push_back(vals);
+        }
+
+        emitStmt(ctx, (Stmt *)caseStmt.block);
     }
 }
 
@@ -1041,6 +1055,13 @@ void emitStmt(Context *ctx, Stmt *stmt) {
         case StmtDeclKind_Variable:
             emitDeclVariable(ctx, (Decl *) stmt);
             break;
+
+        case StmtKind_Block: {
+            Stmt_Block block = stmt->Block;
+            ForEach(block.stmts, Stmt *) {
+                emitStmt(ctx, stmt);
+            }
+        } break;
 
         case StmtKind_Label:
             emitStmtLabel(ctx, stmt);
@@ -1066,6 +1087,7 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             break;
         case StmtKind_Switch:
             emitStmtSwitch(ctx, stmt);
+            break;
         default:
             ASSERT(false);
     }
