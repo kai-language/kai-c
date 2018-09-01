@@ -1272,6 +1272,18 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
     }
 }
 
+void emitStmtBlock(Context *ctx, Stmt *stmt) {
+    ASSERT(stmt->kind == StmtKind_Block);
+
+    llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
+    ctx->b.CreateBr(block);
+    ctx->b.SetInsertPoint(block);
+
+    ForEach(stmt->Block.stmts, Stmt *) {
+        emitStmt(ctx, it);
+    }
+}
+
 void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     ASSERT(stmt->kind == StmtKind_Switch);
     Stmt_Switch swt = stmt->Switch;
@@ -1286,6 +1298,7 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     llvm::Function   *currentFunc = currentBlock->getParent();
 
     llvm::BasicBlock *post = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.post", currentFunc);
+    llvm::BasicBlock *defaultBlock = NULL;
 
     // TODO: labels
     std::vector<llvm::BasicBlock *> thenBlocks;
@@ -1295,6 +1308,7 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
             thenBlocks.push_back(then);
         } else {
             llvm::BasicBlock *then = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.default", currentFunc);
+            defaultBlock = then;
             thenBlocks.push_back(then);
         }
     }
@@ -1326,19 +1340,33 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
             matches.push_back(vals);
         }
 
-        void emitStmtBlock(Context *ctx, Stmt_Block *stmt);
-        emitStmtBlock(ctx, caseStmt.block);
-    }
-}
+        ForEach(caseStmt.block->stmts, Stmt *) {
+            emitStmt(ctx, it);
+        }
 
-void emitStmtBlock(Context *ctx, Stmt_Block *blockStmt) {
-    llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
-    ctx->b.CreateBr(block);
-    ctx->b.SetInsertPoint(block);
-
-    ForEach(blockStmt->stmts, Stmt *) {
-        emitStmt(ctx, it);
+        b32 hasTerm = ctx->b.GetInsertBlock()->getTerminator() != NULL;
+        if (!hasTerm) {
+            ctx->b.CreateBr(post);
+        }
+        ctx->b.SetInsertPoint(currentBlock);
     }
+
+    llvm::SwitchInst *swtch = ctx->b.CreateSwitch(
+        tag ? tag : value,
+        defaultBlock ? defaultBlock : post,
+        thenBlocks.size()
+    );
+
+    size_t count = MIN(matches.size(), thenBlocks.size());
+    for (size_t i = 0; i < count; i += 1) {
+        llvm::BasicBlock *block = thenBlocks[i];
+
+        for (size_t j = 0; j < matches[i].size(); j += 1) {
+            swtch->addCase((llvm::ConstantInt *)matches[i][j], block);
+        }
+    }
+
+    ctx->b.SetInsertPoint(post);
 }
 
 void emitStmt(Context *ctx, Stmt *stmt) {
@@ -1386,7 +1414,7 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             break;
         
         case StmtKind_Block:
-            emitStmtBlock(ctx, &stmt->Block);
+            emitStmtBlock(ctx, stmt);
             break;
 
         case StmtKind_For:
