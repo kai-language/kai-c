@@ -1601,18 +1601,13 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
 
     // Linking and debug symbols
 #ifdef SYSTEM_OSX
-    const char *outputType;
-    switch (OutputType) {
-    case OutputType_Exec:    outputType = "execute"; break;
-    case OutputType_Dynamic: outputType = "dynamic"; break;
-    }
-
     bool isStatic = OutputType == OutputType_Static;
 
     DynamicArray(u8) linkerFlags = NULL;
     if (isStatic) {
-        ArrayPrintf(linkerFlags, "libtool -static -o %s %s", objectName, OutputName);
+        ArrayPrintf(linkerFlags, "libtool -static -o %s %s", OutputName, objectName);
     } else {
+        const char *outputType = OutputType == OutputType_Exec ? "execute" : "dynamic";
         ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -%s -macosx_version_min 10.13", objectName, OutputName, outputType);
     }
 
