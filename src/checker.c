@@ -480,7 +480,6 @@ Conversion conversion(Type *type, Type *target) {
 }
 
 void changeTypeOrMarkConversionForExpr(Expr *expr, Type *type, Type *target, Package *pkg) {
-
     switch (expr->kind) {
         case ExprKind_LitNil:
         case ExprKind_LitInt:
@@ -552,12 +551,17 @@ void convertValue(Type *type, Type *target, Val *val) {
 }
 
 b32 coerceTypeSilently(Expr *expr, CheckerContext *ctx, Type **type, Type *target, Package *pkg) {
-    if (*type == InvalidType || target == InvalidType) return false;
-    if (TypesIdentical(*type, target)) return true;
+    if (*type == InvalidType || target == InvalidType)
+        return false;
+    if (TypesIdentical(*type, target))
+        return true;
 
-    if (!canCoerce(*type, target, ctx)) return false;
+    if (!canCoerce(*type, target, ctx))
+        return false;
 
-    if (IsConstant(ctx)) convertValue(*type, target, &ctx->val);
+    if (IsConstant(ctx))
+        convertValue(*type, target, &ctx->val);
+
     changeTypeOrMarkConversionForExpr(expr, *type, target, pkg);
 
     *type = target;
@@ -2218,7 +2222,8 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         CheckerContext caseCtx = {
             .scope = pushScope(pkg, switchCtx.scope),
             .swtch = stmt,
-            .desiredType = ctx->desiredType,
+            // FIXME: WTF is going on with return types...
+//            .desiredType = ctx->desiredType,
             .nextCase = NULL,
             .loop = switchCtx.loop,
             .flags = switchCtx.flags & ~CheckerContextFlag_Constant,
