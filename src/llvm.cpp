@@ -1327,6 +1327,7 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
         }
 
         emitStmt(ctx, (Stmt *)caseStmt.block);
+    }
 }
 
 void emitStmtBlock(Context *ctx, Stmt *stmt) {
