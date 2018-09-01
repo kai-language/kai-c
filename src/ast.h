@@ -52,10 +52,12 @@
 #define DECL_KINDS                       \
     FOR_EACH(Variable, "variable", true) \
     FOR_EACH(Constant, "constant", true) \
+    FOR_EACH(Foreign, "foreign", true)   \
+    FOR_EACH(ForeignBlock, "foreign block", false) \
     FOR_EACH(Import, "import", true)
 
 typedef u8 ExprKind;
-enum {
+enum Enum_ExprKind {
     ExprKind_Invalid = 0,
     
     _ExprKind_Start = EXPR_KIND_START,
@@ -66,7 +68,7 @@ enum {
 };
 
 typedef u8 StmtKind;
-enum {
+enum Enum_StmtKind {
     StmtKind_Invalid = 0,
     
     _StmtKind_Start = STMT_KIND_START,
@@ -89,7 +91,7 @@ enum {
 };
 
 typedef u8 DeclKind;
-enum {
+enum Enum_DeclKind {
     DeclKind_Invalid = 0,
     
     _DeclKind_Start = DECL_KIND_START,
@@ -199,7 +201,7 @@ struct Expr_Autocast {
 };
 
 typedef u8 KeyValueFlag;
-enum {
+enum Enum_KeyValueFlag {
     KeyValueFlag_Index = 1,
 };
 struct Expr_KeyValue {
@@ -207,6 +209,15 @@ struct Expr_KeyValue {
     Expr *key;
     Expr *value;
     KeyValueFlag flags;
+
+    // info is set by the checker. This is the only node to have checker info
+    // inlined onto the node instead of using an Expr id. The reason for this
+    // is that KeyValues are inlined directly for both composite literals and
+    // function literals. This will actually save space because the id is 64
+    // bits and there is also a union tag that this doesn't have.
+    void *info;
+    // LitCompound is Array -> u64
+    // LitCompound is Struct -> TypeField*
 };
 
 struct Expr_LocationDirective {
@@ -299,7 +310,7 @@ struct Expr_TypePolymorphic {
 };
 
 typedef u8 TypeVariadicFlag;
-enum {
+enum Enum_TypeVariadicFlag {
     TypeVariadicFlag_CVargs = 1,
 };
 struct Expr_TypeVariadic {
@@ -405,6 +416,33 @@ struct Decl_Constant {
     DynamicArray(Expr *) values;
 };
 
+struct Decl_Foreign {
+    Position start;
+    Expr *library;
+    bool isConstant;
+    const char *name;
+    Expr *type;
+    const char *linkname;
+    const char *callingConvention;
+};
+
+typedef struct Decl_ForeignBlockMember Decl_ForeignBlockMember;
+struct Decl_ForeignBlockMember {
+    Position start;
+    const char *name;
+    bool isConstant;
+    Expr *type;
+    const char *linkname;
+    Symbol *symbol;
+};
+
+struct Decl_ForeignBlock {
+    Position start;
+    Expr *library;
+    const char *callingConvention;
+    DynamicArray(Decl_ForeignBlockMember) members;
+};
+
 struct Decl_Import {
     Position start;
     const char *path;
@@ -470,6 +508,7 @@ struct Expr {
     };
 };
 
+// TODO: All decls should have space for a calling convention
 struct Decl {
     u64 id;
     DeclKind kind;
@@ -482,7 +521,7 @@ struct Decl {
         DECL_KINDS
 #undef FOR_EACH
     };
-    u64 declId;
+    u64 declId; // TODO: Remove
 };
 
 b32 isExpr(Stmt *stmt);
@@ -554,4 +593,6 @@ Stmt *NewStmtSwitchCase(Package *package, Position start, DynamicArray(Expr *) m
 // - MARK: Decls
 Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
 Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
+Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
+Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
 Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias);

@@ -1,6 +1,6 @@
 
 typedef u8 ExprMode;
-enum {
+enum Enum_ExprMode {
     // Signals to the caller in the checker
     ExprMode_Invalid,
     ExprMode_Unresolved,
@@ -22,6 +22,8 @@ enum {
 typedef u8 CheckerContextFlag;
 #define CheckerContextFlag_Constant     0x01
 #define CheckerContextFlag_LoopClosest  0x02
+#define CheckerContextFlag_UnresolvedOk 0x04
+#define CheckerContextFlag_ArrayLength  0x08
 
 typedef struct CheckerContext CheckerContext;
 struct CheckerContext {
@@ -53,6 +55,9 @@ Inline
 void markSymbolResolved(Symbol *symbol, Type *type) {
     symbol->state = SymbolState_Resolved;
     symbol->type = type;
+    if (symbol->kind == SymbolKind_Type) {
+        type->Symbol = symbol;
+    }
 }
 
 Inline
@@ -83,6 +88,12 @@ void storeInfoVariable(Package *pkg, Decl *decl, Symbol **symbols) {
     pkg->checkerInfo[decl->id] = info;
 }
 
+void storeInfoForeign(Package *pkg, Decl *decl, Symbol *symbol) {
+    ASSERT(decl->kind == DeclKind_Foreign);
+    CheckerInfo info = {CheckerInfoKind_Foreign, .Foreign.symbol = symbol};
+    pkg->checkerInfo[decl->id] = info;
+}
+
 void storeInfoIdent(Package *pkg, Expr *expr, Symbol *symbol) {
     ASSERT(expr->kind == ExprKind_Ident);
     CheckerInfo info = {CheckerInfoKind_Ident, .Ident.symbol = symbol};
@@ -93,6 +104,15 @@ void storeInfoBasicExpr(Package *pkg, Expr *expr, Type *type, CheckerContext *ct
     CheckerInfo info = {CheckerInfoKind_BasicExpr, .BasicExpr.type = type};
     info.BasicExpr.isConstant = IsConstant(ctx);
     info.BasicExpr.val = ctx->val;
+    pkg->checkerInfo[expr->id] = info;
+}
+
+void storeInfoSelector(Package *pkg, Expr *expr, Type *type, SelectorKind kind, SelectorValue value, CheckerContext *ctx) {
+    CheckerInfo info = {CheckerInfoKind_Selector, .Selector.type = type};
+    info.Selector.kind = kind;
+    info.Selector.value = value;
+    info.Selector.isConstant = IsConstant(ctx);
+    info.Selector.val = ctx->val;
     pkg->checkerInfo[expr->id] = info;
 }
 
@@ -779,6 +799,19 @@ error:
     return InvalidType;
 }
 
+Type *checkExprLitString(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_LitString);
+    Type *type = StringType;
+    if (TypesIdentical(RawptrType, ctx->desiredType)) {
+        type = ctx->desiredType;
+    }
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    // TODO: Constant support for String literals @Strings
+    ctx->flags &= ~CheckerContextFlag_Constant;
+    ctx->mode = ExprMode_Value;
+    return type;
+}
+
 Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeVariadic);
     Type *type = checkExpr(expr->TypeVariadic.type, ctx, pkg);
@@ -917,6 +950,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
         expectType(pkg, type, ctx, expr->LitCompound.type->start);
     }
 
+    size_t maxIndex = 0;
     size_t currentIndex = 0;
     ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
         Type *expectedValueType = NULL;
@@ -940,24 +974,80 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     //  you'd expect them here too.
                     // On the other hand you would go from static values where the KeyValue pair after a pair with [4]
                     //  would be 5 if no key is specified. Would it be wise to make this true for runtime values too?
-                    if (indexCtx.flags & CheckerContextFlag_Constant) {
+                    if (!(indexCtx.flags & CheckerContextFlag_Constant)) {
                         UNIMPLEMENTED();
                     }
                     currentIndex = (size_t) indexCtx.val.u64;
 
+                    // Allow 0 length arrays to be indexed freely
+                    if (type->kind == TypeKind_Array && type->Array.length && type->Array.length <= currentIndex) {
+                        ReportError(pkg, TODOError, it->value->start,
+                                    "Array index %llu is beyond the max index of %llu for type %s",
+                                    currentIndex, type->Array.length - 1, DescribeType(type));
+                    }
+
                     expectedValueType = type->Slice.elementType;
+                    it->info = (void *) currentIndex;
                     break;
 
-                // TODO: @Struct
+                case TypeKind_Struct:
+                    if (it->flags & KeyValueFlag_Index) {
+                        ReportError(pkg, TODOError, it->key->start, "Cannot initalize struct members using index");
+                        goto checkValue;
+                    }
+
+                    if (it->key->kind != ExprKind_Ident) {
+                        ReportError(pkg, TODOError, it->key->start,
+                                    "Expected identifier for field name for type %s", DescribeType(type));
+                        goto checkValue;
+                    }
+
+                    const char *fieldName = it->key->Ident.name;
+
+                    StructFieldLookupResult result = StructFieldLookup(type->Struct, fieldName);
+                    if (!result.field) {
+                        ReportError(pkg, TODOError, it->key->start,
+                                    "Type %s has no field named %s", DescribeType(type), fieldName);
+                    }
+
+                    it->info = result.field;
+                    expectedValueType = result.field->type;
+                    break;
+            }
+        } else {
+            switch (type->kind) {
+                case TypeKind_Struct: {
+                    TypeField *field = type->Struct.members[currentIndex];
+                    it->info = field;
+                    expectedValueType = field->type;
+                    break;
+                case TypeKind_Array:
+                    // Allow 0 length arrays to be indexed freely
+                    if (type->Array.length && type->Array.length <= currentIndex) {
+                        ReportError(pkg, TODOError, it->value->start,
+                                    "Array index %llu is beyond the max index of %llu for type %s",
+                                    currentIndex, type->Array.length - 1, DescribeType(type));
+                    }
+                    // fallthrough
+                case TypeKind_Slice:
+                    it->info = (void *) currentIndex;
+                    break;
+                }
             }
         }
 
-checkValue:
+    checkValue:;
+        Type *previousDesiredType = ctx->desiredType;
         ctx->desiredType = expectedValueType ? expectedValueType : type->Slice.elementType;
         Type *valueType = checkExpr(it->value, ctx, pkg);
         coerceType(it->value, ctx, &valueType, ctx->desiredType, pkg);
+        ctx->desiredType = previousDesiredType;
+        maxIndex = MAX(maxIndex, currentIndex);
         currentIndex += 1;
     }
+
+    ctx->mode = ExprMode_Value; // TODO: We want to make &Foo{} possible, does that mean we should make this addressable
+    ctx->flags &= ~CheckerContextFlag_Constant; // NOTE: Currently constant composite literals are unsupported
     storeInfoBasicExpr(pkg, expr, type, ctx);
     return type;
 
@@ -973,6 +1063,8 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (desiredType && isPointer(desiredType)) {
         ctx->desiredType = desiredType->Pointer.pointeeType;
     }
+    CheckerContextFlag prevFlags = ctx->flags;
+    ctx->flags |= CheckerContextFlag_UnresolvedOk;
     Type *type = checkExpr(expr->TypePointer.type, ctx, pkg);
 
     expectType(pkg, type, ctx, expr->TypePointer.type->start);
@@ -987,6 +1079,8 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     if (desiredType == RawptrType) type = RawptrType;
 
+    ctx->flags = prevFlags;
+
     type = NewTypePointer(TypeFlag_None, type);
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
@@ -999,6 +1093,10 @@ error:
 
 Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeArray);
+
+    // NOTE: Later on we will check ctx->Flags & CheckerContextFlag_ValIsArrayLength
+    u64 length = ctx->val.u64;
+
     Type *type = checkExpr(expr->TypeArray.type, ctx, pkg);
     expectType(pkg, type, ctx, expr->TypeArray.type->start);
     if (ctx->mode != ExprMode_Type) {
@@ -1008,19 +1106,38 @@ Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
                     "Arrays of zero width elements are not permitted");
     }
 
-    // TODO: Implement implicitely sized arrays
-    if (!expr->TypeArray.length) UNIMPLEMENTED();
+    TypeFlag flags = TypeFlag_None;
+    if (expr->TypeArray.length) {
+        Type *previousDesiredType = ctx->desiredType;
+        ctx->desiredType = U64Type;
+        Type *lengthType = checkExpr(expr->TypeArray.length, ctx, pkg);
+        ctx->desiredType = previousDesiredType;
+        coerceType(expr->TypeArray.length, ctx, &lengthType, U64Type, pkg);
+        length = ctx->val.u64;
 
-    ctx->desiredType = U64Type;
-    Type *lengthType = checkExpr(expr->TypeArray.length, ctx, pkg);
-    coerceType(expr->TypeArray.length, ctx, &lengthType, U64Type, pkg);
-    if (!(ctx->flags & CheckerContextFlag_Constant)) {
-        ReportError(pkg, NonConstantArrayLengthError, expr->TypeArray.length->start,
-                    "An arrays length must be a constant value");
-        ReportNote(pkg, expr->start, "To infer a length for the array type from the context use `..` as the length");
+        if (!(ctx->flags & CheckerContextFlag_Constant)) {
+            ReportError(pkg, NonConstantArrayLengthError, expr->TypeArray.length->start,
+                        "An arrays length must be a constant value");
+            ReportNote(pkg, expr->start, "To infer a length for the array type from the context use `..` as the length");
+        }
+    } else {
+        // NOTE: We need someway to pass down the length from the caller because we cannot create and later on update
+        //  a Type. We must also add no flag to indicate the array's ImplicitLength to it's Type as we wish the type of
+        //  [..]u8{1} to be equal to [1]u8.
+        //  The reason this wasn't implemented at the time of the comment was because in order to determine the length
+        //  of the array you must first check all of a composite literals KeyValue pairs (as the key's can make the
+        //  length != ArrayLen(LitComposite.elements)). This meant that checkExprLitComposite had to awkwardly check the
+        //  array's element type & then check all of the KeyValue pairs to determine a length then pass this length down
+        //  to a call to checkExprTypeArray. This alone is fine for expressions of the form
+        //    [..]u8{1, 2}
+        //  but in the form
+        //    array: [..]u8 = {1, 2, 3, 4}
+        //  this approach would not work and the checkDeclVariable (and checkDeclConstant) functions would also need to
+        //  implement this sort of special logic.
+        UNIMPLEMENTED();
     }
 
-    type = NewTypeArray(TypeFlag_None, ctx->val.u64, type);
+    type = NewTypeArray(flags, length, type);
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
@@ -1049,6 +1166,41 @@ Type *checkExprTypeSlice(Expr *expr, CheckerContext *ctx, Package *pkg) {
 error:
     ctx->mode = ExprMode_Invalid;
     return type;
+}
+
+Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeStruct);
+
+    DynamicArray(TypeField *) fields = NULL;
+    ArrayFit(fields, ArrayLen(expr->TypeStruct.items));
+
+    u32 align = 0;
+    u32 width = 0;
+    for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
+        AggregateItem item = expr->TypeStruct.items[i];
+        TypeField *field = AllocAst(pkg, sizeof(TypeField));
+        ArrayPush(fields, field);
+
+        Type *type = checkExpr(item.type, ctx, pkg);
+        align = MAX(align, type->Align);
+        for (size_t j = 0; j < ArrayLen(item.names); j++) {
+            // TODO: Check for duplicate names!
+            // TODO: Check the max alignment of the Target Arch and cap alignment requirements to that
+            field->name = item.names[j];
+            field->type = type;
+            field->offset = ALIGN_UP(width, type->Align);
+            width = field->offset + type->Width;
+        }
+    }
+
+    Type *type = NewTypeStruct(align, width, TypeFlag_None, fields);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    ctx->mode = ExprMode_Type;
+    return type;
+
+error:
+    ctx->mode = ExprMode_Invalid;
+    return InvalidType;
 }
 
 Type *checkExprParen(Expr *expr, CheckerContext *ctx, Package *pkg) {
@@ -1108,10 +1260,7 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext rhsCtx = { ctx->scope };
     Type *lhs = checkExpr(expr->Binary.lhs, &lhsCtx, pkg);
     Type *rhs = checkExpr(expr->Binary.rhs, &rhsCtx, pkg);
-
-    if (lhsCtx.mode == ExprMode_Invalid || rhsCtx.mode == ExprMode_Invalid) {
-        goto error;
-    }
+    if (lhsCtx.mode == ExprMode_Invalid || rhsCtx.mode == ExprMode_Invalid) goto error;
 
     // TODO: clean this up
     if (!(coerceTypeSilently(expr->Binary.lhs, &lhsCtx, &lhs, rhs, pkg) ||
@@ -1186,13 +1335,15 @@ Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *fail = checkExpr(expr->Ternary.fail, &failCtx, pkg);
     if (failCtx.mode == ExprMode_Unresolved)
 
-    if (!isBoolean(cond) && !isNumericOrPointer(cond)) {
+    if (condCtx.mode != ExprMode_Invalid && !isBoolean(cond) && !isNumericOrPointer(cond)) {
         ReportError(pkg, BadConditionError, expr->start,
                     "Expected a numeric or pointer type to act as a condition in the ternary expression");
         goto error;
     }
 
     Type *type = fail;
+    // This check bypasses the type compatibility check?
+    //  Should that be allowed just because we know the result at compile time?
     if (condCtx.flags & passCtx.flags & failCtx.flags & CheckerContextFlag_Constant) {
         ctx->flags |= CheckerContextFlag_Constant;
         ctx->val = condCtx.val.u64 ? passCtx.val : failCtx.val;
@@ -1222,9 +1373,9 @@ Type *checkExprLocationDirective(Expr *expr, CheckerContext *ctx, Package *pkg) 
         type = U32Type;
         ctx->val.u32 = expr->start.line;
     } else if (expr->LocationDirective.name == internFile) {
-        // TODO: @Strings
+        // TODO: @Strings @Builtins
     } else if (expr->LocationDirective.name == internLocation) {
-        // TODO: @Structs
+        // TODO: @Structs @Builtins
     } else if (expr->LocationDirective.name == internFunction) {
         // TODO: @Strings
     }
@@ -1247,6 +1398,7 @@ Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     ctx->desiredType = type;
     Type *exprType = checkExpr(expr->Cast.expr, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
 
     if (!cast(exprType, type, ctx)) {
         ReportError(pkg, InvalidConversionError, expr->start,
@@ -1254,6 +1406,7 @@ Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
         goto error;
     }
 
+    // Should we let the caller do this?...
     if (callersDesiredType) coerceType(expr, ctx, &type, callersDesiredType, pkg);
 
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1275,6 +1428,7 @@ Type *checkExprAutocast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     Type *type = checkExpr(expr->Autocast.expr, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
 
     if (!cast(type, ctx->desiredType, ctx)) {
         ReportError(pkg, InvalidConversionError, expr->Autocast.expr->start,
@@ -1295,14 +1449,10 @@ Type *checkExprSubscript(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext targetCtx = { ctx->scope };
     CheckerContext indexCtx = { ctx->scope };
     Type *recv = checkExpr(expr->Subscript.expr, &targetCtx, pkg);
-    if (targetCtx.mode == ExprMode_Invalid) {
-        goto error;
-    }
+    if (targetCtx.mode == ExprMode_Invalid) goto error;
 
     Type *index = checkExpr(expr->Subscript.index, &indexCtx, pkg);
-    if (indexCtx.mode == ExprMode_Invalid) {
-        goto error;
-    }
+    if (indexCtx.mode == ExprMode_Invalid) goto error;
 
     if (!IsInteger(index)) {
         ReportError(pkg, InvalidSubscriptIndexTypeError, expr->Subscript.index->start,
@@ -1356,10 +1506,48 @@ error:
     return InvalidType;
 }
 
+Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Selector);
+    
+    Type *type;
+    Type *base = checkExpr(expr->Selector.expr, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
+    switch (base->kind) {
+        case TypeKind_Struct: {
+            StructFieldLookupResult result = StructFieldLookup(base->Struct, expr->Selector.name);
+            if (!result.field) {
+                ReportError(pkg, TODOError, expr->Selector.start, "Struct %s has no member named %s",
+                            DescribeType(base), expr->Selector.name);
+                goto error;
+            }
+            SelectorValue val = {.Struct.index = result.index, .Struct.offset = result.field->offset};
+            storeInfoSelector(pkg, expr, result.field->type, SelectorKind_Struct, val, ctx);
+            type = result.field->type;
+            ctx->mode = ExprMode_Addressable;
+            ctx->flags &= ~CheckerContextFlag_Constant;
+            // TODO: Constant evaluation for struct types.
+            break;
+        }
+
+        default: {
+            ReportError(pkg, TODOError, expr->start, "%s has no member '%s'", DescribeExpr(expr->Selector.expr), expr->Selector.name);
+            goto error;
+        }
+    }
+
+    return type;
+    
+error:
+    ctx->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
 Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Call);
     CheckerContext calleeCtx = { ctx->scope };
     Type *calleeType = checkExpr(expr->Call.expr, &calleeCtx, pkg);
+    if (calleeCtx.mode == ExprMode_Invalid) goto error;
+
     if (calleeCtx.mode == ExprMode_Type) {
 
         if (ArrayLen(expr->Call.args) < 1) {
@@ -1378,11 +1566,13 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
+    Type *previousDesiredType = ctx->desiredType;
     ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
         ctx->desiredType = calleeType->Function.params[i];
         Type *type = checkExpr(arg->value, ctx, pkg);
         coerceType(arg->value, ctx, &type, calleeType->Function.params[i], pkg);
     }
+    ctx->desiredType = previousDesiredType;
     // TODO: Implement checking for calls
     Type *type = NewTypeTuple(TypeFlag_None, calleeType->Function.results);
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1410,6 +1600,10 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         case ExprKind_LitNil:
             type = checkExprLitNil(expr, ctx, pkg);
+            break;
+
+        case ExprKind_LitString:
+            type = checkExprLitString(expr, ctx, pkg);
             break;
 
         case ExprKind_LitFunction:
@@ -1441,6 +1635,9 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_TypeStruct:
+            type = checkExprTypeStruct(expr, ctx, pkg);
+            break;
+
         case ExprKind_TypeEnum:
         case ExprKind_TypeUnion:
         case ExprKind_TypePolymorphic:
@@ -1476,7 +1673,7 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_Selector:
-            UNIMPLEMENTED();
+            type = checkExprSelector(expr, ctx, pkg);
             break;
 
         case ExprKind_Subscript:
@@ -1539,36 +1736,46 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     symbol->state = SymbolState_Resolving;
 
     switch (value->kind) {
-    case ExprKind_LitFunction: {
-        Expr_LitFunction func = value->LitFunction;
-        Type *type = checkExprTypeFunction(func.type, ctx, pkg);
-        if (ctx->mode == ExprMode_Unresolved) return true;
+        case ExprKind_LitFunction: {
+            Expr_LitFunction func = value->LitFunction;
+            Type *type = checkExprTypeFunction(func.type, ctx, pkg);
+            if (ctx->mode == ExprMode_Unresolved) return true;
 
-        expectType(pkg, type, ctx, func.type->start);
+            expectType(pkg, type, ctx, func.type->start);
 
-        markSymbolResolved(symbol, type);
-    } break;
+            markSymbolResolved(symbol, type);
+            symbol->kind = SymbolKind_Constant;
+        } break;
 
-    case ExprKind_TypeStruct:
-    case ExprKind_TypeUnion:
-    case ExprKind_TypeEnum: {
-        UNIMPLEMENTED();
-    } break;
-        default:
+        case ExprKind_TypeStruct: {
+            symbol->state = SymbolState_Resolving;
+            symbol->kind = SymbolKind_Type;
             break;
+        }
+
+        case ExprKind_TypeUnion:
+        case ExprKind_TypeEnum: {
+            UNIMPLEMENTED();
+        } break;
+
+        default: {
+            symbol->kind = SymbolKind_Constant;
+            break;
+        }
     }
 
     CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
     Type *type = checkExpr(value, &exprCtx, pkg);
     if (exprCtx.mode == ExprMode_Unresolved) {
         return true;
-    } else if (exprCtx.mode < ExprMode_Type) {
+    } else if (exprCtx.mode < ExprMode_Type || (((exprCtx.flags & CheckerContextFlag_Constant) == 0) && (exprCtx.mode != ExprMode_Type))) {
+        // The above checks that the expression is constant
+        // TODO: Simplify the above ... possibly by shifting around the ExprMode orders so that Addressable is lesser then Value.
         ReportError(pkg, NotAValueError, value->start,
                     "Expected a type or value but got %s (type %s)", DescribeExpr(value), DescribeType(type));
     }
 
     symbol->val = exprCtx.val;
-    symbol->kind = SymbolKind_Constant;
 
     if (expectedType && !coerceType(value, &exprCtx, &type, expectedType, pkg)) {
         ReportError(pkg, InvalidConversionError, value->start,
@@ -1619,13 +1826,6 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         ForEach(symbols, Symbol *) {
             it->type = expectedType;
             it->state = SymbolState_Resolved;
-        }
-
-        if (expectedType->kind == TypeKind_Array && expectedType->Array.length == -1) {
-            ReportError(
-                pkg, UninitImplicitArrayError, var.type->start, 
-                "Implicit-length array must have an initial value"
-            );
         }
 
         if (expectedType->kind == TypeKind_Function) {
@@ -1689,6 +1889,43 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     }
 
     storeInfoVariable(pkg, declStmt, symbols);
+    return false;
+}
+
+b32 checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_Foreign);
+
+    Type *type = checkExpr(decl->Foreign.type, ctx, pkg);
+    expectType(pkg, type, ctx, decl->Foreign.type->start);
+
+    Symbol *symbol;
+    if (ctx->scope == pkg->scope) {
+        symbol = MapGet(&ctx->scope->members, decl->Foreign.name);
+        ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
+    } else {
+        declareSymbol(pkg, ctx->scope, decl->Foreign.name, &symbol, decl);
+    }
+
+    symbol->externalName = decl->Foreign.linkname;
+
+    markSymbolResolved(symbol, type);
+    storeInfoForeign(pkg, decl, symbol);
+    return false;
+}
+
+b32 checkDeclForeignBlock(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_ForeignBlock);
+
+    for (size_t i = 0; i < ArrayLen(decl->ForeignBlock.members); i++) {
+        Decl_ForeignBlockMember it = decl->ForeignBlock.members[i];
+
+        Type *type = checkExpr(it.type, ctx, pkg);
+        expectType(pkg, type, ctx, it.type->start);
+
+        Symbol *symbol = it.symbol;
+        symbol->externalName = it.linkname;
+        markSymbolResolved(symbol, type);
+    }
 
     return false;
 }
@@ -1715,7 +1952,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ForEach(assign.lhs, Expr *) {
         Type *type = checkExpr(it, ctx, pkg);
         ArrayPush(lhsTypes, type);
-        if (ctx->mode < ExprMode_Addressable) {
+        if (ctx->mode < ExprMode_Addressable && ctx->mode != ExprMode_Invalid) {
             ReportError(pkg, ValueNotAssignableError, it->start,
                         "Cannot assign to value %s of type %s", DescribeExpr(it), DescribeType(type));
         }
@@ -1773,6 +2010,7 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         Type *expectedType = ctx->desiredType->Tuple.types[i];
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         Type *type = checkExpr(expr, &exprCtx, pkg);
+        if (exprCtx.mode == ExprMode_Invalid) continue;
         coerceType(expr, &exprCtx, &type, expectedType, pkg);
     }
 }
@@ -2011,6 +2249,14 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             shouldRequeue = checkDeclVariable((Decl *) stmt, ctx, pkg);
             break;
 
+        case StmtDeclKind_Foreign:
+            shouldRequeue = checkDeclForeign((Decl *) stmt, ctx, pkg);
+            break;
+
+        case StmtDeclKind_ForeignBlock:
+            shouldRequeue = checkDeclForeignBlock((Decl *) stmt, ctx, pkg);
+            break;
+
         case StmtDeclKind_Import:
             shouldRequeue = checkDeclImport((Decl *) stmt, ctx, pkg);
             break;
@@ -2218,6 +2464,8 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeArray("[1]void");
     ASSERT(pkg.diagnostics.errors);
+
+    // TODO: Implicitly sized array's should error without context.
 }
 
 void test_checkTypeSlice() {
@@ -2240,6 +2488,60 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeSlice("[]void");
     ASSERT(pkg.diagnostics.errors);
+}
+
+void test_checkTypeStruct() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_BasicExpr info;
+#define checkTypeStruct(_CODE) \
+stmt = resetAndParseReturningLastStmt(_CODE); \
+RESET_CONTEXT(ctx); \
+type = checkExprTypeStruct((Expr *) stmt, &ctx, &pkg); \
+info = GetStmtInfo(&pkg, stmt)->BasicExpr
+
+    checkTypeStruct("struct {}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(!type->Struct.members);
+    ASSERT(!pkg.diagnostics.errors);
+
+    checkTypeStruct("struct {a: u8}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.Flags == TypeFlag_None);
+    ASSERT(type->Align == 8);
+    ASSERT(type->Width == 8);
+    ASSERT(info.type == type);
+
+    checkTypeStruct("struct {a: u8; b: u16}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.members[1]->type == U16Type);
+    ASSERT_MSG(type->Struct.members[1]->offset == 16, "Fields should be aligned to at least their size");
+    ASSERT(type->Struct.Flags == TypeFlag_None);
+    ASSERT(type->Align == 16);
+    ASSERT(type->Width == 32);
+    ASSERT(info.type == type);
+
+    checkTypeStruct("struct {a: u8; b: u8; b: u16; c: u32; d: u32}");
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.members[1]->type == U8Type);
+    ASSERT(type->Struct.members[2]->type == U16Type);
+    ASSERT(type->Struct.members[3]->type == U32Type);
+    ASSERT(type->Struct.members[4]->type == U32Type);
+
+    ASSERT_MSG(type->Struct.members[0]->offset == 0, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[1]->offset == 8, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[2]->offset == 16, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[3]->offset == 32, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[4]->offset == 64, "Fields should be aligned to at least their size");
+    ASSERT(type->Struct.Flags == TypeFlag_None);
+    ASSERT(type->Align == 32);
+    ASSERT(type->Width == 96);
+    ASSERT(info.type == type);
 }
 
 void test_checkConstantUnaryExpressions() {
@@ -2391,6 +2693,26 @@ void test_checkConstantCastExpression() {
     ASSERT(ctx.val.u64 == 42);
 }
 
+void test_checkExprSelector() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+    CheckerInfo_Selector info;
+
+#define checkSelector(_CODE) \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
+    RESET_CONTEXT(ctx); \
+    type = checkExprSelector((Expr *) stmt, &ctx, &pkg); \
+    info = GetStmtInfo(&pkg, stmt)->Selector
+
+    checkSelector("Foo :: struct {a: u8; b: u16};"
+                  "foo := Foo{};"
+                  "foo.b;");
+    ASSERT(type == U16Type);
+    ASSERT(type == info.type);
+}
+
 Type *typeFromParsing(const char *code) {
     pkg.scope = pushScope(&pkg, builtinPackage.scope);
 
@@ -2443,16 +2765,45 @@ void test_checkExprLitCompound() {
     Expr *expr;
     CheckerContext ctx = { pkg.scope };
     Type *type;
+    CheckerInfo *info;
 
 #define checkCompound(_CODE) \
     expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
     RESET_CONTEXT(ctx); \
-    type = checkExprLitCompound(expr, &ctx, &pkg);
+    type = checkExprLitCompound(expr, &ctx, &pkg); \
+    info = CheckerInfoForExpr(&pkg, expr);
 
     checkCompound("[5]i8{1, 2, 3, 4, 5}");
+    ASSERT(info->BasicExpr.type == type);
     ASSERT(type == typeFromParsing("[5]i8"));
 
-    // TODO: @Structs
+    checkCompound("Foo :: struct {a: u8; b: u16};"
+                  "Foo{};");
+    ASSERT(info->BasicExpr.type == type);
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Symbol->name == StrIntern("Foo"));
+
+    checkCompound("Foo :: struct {a: u8; b: u16};"
+                  "Foo{a: 4, b: 89};");
+    ASSERT(info->BasicExpr.type == type);
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Symbol->name == StrIntern("Foo"));
+
+    // TODO: Implicitely sized array's should be the size of their maxIndex (not just the number of elements)
+//    checkCompound("[..]u8{1, 2, 3, [9]: 4, 5}");
+//    ASSERT(info->BasicExpr.type == type);
+//    ASSERT(type == typeFromParsing("[10]u8"));
+
+    // NOTE: The below is fairly different because the last stmt is a declaration. It checks that the desired type can
+    //  be used in place of explicitly providing the type for a compound literal
+    Stmt *stmt = resetAndParseReturningLastStmt("Foo :: struct {a: u8; b: u16};"
+                  "foo : Foo = {};");
+    checkStmt(stmt, &ctx, &pkg);
+    expr = stmt->Variable.values[0];
+    info = CheckerInfoForExpr(&pkg, expr);
+    type = TypeFromCheckerInfo(*info);
+    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->Symbol->name == StrIntern("Foo"));
 }
 
 void test_checkStmtAssign() {

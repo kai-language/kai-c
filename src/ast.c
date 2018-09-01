@@ -421,6 +421,25 @@ Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident 
     return d;
 }
 
+Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention) {
+    Decl *d = NewDecl(package, DeclKind_Foreign, start);
+    d->Foreign.library = library;
+    d->Foreign.isConstant = isConstant;
+    d->Foreign.name = name;
+    d->Foreign.type = type;
+    d->Foreign.linkname = linkname;
+    d->Foreign.callingConvention = callingConvention;
+    return d;
+}
+
+Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members) {
+    Decl *d = NewDecl(package, DeclKind_ForeignBlock, start);
+    d->ForeignBlock.library = library;
+    d->ForeignBlock.members = members;
+    d->ForeignBlock.callingConvention = callingConvention;
+    return d;
+}
+
 Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias) {
     Decl *d = NewDecl(package, DeclKind_Import, start);
     d->Import.path = path;

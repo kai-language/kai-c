@@ -30,6 +30,9 @@ struct Parser {
     Position prevEnd;
     Token tok;
     Package *package;
+
+    const char *callingConvention;
+    const char *linkPrefix;
 };
 
 #define nextToken() \
@@ -52,7 +55,19 @@ b32 isTokenIdent(Parser *p, const char *ident) {
 }
 
 b32 isDirective(Parser *p, const char *ident) {
-    return isToken(p, TK_Directive);
+    return isToken(p, TK_Directive) && p->tok.val.ident == ident;
+}
+
+b32 isPrefixDirective(Parser *p) {
+    if (p->tok.val.ident == internCallConv) return true;
+    if (p->tok.val.ident == internLinkPrefix) return true;
+    if (p->tok.val.ident == internForeign) return true;
+    return false;
+}
+
+b32 isSuffixDirective(Parser *p) {
+    if (p->tok.val.ident == internLinkName) return true;
+    return false;
 }
 
 b32 isKeyword(Parser *p, const char *ident) {
@@ -314,6 +329,7 @@ Expr *parseExprAtom(Parser *p) {
                 }
 
                 expectTerminator(p);
+                if (isTokenEof(p)) break;
             }
 
             expectToken(p, TK_Rbrace);
@@ -348,6 +364,7 @@ Expr *parseExprAtom(Parser *p) {
                 }
 
                 expectTerminator(p);
+                if (isTokenEof(p)) break;
             }
 
             expectToken(p, TK_Rbrace);
@@ -393,6 +410,7 @@ Expr *parseExprAtom(Parser *p) {
                 }
 
                 expectTerminator(p);
+                if (isTokenEof(p)) break;
             }
 
             expectToken(p, TK_Rbrace);
@@ -888,6 +906,127 @@ Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
     return NewStmtSwitch(pkg, start, match, cases);
 }
 
+void parsePrefixDirectives(Parser *p) {
+    while (isPrefixDirective(p) && !isTokenEof(p)) {
+        if (p->tok.val.ident == internCallConv) {
+            nextToken();
+            const char *val = p->tok.val.s;
+            if (expectToken(p, TK_String)) {
+                p->callingConvention = val;
+            }
+        } else if (p->tok.val.ident == internLinkPrefix) {
+            nextToken();
+            const char *val = p->tok.val.s;
+            if (expectToken(p, TK_String)) {
+                p->linkPrefix = val;
+            }
+        } else {
+            UNIMPLEMENTED();
+        }
+
+        matchToken(p, TK_Terminator);
+    }
+}
+
+typedef struct SuffixDirectives SuffixDirectives;
+struct SuffixDirectives {
+    const char *linkname;
+};
+
+SuffixDirectives parseSuffixDirectives(Parser *p) {
+    SuffixDirectives val = {0};
+    while (isSuffixDirective(p) && !isTokenEof(p)) {
+        Position start = p->tok.pos;
+        if (p->tok.val.ident == internLinkName) {
+            nextToken();
+            const char *name = p->tok.val.s;
+            if (val.linkname) {
+                ReportError(p->package, TODOError, start, "Multiple linknames provided for declaration");
+            }
+            if (expectToken(p, TK_String)) {
+                val.linkname = name;
+            }
+        } else {
+            UNIMPLEMENTED();
+        }
+    }
+    return val;
+}
+
+Decl *parseForeignDecl(Parser *p, Position start, Expr *library) {
+    const char *name = parseIdent(p);
+
+    bool isConstant = false;
+    expectToken(p, TK_Colon);
+    if (matchToken(p, TK_Colon)) {
+        isConstant = true;
+    }
+    Expr *type = parseType(p);
+
+    SuffixDirectives suffixDirectives = parseSuffixDirectives(p);
+
+    const char *linkname;
+    if (suffixDirectives.linkname) {
+        linkname = suffixDirectives.linkname;
+    } else if (p->linkPrefix) {
+        size_t prefixLen = strlen(p->linkPrefix);
+        size_t nameLen = strlen(name);
+        char *temp = Alloc(DefaultAllocator, prefixLen + nameLen + 1);
+        temp = strncpy(temp, p->linkPrefix, prefixLen);
+        temp = strncpy(temp + prefixLen, name, nameLen + 1);
+        linkname = StrInternRange(temp, temp + prefixLen + nameLen);
+        Free(DefaultAllocator, temp); // TODO: Some sort of scratch allocator on the package?
+    } else {
+        linkname = name;
+    }
+
+    return NewDeclForeign(p->package, start, library, isConstant, name, type, linkname, p->callingConvention);
+}
+
+Decl *parseForeignDeclBlock(Parser *p, Position start, Expr *library) {
+
+    DynamicArray(char) tempStringBuffer = NULL;
+    DynamicArray(Decl_ForeignBlockMember) members = NULL;
+
+    while (!isToken(p, TK_Rbrace) && !isTokenEof(p)) {
+
+        Position start = p->tok.pos;
+        const char *name = parseIdent(p);
+
+        bool isConstant = false;
+        expectToken(p, TK_Colon);
+        if (matchToken(p, TK_Colon)) {
+            isConstant = true;
+        }
+        Expr *type = parseType(p);
+
+        SuffixDirectives suffixDirectives = parseSuffixDirectives(p);
+
+        const char *linkname;
+        if (suffixDirectives.linkname) {
+            linkname = suffixDirectives.linkname;
+        } else  if (p->linkPrefix) {
+            size_t prefixLen = strlen(p->linkPrefix);
+            size_t nameLen = strlen(name);
+            tempStringBuffer = ArrayFit(tempStringBuffer, prefixLen + nameLen + 1);
+            strncpy(tempStringBuffer, p->linkPrefix, prefixLen);
+            strncpy(tempStringBuffer + prefixLen, name, nameLen + 1);
+            linkname = StrInternRange(tempStringBuffer, tempStringBuffer + prefixLen + nameLen);
+        } else {
+            linkname = name;
+        }
+
+        expectTerminator(p);
+
+        Decl_ForeignBlockMember member = {start, name, isConstant, type, linkname};
+        ArrayPush(members, member);
+    }
+
+    expectToken(p, TK_Rbrace);
+
+    return NewDeclForeignBlock(p->package, start, library, p->callingConvention, members);
+}
+
 Stmt *parseStmt(Parser *p) {
     Package *pkg = p->package;
     Position start = p->tok.pos;
@@ -911,7 +1050,42 @@ Stmt *parseStmt(Parser *p) {
         case TK_Directive: {
             if (isDirective(p, internFile) || isDirective(p, internLine) || isDirective(p, internLocation) || isDirective(p, internFunction)) goto exprStart;
             else if (isDirective(p, internCVargs)) goto exprStart;
-            UNIMPLEMENTED();
+
+            if (!isPrefixDirective(p)) {
+                ReportError(pkg, TODOError, start, "Directive #%s cannot be used lone or as a prefix", p->tok.val.ident);
+                nextToken();
+                return NULL;
+            }
+
+            if (isDirective(p, internForeign)) {
+                // #foreign glfw #callconv "c" #linkprefix "glfw"
+                nextToken();
+                Expr *library = parseExpr(p, false);
+                matchToken(p, TK_Terminator);
+
+                // This will update the parser state, setting callingConvention and linkPrefix
+                parsePrefixDirectives(p);
+
+                Decl *decl;
+                if (matchToken(p, TK_Lbrace)) {
+
+                    decl = parseForeignDeclBlock(p, start, library);
+                } else {
+                    if (p->linkPrefix) {
+                        // FIXME: Position should be the linkPrefix position
+                        ReportError(pkg, TODOError, start, "Use of linkprefix directive is only valid on foreign blocks");
+                    }
+
+                    decl = parseForeignDecl(p, start, library);
+                }
+
+                // clear the prefixDirectives
+                p->callingConvention = NULL;
+                p->linkPrefix = NULL;
+                expectTerminator(p);
+                return (Stmt *) decl;
+            }
+
             return NULL;
         }
 
@@ -1025,6 +1199,25 @@ void parsePackageCode(Package *pkg, const char *code) {
                 }
                 break;
             }
+            case StmtDeclKind_Foreign: {
+                declareSymbol(pkg, pkg->scope, stmt->Foreign.name, &symbol, (Decl *) stmt);
+                symbol->kind = stmt->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+                symbol->state = SymbolState_Unresolved;
+                break;
+            }
+            case StmtDeclKind_ForeignBlock: {
+                Decl_ForeignBlock block = stmt->ForeignBlock;
+                size_t len = ArrayLen(block.members);
+                for (size_t i = 0; i < len; i++) {
+                    Decl_ForeignBlockMember *it = &block.members[i];
+                    declareSymbol(pkg, pkg->scope, it->name, &symbol, (Decl *) stmt);
+                    symbol->kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+                    symbol->state = SymbolState_Unresolved;
+                    it->symbol = symbol;
+                }
+                break;
+            }
+
             case StmtDeclKind_Import:
                 // TODO(Brett): collect import
                 UNIMPLEMENTED();
@@ -1362,10 +1555,6 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     Expr *expr;
     Parser p;
 
-    /*
-     *  A mini-test-suite for structs
-     */
-
     p = newTestParser("struct { a, b, c: u32 }");
     ASSERT_EXPR_KIND(ExprKind_TypeStruct);
 }
@@ -1380,10 +1569,6 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
     Expr *expr;
     Parser p;
-
-    /*
-     *  A mini-test-suite for unions
-     */
 
     p = newTestParser("union { a, b, c: u32 }");
     ASSERT_EXPR_KIND(ExprKind_TypeUnion);

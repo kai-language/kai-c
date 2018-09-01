@@ -30,6 +30,8 @@ Type *IntptrType;
 Type *UintptrType;
 Type *RawptrType;
 
+Type *StringType;
+
 // TODO: Mechanism to lookup type by their ID
 u32 nextTypeId = 1;
 
@@ -109,6 +111,21 @@ b32 TypesIdentical(Type *type, Type *target) {
         target = target->Symbol->type;
     }
     return type == target;
+}
+
+StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name) {
+
+    u32 index = 0;
+    TypeField *field = NULL;
+    ForEachWithIndex(type.members, i, TypeField *, it) {
+        if (it->name == name) {
+            index = (u32) i;
+            field = it;
+            break;
+        }
+    }
+    
+    return (StructFieldLookupResult){index, field};
 }
 
 #if TEST
@@ -230,9 +247,13 @@ Type *NewTypeTuple(TypeFlag flags, DynamicArray(Type *) types) {
     return type;
 }
 
-Type *NewTypeStruct(TypeFlag flags, DynamicArray(Type *) members) {
-    UNIMPLEMENTED();
-    return NULL;
+Type *NewTypeStruct(u32 Align, u32 Width, TypeFlag flags, DynamicArray(TypeField *) members) {
+    Type *type = AllocType(TypeKind_Struct);
+    type->Align = Align;
+    type->Width = Width;
+    type->Flags = flags;
+    type->Struct.members = members;
+    return type;
 }
 
 Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
@@ -332,6 +353,8 @@ void InitBuiltins() {
     TYPEALIAS(IntType,   "int", I32Type);
     TYPEALIAS(UintType, "uint", U32Type);
 
+    TYPE(StringType, "string", Struct, 128, TypeFlag_None);
+
     switch (TargetTypeMetrics[TargetMetrics_Pointer].Width) {
         case 32:
             TYPEALIAS(IntptrType,   "intptr", I32Type);
@@ -348,6 +371,8 @@ void InitBuiltins() {
 
     declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
     declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
+
+    RawptrType->Pointer.pointeeType = U8Type;
 
     AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
     AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;

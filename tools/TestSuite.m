@@ -99,6 +99,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkTypeSlice();
 }
 
+- (void)test_checkTypeStruct {
+    test_checkTypeStruct();
+}
+
 - (void)test_checkConstantUnaryExpressions {
     test_checkConstantUnaryExpressions();
 }
@@ -113,6 +117,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
 
 - (void)test_checkConstantCastExpression {
     test_checkConstantCastExpression();
+}
+
+- (void)test_checkExprSelector {
+    test_checkExprSelector();
 }
 
 - (void)test_checkExprLitInteger {

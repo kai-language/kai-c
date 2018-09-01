@@ -44,7 +44,7 @@ extern Symbol *TrueSymbol;
     FOR_EACH(Tuple, "tuple")        \
 
 typedef u8 TypeKind;
-enum TypeKindEnum {
+enum Enum_TypeKind {
 #define FOR_EACH(kind, ...) TypeKind_##kind,
     TYPE_KINDS
 #undef FOR_EACH
@@ -98,9 +98,16 @@ struct Type_Function {
     DynamicArray(Type *) results;
 };
 
+typedef struct TypeField TypeField;
+struct TypeField {
+    const char *name;
+    Type *type;
+    u32 offset;
+};
+
 struct Type_Struct {
     TypeFlag Flags;
-    DynamicArray(Type *) members;
+    DynamicArray(TypeField *) members;
 };
 
 struct Type_Union {
@@ -146,8 +153,15 @@ struct Type {
     };
 };
 
+typedef struct StructFieldLookupResult StructFieldLookupResult;
+struct StructFieldLookupResult {
+    u32 index;
+    TypeField *field;
+};
+
 #ifdef __cplusplus
 extern "C" {
+#endif
 const char *DescribeType(Type *type);
 const char *DescribeTypeKind(TypeKind kind);
 Type *SmallestIntTypeForPositiveValue(u64 val);
@@ -156,5 +170,7 @@ i64 SignExtend(Type *type, Type *target, Val val);
 i64 SignExtendTo64Bits(Type *source, Val val);
 b32 TypesIdentical(Type *type, Type *target);
 u64 MaxValueForIntOrPointerType(Type *type);
+StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name);
+#ifdef __cplusplus
 }
 #endif
