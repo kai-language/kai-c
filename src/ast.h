@@ -64,7 +64,7 @@ enum Enum_ExprKind {
 #define FOR_EACH(kindName, ...) ExprKind_##kindName,
     EXPR_KINDS
 #undef FOR_EACH
-        _ExprKind_End,
+    _ExprKind_End,
 };
 
 typedef u8 StmtKind;
@@ -98,7 +98,7 @@ enum Enum_DeclKind {
 #define FOR_EACH(kindName, ...) DeclKind_##kindName,
     DECL_KINDS
 #undef FOR_EACH
-        _DeclKind_End,
+    _DeclKind_End,
 };
 
 STATIC_ASSERT(_ExprKind_End <= UINT8_MAX, "enum values overflow storage type");
@@ -445,8 +445,9 @@ struct Decl_ForeignBlock {
 
 struct Decl_Import {
     Position start;
-    const char *path;
+    Expr *path;
     const char *alias;
+    Symbol *symbol;
 };
 
 #define FOR_EACH(kindName, s, ...) Expr_##kindName kindName;
@@ -521,8 +522,9 @@ struct Decl {
         DECL_KINDS
 #undef FOR_EACH
     };
-    u64 declId; // TODO: Remove
 };
+
+extern i8 stmtDeclaresSymbol[_StmtDeclKind_End];
 
 b32 isExpr(Stmt *stmt);
 
@@ -595,4 +597,4 @@ Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident 
 Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
 Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
 Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
-Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias);
+Decl *NewDeclImport(Package *package, Position start, Expr *path, const char *alias);

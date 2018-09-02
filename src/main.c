@@ -76,18 +76,18 @@ int main(int argc, const char **argv) {
     }
     
     while (true) {
-        Package *package = QueueDequeue(&parsingQueue);
+        Package *package = QueuePopFront(&parsingQueue);
         if (package) {
             parsePackage(package);
             continue;
         }
         
-        CheckerWork *work = QueueDequeue(&checkingQueue);
+        CheckerWork *work = QueuePopFront(&checkingQueue);
         if (work) {
             CheckerContext ctx = { .scope = work->package->scope };
             b32 shouldRequeue = checkStmt(work->stmt, &ctx, work->package);
-            if (shouldRequeue) {
-                QueueEnqueue(&checkingQueue, work);
+            if (shouldRequeue || ctx.mode == ExprMode_Unresolved) {
+                QueuePushBack(&checkingQueue, work);
             }
             continue;
         }

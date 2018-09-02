@@ -237,7 +237,6 @@ struct Package {
     DynamicArray(Symbol *) symbols;
 
     u64 astIdCount;
-    u64 declCount;
     DynamicArray(CheckerInfo) checkerInfo;
 
     Scope *scope;

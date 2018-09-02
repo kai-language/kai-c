@@ -100,7 +100,7 @@ struct Context {
 
 typedef struct BackendStructUserdata BackendStructUserdata;
 struct BackendStructUserdata {
-    llvm::Type *type;
+    llvm::StructType *type;
     llvm::DIType *debugType;
 };
 
@@ -165,7 +165,19 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
                 elements.push_back(type);
             }
 
-            return llvm::StructType::create(ctx->m->getContext(), elements);
+            llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elements);
+            if (type->Symbol) {
+                ty->setName(type->Symbol->name);
+
+                // NOTE: emitExprTypeStruct will update this with debug info later if needed.
+
+                BackendStructUserdata *userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+                userdata->type = ty;
+                userdata->debugType = NULL;
+                type->Symbol->backendUserdata = userdata;
+            }
+
+            return ty;
         } break;
     }
 
@@ -366,6 +378,21 @@ llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value
     }
 }
 
+llvm::Value *emitExprIdent(Context *ctx, Expr *expr) {
+    CheckerInfo info = ctx->checkerInfo[expr->id];
+    Symbol *symbol = info.Ident.symbol;
+    if (!symbol->backendUserdata) {
+        emitStmt(ctx, (Stmt *) symbol->decl);
+        ASSERT(symbol->backendUserdata);
+    }
+
+    llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
+    if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
+        value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
+    }
+    return value;
+}
+
 llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_Call);
     auto fnType = TypeFromCheckerInfo(ctx->checkerInfo[expr->Call.expr->id]);
@@ -439,6 +466,11 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
     CheckerInfo_Selector info = ctx->checkerInfo[expr->id].Selector;
 
     switch (info.kind) {
+        case SelectorKind_None: {
+            UNIMPLEMENTED();
+            break;
+        }
+
         case SelectorKind_Struct: {
             bool previousReturnAddress = ctx->returnAddress;
             ctx->returnAddress = true;
@@ -456,6 +488,24 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
 
             if (ctx->returnAddress) return addr;
             return ctx->b.CreateAlignedLoad(addr, BytesFromBits(info.value.Struct.index));
+        }
+
+        case SelectorKind_Import: {
+            Symbol *symbol = info.value.Import.symbol;
+            if (!symbol->backendUserdata) {
+                CheckerInfo *prevCheckerInfo = ctx->checkerInfo;
+                ctx->checkerInfo = info.value.Import.package->checkerInfo;
+                emitStmt(ctx, (Stmt *) symbol->decl);
+                ASSERT(symbol->backendUserdata);
+
+                ctx->checkerInfo = prevCheckerInfo;
+            }
+
+            llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
+            if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
+                value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
+            }
+            return value;
         }
     }
 
@@ -498,12 +548,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
         }
 
         case ExprKind_Ident: {
-            CheckerInfo info = ctx->checkerInfo[expr->id];
-            Symbol *symbol = info.Ident.symbol;
-            value = (llvm::Value *) symbol->backendUserdata;
-            if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
-                value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
-            }
+            value = emitExprIdent(ctx, expr);
             break;
         }
 
@@ -885,6 +930,11 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 
     Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
 
+    if (type->Symbol->backendUserdata && !FlagDebug) {
+        BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+        return userdata->type;
+    }
+
     std::vector<llvm::Type *> elementTypes;
     std::vector<llvm::Metadata *> debugMembers;
 
@@ -915,7 +965,12 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         }
     }
 
-    llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
+    llvm::StructType *ty;
+    if (type->Symbol->backendUserdata) {
+        ty = (llvm::StructType *) type->Symbol->backendUserdata;
+    } else {
+        ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
+    }
 
     llvm::DICompositeType *debugType = ctx->d.builder->createStructType(
         ctx->d.scope,
@@ -932,10 +987,16 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     if (type->Symbol) {
         ty->setName(type->Symbol->name);
 
-        BackendStructUserdata *userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
-        userdata->type = ty;
+        BackendStructUserdata *userdata;
+        if (type->Symbol->backendUserdata) {
+            userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+            ASSERT_MSG(!userdata->debugType, "debugType is only set here, which means this run twice");
+        } else {
+            userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+            userdata->type = ty;
+            type->Symbol->backendUserdata = userdata;
+        }
         userdata->debugType = debugType;
-        type->Symbol->backendUserdata = userdata;
     }
 
 #if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
@@ -988,21 +1049,20 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
 
         default: {
             llvm::Type *type = canonicalize(ctx, symbol->type);
+            
+            llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
 
-            bool isGlobal = ctx->fn == NULL;
             llvm::GlobalVariable *global = new llvm::GlobalVariable(
                 *ctx->m,
                 type,
                 true, // IsConstant
-                isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
-                0,
+                symbol->flags & SymbolFlag_Global ?
+                    llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+                (llvm::Constant *) value, // Initializer
                 symbol->name
             );
 
             symbol->backendUserdata = global;
-
-            llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
-            global->setInitializer((llvm::Constant *) value);
             break;
         }
     }
@@ -1016,35 +1076,54 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
     DynamicArray(Symbol *) symbols = info.Variable.symbols;
     Decl_Variable var = decl->Variable;
 
+    bool prevReturnAddress = ctx->returnAddress;
+    ctx->returnAddress = false;
+
     For (symbols) {
         Symbol *symbol = symbols[i];
         // FIXME: Global variables
         debugPos(ctx, var.names[i]->start);
 
-        // NOTE: We may want a more verbose version of this?
-        b32 isGlobal = ctx->fn == NULL;
+        if (symbol->flags & SymbolFlag_Global) {
 
-        if (isGlobal) {
-            auto global = new llvm::GlobalVariable(
+            llvm::GlobalVariable *global = new llvm::GlobalVariable(
                 *ctx->m,
                 canonicalize(ctx, symbol->type),
-                false, /* isConstant */
-                llvm::GlobalValue::LinkageTypes::ExternalLinkage,
-                NULL,
+                false, // IsConstant
+                llvm::GlobalValue::ExternalLinkage,
+                NULL, // Initializer
                 symbol->name
             );
             global->setAlignment(BytesFromBits(symbol->type->Align));
             symbol->backendUserdata = global;
 
-            ctx->d.builder->createGlobalVariableExpression(
-                ctx->d.scope,
-                symbol->name, "",
-                ctx->d.file,
-                decl->start.line,
-                debugCanonicalize(ctx, symbol->type),
-                false
-            );
+            if (FlagDebug) {
+                ctx->d.builder->createGlobalVariableExpression(
+                    ctx->d.scope,
+                    symbol->name, // Name
+                    symbol->name, // LinkageName
+                    ctx->d.file,
+                    decl->start.line,
+                    debugCanonicalize(ctx, symbol->type),
+                    false,        // isLocalToUnit
+                    nullptr,      // Expr
+                    nullptr,      // Decl
+                    symbol->type->Align
+                );
+            }
+
+            llvm::Value *value = emitExpr(ctx, decl->Variable.values[0]);
+
+            if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
+                global->setInitializer(constant);
+            } else {
+                global->setExternallyInitialized(true);
+                // TODO: Add initializer to some sort of premain
+                UNIMPLEMENTED();
+            }
+            break;
         } else {
+
             llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
             symbol->backendUserdata = alloca;
 
@@ -1067,16 +1146,18 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
             }
         }
         
-        if (i && ArrayLen(var.values) >= i) {
+        if (i < ArrayLen(var.values)) {
             Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
             llvm::Value *value = emitExpr(ctx, var.values[i]);
-            if (isGlobal) {
+            if (symbol->flags & SymbolFlag_Global) {
                 ((llvm::GlobalVariable *)symbol->backendUserdata)->setInitializer((llvm::Constant *)value);
             } else {
                 ctx->b.CreateAlignedStore(value, (llvm::Value *)symbol->backendUserdata, BytesFromBits(type->Align));
             }
         }
+
     }
+    ctx->returnAddress = prevReturnAddress;
 }
 
 void emitDeclForeign(Context *ctx, Decl *decl) {

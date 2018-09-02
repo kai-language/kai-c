@@ -1,5 +1,12 @@
 #include "ast.h"
 
+i8 stmtDeclaresSymbol[_StmtDeclKind_End] = {
+    [StmtDeclKind_Constant] = 1,
+    [StmtDeclKind_Variable] = 1,
+    [StmtDeclKind_Foreign] = 1,
+    [StmtDeclKind_ForeignBlock] = 1,
+};
+
 const char *AstDescriptions[] = {
 #define FOR_EACH(kindName, s, ...) "" s "",
     [EXPR_KIND_START] = "invalid",
@@ -100,7 +107,6 @@ Decl *NewDecl(Package *package, DeclKind kind, Position start) {
     d->kind = kind;
     d->start = start;
     d->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
-    d->declId = package->declCount++;
     return d;
 }
 
@@ -440,7 +446,7 @@ Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const
     return d;
 }
 
-Decl *NewDeclImport(Package *package, Position start, const char *path, const char *alias) {
+Decl *NewDeclImport(Package *package, Position start, Expr *path, const char *alias) {
     Decl *d = NewDecl(package, DeclKind_Import, start);
     d->Import.path = path;
     d->Import.alias = alias;

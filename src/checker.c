@@ -44,6 +44,20 @@ b32 IsConstant(CheckerContext *ctx) {
     return (ctx->flags & CheckerContextFlag_Constant) != 0;
 }
 
+ExprMode exprModeForSymbol(Symbol *symbol) {
+    static ExprMode table[SYMBOL_KIND_COUNT] = {
+        [SymbolKind_Invalid] = ExprMode_Invalid,
+        [SymbolKind_Import] = ExprMode_Import,
+        [SymbolKind_Library] = ExprMode_Library,
+        [SymbolKind_Label] = ExprMode_Invalid, // TODO: @goto
+        [SymbolKind_Type] = ExprMode_Type,
+        [SymbolKind_Constant] = ExprMode_Value,
+        [SymbolKind_Variable] = ExprMode_Addressable,
+    };
+
+    return table[symbol->kind];
+}
+
 void markSymbolInvalid(Symbol *symbol) {
     if (symbol) {
         symbol->state = SymbolState_Resolved;
@@ -647,7 +661,8 @@ Type *TypeFromCheckerInfo(CheckerInfo info) {
             return info.BasicExpr.type;
         case CheckerInfoKind_Ident:
             return info.Ident.symbol->type;
-            // FIXME: Fill in
+        case CheckerInfoKind_Selector:
+            return info.Selector.type;
         default:
             return NULL;
     }
@@ -669,8 +684,7 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
     symbol->used = true;
     switch (symbol->state) {
         case SymbolState_Unresolved:
-            ctx->mode = ExprMode_Unresolved;
-            return InvalidType;
+            goto unresolved;
 
         case SymbolState_Resolving:
             // TODO: For cyclic types we need a ctx->hasIndirection to check and see if
@@ -709,6 +723,10 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     ctx->val = symbol->val;
     return symbol->type;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return NULL;
 }
 
 Type *checkExprLitInt(Expr *expr, CheckerContext *ctx, Package *pkg) {
@@ -810,9 +828,9 @@ Type *checkExprLitString(Expr *expr, CheckerContext *ctx, Package *pkg) {
         type = ctx->desiredType;
     }
     storeInfoBasicExpr(pkg, expr, type, ctx);
-    // TODO: Constant support for String literals @Strings
-    ctx->flags &= ~CheckerContextFlag_Constant;
+    ctx->flags |= CheckerContextFlag_Constant;
     ctx->mode = ExprMode_Value;
+    ctx->val.ptr = (uintptr_t) expr->LitString.val;
     return type;
 }
 
@@ -935,6 +953,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext bodyCtx = { bodyScope, .desiredType = tuple };
     ForEach(func.body->stmts, Stmt *) {
         checkStmt(it, &bodyCtx, pkg);
+        if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;
     }
 
     Type *type = NewTypeFunction(typeFlags, paramTypes, resultTypes);
@@ -942,6 +961,10 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     ctx->mode = ExprMode_Type;
     return type;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return NULL;
 }
 
 STATIC_ASSERT(offsetof(Type_Array, elementType) == offsetof(Type_Slice, elementType), "elementTypes must be at equal offset");
@@ -951,6 +974,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     if (expr->LitCompound.type) {
         type = checkExpr(expr->LitCompound.type, ctx, pkg);
+        if (ctx->mode == ExprMode_Unresolved) return NULL;
         expectType(pkg, type, ctx, expr->LitCompound.type->start);
     }
 
@@ -1182,14 +1206,15 @@ Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
     u32 width = 0;
     for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
         AggregateItem item = expr->TypeStruct.items[i];
-        TypeField *field = AllocAst(pkg, sizeof(TypeField));
-        ArrayPush(fields, field);
 
         Type *type = checkExpr(item.type, ctx, pkg);
         align = MAX(align, type->Align);
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
             // TODO: Check for duplicate names!
             // TODO: Check the max alignment of the Target Arch and cap alignment requirements to that
+            TypeField *field = AllocAst(pkg, sizeof(TypeField));
+            ArrayPush(fields, field);
+
             field->name = item.names[j];
             field->type = type;
             field->offset = ALIGN_UP(width, type->Align);
@@ -1516,20 +1541,55 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *type;
     Type *base = checkExpr(expr->Selector.expr, ctx, pkg);
     if (ctx->mode == ExprMode_Invalid) goto error;
+    if (ctx->mode == ExprMode_Unresolved) goto unresolved;
+
+    if (base == FileType) goto TypeKind_File;
+
     switch (base->kind) {
         case TypeKind_Struct: {
             StructFieldLookupResult result = StructFieldLookup(base->Struct, expr->Selector.name);
             if (!result.field) {
-                ReportError(pkg, TODOError, expr->Selector.start, "Struct %s has no member named %s",
+                ReportError(pkg, TODOError, expr->Selector.start, "Struct %s has no member %s",
                             DescribeType(base), expr->Selector.name);
                 goto error;
             }
             SelectorValue val = {.Struct.index = result.index, .Struct.offset = result.field->offset};
-            storeInfoSelector(pkg, expr, result.field->type, SelectorKind_Struct, val, ctx);
             type = result.field->type;
+            storeInfoSelector(pkg, expr, type, SelectorKind_Struct, val, ctx);
             ctx->mode = ExprMode_Addressable;
             ctx->flags &= ~CheckerContextFlag_Constant;
             // TODO: Constant evaluation for struct types.
+            break;
+        }
+
+        TypeKind_File: {
+            Symbol *file = pkg->checkerInfo[expr->Selector.expr->id].Ident.symbol;
+            Package *import = (Package *) file->backendUserdata;
+
+            if (file->state == SymbolState_Unresolved) {
+                ctx->mode = ExprMode_Unresolved;
+                return NULL;
+            }
+
+            Symbol *symbol = Lookup(import->scope, expr->Selector.name);
+            switch (symbol->state) {
+                case SymbolState_Unresolved:
+                    ctx->mode = ExprMode_Unresolved;
+                    return NULL;
+                case SymbolState_Resolving:
+                    // TODO: For cyclic types we need a ctx->hasIndirection to check and see if
+                    // We have a cyclic reference error.
+                    ReportError(pkg, ReferenceToDeclarationError, expr->start,
+                                "Declaration initial value refers to itself");
+                    break;
+                case SymbolState_Resolved:
+                    break;
+            }
+            type = symbol->type;
+            SelectorValue val = {.Import.symbol = symbol, .Import.package = import};
+            storeInfoSelector(pkg, expr, type, SelectorKind_Import, val, ctx);
+            ctx->mode = exprModeForSymbol(symbol);
+            // Constants?
             break;
         }
 
@@ -1540,6 +1600,10 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     return type;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return NULL;
     
 error:
     ctx->mode = ExprMode_Invalid;
@@ -1551,6 +1615,7 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext calleeCtx = { ctx->scope };
     Type *calleeType = checkExpr(expr->Call.expr, &calleeCtx, pkg);
     if (calleeCtx.mode == ExprMode_Invalid) goto error;
+    if (calleeCtx.mode == ExprMode_Unresolved) goto unresolved;
 
     if (calleeCtx.mode == ExprMode_Type) {
 
@@ -1574,13 +1639,20 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
         ctx->desiredType = calleeType->Function.params[i];
         Type *type = checkExpr(arg->value, ctx, pkg);
+        if (ctx->mode == ExprMode_Unresolved) goto unresolved;
+
         coerceType(arg->value, ctx, &type, calleeType->Function.params[i], pkg);
     }
     ctx->desiredType = previousDesiredType;
     // TODO: Implement checking for calls
     Type *type = NewTypeTuple(TypeFlag_None, calleeType->Function.results);
     storeInfoBasicExpr(pkg, expr, type, ctx);
+    ctx->mode = ExprMode_Value;
     return type;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return NULL;
 
 error:
     ctx->mode = ExprMode_Invalid;
@@ -1695,7 +1767,7 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
     return type;
 }
 
-b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
+void checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(declStmt->kind == DeclKind_Constant);
     Decl_Constant decl = declStmt->Constant;
 
@@ -1707,21 +1779,20 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
             Symbol *symbol = Lookup(pkg->scope, it->name);
             markSymbolInvalid(symbol);
         }
-
-        return false;
+        return;
     }
 
     if (ArrayLen(decl.values) > 1) {
         ReportError(pkg, ArityMismatchError, decl.start,
                     "Constant declarations only allow for a single value, but got %zu", ArrayLen(decl.values));
-        return false;
+        return;
     }
 
     Type *expectedType = NULL;
 
     if (decl.type) {
         expectedType = checkExpr(decl.type, ctx, pkg);
-        if (ctx->mode == ExprMode_Unresolved) return true;
+        if (ctx->mode == ExprMode_Unresolved) return;
 
         expectType(pkg, expectedType, ctx, decl.type->start);
     }
@@ -1743,7 +1814,7 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         case ExprKind_LitFunction: {
             Expr_LitFunction func = value->LitFunction;
             Type *type = checkExprTypeFunction(func.type, ctx, pkg);
-            if (ctx->mode == ExprMode_Unresolved) return true;
+            if (ctx->mode == ExprMode_Unresolved) return;
 
             expectType(pkg, type, ctx, func.type->start);
 
@@ -1770,13 +1841,13 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
 
     CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
     Type *type = checkExpr(value, &exprCtx, pkg);
-    if (exprCtx.mode == ExprMode_Unresolved) {
-        return true;
-    } else if (exprCtx.mode < ExprMode_Type || (((exprCtx.flags & CheckerContextFlag_Constant) == 0) && (exprCtx.mode != ExprMode_Type))) {
+    if (exprCtx.mode == ExprMode_Unresolved) goto unresolved;
+
+    if (exprCtx.mode < ExprMode_Type || (((exprCtx.flags & CheckerContextFlag_Constant) == 0) && (exprCtx.mode != ExprMode_Type))) {
         // The above checks that the expression is constant
         // TODO: Simplify the above ... possibly by shifting around the ExprMode orders so that Addressable is lesser then Value.
         ReportError(pkg, NotAValueError, value->start,
-                    "Expected a type or value but got %s (type %s)", DescribeExpr(value), DescribeType(type));
+                    "Expected a type or constant value but got %s (type %s)", DescribeExpr(value), DescribeType(type));
     }
 
     symbol->val = exprCtx.val;
@@ -1785,15 +1856,19 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         ReportError(pkg, InvalidConversionError, value->start,
                     "Unable to convert type %s to expected type type %s", DescribeType(type), DescribeType(expectedType));
         markSymbolInvalid(symbol);
-        return false;
+        return;
     }
 
     markSymbolResolved(symbol, type);
     storeInfoConstant(pkg, declStmt, symbol);
-    return false;
+    return;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return;
 }
 
-b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
+void checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(declStmt->kind == DeclKind_Variable);
     Decl_Variable var = declStmt->Variable;
 
@@ -1801,7 +1876,7 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
 
     if (var.type) {
         expectedType = checkExpr(var.type, ctx, pkg);
-        if (ctx->mode == ExprMode_Unresolved) return true;
+        if (ctx->mode == ExprMode_Unresolved) return;
 
         expectType(pkg, expectedType, ctx, var.type->start);
     }
@@ -1850,22 +1925,22 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
             For (symbols) {
                 markSymbolInvalid(symbols[i]);
             }
-            return false;
+            return;
         }
 
         // TODO(Brett): check for multi-value call
 
         if (var.values && var.values[0]->kind == ExprKind_Call) {
             UNIMPLEMENTED();
-            return false;
+            return;
         }
 
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         For (var.names) {
             Type *type = checkExpr(var.values[i], &exprCtx, pkg);
-            if (exprCtx.mode == ExprMode_Unresolved) {
-                return true;
-            } else if (exprCtx.mode < ExprMode_Value) {
+            if (ctx->mode == ExprMode_Unresolved) return;
+
+            if (exprCtx.mode < ExprMode_Value) {
                 ReportError(pkg, NotAValueError, var.values[i]->start,
                             "Expected a value but got %s (type %s)", DescribeExpr(var.values[i]), DescribeType(type));
             }
@@ -1875,7 +1950,7 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
                             "Unable to convert type %s to expected type type %s",
                             DescribeType(type), DescribeType(expectedType));
                 markSymbolInvalid(symbols[i]);
-                return false;
+                return;
             }
 
             if (exprCtx.mode == ExprMode_Type) {
@@ -1893,13 +1968,14 @@ b32 checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     }
 
     storeInfoVariable(pkg, declStmt, symbols);
-    return false;
 }
 
-b32 checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
+void checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
     ASSERT(decl->kind == DeclKind_Foreign);
 
     Type *type = checkExpr(decl->Foreign.type, ctx, pkg);
+    if (ctx->mode == ExprMode_Unresolved) return;
+
     expectType(pkg, type, ctx, decl->Foreign.type->start);
 
     Symbol *symbol;
@@ -1914,31 +1990,53 @@ b32 checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
 
     markSymbolResolved(symbol, type);
     storeInfoForeign(pkg, decl, symbol);
-    return false;
 }
 
-b32 checkDeclForeignBlock(Decl *decl, CheckerContext *ctx, Package *pkg) {
+void checkDeclForeignBlock(Decl *decl, CheckerContext *ctx, Package *pkg) {
     ASSERT(decl->kind == DeclKind_ForeignBlock);
 
     for (size_t i = 0; i < ArrayLen(decl->ForeignBlock.members); i++) {
         Decl_ForeignBlockMember it = decl->ForeignBlock.members[i];
 
         Type *type = checkExpr(it.type, ctx, pkg);
+        if (ctx->mode == ExprMode_Unresolved) return;
+
         expectType(pkg, type, ctx, it.type->start);
 
         Symbol *symbol = it.symbol;
         symbol->externalName = it.linkname;
         markSymbolResolved(symbol, type);
     }
-
-    return false;
 }
 
-b32 checkDeclImport(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
-    ASSERT(declStmt->kind == DeclKind_Import);
-//    Decl_Import import = declStmt->Import;
-    UNIMPLEMENTED();
-    return false;
+void checkDeclImport(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_Import);
+
+    ctx->desiredType = StringType;
+    Type *type = checkExpr(decl->Import.path, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
+    if (ctx->mode == ExprMode_Unresolved) return;
+
+    if (!TypesIdentical(type, StringType) || !IsConstant(ctx)) {
+        ReportError(pkg, TODOError, decl->start,
+                    "Could not resolve path %s to string constant", DescribeExpr(decl->Import.path));
+        goto error;
+    }
+
+    // TODO: Path stuff
+
+    Symbol *symbol = decl->Import.symbol;
+
+    const char *path = (const char *) ctx->val.ptr;
+    Package *import = ImportPackage(path);
+//    import->externalName = ExternalNameForPackage();
+    import->externalName = "packagePrefix";
+    symbol->backendUserdata = import;
+
+    return;
+
+error:
+    return;
 }
 
 void checkStmtLabel(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
@@ -2242,27 +2340,25 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 }
 
 b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
-    b32 shouldRequeue = false;
-
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
-            shouldRequeue = checkDeclConstant((Decl *) stmt, ctx, pkg);
+            checkDeclConstant((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtDeclKind_Variable:
-            shouldRequeue = checkDeclVariable((Decl *) stmt, ctx, pkg);
+            checkDeclVariable((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtDeclKind_Foreign:
-            shouldRequeue = checkDeclForeign((Decl *) stmt, ctx, pkg);
+            checkDeclForeign((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtDeclKind_ForeignBlock:
-            shouldRequeue = checkDeclForeignBlock((Decl *) stmt, ctx, pkg);
+            checkDeclForeignBlock((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtDeclKind_Import:
-            shouldRequeue = checkDeclImport((Decl *) stmt, ctx, pkg);
+            checkDeclImport((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtKind_Label:
@@ -2313,7 +2409,8 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
 
-    return shouldRequeue;
+    if (ctx->mode == ExprMode_Unresolved) return true;
+    return false;
 }
 
 #if TEST
@@ -2344,11 +2441,11 @@ Stmt *resetAndParseReturningLastStmt(const char *code) {
     Queue queue = resetAndParse(code);
     ASSERT(queue.size > 0);
     while (queue.size > 1) {
-        CheckerWork *work = QueueDequeue(&queue);
+        CheckerWork *work = QueuePopFront(&queue);
         CheckerContext ctx = { work->package->scope };
         checkStmt(work->stmt, &ctx, work->package);
     }
-    CheckerWork *work = QueueDequeue(&queue);
+    CheckerWork *work = QueuePopFront(&queue);
     ASSERT(work);
     Stmt *stmt = work->stmt;
     ArenaFree(&queue.arena);
@@ -2359,7 +2456,7 @@ void test_checkConstantDeclarations() {
     REINIT_COMPILER();
     Queue queue = resetAndParse("x :: 8");
 
-    CheckerWork *work = QueueDequeue(&queue);
+    CheckerWork *work = QueuePopFront(&queue);
 
     ASSERT(queue.size == 0);
 
@@ -2798,10 +2895,8 @@ void test_checkExprLitCompound() {
 //    ASSERT(info->BasicExpr.type == type);
 //    ASSERT(type == typeFromParsing("[10]u8"));
 
-    // NOTE: The below is fairly different because the last stmt is a declaration. It checks that the desired type can
-    //  be used in place of explicitly providing the type for a compound literal
     Stmt *stmt = resetAndParseReturningLastStmt("Foo :: struct {a: u8; b: u16};"
-                  "foo : Foo = {};");
+                                                "foo : Foo = {};");
     RESET_CONTEXT(ctx);
     checkStmt(stmt, &ctx, &pkg);
     expr = stmt->Variable.values[0];

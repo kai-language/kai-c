@@ -42,7 +42,7 @@ Package *ImportPackage(const char *path) {
 
         strcpy(package->fullPath, fullPath);
         addPackage(package);
-        QueueEnqueue(&parsingQueue, package);
+        QueuePushBack(&parsingQueue, package);
     }
     return package;
 }
