@@ -1023,7 +1023,14 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
             global->setAlignment(BytesFromBits(symbol->type->Align));
             symbol->backendUserdata = global;
 
-            // TODO(Brett): debug global declare
+            ctx->d.builder->createGlobalVariableExpression(
+                ctx->d.scope,
+                symbol->name, "",
+                ctx->d.file,
+                decl->start.line,
+                debugCanonicalize(ctx, symbol->type),
+                false
+            );
         } else {
             llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
             symbol->backendUserdata = alloca;
