@@ -1,4 +1,3 @@
-
 #include "common.h"
 #include "symbols.h"
 #include "compiler.h"
@@ -1362,7 +1361,7 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     llvm::SwitchInst *swtch = ctx->b.CreateSwitch(
         tag ? tag : value,
         defaultBlock ? defaultBlock : post,
-        thenBlocks.size()
+        (u32)thenBlocks.size()
     );
 
     size_t count = MIN(matches.size(), thenBlocks.size());
@@ -1378,7 +1377,6 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmt(Context *ctx, Stmt *stmt) {
-
     if (stmt->kind > _StmtExprKind_Start && stmt->kind < _StmtExprKind_End) {
         emitExpr(ctx, (Expr *) stmt);
         return;

@@ -2222,8 +2222,7 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         CheckerContext caseCtx = {
             .scope = pushScope(pkg, switchCtx.scope),
             .swtch = stmt,
-            // FIXME: WTF is going on with return types...
-//            .desiredType = ctx->desiredType,
+            .desiredType = ctx->desiredType,
             .nextCase = NULL,
             .loop = switchCtx.loop,
             .flags = switchCtx.flags & ~CheckerContextFlag_Constant,
