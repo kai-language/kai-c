@@ -31,6 +31,8 @@ for (TYPE ITER = AGG ? AGG[IDX] : NULL; IDX < ArrayLen(AGG); IDX++, ITER = AGG[I
 
 #define ForEach(AGG, TYPE) ForEachWithIndex(AGG, ANONYMOUS_VARIABLE(_index), TYPE, it)
 
+typedef DynamicArray(u8) String;
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1605,7 +1605,7 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
     if (isStatic) {
         ArrayPrintf(linkerFlags, "libtool -static -o %s %s", OutputName, objectName);
     } else {
-        const char *outputType = OutputType == OutputType_Exec ? "execute" : "dynamic";
+        const char *outputType = OutputType == OutputType_Exec ? "execute" : "dynamic -dylib";
         ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -%s -macosx_version_min 10.13", objectName, OutputName, outputType);
     }
 
