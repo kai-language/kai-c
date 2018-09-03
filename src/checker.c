@@ -1945,7 +1945,7 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         For (var.names) {
             Type *type = checkExpr(var.values[i], &exprCtx, pkg);
-            if (ctx->mode == ExprMode_Unresolved) return;
+            if (exprCtx.mode == ExprMode_Unresolved) return;
 
             if (exprCtx.mode < ExprMode_Value) {
                 ReportError(pkg, NotAValueError, var.values[i]->start,
