@@ -1116,6 +1116,24 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
 
             if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
                 global->setInitializer(constant);
+            } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
+
+                // This handles a file scope variables refering to one another where the initializer is a constant
+
+                // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
+                //  It could be much better to have in the context a flag that says, *if* a global is encountered then
+                //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
+                // -vdka September 2018
+
+                llvm::Value *loaded = inst->getPointerOperand();
+                if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
+
+                    inst->removeFromParent();
+                    inst->deleteValue();
+
+                    global->setInitializer(other->getInitializer());
+                }
+
             } else {
                 global->setExternallyInitialized(true);
                 // TODO: Add initializer to some sort of premain
@@ -1639,13 +1657,15 @@ b32 CodegenLLVM(Package *p) {
         // TODO: Absolute path for dir
         llvm::DIFile *file = builder->createFile(name, dir);
 
+        // TODO: Set isOptimized in a logical way
+        // TODO: Set RuntimeVersion in some logical way
         llvm::DICompileUnit *unit = builder->createCompileUnit(
             llvm::dwarf::DW_LANG_C,
             file,
             "Kai programming language",
-            /* isOptimized:*/ false,
+            false,  // isOptimized
             "",
-            /* RuntimeVersion:*/ 0
+            0       // RuntimeVersion
         );
 
         DebugTypes types;
@@ -1767,12 +1787,19 @@ void debugPos(Context *ctx, Position pos) {
     ctx->b.SetCurrentDebugLocation(llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope));
 }
 
+void printIR(llvm::Module *value) {
+    value->print(llvm::outs(), nullptr, true, true);
+    puts("\n");
+}
+
 void printIR(llvm::Value *value) {
     value->print(llvm::outs());
+    puts("\n");
 }
 
 void printIR(llvm::Type *value) {
     value->print(llvm::outs());
+    puts("\n");
 }
 
 #pragma clang diagnostic pop
