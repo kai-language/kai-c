@@ -1195,6 +1195,7 @@ void parsePackageCode(Package *pkg, const char *code) {
 
         switch (decl->kind) {
             case StmtDeclKind_Constant: {
+                decl->owningScope = pkg->scope;
                 ForEach(decl->Constant.names, Expr_Ident *) {
                     // We iterate over, and declare all names of the constant despite only supporting a single name
                     declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
@@ -1206,6 +1207,7 @@ void parsePackageCode(Package *pkg, const char *code) {
                 break;
             }
             case StmtDeclKind_Variable: {
+                decl->owningScope = pkg->scope;
                 ForEach(decl->Variable.names, Expr_Ident *) {
                     declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
                     symbol->kind = SymbolKind_Variable;
@@ -1216,6 +1218,7 @@ void parsePackageCode(Package *pkg, const char *code) {
                 break;
             }
             case StmtDeclKind_Foreign: {
+                decl->owningScope = pkg->scope;
                 declareSymbol(pkg, pkg->scope, decl->Foreign.name, &symbol, decl);
                 symbol->kind = decl->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
                 symbol->state = SymbolState_Unresolved;
@@ -1224,6 +1227,7 @@ void parsePackageCode(Package *pkg, const char *code) {
                 break;
             }
             case StmtDeclKind_ForeignBlock: {
+                decl->owningScope = pkg->scope;
                 Decl_ForeignBlock block = decl->ForeignBlock;
                 size_t len = ArrayLen(block.members);
                 for (size_t i = 0; i < len; i++) {
@@ -1240,6 +1244,7 @@ void parsePackageCode(Package *pkg, const char *code) {
             }
 
             case StmtDeclKind_Import: {
+                decl->owningScope = pkg->scope;
                 // TODO: To properly support out of order declarations things we will need to re-evaluate how we
                 //  evaluate imports. Because the code will potentially have to run through the entire compiler pipeline
                 //  before a constant string may be generated. Only then can we 'infer' the name from the import.

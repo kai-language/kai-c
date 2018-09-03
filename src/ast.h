@@ -522,6 +522,9 @@ struct Decl {
         DECL_KINDS
 #undef FOR_EACH
     };
+
+    // This is used to switch context for file level declarations. Only expect this to be set for top level declarations
+    Scope *owningScope;
 };
 
 extern i8 stmtDeclaresSymbol[_StmtDeclKind_End];

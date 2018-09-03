@@ -684,7 +684,12 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
     symbol->used = true;
     switch (symbol->state) {
         case SymbolState_Unresolved:
-            goto unresolved;
+            // TODO: Context switch to the declaration's context
+
+            ASSERT_MSG(symbol->decl->owningScope, "Unresolved non top level symbol");
+            CheckerContext declCtx = { .scope = symbol->decl->owningScope };
+            checkStmt((Stmt *) symbol->decl, &declCtx, pkg);
+            break;
 
         case SymbolState_Resolving:
             // TODO: For cyclic types we need a ctx->hasIndirection to check and see if
@@ -1767,45 +1772,45 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
     return type;
 }
 
-void checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
-    ASSERT(declStmt->kind == DeclKind_Constant);
-    Decl_Constant decl = declStmt->Constant;
+void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_Constant);
+    Decl_Constant constant = decl->Constant;
 
-    if (ArrayLen(decl.names) != 1) {
-        ReportError(pkg, MultipleConstantDeclError, decl.start,
+    if (ArrayLen(constant.names) != 1) {
+        ReportError(pkg, MultipleConstantDeclError, constant.start,
             "Constant declarations must declare at most one item");
 
-        ForEach (decl.names, Expr_Ident *) {
+        ForEach (constant.names, Expr_Ident *) {
             Symbol *symbol = Lookup(pkg->scope, it->name);
             markSymbolInvalid(symbol);
         }
         return;
     }
 
-    if (ArrayLen(decl.values) > 1) {
-        ReportError(pkg, ArityMismatchError, decl.start,
-                    "Constant declarations only allow for a single value, but got %zu", ArrayLen(decl.values));
+    if (ArrayLen(constant.values) > 1) {
+        ReportError(pkg, ArityMismatchError, constant.start,
+                    "Constant declarations only allow for a single value, but got %zu", ArrayLen(constant.values));
         return;
     }
 
     Type *expectedType = NULL;
 
-    if (decl.type) {
-        expectedType = checkExpr(decl.type, ctx, pkg);
+    if (constant.type) {
+        expectedType = checkExpr(constant.type, ctx, pkg);
         if (ctx->mode == ExprMode_Unresolved) return;
 
-        expectType(pkg, expectedType, ctx, decl.type->start);
+        expectType(pkg, expectedType, ctx, constant.type->start);
     }
 
-    Expr_Ident *ident = decl.names[0];
-    Expr *value = decl.values[0];
+    Expr_Ident *ident = constant.names[0];
+    Expr *value = constant.values[0];
 
     Symbol *symbol;
     if (ctx->scope == pkg->scope) {
         symbol = MapGet(&ctx->scope->members, ident->name);
         ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
     } else {
-        declareSymbol(pkg, ctx->scope, ident->name, &symbol, declStmt);
+        declareSymbol(pkg, ctx->scope, ident->name, &symbol, decl);
     }
 
     symbol->state = SymbolState_Resolving;
@@ -1860,7 +1865,7 @@ void checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
     }
 
     markSymbolResolved(symbol, type);
-    storeInfoConstant(pkg, declStmt, symbol);
+    storeInfoConstant(pkg, decl, symbol);
     return;
 
 unresolved:
@@ -1868,9 +1873,9 @@ unresolved:
     return;
 }
 
-void checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
-    ASSERT(declStmt->kind == DeclKind_Variable);
-    Decl_Variable var = declStmt->Variable;
+void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_Variable);
+    Decl_Variable var = decl->Variable;
 
     Type *expectedType = NULL;
 
@@ -1894,7 +1899,7 @@ void checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         ForEach(var.names, Expr_Ident *) {
             Symbol *symbol;
             // FIXME(Brett): figure out how I want to recover from a duplicate
-            declareSymbol(pkg, ctx->scope, it->name, &symbol, declStmt);
+            declareSymbol(pkg, ctx->scope, it->name, &symbol, decl);
             ArrayPush(symbols, symbol);
         }
     }
@@ -1967,7 +1972,7 @@ void checkDeclVariable(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
         }
     }
 
-    storeInfoVariable(pkg, declStmt, symbols);
+    storeInfoVariable(pkg, decl, symbols);
 }
 
 void checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
