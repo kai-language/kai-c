@@ -126,7 +126,7 @@ void assertHandler(char const *file, i32 line, char const *msg, ...);
 #endif
 
 #ifndef TEST
-#if !defined(RELEASE) && !defined(ASSERTS)
+#if DEBUG
     #define ASSERT_MSG_VA(cond, msg, ...) do { \
         if (!(cond)) { \
             assertHandler(__FILE__, (i32)__LINE__, msg, __VA_ARGS__); \

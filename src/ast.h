@@ -525,6 +525,12 @@ struct Decl {
 
     // This is used to switch context for file level declarations. Only expect this to be set for top level declarations
     Scope *owningScope;
+
+    // The following members exist in DEBUG builds to aid in debugging the compiler itself.
+    // Anything they enable should be achievable in another way, they are here purely for convenience.
+#if DEBUG
+    Package *owningPackage;
+#endif
 };
 
 extern i8 stmtDeclaresSymbol[_StmtDeclKind_End];

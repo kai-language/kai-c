@@ -1774,6 +1774,7 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
 void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
     ASSERT(decl->kind == DeclKind_Constant);
+    ASSERT(decl->owningPackage == pkg);
     Decl_Constant constant = decl->Constant;
 
     if (ArrayLen(constant.names) != 1) {
@@ -1875,6 +1876,7 @@ unresolved:
 
 void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
     ASSERT(decl->kind == DeclKind_Variable);
+    ASSERT(decl->owningPackage == pkg);
     Decl_Variable var = decl->Variable;
 
     Type *expectedType = NULL;
