@@ -85,8 +85,8 @@ int main(int argc, const char **argv) {
         CheckerWork *work = QueuePopFront(&checkingQueue);
         if (work) {
             CheckerContext ctx = { .scope = work->package->scope };
-            b32 shouldRequeue = checkStmt(work->stmt, &ctx, work->package);
-            if (shouldRequeue || ctx.mode == ExprMode_Unresolved) {
+            checkStmt(work->stmt, &ctx, work->package);
+            if (ctx.mode == ExprMode_Unresolved) {
                 QueuePushBack(&checkingQueue, work);
             }
             continue;

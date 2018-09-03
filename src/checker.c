@@ -669,7 +669,7 @@ Type *TypeFromCheckerInfo(CheckerInfo info) {
 }
 
 Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg);
-b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg);
+void  checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg);
 
 Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Ident);
@@ -2339,7 +2339,7 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     }
 }
 
-b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
+void checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     switch (stmt->kind) {
         case StmtDeclKind_Constant:
             checkDeclConstant((Decl *) stmt, ctx, pkg);
@@ -2408,9 +2408,6 @@ b32 checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             }
             ASSERT_MSG_VA(false, "Statement of type '%s' went unchecked", AstDescriptions[stmt->kind]);
     }
-
-    if (ctx->mode == ExprMode_Unresolved) return true;
-    return false;
 }
 
 #if TEST
