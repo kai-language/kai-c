@@ -2059,9 +2059,7 @@ void checkDeclImport(Decl *decl, CheckerContext *ctx, Package *pkg) {
     Symbol *symbol = decl->Import.symbol;
 
     const char *path = (const char *) ctx->val.ptr;
-    Package *import = ImportPackage(path);
-//    import->externalName = ExternalNameForPackage();
-    import->externalName = "packagePrefix";
+    Package *import = ImportPackage(path, pkg);
     symbol->backendUserdata = import;
 
     return;

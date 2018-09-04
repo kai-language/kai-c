@@ -1280,7 +1280,7 @@ void parsePackageCode(Package *pkg, const char *code) {
 }
 
 void parsePackage(Package *package) {
-    const char *code = ReadEntireFile(package->fullPath);
+    const char *code = ReadEntireFile(package->fullpath);
     if (!code) {
         ReportError(package, FatalError, (Position){ .name = package->path }, "Failed to read source file");
         return;

@@ -69,7 +69,7 @@ int main(int argc, const char **argv) {
     }
         
     InitCompiler();
-    Package *mainPackage = ImportPackage(InputName);
+    Package *mainPackage = ImportPackage(InputName, NULL);
     if (!mainPackage) {
         printf("error: Failed to compile '%s'\n", InputName);
         exit(1);

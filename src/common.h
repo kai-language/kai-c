@@ -229,8 +229,7 @@ struct Scope {
 typedef struct Package Package;
 struct Package {
     const char *path;
-    char fullPath[MAX_PATH];
-    const char *externalName;
+    const char *fullpath;
     DiagnosticEngine diagnostics;
     Arena arena;
     DynamicArray(Stmt *) stmts;
