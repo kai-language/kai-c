@@ -323,7 +323,7 @@ void InitBuiltins() {
     _global = Alloc(DefaultAllocator, sizeof(Type)); \
     memcpy(_global, _alias, sizeof(Type)); \
     _global->Flags |= TypeFlag_Alias; \
-    declareBuiltinType(_name, _global)
+    declareBuiltinType(_name, _alias)
 
     TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
     TYPE(FileType, "<file>", Invalid, 0, TypeFlag_None);

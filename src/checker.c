@@ -491,6 +491,7 @@ Conversion conversion(Type *type, Type *target) {
     // TODO: function to pointer and vica versa
 
     PANIC("Unhandled or prohibited conversion");
+    return ConversionKind_None;
 }
 
 void changeTypeOrMarkConversionForExpr(Expr *expr, Type *type, Type *target, Package *pkg) {
@@ -2488,8 +2489,8 @@ void test_checkConstantDeclarations() {
 
     Stmt *stmt = work->stmt;
     CheckerContext ctx = { pkg.scope };
-    b32 requeue = checkStmt(stmt, &ctx, &pkg);
-    ASSERT(!requeue);
+    checkStmt(stmt, &ctx, &pkg);
+    ASSERT(ctx.mode != ExprMode_Unresolved);
 
     Symbol *sym = Lookup(pkg.scope, StrIntern("x"));
     ASSERT(sym);

@@ -17,6 +17,9 @@ R"(
 #include <setjmp.h>
 #include <signal.h>
 
+#define DEBUG 1
+#define TEST  1
+
 int _fileTestsPassCount = 0;
 int _totalTestsPassCount = 0;
 int _currentTestAsserted = 0;

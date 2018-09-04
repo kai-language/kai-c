@@ -915,7 +915,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         ctx->d.builder->finalizeSubprogram(fn->getSubprogram());
     }
 
-#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+#if DEBUG
     if (llvm::verifyFunction(*fn, &llvm::errs())) {
         ctx->m->print(llvm::errs(), nullptr);
         ASSERT(false);
@@ -999,7 +999,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         userdata->debugType = debugType;
     }
 
-#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+#if DEBUG
     // Checks the frontend layout matches the llvm backend
     const llvm::StructLayout *layout = ctx->dataLayout.getStructLayout(ty);
     size_t numElements = ArrayLen(type->Struct.members);
@@ -1703,7 +1703,7 @@ b32 CodegenLLVM(Package *p) {
 
     ctx.d.builder->finalize();
 
-#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+#if DEBUG
     if (llvm::verifyModule(*module, &llvm::errs())) {
         module->print(llvm::errs(), nullptr);
         ASSERT(false);

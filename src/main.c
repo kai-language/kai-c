@@ -16,41 +16,20 @@
 
 #define VERSION "0.0.0 (prerelease)"
 
-#ifdef DEBUG
-b8 _debugEnabled = true;
-#else
-b8 _debugEnabled = false;
-#endif
-
-#if defined(ASSERTS) || defined(DEBUG)
-b8 _assertsEnabled = true;
-#else
-b8 _assertsEnabled = false;
-#endif
-
-#ifndef NO_ERROR_CODES
-b8 _errorCodesEnabled = true;
-#else
-b8 _errorCodesEnabled = false;
-#endif
-
-#ifdef DIAGNOSTICS
-b8 _diagnosticsEnabled = true;
-#else
-b8 _diagnosticsEnabled = false;
-#endif
-
 
 void outputVersionAndBuildInfo() {
     printf("%s\n\n", VERSION);
 
-#define checkOrCross(info) \
-    printf("%-11s %s\n", "" #info "", _##info##Enabled ? "✅" : "❌")
+    bool debug = false;
 
-    checkOrCross(asserts);
-    checkOrCross(debug);
-    checkOrCross(errorCodes);
-    checkOrCross(diagnostics);
+#if DEBUG
+    debug = true;
+#endif
+
+    const char *y = "✔";
+    const char *n = "✘";
+
+    printf("-DDEBUG %s\n", debug ? y : n);
 }
 
 #ifndef TEST
