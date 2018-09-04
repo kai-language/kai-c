@@ -34,7 +34,7 @@ Package *ImportPackage(const char *path, Package *importer) {
     char pathRelativeToImporter[MAX_PATH];
     if (importer) {
         strcpy(pathRelativeToImporter, importer->path);
-        char *lastSlash = rindex(pathRelativeToImporter, '/') + 1;
+        char *lastSlash = strrchr(pathRelativeToImporter, '/') + 1;
         strcpy(lastSlash, path);
     } else {
         strcpy(pathRelativeToImporter, path);

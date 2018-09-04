@@ -296,6 +296,20 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
     types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
 }
 
+llvm::DIFile *setDebugInfoForPackage(llvm::DIBuilder *b, Package *import) {
+    if (FlagDebug && !import->backendUserdata) {
+        char directory[MAX_PATH];
+        strcpy(directory, import->fullpath);
+        char *filename = strrchr(directory, '/');
+        *(filename++) = '\0';
+
+        llvm::DIFile *file = b->createFile(filename, directory);
+        import->backendUserdata = file;
+        return file;
+    }
+    return NULL;
+}
+
 void setCallingConvention(llvm::Function *fn, const char *name) {
     if (name == internCallConv_C) {
         fn->setCallingConv(llvm::CallingConv::C);
@@ -382,6 +396,8 @@ llvm::Value *emitExprIdent(Context *ctx, Expr *expr) {
     CheckerInfo info = ctx->checkerInfo[expr->id];
     Symbol *symbol = info.Ident.symbol;
     if (!symbol->backendUserdata) {
+
+        // TODO: Switch to the symbol's package (only relevant when a symbol can be imported) into another scope
         emitStmt(ctx, (Stmt *) symbol->decl);
         ASSERT(symbol->backendUserdata);
     }
@@ -495,7 +511,22 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
             if (!symbol->backendUserdata) {
                 CheckerInfo *prevCheckerInfo = ctx->checkerInfo;
                 ctx->checkerInfo = info.value.Import.package->checkerInfo;
-                emitStmt(ctx, (Stmt *) symbol->decl);
+
+                llvm::DIFile *file = (llvm::DIFile *) info.value.Import.package->backendUserdata;
+                Debug debug = {ctx->d.builder, ctx->d.unit, file, ctx->d.types, file};
+
+                llvm::IRBuilder<> b(ctx->m->getContext());
+                Context declContext = {
+                    .checkerInfo = info.value.Import.package->checkerInfo,
+                    .m = ctx->m,
+                    .targetMachine = ctx->targetMachine,
+                    .dataLayout = ctx->dataLayout,
+                    .b = b,
+                    .fn = nullptr,
+                    .d = debug,
+                };
+
+                emitStmt(&declContext, (Stmt *) symbol->decl);
                 ASSERT(symbol->backendUserdata);
 
                 ctx->checkerInfo = prevCheckerInfo;
@@ -802,18 +833,21 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     if (FlagDebug) {
 
         auto dbgType = (llvm::DISubroutineType *)debugCanonicalize(ctx, info.BasicExpr.type);
+
+        // TODO: Set isOptimized in a logical way
+        // TODO: Set isLocalToUnit (if a function is declared in a function scope)
         llvm::DISubprogram *sub = ctx->d.builder->createFunction(
             ctx->d.file,
-            fn->getName(), // Name (will be set correctly by the caller) (TODO)
-            fn->getName(), // LinkageName
+            fn->getName(),      // Name (will be set correctly by the caller) (TODO)
+            fn->getName(),      // LinkageName
             ctx->d.file,
             expr->start.line,
             dbgType,
-            false,
-            true,
+            false,              // isLocalToUnit
+            true,               // isDefinition
             expr->LitFunction.body->start.line,
             llvm::DINode::FlagPrototyped,
-            false
+            false               // isOptimized (TODO)
         );
         fn->setSubprogram(sub);
 
@@ -1541,6 +1575,10 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             emitDeclForeignBlock(ctx, (Decl *) stmt);
             break;
 
+        case StmtDeclKind_Import:
+            setDebugInfoForPackage(ctx->d.builder, (Package *) stmt->Import.symbol->backendUserdata);
+            break;
+
         case StmtKind_Label:
             emitStmtLabel(ctx, stmt);
             break;
@@ -1645,17 +1683,11 @@ b32 CodegenLLVM(Package *p) {
      !1 = !{!"clang version 6.0.0 (tags/RELEASE_600/final)"}
      */
 
-    char *path = AbsolutePath(p->path, NULL);
-    char buff[MAX_PATH];
-    char *dir;
-    char *name = GetFileName(path, buff, &dir);
-
     Debug debug;
     if (FlagDebug) {
         llvm::DIBuilder *builder = new llvm::DIBuilder(*module);
 
-        // TODO: Absolute path for dir
-        llvm::DIFile *file = builder->createFile(name, dir);
+        llvm::DIFile *file = setDebugInfoForPackage(builder, p);
 
         // TODO: Set isOptimized in a logical way
         // TODO: Set RuntimeVersion in some logical way
@@ -1714,7 +1746,11 @@ b32 CodegenLLVM(Package *p) {
         module->print(llvm::outs(), nullptr);
         return 0;
     } else {
-        return emitObjectFile(p, name, &ctx);
+        char path[MAX_PATH];
+        strcpy(path, p->path);
+        char *filename = strrchr(path, '/');
+        *(filename++) = '\0';
+        return emitObjectFile(p, filename, &ctx);
     }
 }
 

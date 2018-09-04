@@ -238,6 +238,9 @@ struct Package {
     u64 astIdCount;
     DynamicArray(CheckerInfo) checkerInfo;
 
+    // This pointer can be used by any backend to store symbol-related info for quick lookup
+    void *backendUserdata;
+
     Scope *scope;
 };
 
