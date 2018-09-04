@@ -1054,7 +1054,7 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
             }
         }
         
-        if (ArrayLen(var.values) >= i) {
+        if (i && ArrayLen(var.values) >= i) {
             Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
             llvm::Value *value = emitExpr(ctx, var.values[i]);
             if (isGlobal) {
