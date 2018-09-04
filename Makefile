@@ -1,5 +1,6 @@
 CC = clang
 CXX = clang++
+PREFIX=/usr/local
 
 debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG -DDIAGNOSTICS -DSLOW $(CFLAGS)
 release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE -DFAST $(CFLAGS)
@@ -45,6 +46,9 @@ tests: clean tools/genTests
 	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
 	@./$(TEST_TARGET) 2> $(TEST_LOG)
 	@rm -f $(TEST_TARGET) $(TEST_MAIN)
+
+install:
+	cp $(TARGET) $(PREFIX)/bin/
 
 clean:
 	rm -f $(TARGET) core.o llvm.o $(TEST_TARGET) $(TEST_LOG) $(TEST_MAIN)
