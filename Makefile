@@ -32,7 +32,7 @@ release: clean $(TARGET)
 $(TARGET): core.o llvm.o
 	$(CXX) -o $(TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
 core.o:
-	$(CC) src/main.c -c -o core.o $(local_CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
+	$(CC) src/main.c -c -o core.o $(local_CFLAGS) $(LFLAGS) $(DISABLED_WARNINGS)
 llvm.o:
 	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 
