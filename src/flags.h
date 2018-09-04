@@ -5,6 +5,7 @@ extern bool FlagVerbose;
 extern bool FlagVersion;
 extern bool FlagHelp;
 extern bool FlagEmitIR;
+extern bool FlagEmitHeader;
 extern bool FlagDumpIR;
 extern bool FlagDebug;
 

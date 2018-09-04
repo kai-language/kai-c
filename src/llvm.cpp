@@ -1008,30 +1008,60 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
         // FIXME: Global variables
         debugPos(ctx, var.names[i]->start);
 
-        llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
-        symbol->backendUserdata = alloca;
+        // NOTE: We may want a more verbose version of this?
+        b32 isGlobal = ctx->fn == NULL;
 
-        if (FlagDebug) {
-            auto d = ctx->d.builder->createAutoVariable(
+        if (isGlobal) {
+            auto global = new llvm::GlobalVariable(
+                *ctx->m,
+                canonicalize(ctx, symbol->type),
+                false, /* isConstant */
+                llvm::GlobalValue::LinkageTypes::ExternalLinkage,
+                NULL,
+                symbol->name
+            );
+            global->setAlignment(BytesFromBits(symbol->type->Align));
+            symbol->backendUserdata = global;
+
+            ctx->d.builder->createGlobalVariableExpression(
                 ctx->d.scope,
-                symbol->name,
+                symbol->name, "",
                 ctx->d.file,
                 decl->start.line,
-                debugCanonicalize(ctx, symbol->type)
+                debugCanonicalize(ctx, symbol->type),
+                false
             );
-            ctx->d.builder->insertDeclare(
-                alloca,
-                d,
-                ctx->d.builder->createExpression(),
-                llvm::DebugLoc::get(decl->start.line, decl->start.column, ctx->d.scope),
-                ctx->b.GetInsertBlock()
-            );
-        }
+        } else {
+            llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
+            symbol->backendUserdata = alloca;
 
-        if (ArrayLen(var.values) >= i) {
+            if (FlagDebug) {
+                auto d = ctx->d.builder->createAutoVariable(
+                    ctx->d.scope,
+                    symbol->name,
+                    ctx->d.file,
+                    decl->start.line,
+                    debugCanonicalize(ctx, symbol->type)
+                );
+
+                ctx->d.builder->insertDeclare(
+                    alloca,
+                    d,
+                    ctx->d.builder->createExpression(),
+                    llvm::DebugLoc::get(decl->start.line, decl->start.column, ctx->d.scope),
+                    ctx->b.GetInsertBlock()
+                );
+            }
+        }
+        
+        if (i && ArrayLen(var.values) >= i) {
             Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
             llvm::Value *value = emitExpr(ctx, var.values[i]);
-            ctx->b.CreateAlignedStore(value, alloca, BytesFromBits(type->Align));
+            if (isGlobal) {
+                ((llvm::GlobalVariable *)symbol->backendUserdata)->setInitializer((llvm::Constant *)value);
+            } else {
+                ctx->b.CreateAlignedStore(value, (llvm::Value *)symbol->backendUserdata, BytesFromBits(type->Align));
+            }
         }
     }
 }
@@ -1576,7 +1606,6 @@ b32 CodegenLLVM(Package *p) {
 
 
 b32 emitObjectFile(Package *p, char *name, Context *ctx) {
-
     char *objectName = KaiToObjectExtension(name);
 
     std::error_code ec;
@@ -1605,7 +1634,7 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
     if (isStatic) {
         ArrayPrintf(linkerFlags, "libtool -static -o %s %s", OutputName, objectName);
     } else {
-        const char *outputType = OutputType == OutputType_Exec ? "execute" : "dynamic";
+        const char *outputType = OutputType == OutputType_Exec ? "execute" : "dynamic -dylib";
         ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -%s -macosx_version_min 10.13", objectName, OutputName, outputType);
     }
 

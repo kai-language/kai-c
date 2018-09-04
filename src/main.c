@@ -10,6 +10,7 @@
 #include "checker.h"
 #include "parser.c"
 #include "checker.c"
+#include "header.c"
 
 #include "llvm.h"
 
@@ -104,6 +105,9 @@ int main(int argc, const char **argv) {
 
     if (!sawErrors) {
         CodegenLLVM(mainPackage);
+
+        if (OutputType != OutputType_Exec || FlagEmitHeader)
+            CodegenCHeader(mainPackage);
     }
 
     ArenaFree(&parsingQueue.arena);
