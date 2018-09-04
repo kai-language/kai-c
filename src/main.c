@@ -55,8 +55,8 @@ void outputVersionAndBuildInfo() {
 
 #ifndef TEST
 int main(int argc, const char **argv) {
-    
     const char *programName = argv[0];
+
     ParseFlags(&argc, &argv);
     if (FlagVersion) {
         outputVersionAndBuildInfo();
@@ -108,6 +108,8 @@ int main(int argc, const char **argv) {
 
         if (OutputType != OutputType_Exec || FlagEmitHeader)
             CodegenCHeader(mainPackage);
+    } else {
+        return 1;
     }
 
     ArenaFree(&parsingQueue.arena);
