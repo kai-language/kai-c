@@ -1,4 +1,3 @@
-
 extern bool FlagParseComments;
 extern bool FlagErrorCodes;
 extern bool FlagVerbose;
@@ -8,6 +7,7 @@ extern bool FlagEmitIR;
 extern bool FlagEmitHeader;
 extern bool FlagDumpIR;
 extern bool FlagDebug;
+extern bool FlagLink;
 
 extern const char *InputName;
 extern const char *OutputName;

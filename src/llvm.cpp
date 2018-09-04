@@ -1626,6 +1626,9 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
     pass.run(*ctx->m);
     dest.flush();
 
+    if (!FlagLink)
+        return 0;
+
     // Linking and debug symbols
 #ifdef SYSTEM_OSX
     bool isStatic = OutputType == OutputType_Static;

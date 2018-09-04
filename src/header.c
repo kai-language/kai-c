@@ -69,7 +69,7 @@ void cgenFuncPrototype(String *buffer, const char *name, Type *type) {
         }
     }
 
-    ArrayPrintf(*buffer, "extern %s %s(%s);\n", returnType, name, params);
+    ArrayPrintf(*buffer, "extern %s %s(%s);\n", returnType, name, params ? (char *)params : "void");
 
     ArrayFree(params);
     ArrayFree(returnType);
