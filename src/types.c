@@ -158,6 +158,7 @@ Type *NewTypePointer(TypeFlag flags, Type *pointeeType) {
     if (!type) {
         type = AllocType(TypeKind_Pointer);
         type->Width = RawptrType->Width;
+        type->Align = RawptrType->Align;
         type->Flags = flags;
         type->Pointer.pointeeType = pointeeType;
         MapSet(&internPointerTypes, pointeeType, type);

@@ -108,6 +108,7 @@ bool shouldInsertSemiAfterKeyword(const char *keyword) {
     if (keyword == Keyword_return) return true;
     if (keyword == Keyword_continue) return true;
     if (keyword == Keyword_fallthrough) return true;
+    if (keyword == Keyword_nil) return true;
     return false;
 }
 

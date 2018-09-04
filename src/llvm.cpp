@@ -1606,7 +1606,6 @@ b32 CodegenLLVM(Package *p) {
 
 
 b32 emitObjectFile(Package *p, char *name, Context *ctx) {
-
     char *objectName = KaiToObjectExtension(name);
 
     std::error_code ec;
