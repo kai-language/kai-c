@@ -12,8 +12,16 @@ bool FlagDebug = true;
 
 const char *InputName;
 const char *OutputName;
+
 int TargetOs;
 int TargetArch;
+int OutputType;
+
+static const char *OutputTypeNames[] = {
+    "exec",
+    "static",
+    "dynamic"
+};
 
 CLIFlag CLIFlags[] = {
     { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
@@ -31,6 +39,7 @@ CLIFlag CLIFlags[] = {
 
     { CLIFlagKind_Enum, "os", .ptr.i = &TargetOs, .options = OsNames, .nOptions = sizeof(OsNames) / sizeof(*OsNames), .help = "Target operating system (default: current)" },
     { CLIFlagKind_Enum, "arch", .ptr.i = &TargetArch, .options = ArchNames, .nOptions = sizeof(ArchNames) / sizeof(*ArchNames), .help = "Target architecture (default: current)" },
+    { CLIFlagKind_Enum, "type", .ptr.i = &OutputType, .options = OutputTypeNames, .nOptions = sizeof(OutputTypeNames) / sizeof(*OutputTypeNames), .help = "Final output type (default: exec)" },
 };
 
 CLIFlag *FlagForName(const char *name) {
