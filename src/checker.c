@@ -705,12 +705,20 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
     storeInfoIdent(pkg, expr, symbol);
 
     switch (symbol->kind) {
+        case SymbolKind_Invalid:
+            ctx->mode = ExprMode_Invalid;
+            break;
+
         case SymbolKind_Import:
             ctx->mode = ExprMode_Import;
             break;
 
         case SymbolKind_Library:
             ctx->mode = ExprMode_Library;
+            break;
+
+        case SymbolKind_Label:
+            UNIMPLEMENTED();
             break;
 
         case SymbolKind_Type:
@@ -722,8 +730,9 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
             ctx->flags |= CheckerContextFlag_Constant;
             break;
 
-        default:
+        case SymbolKind_Variable:
             ctx->mode = ExprMode_Addressable;
+            break;
     }
 
     ctx->val = symbol->val;
@@ -1577,6 +1586,12 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
             }
 
             Symbol *symbol = Lookup(import->scope, expr->Selector.name);
+            if (!symbol) {
+                ReportError(pkg, TODOError, expr->Selector.start, "File %s has no member %s",
+                            DescribeExpr(expr->Selector.expr), expr->Selector.name);
+                goto error;
+            }
+
             switch (symbol->state) {
                 case SymbolState_Unresolved:
                     ctx->mode = ExprMode_Unresolved;
@@ -1640,15 +1655,15 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
-    Type *previousDesiredType = ctx->desiredType;
+    CheckerContext argCtx = { ctx->scope };
     ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
-        ctx->desiredType = calleeType->Function.params[i];
-        Type *type = checkExpr(arg->value, ctx, pkg);
-        if (ctx->mode == ExprMode_Unresolved) goto unresolved;
+        argCtx.desiredType = calleeType->Function.params[i];
+        Type *type = checkExpr(arg->value, &argCtx, pkg);
+        if (argCtx.mode == ExprMode_Unresolved) goto unresolved;
+        if (argCtx.mode == ExprMode_Invalid) goto error;
 
-        coerceType(arg->value, ctx, &type, calleeType->Function.params[i], pkg);
+        coerceType(arg->value, &argCtx, &type, calleeType->Function.params[i], pkg);
     }
-    ctx->desiredType = previousDesiredType;
     // TODO: Implement checking for calls
     Type *type = NewTypeTuple(TypeFlag_None, calleeType->Function.results);
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1945,7 +1960,11 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
         For (var.names) {
             Type *type = checkExpr(var.values[i], &exprCtx, pkg);
-            if (exprCtx.mode == ExprMode_Unresolved) return;
+            if (exprCtx.mode == ExprMode_Unresolved) goto unresolved;
+            if (exprCtx.mode == ExprMode_Invalid) {
+                markSymbolInvalid(symbols[i]);
+                continue;
+            };
 
             if (exprCtx.mode < ExprMode_Value) {
                 ReportError(pkg, NotAValueError, var.values[i]->start,
@@ -1975,6 +1994,11 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
     }
 
     storeInfoVariable(pkg, decl, symbols);
+    return;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return;
 }
 
 void checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
