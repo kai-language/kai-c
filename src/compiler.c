@@ -18,16 +18,17 @@ DynamicArray(Package*) packages;
 Queue parsingQueue;
 Queue checkingQueue;
 
+Scope *pushScope(Package *pkg, Scope *parent);
+
 void addPackage(Package *package) {
-    Package *old = MapGet(&packageMap, package->path);
+    Package *old = MapGet(&packageMap, package->fullpath);
     if (old != package) {
         ASSERT(!old);
-        MapSet(&packageMap, package->path, package);
+        MapSet(&packageMap, package->fullpath, package);
         ArrayPush(packages, package);
     }
 }
 
-Scope *pushScope(Package *pkg, Scope *parent);
 Package *ImportPackage(const char *path, Package *importer) {
 
     char pathRelativeToImporter[MAX_PATH];
