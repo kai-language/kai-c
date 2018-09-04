@@ -7,6 +7,7 @@ bool FlagVerbose;
 bool FlagVersion;
 bool FlagHelp;
 bool FlagEmitIR;
+bool FlagEmitHeader;
 bool FlagDumpIR;
 bool FlagDebug = true;
 
@@ -32,6 +33,7 @@ CLIFlag CLIFlags[] = {
     { CLIFlagKind_Bool, "verbose", "v", .ptr.b = &FlagVerbose,         .help = "Enable verbose output" },
     { CLIFlagKind_Bool, "dump-ir", .ptr.b = &FlagDumpIR,               .help = "Dump LLVM IR" },
     { CLIFlagKind_Bool, "emit-ir", .ptr.b = &FlagEmitIR,               .help = "Emit LLVM IR file(s)" },
+    { CLIFlagKind_Bool, "emit-header", .ptr.b = &FlagEmitHeader,       .help = "Emit C header file(s)" },
     { CLIFlagKind_Bool, "emit-times", .ptr = NULL,                     .help = "Emit times for each stage of compilation" },
     { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "Display error codes along side error location" },
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },

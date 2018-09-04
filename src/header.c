@@ -144,22 +144,33 @@ void CodegenCHeader(Package *pkg) {
         cgenStmt(&ctx, pkg->checkerInfo, pkg->stmts[i]);
     }
 
-    printf("%s\n", preface);
+    char outputPath[MAX_PATH];
+    snprintf(&outputPath[0], sizeof(outputPath), "%s.h", name);
 
-    if (ctx.primitiveDecls) {
-        printf("// MARK: Declarations\n");
-        printf("%s\n", ctx.primitiveDecls);
+    FILE *file = fopen(outputPath, "wb");
+    if (file) {
+        fprintf(file, "%s\n", preface);
+
+        if (ctx.primitiveDecls) {
+            fprintf(file, "// MARK: Declarations\n");
+            fprintf(file, "%s\n", ctx.primitiveDecls);
+        }
+
+        if (ctx.complexDecls) {
+            fprintf(file, "// MARK: Types\n");
+            fprintf(file, "%s\n", ctx.complexDecls);
+        }
+
+        if (ctx.functions) {
+            fprintf(file, "// MARK: Functions\n");
+            fprintf(file, "%s\n", ctx.functions);
+        }
+
+        fprintf(file, "#endif // KAI_%s_H\n", name);
+        fclose(file);
     }
 
-    if (ctx.complexDecls) {
-        printf("// MARK: Types\n");
-        printf("%s\n", ctx.complexDecls);
-    }
-
-    if (ctx.functions) {
-        printf("// MARK: Functions\n");
-        printf("%s\n", ctx.functions);
-    }
-
-    printf("#endif // KAI_%s_H\n", name);
+    ArrayFree(ctx.primitiveDecls);
+    ArrayFree(ctx.complexDecls);
+    ArrayFree(ctx.functions);
 }

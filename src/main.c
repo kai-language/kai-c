@@ -106,7 +106,7 @@ int main(int argc, const char **argv) {
     if (!sawErrors) {
         CodegenLLVM(mainPackage);
 
-        if (OutputType != OutputType_Exec)
+        if (OutputType != OutputType_Exec || FlagEmitHeader)
             CodegenCHeader(mainPackage);
     }
 
