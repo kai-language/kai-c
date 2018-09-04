@@ -10,6 +10,7 @@ bool FlagEmitIR;
 bool FlagEmitHeader;
 bool FlagDumpIR;
 bool FlagDebug = true;
+bool FlagLink = true;
 
 const char *InputName;
 const char *OutputName;
@@ -38,6 +39,7 @@ CLIFlag CLIFlags[] = {
     { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "Display error codes along side error location" },
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },
     { CLIFlagKind_Bool, "debug", "g",  .ptr.b = &FlagDebug,            .help = "Include debug symbols"},
+    { CLIFlagKind_Bool, "link", .ptr.b = &FlagLink,                    .help = "Link object files (default)"},
 
     { CLIFlagKind_Enum, "os", .ptr.i = &TargetOs, .options = OsNames, .nOptions = sizeof(OsNames) / sizeof(*OsNames), .help = "Target operating system (default: current)" },
     { CLIFlagKind_Enum, "arch", .ptr.i = &TargetArch, .options = ArchNames, .nOptions = sizeof(ArchNames) / sizeof(*ArchNames), .help = "Target architecture (default: current)" },

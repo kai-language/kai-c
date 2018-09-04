@@ -5,6 +5,7 @@ enum Os {
     Os_Linux,
     Os_Darwin,
     Os_Windows,
+
     NUM_OSES,
 };
 
