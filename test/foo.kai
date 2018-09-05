@@ -1,4 +1,10 @@
 
+#import "libc.kai" libc
+
+breakpoint :: fn() -> void {
+    libc.printf("breakpoint\n", 0)
+}
+
 Foo :: struct {
     a, b, c: u32
 }

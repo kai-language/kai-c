@@ -156,7 +156,15 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 
         case TypeKind_Struct: {
             if (type->Symbol && type->Symbol->backendUserdata) {
-                return ((BackendStructUserdata *) type->Symbol->backendUserdata)->type;
+                BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+                return userdata->type;
+            }
+
+            if (type->Symbol->decl) {
+                // TODO: When we support importing symbols into other scopes we will need to do a context switch
+                emitStmt(ctx, (Stmt *) type->Symbol->decl);
+                BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+                return userdata->type;
             }
 
             std::vector<llvm::Type *> elements;
@@ -239,7 +247,8 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
 
     if (type->kind == TypeKind_Struct) {
         if (type->Symbol && type->Symbol->backendUserdata) {
-            return ((BackendStructUserdata *) type->Symbol->backendUserdata)->debugType;
+            BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+            if (userdata->debugType) return userdata->debugType;
         }
 
         std::vector<llvm::Metadata *> elementTypes;
@@ -1733,7 +1742,7 @@ b32 CodegenLLVM(Package *p) {
         emitStmt(&ctx, p->stmts[i]);
     }
 
-    ctx.d.builder->finalize();
+    if (FlagDebug) ctx.d.builder->finalize();
 
 #if DEBUG
     if (llvm::verifyModule(*module, &llvm::errs())) {
