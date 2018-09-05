@@ -98,8 +98,8 @@ struct Context {
     std::vector<llvm::BasicBlock *> deferStack;
 };
 
-typedef struct BackendStructUserdata BackendStructUserdata;
-struct BackendStructUserdata {
+typedef struct BackendUserdataAndDebug BackendUserdataAndDebug;
+struct BackendUserdataAndDebug {
     llvm::Type *type;
     llvm::DIType *debugType;
 };
@@ -133,6 +133,10 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
             }
         } break;
 
+        case TypeKind_Enum: {
+            return llvm::IntegerType::get(ctx->m->getContext(), type->Width);
+        };
+
         case TypeKind_Array: {
             return llvm::ArrayType::get(canonicalize(ctx, type->Array.elementType), type->Array.length);
         } break;
@@ -156,7 +160,7 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 
         case TypeKind_Struct: {
             if (type->Symbol && type->Symbol->backendUserdata) {
-                return ((BackendStructUserdata *) type->Symbol->backendUserdata)->type;
+                return ((BackendUserdataAndDebug *) type->Symbol->backendUserdata)->type;
             }
 
             std::vector<llvm::Type *> elements;
@@ -225,9 +229,38 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         return ctx->d.builder->createSubroutineType(pTypes);
     }
 
+    if (type->kind == TypeKind_Enum) {
+        if (type->Symbol && type->Symbol->backendUserdata) {
+            return ((BackendUserdataAndDebug *) type->Symbol->backendUserdata)->debugType;
+        }
+
+        std::vector<llvm::Metadata *> enumerations;
+        For(type->Enum.cases) {
+            EnumField it = type->Enum.cases[i];
+            auto enumeration = ctx->d.builder->createEnumerator(
+                it.name,
+                it.val
+            );
+
+            enumerations.push_back(enumeration);
+        }
+
+        auto elements = ctx->d.builder->getOrCreateArray(enumerations);
+        ctx->d.builder->createEnumerationType(
+            ctx->d.scope,
+            type->Symbol->name,
+            ctx->d.file,
+            0,
+            type->Width,
+            type->Align,
+            elements,
+            debugCanonicalize(ctx, type->Enum.backingType)
+        );
+    }
+
     if (type->kind == TypeKind_Struct) {
         if (type->Symbol && type->Symbol->backendUserdata) {
-            return ((BackendStructUserdata *) type->Symbol->backendUserdata)->debugType;
+            return ((BackendUserdataAndDebug *) type->Symbol->backendUserdata)->debugType;
         }
 
         std::vector<llvm::Metadata *> elementTypes;
@@ -932,7 +965,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     if (type->Symbol) {
         ty->setName(type->Symbol->name);
 
-        BackendStructUserdata *userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+        BackendUserdataAndDebug *userdata = (BackendUserdataAndDebug *) ArenaAlloc(&ctx->arena, sizeof(BackendUserdataAndDebug));
         userdata->type = ty;
         userdata->debugType = debugType;
         type->Symbol->backendUserdata = userdata;
@@ -983,6 +1016,10 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
     switch (decl->Constant.values[0]->kind) {
         case ExprKind_TypeStruct: {
             emitExprTypeStruct(ctx, decl->Constant.values[0]);
+            break;
+        }
+
+        case ExprKind_TypeEnum: {
             break;
         }
 
@@ -1557,7 +1594,6 @@ b32 CodegenLLVM(Package *p) {
 
         // TODO: Absolute path for dir
         llvm::DIFile *file = builder->createFile(name, dir);
-
         llvm::DICompileUnit *unit = builder->createCompileUnit(
             llvm::dwarf::DW_LANG_C,
             file,
@@ -1692,6 +1728,10 @@ void printIR(llvm::Value *value) {
 
 void printIR(llvm::Type *value) {
     value->print(llvm::outs());
+}
+
+void printModule(llvm::Module *module) {
+    module->print(llvm::errs(), nullptr);
 }
 
 #pragma clang diagnostic pop

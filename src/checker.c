@@ -352,6 +352,10 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
         return type->Width <= target->Width;
     }
 
+    if (type->kind == TypeKind_Enum || IsInteger(target)) {
+        return canCoerce(type->Enum.backingType, target, ctx);
+    }
+
     if (IsFloat(type)) {
         // Coercion between float types requires the target is larger or equal in size.
         return IsFloat(target) && type->Width <= target->Width;
@@ -829,6 +833,85 @@ Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
 error:
     ctx->mode = ExprMode_Invalid;
     return InvalidType;
+}
+
+Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeEnum);
+    Expr_TypeEnum enm = expr->TypeEnum;
+
+    Type *backingType = NULL;
+    if (enm.explicitType) {
+        Type *type = checkExpr(enm.explicitType, ctx, pkg);
+        expectType(pkg, type, ctx, enm.explicitType->start);
+        if (IsInteger(type)) {
+            backingType = type;
+        } else {
+            ReportError(
+                pkg, TypeMismatchError, enm.explicitType->start,
+                "Enum backing type must be an integer. Got: %s",
+                DescribeType(type)
+            );
+        }
+    }
+
+    b32 firstValue = true;
+    b32 hasMinMax = false;
+    u64 maxValue;
+
+    if (backingType) {
+        // TODO: flags
+        maxValue = MaxValueForIntOrPointerType(backingType);
+        hasMinMax = true;
+    }
+
+    DynamicArray(EnumField) fields = NULL;
+    ArrayFit(fields, ArrayLen(enm.items));
+
+    u64 currentValue = 0;
+    u64 largestValue = 0;
+
+    For(enm.items) {
+        EnumItem item = enm.items[i];
+
+        if (item.init) {
+            CheckerContext itemCtx = {.scope = ctx->scope, .desiredType = backingType};
+            Type *type = checkExpr(item.init, &itemCtx, pkg);
+
+            if (!IsConstant(&itemCtx)) {
+                ReportError(
+                    pkg, TODOError, item.init->start,
+                    "Enum cases must be a constant value");
+                continue;
+            }
+
+            if (backingType && !canCoerce(type, backingType, &itemCtx)) {
+                ReportError(
+                    pkg, InvalidConversionError, item.init->start,
+                    "Cannot convert %s to type %s",
+                    DescribeExpr(item.init), DescribeType(backingType)
+                );
+                continue;
+            }
+
+            u64 val = itemCtx.val.u64;
+            currentValue = val;
+            largestValue = MAX(largestValue, val);
+        }
+
+        if (hasMinMax && currentValue > maxValue) {
+            printf("oops!\n");
+            continue;
+        }
+
+        ArrayPush(fields, (EnumField){.name = item.name, .val = currentValue});
+        currentValue++;
+    }
+
+    backingType = backingType ? backingType : SmallestIntTypeForPositiveValue(largestValue);
+    Type *type = NewTypeEnum(TypeFlag_None, backingType, fields);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    ctx->mode = ExprMode_Type;
+    return type;
 }
 
 Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
@@ -1533,6 +1616,25 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
         }
 
+        case TypeKind_Enum: {
+            if (ctx->mode == ExprMode_Type) {
+                EnumFieldLookupResult result = EnumFieldLookup(base->Enum, expr->Selector.name);
+                if (!result.field) {
+                    ReportError(pkg, TODOError, expr->Selector.start, "Enum %s has no member named %s",
+                        DescribeType(base), expr->Selector.name);
+                    goto error;
+                }
+
+                ctx->val.u64 = result.field->val;
+                SelectorValue val = {.Enum.index = result.index};
+                storeInfoSelector(pkg, expr, base, SelectorKind_Enum, val, ctx);
+                type = base;
+                ctx->mode = ExprMode_Addressable;
+                ctx->flags |= CheckerContextFlag_Constant;
+                break;
+            }
+        } 
+
         default: {
             ReportError(pkg, TODOError, expr->start, "%s has no member '%s'", DescribeExpr(expr->Selector.expr), expr->Selector.name);
             goto error;
@@ -1643,6 +1745,9 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_TypeEnum:
+            type = checkExprTypeEnum(expr, ctx, pkg);
+            break;
+
         case ExprKind_TypeUnion:
         case ExprKind_TypePolymorphic:
             UNIMPLEMENTED();
@@ -1757,8 +1862,12 @@ b32 checkDeclConstant(Decl *declStmt, CheckerContext *ctx, Package *pkg) {
             break;
         }
 
-        case ExprKind_TypeUnion:
         case ExprKind_TypeEnum: {
+            symbol->state = SymbolState_Resolving;
+            symbol->kind = SymbolKind_Type;
+        } break;
+
+        case ExprKind_TypeUnion: {
             UNIMPLEMENTED();
         } break;
 

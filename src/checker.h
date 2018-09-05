@@ -58,6 +58,7 @@ struct CheckerInfo_Ident {
 typedef u8 SelectorKind;
 #define SelectorKind_None   0x0
 #define SelectorKind_Struct 0x1
+#define SelectorKind_Enum   0x2
 
 typedef struct Selector_Struct Selector_Struct;
 struct Selector_Struct {
@@ -65,9 +66,15 @@ struct Selector_Struct {
     u32 offset; // The member offset in the structure (in bits)
 };
 
+typedef struct Selector_Enum Selector_Enum;
+struct Selector_Enum {
+    u32 index;
+};
+
 typedef union SelectorValue SelectorValue;
 union SelectorValue {
     Selector_Struct Struct;
+    Selector_Enum Enum;
 };
 
 typedef struct CheckerInfo_Selector CheckerInfo_Selector;
