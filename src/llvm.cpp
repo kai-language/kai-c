@@ -989,19 +989,19 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
             if (FlagDebug) {
-            llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
-                ctx->d.scope,
-                item.names[j],
-                ctx->d.file,
-                item.start.line,
-                fieldType->Width,
-                fieldType->Align,
-                type->Struct.members[index]->offset,
-                llvm::DINode::DIFlags::FlagZero,
-                dty
-            );
+                llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
+                    ctx->d.scope,
+                    item.names[j],
+                    ctx->d.file,
+                    item.start.line,
+                    fieldType->Width,
+                    fieldType->Align,
+                    type->Struct.members[index]->offset,
+                    llvm::DINode::DIFlags::FlagZero,
+                    dty
+                );
 
-            debugMembers.push_back(member);
+                debugMembers.push_back(member);
             }
             elementTypes.push_back(ty);
 
@@ -1018,16 +1018,16 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     llvm::DICompositeType *debugType;
     if (FlagDebug) {
         debugType = ctx->d.builder->createStructType(
-        ctx->d.scope,
-        type->Symbol->name,
-        ctx->d.file,
-        type->Symbol->decl->start.line,
-        type->Width,
-        type->Align,
-        llvm::DINode::DIFlags::FlagZero,
-        NULL, // DerivedFrom
-        ctx->d.builder->getOrCreateArray(debugMembers)
-    );
+            ctx->d.scope,
+            type->Symbol->name,
+            ctx->d.file,
+            type->Symbol->decl->start.line,
+            type->Width,
+            type->Align,
+            llvm::DINode::DIFlags::FlagZero,
+            NULL, // DerivedFrom
+            ctx->d.builder->getOrCreateArray(debugMembers)
+        );
     }
 
     if (type->Symbol) {
@@ -1043,8 +1043,8 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
             type->Symbol->backendUserdata = userdata;
         }
         if (FlagDebug) {
-        userdata->debugType = debugType;
-    }
+            userdata->debugType = debugType;
+        }
     }
 
 #if DEBUG
@@ -1654,6 +1654,8 @@ void setupTargetInfo() {
     init = true;
 }
 
+#include "llvm_interp.cpp"
+
 b32 CodegenLLVM(Package *p) {
     llvm::LLVMContext context;
     llvm::Module *module = new llvm::Module(p->path, context);
@@ -1756,7 +1758,10 @@ b32 CodegenLLVM(Package *p) {
     }
 #endif
 
-    if (FlagDumpIR) {
+    if (true) {
+        p->backendUserdata = module;
+        RunInterpLLVM(p);
+    } else if (FlagDumpIR) {
         module->print(llvm::outs(), nullptr);
         return 0;
     } else {

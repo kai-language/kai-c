@@ -51,6 +51,9 @@
 		5DFD2D95213F69C500180703 /* kai-Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "kai-Shared.xcconfig"; sourceTree = "<group>"; };
 		5DFD2D96213F69C500180703 /* kai-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "kai-Release.xcconfig"; sourceTree = "<group>"; };
 		5DFD2D97213F69C500180703 /* Project-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Project-Debug.xcconfig"; sourceTree = "<group>"; };
+		5DFD2D9B213FA4B700180703 /* llvm_interp.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llvm_interp.cpp; path = src/llvm_interp.cpp; sourceTree = "<group>"; };
+		5DFD2D9C213FA4B700180703 /* llvm_interp.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llvm_interp.h; path = src/llvm_interp.h; sourceTree = "<group>"; };
+		5DFD2D9E214008A400180703 /* test */ = {isa = PBXFileReference; lastKnownFileType = folder; path = test; sourceTree = "<group>"; };
 		B219499B209B79E0007BB781 /* kai */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = kai; sourceTree = BUILT_PRODUCTS_DIR; };
 		B249A255209B80CA0016B49E /* main.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = main.c; path = src/main.c; sourceTree = "<group>"; };
 		B249A257209B80E00016B49E /* checker.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = checker.c; path = src/checker.c; sourceTree = "<group>"; };
@@ -153,6 +156,8 @@
 				B25AB22A20B987D1002E1440 /* lexer.h */,
 				B25AB22E20B987D1002E1440 /* llvm.cpp */,
 				B25AB22F20B987D1002E1440 /* llvm.h */,
+				5DFD2D9B213FA4B700180703 /* llvm_interp.cpp */,
+				5DFD2D9C213FA4B700180703 /* llvm_interp.h */,
 				B25AB22D20B987D1002E1440 /* map.h */,
 				B25AB22920B987D1002E1440 /* symbols.h */,
 				B25AB22C20B987D1002E1440 /* types.h */,
@@ -174,6 +179,7 @@
 				B249A25E209B80E00016B49E /* string.c */,
 				B249A25F209B80E00016B49E /* utf.c */,
 				B249A255209B80CA0016B49E /* main.c */,
+				5DFD2D9E214008A400180703 /* test */,
 				5D41B52420CACF5E005E9A8E /* tests */,
 				5D41B53520CE393F005E9A8E /* kai-xctests */,
 				B219499C209B79E0007BB781 /* Products */,

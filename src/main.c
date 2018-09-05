@@ -13,6 +13,7 @@
 #include "header.c"
 
 #include "llvm.h"
+#include "llvm_interp.h"
 
 #define VERSION "0.0.0 (prerelease)"
 
