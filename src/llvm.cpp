@@ -158,15 +158,14 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
             if (type->Symbol && type->Symbol->backendUserdata) {
                 BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
                 return userdata->type;
-            }
-
-            if (type->Symbol->decl) {
+            } else if (type->Symbol->decl) {
                 // TODO: When we support importing symbols into other scopes we will need to do a context switch
                 emitStmt(ctx, (Stmt *) type->Symbol->decl);
                 BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
                 return userdata->type;
             }
 
+            ASSERT_MSG(!type->Symbol, "Only unnamed structures should get to here");
             std::vector<llvm::Type *> elements;
             ForEachWithIndex(type->Struct.members, index, TypeField *, it) {
                 llvm::Type *type = canonicalize(ctx, it->type);
@@ -989,6 +988,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         llvm::Type *ty = canonicalize(ctx, fieldType);
         llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
+            if (FlagDebug) {
             llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
                 ctx->d.scope,
                 item.names[j],
@@ -1001,8 +1001,9 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
                 dty
             );
 
-            elementTypes.push_back(ty);
             debugMembers.push_back(member);
+            }
+            elementTypes.push_back(ty);
 
             index += 1;
         }
@@ -1014,8 +1015,9 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     } else {
         ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
     }
-
-    llvm::DICompositeType *debugType = ctx->d.builder->createStructType(
+    llvm::DICompositeType *debugType;
+    if (FlagDebug) {
+        debugType = ctx->d.builder->createStructType(
         ctx->d.scope,
         type->Symbol->name,
         ctx->d.file,
@@ -1026,6 +1028,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         NULL, // DerivedFrom
         ctx->d.builder->getOrCreateArray(debugMembers)
     );
+    }
 
     if (type->Symbol) {
         ty->setName(type->Symbol->name);
@@ -1039,7 +1042,9 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
             userdata->type = ty;
             type->Symbol->backendUserdata = userdata;
         }
+        if (FlagDebug) {
         userdata->debugType = debugType;
+    }
     }
 
 #if DEBUG
