@@ -2,8 +2,8 @@ CC = clang
 CXX = clang++
 PREFIX=/usr/local
 
-debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG -DDIAGNOSTICS -DSLOW $(CFLAGS)
-release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE -DFAST $(CFLAGS)
+debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG $(CFLAGS)
+release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE $(CFLAGS)
 
 LLVM_VERSION := 6.0
 
@@ -32,7 +32,7 @@ release: clean $(TARGET)
 $(TARGET): core.o llvm.o
 	$(CXX) -o $(TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
 core.o:
-	$(CC) src/main.c -c -o core.o $(local_CFLAGS) -DKAI_BINARY $(LFLAGS) $(DISABLED_WARNINGS)
+	$(CC) src/main.c -c -o core.o $(local_CFLAGS) $(LFLAGS) $(DISABLED_WARNINGS)
 llvm.o:
 	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 

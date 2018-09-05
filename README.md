@@ -70,24 +70,5 @@ make tests
 ```
 
 ## Configuration
-`Makefile` tries to follow common make practices and allows you to configure many common variables, such as `CC`, `CXX` and `CFLAGS`. Just not that `CC` and `CXX` must be from the same project. For example `CC=gcc` paired with `CXX=g++` or `CC=clang` and `CXX=clang++` *(default)*. 
-
-### Makefile Build Flags
-The `Makefile` has an assortment of build flags that allow for extensive customization. Just override `CFLAGS` to enable/disable them:
-
-```
-make release CFLAGS="-DNO_ERROR_CODES -DASSERTS"
-```
-
-#### Supported Flags
-
-| Flag               | Default | Description                                                                    |
-| ------------------ | ------- | ------------------------------------------------------------------------------ |
-| `-DDEBUG`          | ✔       | Enables debugging checks, logs and assertions, easing the development process. |
-| `-DRELEASE`        |         | Disables development checks.                                                   |
-| `-DASSERTS`        | ✔       | Enables assertions (default for DEBUG builds).                                 |
-| `-DSLOW`           | ✔       | Use "slow" versions of routines that help when debugging.                      |
-| `-DFAST`           |         | Use the fast version of all routines.                                          |
-| `-DNO_ERROR_CODES` |         | Disable support for error codes.                                               |
-| `-DDIAGNOSTICS`    | ✔       | Enable support for diagnostics and profiling.                                  |
+`Makefile` tries to follow common make practices and allows you to configure many common variables, such as `CC`, `CXX` and `CFLAGS`.
 
