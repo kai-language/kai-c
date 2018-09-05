@@ -1,6 +1,6 @@
 
 typedef u8 CheckerInfoKind;
-enum CheckerInfoKindEnum {
+enum Enum_CheckerInfoKind {
     // None is the zero value and so the default for zero initialized checker info.
     CheckerInfoKind_None,
     CheckerInfoKind_Constant,
@@ -58,6 +58,7 @@ struct CheckerInfo_Ident {
 typedef u8 SelectorKind;
 #define SelectorKind_None   0x0
 #define SelectorKind_Struct 0x1
+#define SelectorKind_Import 0x2
 
 typedef struct Selector_Struct Selector_Struct;
 struct Selector_Struct {
@@ -65,9 +66,16 @@ struct Selector_Struct {
     u32 offset; // The member offset in the structure (in bits)
 };
 
+typedef struct Selector_Import Selector_Import;
+struct Selector_Import {
+    Symbol *symbol;
+    Package *package;
+};
+
 typedef union SelectorValue SelectorValue;
 union SelectorValue {
     Selector_Struct Struct;
+    Selector_Import Import;
 };
 
 typedef struct CheckerInfo_Selector CheckerInfo_Selector;

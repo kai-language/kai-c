@@ -100,7 +100,7 @@ struct Context {
 
 typedef struct BackendStructUserdata BackendStructUserdata;
 struct BackendStructUserdata {
-    llvm::Type *type;
+    llvm::StructType *type;
     llvm::DIType *debugType;
 };
 
@@ -156,16 +156,35 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 
         case TypeKind_Struct: {
             if (type->Symbol && type->Symbol->backendUserdata) {
-                return ((BackendStructUserdata *) type->Symbol->backendUserdata)->type;
+                BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+                return userdata->type;
+            } else if (type->Symbol->decl) {
+                // TODO: When we support importing symbols into other scopes we will need to do a context switch
+                emitStmt(ctx, (Stmt *) type->Symbol->decl);
+                BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+                return userdata->type;
             }
 
+            ASSERT_MSG(!type->Symbol, "Only unnamed structures should get to here");
             std::vector<llvm::Type *> elements;
             ForEachWithIndex(type->Struct.members, index, TypeField *, it) {
                 llvm::Type *type = canonicalize(ctx, it->type);
                 elements.push_back(type);
             }
 
-            return llvm::StructType::create(ctx->m->getContext(), elements);
+            llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elements);
+            if (type->Symbol) {
+                ty->setName(type->Symbol->name);
+
+                // NOTE: emitExprTypeStruct will update this with debug info later if needed.
+
+                BackendStructUserdata *userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+                userdata->type = ty;
+                userdata->debugType = NULL;
+                type->Symbol->backendUserdata = userdata;
+            }
+
+            return ty;
         } break;
     }
 
@@ -227,7 +246,8 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
 
     if (type->kind == TypeKind_Struct) {
         if (type->Symbol && type->Symbol->backendUserdata) {
-            return ((BackendStructUserdata *) type->Symbol->backendUserdata)->debugType;
+            BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+            if (userdata->debugType) return userdata->debugType;
         }
 
         std::vector<llvm::Metadata *> elementTypes;
@@ -282,6 +302,20 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
 
     types->f32 = b->createBasicType("f32", 32, DW_ATE_float);
     types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
+}
+
+llvm::DIFile *setDebugInfoForPackage(llvm::DIBuilder *b, Package *import) {
+    if (FlagDebug && !import->backendUserdata) {
+        char directory[MAX_PATH];
+        strcpy(directory, import->fullpath);
+        char *filename = strrchr(directory, '/');
+        *(filename++) = '\0';
+
+        llvm::DIFile *file = b->createFile(filename, directory);
+        import->backendUserdata = file;
+        return file;
+    }
+    return NULL;
 }
 
 void setCallingConvention(llvm::Function *fn, const char *name) {
@@ -366,6 +400,23 @@ llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value
     }
 }
 
+llvm::Value *emitExprIdent(Context *ctx, Expr *expr) {
+    CheckerInfo info = ctx->checkerInfo[expr->id];
+    Symbol *symbol = info.Ident.symbol;
+    if (!symbol->backendUserdata) {
+
+        // TODO: Switch to the symbol's package (only relevant when a symbol can be imported) into another scope
+        emitStmt(ctx, (Stmt *) symbol->decl);
+        ASSERT(symbol->backendUserdata);
+    }
+
+    llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
+    if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
+        value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
+    }
+    return value;
+}
+
 llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_Call);
     auto fnType = TypeFromCheckerInfo(ctx->checkerInfo[expr->Call.expr->id]);
@@ -439,6 +490,11 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
     CheckerInfo_Selector info = ctx->checkerInfo[expr->id].Selector;
 
     switch (info.kind) {
+        case SelectorKind_None: {
+            UNIMPLEMENTED();
+            break;
+        }
+
         case SelectorKind_Struct: {
             bool previousReturnAddress = ctx->returnAddress;
             ctx->returnAddress = true;
@@ -456,6 +512,39 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
 
             if (ctx->returnAddress) return addr;
             return ctx->b.CreateAlignedLoad(addr, BytesFromBits(info.value.Struct.index));
+        }
+
+        case SelectorKind_Import: {
+            Symbol *symbol = info.value.Import.symbol;
+            if (!symbol->backendUserdata) {
+                CheckerInfo *prevCheckerInfo = ctx->checkerInfo;
+                ctx->checkerInfo = info.value.Import.package->checkerInfo;
+
+                llvm::DIFile *file = (llvm::DIFile *) info.value.Import.package->backendUserdata;
+                Debug debug = {ctx->d.builder, ctx->d.unit, file, ctx->d.types, file};
+
+                llvm::IRBuilder<> b(ctx->m->getContext());
+                Context declContext = {
+                    .checkerInfo = info.value.Import.package->checkerInfo,
+                    .m = ctx->m,
+                    .targetMachine = ctx->targetMachine,
+                    .dataLayout = ctx->dataLayout,
+                    .b = b,
+                    .fn = nullptr,
+                    .d = debug,
+                };
+
+                emitStmt(&declContext, (Stmt *) symbol->decl);
+                ASSERT(symbol->backendUserdata);
+
+                ctx->checkerInfo = prevCheckerInfo;
+            }
+
+            llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
+            if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
+                value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
+            }
+            return value;
         }
     }
 
@@ -498,12 +587,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
         }
 
         case ExprKind_Ident: {
-            CheckerInfo info = ctx->checkerInfo[expr->id];
-            Symbol *symbol = info.Ident.symbol;
-            value = (llvm::Value *) symbol->backendUserdata;
-            if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
-                value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
-            }
+            value = emitExprIdent(ctx, expr);
             break;
         }
 
@@ -757,18 +841,21 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     if (FlagDebug) {
 
         auto dbgType = (llvm::DISubroutineType *)debugCanonicalize(ctx, info.BasicExpr.type);
+
+        // TODO: Set isOptimized in a logical way
+        // TODO: Set isLocalToUnit (if a function is declared in a function scope)
         llvm::DISubprogram *sub = ctx->d.builder->createFunction(
             ctx->d.file,
-            fn->getName(), // Name (will be set correctly by the caller) (TODO)
-            fn->getName(), // LinkageName
+            fn->getName(),      // Name (will be set correctly by the caller) (TODO)
+            fn->getName(),      // LinkageName
             ctx->d.file,
             expr->start.line,
             dbgType,
-            false,
-            true,
+            false,              // isLocalToUnit
+            true,               // isDefinition
             expr->LitFunction.body->start.line,
             llvm::DINode::FlagPrototyped,
-            false
+            false               // isOptimized (TODO)
         );
         fn->setSubprogram(sub);
 
@@ -870,7 +957,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         ctx->d.builder->finalizeSubprogram(fn->getSubprogram());
     }
 
-#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+#if DEBUG
     if (llvm::verifyFunction(*fn, &llvm::errs())) {
         ctx->m->print(llvm::errs(), nullptr);
         ASSERT(false);
@@ -885,6 +972,11 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 
     Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
 
+    if (type->Symbol->backendUserdata && !FlagDebug) {
+        BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+        return userdata->type;
+    }
+
     std::vector<llvm::Type *> elementTypes;
     std::vector<llvm::Metadata *> debugMembers;
 
@@ -896,6 +988,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         llvm::Type *ty = canonicalize(ctx, fieldType);
         llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
+            if (FlagDebug) {
             llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
                 ctx->d.scope,
                 item.names[j],
@@ -908,16 +1001,23 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
                 dty
             );
 
-            elementTypes.push_back(ty);
             debugMembers.push_back(member);
+            }
+            elementTypes.push_back(ty);
 
             index += 1;
         }
     }
 
-    llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
-
-    llvm::DICompositeType *debugType = ctx->d.builder->createStructType(
+    llvm::StructType *ty;
+    if (type->Symbol->backendUserdata) {
+        ty = (llvm::StructType *) type->Symbol->backendUserdata;
+    } else {
+        ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
+    }
+    llvm::DICompositeType *debugType;
+    if (FlagDebug) {
+        debugType = ctx->d.builder->createStructType(
         ctx->d.scope,
         type->Symbol->name,
         ctx->d.file,
@@ -928,17 +1028,26 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         NULL, // DerivedFrom
         ctx->d.builder->getOrCreateArray(debugMembers)
     );
+    }
 
     if (type->Symbol) {
         ty->setName(type->Symbol->name);
 
-        BackendStructUserdata *userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
-        userdata->type = ty;
+        BackendStructUserdata *userdata;
+        if (type->Symbol->backendUserdata) {
+            userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+            ASSERT_MSG(!userdata->debugType, "debugType is only set here, which means this run twice");
+        } else {
+            userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+            userdata->type = ty;
+            type->Symbol->backendUserdata = userdata;
+        }
+        if (FlagDebug) {
         userdata->debugType = debugType;
-        type->Symbol->backendUserdata = userdata;
+    }
     }
 
-#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+#if DEBUG
     // Checks the frontend layout matches the llvm backend
     const llvm::StructLayout *layout = ctx->dataLayout.getStructLayout(ty);
     size_t numElements = ArrayLen(type->Struct.members);
@@ -988,21 +1097,20 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
 
         default: {
             llvm::Type *type = canonicalize(ctx, symbol->type);
+            
+            llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
 
-            bool isGlobal = ctx->fn == NULL;
             llvm::GlobalVariable *global = new llvm::GlobalVariable(
                 *ctx->m,
                 type,
                 true, // IsConstant
-                isGlobal ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
-                0,
+                symbol->flags & SymbolFlag_Global ?
+                    llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
+                (llvm::Constant *) value, // Initializer
                 symbol->name
             );
 
             symbol->backendUserdata = global;
-
-            llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
-            global->setInitializer((llvm::Constant *) value);
             break;
         }
     }
@@ -1016,35 +1124,72 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
     DynamicArray(Symbol *) symbols = info.Variable.symbols;
     Decl_Variable var = decl->Variable;
 
+    bool prevReturnAddress = ctx->returnAddress;
+    ctx->returnAddress = false;
+
     For (symbols) {
         Symbol *symbol = symbols[i];
         // FIXME: Global variables
         debugPos(ctx, var.names[i]->start);
 
-        // NOTE: We may want a more verbose version of this?
-        b32 isGlobal = ctx->fn == NULL;
+        if (symbol->flags & SymbolFlag_Global) {
 
-        if (isGlobal) {
-            auto global = new llvm::GlobalVariable(
+            llvm::GlobalVariable *global = new llvm::GlobalVariable(
                 *ctx->m,
                 canonicalize(ctx, symbol->type),
-                false, /* isConstant */
-                llvm::GlobalValue::LinkageTypes::ExternalLinkage,
-                NULL,
+                false, // IsConstant
+                llvm::GlobalValue::ExternalLinkage,
+                NULL, // Initializer
                 symbol->name
             );
             global->setAlignment(BytesFromBits(symbol->type->Align));
             symbol->backendUserdata = global;
 
-            ctx->d.builder->createGlobalVariableExpression(
-                ctx->d.scope,
-                symbol->name, "",
-                ctx->d.file,
-                decl->start.line,
-                debugCanonicalize(ctx, symbol->type),
-                false
-            );
+            if (FlagDebug) {
+                ctx->d.builder->createGlobalVariableExpression(
+                    ctx->d.scope,
+                    symbol->name, // Name
+                    symbol->name, // LinkageName
+                    ctx->d.file,
+                    decl->start.line,
+                    debugCanonicalize(ctx, symbol->type),
+                    false,        // isLocalToUnit
+                    nullptr,      // Expr
+                    nullptr,      // Decl
+                    symbol->type->Align
+                );
+            }
+
+            llvm::Value *value = emitExpr(ctx, decl->Variable.values[0]);
+
+            if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
+                global->setInitializer(constant);
+            } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
+
+                // This handles a file scope variables refering to one another where the initializer is a constant
+
+                // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
+                //  It could be much better to have in the context a flag that says, *if* a global is encountered then
+                //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
+                // -vdka September 2018
+
+                llvm::Value *loaded = inst->getPointerOperand();
+                if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
+
+                    inst->removeFromParent();
+                    inst->deleteValue();
+
+                    global->setInitializer(other->getInitializer());
+                }
+
+            } else {
+                global->setExternallyInitialized(true);
+                // TODO: Add initializer to some sort of premain
+                UNIMPLEMENTED();
+            }
+            break;
         } else {
+
             llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
             symbol->backendUserdata = alloca;
 
@@ -1067,16 +1212,18 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
             }
         }
         
-        if (i && ArrayLen(var.values) >= i) {
+        if (i < ArrayLen(var.values)) {
             Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
             llvm::Value *value = emitExpr(ctx, var.values[i]);
-            if (isGlobal) {
+            if (symbol->flags & SymbolFlag_Global) {
                 ((llvm::GlobalVariable *)symbol->backendUserdata)->setInitializer((llvm::Constant *)value);
             } else {
                 ctx->b.CreateAlignedStore(value, (llvm::Value *)symbol->backendUserdata, BytesFromBits(type->Align));
             }
         }
+
     }
+    ctx->returnAddress = prevReturnAddress;
 }
 
 void emitDeclForeign(Context *ctx, Decl *decl) {
@@ -1442,6 +1589,10 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             emitDeclForeignBlock(ctx, (Decl *) stmt);
             break;
 
+        case StmtDeclKind_Import:
+            setDebugInfoForPackage(ctx->d.builder, (Package *) stmt->Import.symbol->backendUserdata);
+            break;
+
         case StmtKind_Label:
             emitStmtLabel(ctx, stmt);
             break;
@@ -1546,25 +1697,21 @@ b32 CodegenLLVM(Package *p) {
      !1 = !{!"clang version 6.0.0 (tags/RELEASE_600/final)"}
      */
 
-    char *path = AbsolutePath(p->path, NULL);
-    char buff[MAX_PATH];
-    char *dir;
-    char *name = GetFileName(path, buff, &dir);
-
     Debug debug;
     if (FlagDebug) {
         llvm::DIBuilder *builder = new llvm::DIBuilder(*module);
 
-        // TODO: Absolute path for dir
-        llvm::DIFile *file = builder->createFile(name, dir);
+        llvm::DIFile *file = setDebugInfoForPackage(builder, p);
 
+        // TODO: Set isOptimized in a logical way
+        // TODO: Set RuntimeVersion in some logical way
         llvm::DICompileUnit *unit = builder->createCompileUnit(
             llvm::dwarf::DW_LANG_C,
             file,
             "Kai programming language",
-            /* isOptimized:*/ false,
+            false,  // isOptimized
             "",
-            /* RuntimeVersion:*/ 0
+            0       // RuntimeVersion
         );
 
         DebugTypes types;
@@ -1600,9 +1747,9 @@ b32 CodegenLLVM(Package *p) {
         emitStmt(&ctx, p->stmts[i]);
     }
 
-    ctx.d.builder->finalize();
+    if (FlagDebug) ctx.d.builder->finalize();
 
-#if defined(SLOW) || defined(DIAGNOSTICS) || defined(DEBUG)
+#if DEBUG
     if (llvm::verifyModule(*module, &llvm::errs())) {
         module->print(llvm::errs(), nullptr);
         ASSERT(false);
@@ -1613,7 +1760,11 @@ b32 CodegenLLVM(Package *p) {
         module->print(llvm::outs(), nullptr);
         return 0;
     } else {
-        return emitObjectFile(p, name, &ctx);
+        char path[MAX_PATH];
+        strcpy(path, p->path);
+        char *filename = strrchr(path, '/');
+        *(filename++) = '\0';
+        return emitObjectFile(p, filename, &ctx);
     }
 }
 
@@ -1686,12 +1837,19 @@ void debugPos(Context *ctx, Position pos) {
     ctx->b.SetCurrentDebugLocation(llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope));
 }
 
+void printIR(llvm::Module *value) {
+    value->print(llvm::outs(), nullptr, true, true);
+    puts("\n");
+}
+
 void printIR(llvm::Value *value) {
     value->print(llvm::outs());
+    puts("\n");
 }
 
 void printIR(llvm::Type *value) {
     value->print(llvm::outs());
+    puts("\n");
 }
 
 #pragma clang diagnostic pop

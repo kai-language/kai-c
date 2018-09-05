@@ -27,6 +27,7 @@ DynamicArray(const char *) Keywords;
 const char *internNewline;
 const char *internSemicolon;
 
+const char *internUnderscore;
 const char *internIn;
 
 // Directive names
@@ -80,6 +81,7 @@ void InitKeywords() {
     internNewline = StrIntern("\n");
     internSemicolon = StrIntern(";");
 
+    internUnderscore = StrIntern("_");
     internIn = StrIntern("in");
 
     internLine = StrIntern("line");

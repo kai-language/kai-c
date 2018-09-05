@@ -126,7 +126,7 @@ void assertHandler(char const *file, i32 line, char const *msg, ...);
 #endif
 
 #ifndef TEST
-#if !defined(RELEASE) && !defined(ASSERTS)
+#if DEBUG
     #define ASSERT_MSG_VA(cond, msg, ...) do { \
         if (!(cond)) { \
             assertHandler(__FILE__, (i32)__LINE__, msg, __VA_ARGS__); \
@@ -229,16 +229,17 @@ struct Scope {
 typedef struct Package Package;
 struct Package {
     const char *path;
-    char fullPath[MAX_PATH];
-    const char *externalName;
+    const char *fullpath;
     DiagnosticEngine diagnostics;
     Arena arena;
     DynamicArray(Stmt *) stmts;
     DynamicArray(Symbol *) symbols;
 
     u64 astIdCount;
-    u64 declCount;
     DynamicArray(CheckerInfo) checkerInfo;
+
+    // This pointer can be used by any backend to store symbol-related info for quick lookup
+    void *backendUserdata;
 
     Scope *scope;
 };
