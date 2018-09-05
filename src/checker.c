@@ -2802,6 +2802,7 @@ void test_checkExprLitCompound() {
     //  be used in place of explicitly providing the type for a compound literal
     Stmt *stmt = resetAndParseReturningLastStmt("Foo :: struct {a: u8; b: u16};"
                   "foo : Foo = {};");
+    RESET_CONTEXT(ctx);
     checkStmt(stmt, &ctx, &pkg);
     expr = stmt->Variable.values[0];
     info = CheckerInfoForExpr(&pkg, expr);

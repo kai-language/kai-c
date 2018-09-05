@@ -10,6 +10,7 @@ out_*
 test/wip.kai
 tools/genTests
 tools/genXCTests
+tools/xcconfigs/LLVM.xcconfig
 kai_tests*
 scripts/clang-with-compilation-db
 compile_commands.json

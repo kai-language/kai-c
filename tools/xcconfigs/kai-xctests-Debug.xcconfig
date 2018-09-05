@@ -1,0 +1,7 @@
+
+#include "Project-Debug.xcconfig"
+#include "kai-xctests-Shared.xcconfig"
+
+//********************************************//
+//* Currently no build settings in this file *//
+//********************************************//

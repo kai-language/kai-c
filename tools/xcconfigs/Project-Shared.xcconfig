@@ -1,0 +1,85 @@
+
+
+
+// C Language Dialect
+//
+// Choose a standard or non-standard C language dialect.
+//
+// * *ANSI C:* Accept ISO C90 and ISO C++, turning off GNU extensions that are
+// incompatible. [-ansi]
+// Incompatible GNU extensions include the `asm`, `inline`, and `typeof` keywords (but
+// not the equivalent `\_\_asm\_\_`, `\_\_inline\_\_`, and `\_\_typeof\_\_` forms), and
+// the `//` syntax for comments.
+// This setting also enables trigraphs.
+// * *C89:* Accept ISO C90 (1990), but not GNU extensions. [-std=c89]
+// * *GNU89:* Accept ISO C90 and GNU extensions. [-std=gnu89]
+// * *C99:* Accept ISO C99 (1999), but not GNU extensions. [-std=c99]
+// * *GNU99:* Accept ISO C99 and GNU extensions. [-std=gnu99]
+// * *C11:* Accept ISO C11 (2011), but not GNU extensions. [-std=c11]
+// * *GNU11:* Accept ISO C11 and GNU extensions. [-std=gnu11]
+// * *Compiler Default:* Tells the compiler to use its default C language dialect. This
+// is normally the best choice unless you have specific needs. (Currently equivalent to
+// GNU99.)
+
+GCC_C_LANGUAGE_STANDARD = c11
+
+
+
+// C++ Language Dialect
+// 
+// Choose a standard or non-standard C++ language dialect. Options include:
+// 
+// * *C++98:* Accept ISO C++ 1998 with amendments, but not GNU extensions. [-std=c++98]
+// * *GNU++98:* Accept ISO C++ 1998 with amendments and GNU extensions. [-std=gnu++98]
+// * *C++11:* Accept the ISO C++ 2011 standard with amendments, but not GNU extensions.
+// [-std=c++11]
+// * *GNU++11:* Accept the ISO C++ 2011 standard with amendments and GNU extensions.
+// [-std=gnu++11]
+// * *C++14:* Accept the ISO C++ 2014 standard with amendments, but not GNU extensions.
+// [-std=c++14]
+// * *GNU++14:* Accept the ISO C++ 2014 standard with amendments and GNU extensions.
+// [-std=gnu++14]
+// * *C++17:* Accept the ISO C++ 2017 standard with amendments, but not GNU extensions.
+// [-std=c++17]
+// * *GNU++17:* Accept the ISO C++ 2017 standard with amendments and GNU extensions.
+// [-std=gnu++17]
+// * *Compiler Default:* Tells the compiler to use its default C++ language dialect. This
+// is normally the best choice unless you have specific needs. (Currently equivalent to
+// GNU++98.)
+
+CLANG_CXX_LANGUAGE_STANDARD = c++11
+
+
+
+// C++ Standard Library
+// 
+// Choose a version of the C++ standard library to use.
+// 
+// * *libstdc++:* A traditional C++ standard library that works with GCC and the LLVM
+// Compiler (default).
+// * *libc++:* A highly optimized C++ standard library that works only with the LLVM
+// Compiler, and is designed to support new C++11 features.
+
+CLANG_CXX_LIBRARY = libc++
+
+
+
+// macOS Deployment Target
+// 
+// Code will load on this and later versions of macOS. Framework APIs that are
+// unavailable in earlier versions will be weak-linked; your code should check for `null`
+// function pointers or specific system versions before calling newer APIs.
+
+MACOSX_DEPLOYMENT_TARGET = 10.8
+
+
+
+// Base SDK
+// 
+// The name or path of the base SDK being used during the build. The product will be
+// built against the headers and libraries located inside the indicated SDK. This path
+// will be prepended to all search paths, and will be passed through the environment to
+// the compiler and linker. Additional SDKs can be specified in the `ADDITIONAL_SDKS`
+// setting.
+
+SDKROOT = macosx

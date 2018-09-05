@@ -1,0 +1,14 @@
+
+#include "Project-Release.xcconfig"
+#include "kai-Shared.xcconfig"
+
+
+
+// Other C Flags
+// 
+// Space-separated list of additional flags to pass to the compiler for C and Objective-C
+// files. Be sure to backslash-escape any arguments that contain spaces or special
+// characters, such as path names that may contain spaces. Use this setting if Xcode does
+// not already provide UI for a particular C or Objective-C compiler flag.
+
+OTHER_CFLAGS = -O3 -march=native
