@@ -8,6 +8,13 @@
 #include "checker.h"
 #include "llvm.h"
 
+// Save our definition of DEBUG and undefine it to avoid conflict with LLVM's
+// definition
+#ifdef DEBUG
+#define KAI_DEBUG DEBUG
+#undef DEBUG
+#endif
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
 #pragma clang diagnostic ignored "-Wcomma"
@@ -38,6 +45,12 @@
 #include <llvm/Target/TargetOptions.h>
 
 #pragma clang diagnostic pop
+
+// Undefine LLVM's definition of DEBUG and restore our definition (if any)
+#undef DEBUG
+#ifdef KAI_DEBUG
+#define DEBUG KAI_DEBUG
+#endif
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wswitch"
