@@ -913,6 +913,13 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     return fn;
 }
 
+llvm::Value *emitExprTypeEnum(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_TypeEnum);
+
+    Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
+    UNIMPLEMENTED();
+}
+
 llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_TypeStruct);
 
@@ -1020,6 +1027,7 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
         }
 
         case ExprKind_TypeEnum: {
+            emitExprTypeEnum(ctx, decl->Constant.values[0]);
             break;
         }
 
