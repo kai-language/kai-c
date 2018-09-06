@@ -553,6 +553,15 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
             return ctx->b.CreateAlignedLoad(addr, BytesFromBits(info.value.Struct.index));
         }
 
+        case SelectorKind_Enum: {
+            llvm::Type *type = canonicalize(ctx, info.type);
+            if (ctx->returnAddress) {
+                UNIMPLEMENTED();
+            }
+            
+            return llvm::ConstantInt::get(type, info.value.Enum.value);
+        }
+
         case SelectorKind_Import: {
             Symbol *symbol = info.value.Import.symbol;
             if (!symbol->backendUserdata) {
@@ -1006,11 +1015,61 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     return fn;
 }
 
-llvm::Value *emitExprTypeEnum(Context *ctx, Expr *expr) {
+llvm::Type *emitExprTypeEnum(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_TypeEnum);
 
     Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
-    UNIMPLEMENTED();
+
+    if (type->Symbol->backendUserdata && !FlagDebug) {
+        BackendUserdataAndDebug *userdata = (BackendUserdataAndDebug *)type->Symbol->backendUserdata;
+        return userdata->type;
+    }
+
+    Type_Enum enm = type->Enum;
+
+    llvm::Type *ty;
+    if (type->Symbol->backendUserdata) {
+        ty = ((BackendUserdataAndDebug *)type->Symbol->backendUserdata)->type;
+    } else {
+        ty = canonicalize(ctx, enm.backingType);
+    }
+
+    BackendUserdataAndDebug *userdata;
+    if (type->Symbol->backendUserdata) {
+        userdata = (BackendUserdataAndDebug *) type->Symbol->backendUserdata;
+        ASSERT_MSG(!userdata->debugType, "debugType is only set here, which means this run twice");
+    } else {
+        userdata = (BackendUserdataAndDebug *) ArenaAlloc(&ctx->arena, sizeof(*userdata));
+        userdata->type = ty;
+        type->Symbol->backendUserdata = userdata;
+    }
+
+    if (FlagDebug) {
+        llvm::DIType *dbTy = debugCanonicalize(ctx, enm.backingType);
+        std::vector<llvm::Metadata *> enumerations;
+
+        For (enm.cases) {
+            EnumField cse = enm.cases[i];
+            llvm::DIEnumerator *e = ctx->d.builder->createEnumerator(cse.name, cse.val);
+            enumerations.push_back(e);
+        }
+
+        auto elements = ctx->d.builder->getOrCreateArray(enumerations);
+        dbTy = ctx->d.builder->createEnumerationType(
+            ctx->d.scope,
+            type->Symbol->name,
+            ctx->d.file,
+            expr->start.line,
+            type->Width,
+            type->Align,
+            elements,
+            dbTy
+        );
+
+        userdata->debugType = dbTy;
+    }
+
+    return ty;
 }
 
 llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
@@ -1032,22 +1091,25 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         Type *fieldType = type->Struct.members[index]->type;
 
         llvm::Type *ty = canonicalize(ctx, fieldType);
-        llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
+        llvm::DIType *dty = NULL;
+        if (FlagDebug)
+            dty = debugCanonicalize(ctx, fieldType);
+
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
             if (FlagDebug) {
-            llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
-                ctx->d.scope,
-                item.names[j],
-                ctx->d.file,
-                item.start.line,
-                fieldType->Width,
-                fieldType->Align,
-                type->Struct.members[index]->offset,
-                llvm::DINode::DIFlags::FlagZero,
-                dty
-            );
+                llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
+                    ctx->d.scope,
+                    item.names[j],
+                    ctx->d.file,
+                    item.start.line,
+                    fieldType->Width,
+                    fieldType->Align,
+                    type->Struct.members[index]->offset,
+                    llvm::DINode::DIFlags::FlagZero,
+                    dty
+                );
 
-            debugMembers.push_back(member);
+                debugMembers.push_back(member);
             }
             elementTypes.push_back(ty);
 
@@ -1057,23 +1119,9 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 
     llvm::StructType *ty;
     if (type->Symbol->backendUserdata) {
-        ty = (llvm::StructType *) type->Symbol->backendUserdata;
+        ty = ((BackendStructUserdata *) type->Symbol->backendUserdata)->type;
     } else {
         ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
-    }
-    llvm::DICompositeType *debugType;
-    if (FlagDebug) {
-        debugType = ctx->d.builder->createStructType(
-        ctx->d.scope,
-        type->Symbol->name,
-        ctx->d.file,
-        type->Symbol->decl->start.line,
-        type->Width,
-        type->Align,
-        llvm::DINode::DIFlags::FlagZero,
-        NULL, // DerivedFrom
-        ctx->d.builder->getOrCreateArray(debugMembers)
-    );
     }
 
     if (type->Symbol) {
@@ -1084,12 +1132,23 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
             userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
             ASSERT_MSG(!userdata->debugType, "debugType is only set here, which means this run twice");
         } else {
-            userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+            userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(*userdata));
             userdata->type = ty;
             type->Symbol->backendUserdata = userdata;
         }
       
         if (FlagDebug) {
+            llvm::DICompositeType *debugType = ctx->d.builder->createStructType(
+                ctx->d.scope,
+                type->Symbol->name,
+                ctx->d.file,
+                type->Symbol->decl->start.line,
+                type->Width,
+                type->Align,
+                llvm::DINode::DIFlags::FlagZero,
+                NULL, // DerivedFrom
+                ctx->d.builder->getOrCreateArray(debugMembers)
+            );
             userdata->debugType = debugType;
         }
     }

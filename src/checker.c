@@ -223,12 +223,16 @@ b32 IsFloat(Type *type) {
     return type->kind == TypeKind_Float;
 }
 
+b32 isEnum(Type *type) {
+    return type->kind == TypeKind_Enum;
+}
+
 b32 isFunction(Type *type) {
     return type->kind == TypeKind_Function;
 }
 
 b32 isNumeric(Type *type) {
-    return IsInteger(type) || IsFloat(type);
+    return IsInteger(type) || IsFloat(type) || isEnum(type);
 }
 
 b32 isBoolean(Type *type) {
@@ -265,10 +269,6 @@ b32 isArray(Type *type) {
 
 b32 isSlice(Type *type) {
     return type->kind == TypeKind_Slice;
-}
-
-b32 isEnum(Type *type) {
-    return type->kind == TypeKind_Enum;
 }
 
 b32 isEnumFlags(Type *type) {
@@ -366,7 +366,7 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
         return type->Width <= target->Width;
     }
 
-    if (type->kind == TypeKind_Enum || IsInteger(target)) {
+    if (isEnum(type) && IsInteger(target)) {
         return canCoerce(type->Enum.backingType, target, ctx);
     }
 
@@ -472,6 +472,10 @@ Conversion conversion(Type *type, Type *target) {
         result |= ConversionKind_ItoF;
         if (IsSigned(type)) result |= ConversionFlag_Signed;
         return result;
+    }
+
+    if (type->kind == TypeKind_Enum && IsInteger(target)) {
+        return ConversionKind_None;
     }
 
     if (IsFloat(type) && IsInteger(target)) {
@@ -872,29 +876,26 @@ Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeEnum);
     Expr_TypeEnum enm = expr->TypeEnum;
 
-    Type *backingType = NULL;
-    if (enm.explicitType) {
-        Type *type = checkExpr(enm.explicitType, ctx, pkg);
-        expectType(pkg, type, ctx, enm.explicitType->start);
-        if (IsInteger(type)) {
-            backingType = type;
-        } else {
-            ReportError(
-                pkg, TypeMismatchError, enm.explicitType->start,
-                "Enum backing type must be an integer. Got: %s",
-                DescribeType(type)
-            );
-        }
-    }
-
-    b32 firstValue = true;
     b32 hasMinMax = false;
     u64 maxValue;
 
-    if (backingType) {
-        // TODO: flags
-        maxValue = MaxValueForIntOrPointerType(backingType);
-        hasMinMax = true;
+    Type *backingType = NULL;
+    if (enm.explicitType) {
+        Type *type = checkExpr(enm.explicitType, ctx, pkg);
+        if (ctx->mode == ExprMode_Unresolved) goto unresolved;
+
+        if (ctx->mode != ExprMode_Invalid) {
+            expectType(pkg, type, ctx, enm.explicitType->start);
+            if (IsInteger(type)) {
+                // TODO: flags
+                maxValue = MaxValueForIntOrPointerType(type);
+                hasMinMax = true;
+                backingType = type;
+            } else {
+                ReportError(pkg, TypeMismatchError, enm.explicitType->start,
+                            "Enum backing type must be an integer. Got: %s", DescribeType(type));
+            }
+        }
     }
 
     DynamicArray(EnumField) fields = NULL;
@@ -909,20 +910,15 @@ Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
         if (item.init) {
             CheckerContext itemCtx = {.scope = ctx->scope, .desiredType = backingType};
             Type *type = checkExpr(item.init, &itemCtx, pkg);
+            if (itemCtx.mode == ExprMode_Unresolved) goto unresolved; // TODO: @Leak this will leak the 'fields' array
 
             if (!IsConstant(&itemCtx)) {
-                ReportError(
-                    pkg, TODOError, item.init->start,
+                ReportError(pkg, TODOError, item.init->start,
                     "Enum cases must be a constant value");
                 continue;
             }
 
-            if (backingType && !canCoerce(type, backingType, &itemCtx)) {
-                ReportError(
-                    pkg, InvalidConversionError, item.init->start,
-                    "Cannot convert %s to type %s",
-                    DescribeExpr(item.init), DescribeType(backingType)
-                );
+            if (backingType && !coerceType(item.init, ctx, &type, backingType, pkg)) {
                 continue;
             }
 
@@ -932,7 +928,8 @@ Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
         }
 
         if (hasMinMax && currentValue > maxValue) {
-            printf("oops!\n");
+            ReportError(pkg, IntOverflowError, item.init->start,
+                        "Enum case is will overflow backing type");
             continue;
         }
 
@@ -945,6 +942,10 @@ Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return NULL;
 }
 
 Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
@@ -1670,7 +1671,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
                 }
 
                 ctx->val.u64 = result.field->val;
-                SelectorValue val = {.Enum.index = result.index};
+                SelectorValue val = {.Enum.value = result.field->val};
                 storeInfoSelector(pkg, expr, base, SelectorKind_Enum, val, ctx);
                 type = base;
                 ctx->mode = ExprMode_Addressable;

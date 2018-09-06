@@ -69,7 +69,7 @@ struct Selector_Struct {
 
 typedef struct Selector_Enum Selector_Enum;
 struct Selector_Enum {
-    u32 index;
+    u64 value;
 };
 
 typedef struct Selector_Import Selector_Import;
