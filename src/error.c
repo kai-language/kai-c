@@ -79,9 +79,6 @@ struct DiagnosticError {
 };
 
 b32 shouldPrintErrorCode() {
-#if NO_ERROR_CODES
-    return false;
-#endif
     return FlagErrorCodes;
 }
 

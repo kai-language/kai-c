@@ -18,31 +18,46 @@ DynamicArray(Package*) packages;
 Queue parsingQueue;
 Queue checkingQueue;
 
+Scope *pushScope(Package *pkg, Scope *parent);
+
 void addPackage(Package *package) {
-    Package *old = MapGet(&packageMap, package->path);
+    Package *old = MapGet(&packageMap, package->fullpath);
     if (old != package) {
         ASSERT(!old);
-        MapSet(&packageMap, package->path, package);
+        MapSet(&packageMap, package->fullpath, package);
         ArrayPush(packages, package);
     }
 }
 
-Scope *pushScope(Package *pkg, Scope *parent);
-Package *ImportPackage(const char *path) {
-    path = StrIntern(path);
-    Package *package = MapGet(&packageMap, path);
+Package *ImportPackage(const char *path, Package *importer) {
+
+    char pathRelativeToImporter[MAX_PATH];
+    if (importer) {
+        strcpy(pathRelativeToImporter, importer->path);
+        char *lastSlash = strrchr(pathRelativeToImporter, '/') + 1;
+        strcpy(lastSlash, path);
+    } else {
+        strcpy(pathRelativeToImporter, path);
+    }
+
+    char resolvedPath[MAX_PATH];
+    char *result = AbsolutePath(pathRelativeToImporter, resolvedPath);
+    if (!result) {
+        if (FlagVerbose) printf("Failed to resolve absolure path for %s\n", path);
+        return NULL;
+    }
+
+    const char *fullpath = StrIntern(resolvedPath);
+    Package *package = MapGet(&packageMap, fullpath);
     if (!package) { // First time we have seen this package
         package = Calloc(DefaultAllocator, 1, sizeof(Package));
-        package->path = path;
+        package->path = StrIntern(pathRelativeToImporter);
+        package->fullpath = fullpath;
         package->scope = pushScope(package, builtinPackage.scope);
-        if (FlagVerbose) printf("Importing %s\n", path);
+        if (FlagVerbose) printf("Importing %s\n", package->path);
 
-        char fullPath[MAX_PATH];
-        if (!AbsolutePath(path, fullPath)) return NullWithLoggedReason("Failed to resolve absolute path for %s", path);
-
-        strcpy(package->fullPath, fullPath);
         addPackage(package);
-        QueueEnqueue(&parsingQueue, package);
+        QueuePushBack(&parsingQueue, package);
     }
     return package;
 }

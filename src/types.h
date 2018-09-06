@@ -2,6 +2,8 @@
 extern struct TargetMetrics *TargetTypeMetrics;
 
 extern Type *InvalidType;
+extern Type *FileType;
+
 extern Type *AnyType;
 extern Type *VoidType;
 

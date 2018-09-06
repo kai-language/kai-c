@@ -16,41 +16,20 @@
 
 #define VERSION "0.0.0 (prerelease)"
 
-#ifdef DEBUG
-b8 _debugEnabled = true;
-#else
-b8 _debugEnabled = false;
-#endif
-
-#if defined(ASSERTS) || defined(DEBUG)
-b8 _assertsEnabled = true;
-#else
-b8 _assertsEnabled = false;
-#endif
-
-#ifndef NO_ERROR_CODES
-b8 _errorCodesEnabled = true;
-#else
-b8 _errorCodesEnabled = false;
-#endif
-
-#ifdef DIAGNOSTICS
-b8 _diagnosticsEnabled = true;
-#else
-b8 _diagnosticsEnabled = false;
-#endif
-
 
 void outputVersionAndBuildInfo() {
     printf("%s\n\n", VERSION);
 
-#define checkOrCross(info) \
-    printf("%-11s %s\n", "" #info "", _##info##Enabled ? "✅" : "❌")
+    bool debug = false;
 
-    checkOrCross(asserts);
-    checkOrCross(debug);
-    checkOrCross(errorCodes);
-    checkOrCross(diagnostics);
+#if DEBUG
+    debug = true;
+#endif
+
+    const char *y = "✔";
+    const char *n = "✘";
+
+    printf("-DDEBUG %s\n", debug ? y : n);
 }
 
 #ifndef TEST
@@ -69,25 +48,25 @@ int main(int argc, const char **argv) {
     }
         
     InitCompiler();
-    Package *mainPackage = ImportPackage(InputName);
+    Package *mainPackage = ImportPackage(InputName, NULL);
     if (!mainPackage) {
         printf("error: Failed to compile '%s'\n", InputName);
         exit(1);
     }
     
     while (true) {
-        Package *package = QueueDequeue(&parsingQueue);
+        Package *package = QueuePopFront(&parsingQueue);
         if (package) {
             parsePackage(package);
             continue;
         }
         
-        CheckerWork *work = QueueDequeue(&checkingQueue);
+        CheckerWork *work = QueuePopFront(&checkingQueue);
         if (work) {
             CheckerContext ctx = { .scope = work->package->scope };
-            b32 shouldRequeue = checkStmt(work->stmt, &ctx, work->package);
-            if (shouldRequeue) {
-                QueueEnqueue(&checkingQueue, work);
+            checkStmt(work->stmt, &ctx, work->package);
+            if (ctx.mode == ExprMode_Unresolved) {
+                QueuePushBack(&checkingQueue, work);
             }
             continue;
         }

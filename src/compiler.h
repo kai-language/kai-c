@@ -6,6 +6,6 @@ struct CheckerWork {
 };
 
 void InitCompiler(void);
-Package *ImportPackage(const char *path);
+Package *ImportPackage(const char *path, Package *importer);
 
 extern Package builtinPackage;

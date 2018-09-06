@@ -1,0 +1,5 @@
+
+#foreign llvm #callconv "c" {
+    printf :: fn(rawptr, u64) -> i32
+}
+

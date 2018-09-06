@@ -1,0 +1,12 @@
+
+add :: fn(x: i32, y: i32) -> i32 {
+    z := x + y
+    z = z + 5
+    return z
+}
+
+
+main :: fn() -> i32 {
+    return add(5, 8)
+}
+
