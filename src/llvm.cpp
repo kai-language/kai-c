@@ -1043,8 +1043,8 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
             type->Symbol->backendUserdata = userdata;
         }
         if (FlagDebug) {
-        userdata->debugType = debugType;
-    }
+            userdata->debugType = debugType;
+        }
     }
 
 #if DEBUG
@@ -1644,12 +1644,10 @@ void setupTargetInfo() {
     static b32 init = false;
     if (init) return;
 
-    // TODO: If no target is specified we can get away with initializing just the native target.
-    llvm::InitializeAllTargetInfos();
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmParsers();
-    llvm::InitializeAllAsmPrinters();
+    // TODO: Initialize only for the targets we are outputting.
+    LLVMInitializeX86Target();
+    LLVMInitializeX86TargetMC();
+    LLVMInitializeX86TargetInfo();
 
     init = true;
 }

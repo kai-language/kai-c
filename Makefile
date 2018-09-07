@@ -14,7 +14,7 @@ else
 endif
 
 LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
-LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs)
+LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs X86CodeGen Core Support BitReader AsmParser Analysis TransformUtils ScalarOpts Target)
 
 LFLAGS =
 DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
