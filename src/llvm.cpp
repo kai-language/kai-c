@@ -1647,7 +1647,9 @@ void setupTargetInfo() {
     // TODO: Initialize only for the targets we are outputting.
     LLVMInitializeX86Target();
     LLVMInitializeX86TargetMC();
+    LLVMInitializeX86AsmParser();
     LLVMInitializeX86TargetInfo();
+    LLVMInitializeX86AsmPrinter();
 
     init = true;
 }
