@@ -837,6 +837,8 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     // TODO: Set calling convention
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(ctx->m->getContext(), "entry", fn);
     ctx->b.SetInsertPoint(entry);
+
+    llvm::Function *prevFunction = ctx->fn;
     ctx->fn = fn;
     if (FlagDebug) {
 
@@ -956,6 +958,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     if (FlagDebug) {
         ctx->d.builder->finalizeSubprogram(fn->getSubprogram());
     }
+    ctx->fn = prevFunction;
 
 #if DEBUG
     if (llvm::verifyFunction(*fn, &llvm::errs())) {
