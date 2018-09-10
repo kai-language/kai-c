@@ -204,7 +204,7 @@ Symbol *declareLabelSymbol(Package *pkg, Scope *scope, const char *name) {
 }
 
 b32 expectType(Package *pkg, Type *type, CheckerContext *ctx, Position pos) {
-    if (ctx->mode != ExprMode_Type) {
+    if (ctx->mode != ExprMode_Type && ctx->mode != ExprMode_Invalid) {
         ReportError(pkg, NotATypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
     }
     return true;
@@ -877,6 +877,9 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext paramCtx = { pushScope(pkg, ctx->scope) };
     For (func.params) {
         Type *type = checkExpr(func.params[i]->value, &paramCtx, pkg);
+        if (paramCtx.mode == ExprMode_Invalid) goto error;
+        if (paramCtx.mode == ExprMode_Unresolved) goto unresolved;
+
         if (!expectType(pkg, type, &paramCtx, func.params[i]->start)) isInvalid = true;
 
         flags |= type->Flags & TypeFlag_Variadic;
@@ -889,6 +892,9 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     ForEach(func.result, Expr *) {
         Type *type = checkExpr(it, &paramCtx, pkg);
+        if (paramCtx.mode == ExprMode_Invalid) goto error;
+        if (paramCtx.mode == ExprMode_Unresolved) goto unresolved;
+
         if (!expectType(pkg, type, &paramCtx, it->start)) {
             isInvalid = true;
         }
@@ -902,6 +908,10 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ctx->mode = ExprMode_Type;
     storeInfoBasicExpr(pkg, expr, type, ctx);
     return type;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return NULL;
 
 error:
     ctx->mode = ExprMode_Invalid;
@@ -974,7 +984,8 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *type = NewTypeFunction(typeFlags, paramTypes, resultTypes);
     storeInfoBasicExpr(pkg, expr, type, ctx);
 
-    ctx->mode = ExprMode_Type;
+    ctx->flags |= CheckerContextFlag_Constant;
+    ctx->mode = ExprMode_Value;
     return type;
 
 unresolved:
@@ -1109,6 +1120,8 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContextFlag prevFlags = ctx->flags;
     ctx->flags |= CheckerContextFlag_UnresolvedOk;
     Type *type = checkExpr(expr->TypePointer.type, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
+    if (ctx->mode == ExprMode_Unresolved) return NULL;
 
     expectType(pkg, type, ctx, expr->TypePointer.type->start);
     if (ctx->mode != ExprMode_Type) {
@@ -1257,7 +1270,7 @@ Type *checkExprParen(Expr *expr, CheckerContext *ctx, Package *pkg) {
 Type *checkExprUnary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Unary);
     Type *type = checkExpr(expr->Unary.expr, ctx, pkg);
-    if (ctx->mode == ExprMode_Unresolved) return InvalidType;
+    if (ctx->mode == ExprMode_Unresolved) return NULL;
 
     switch (expr->Unary.op) {
         case TK_And:
@@ -1639,6 +1652,7 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (calleeCtx.mode == ExprMode_Unresolved) goto unresolved;
 
     if (calleeCtx.mode == ExprMode_Type) {
+        // This is a cast not a call
 
         if (ArrayLen(expr->Call.args) < 1) {
             ReportError(pkg, CastArgumentCountError, expr->start,
@@ -1656,8 +1670,15 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
+    size_t nParams = ArrayLen(calleeType->Function.params);
     CheckerContext argCtx = { ctx->scope };
     ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
+        if (i >= nParams) {
+            ReportError(pkg, TODOError, arg->start,
+                        "Too many arguments in call to '%s'", DescribeExpr(expr->Call.expr));
+            break;
+        };
+
         argCtx.desiredType = calleeType->Function.params[i];
         Type *type = checkExpr(arg->value, &argCtx, pkg);
         if (argCtx.mode == ExprMode_Unresolved) goto unresolved;
@@ -1846,7 +1867,6 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
 
         case ExprKind_TypeStruct: {
             symbol->state = SymbolState_Resolving;
-            symbol->kind = SymbolKind_Type;
             break;
         }
 
@@ -1880,6 +1900,8 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
         markSymbolInvalid(symbol);
         return;
     }
+
+    if (exprCtx.mode == ExprMode_Type) symbol->kind = SymbolKind_Type;
 
     markSymbolResolved(symbol, type);
     storeInfoConstant(pkg, decl, symbol);
