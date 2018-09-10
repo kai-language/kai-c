@@ -61,5 +61,10 @@ void test_array() {
     ASSERT(strcmp((char*) str, "One: 1\n") == 0);
     ArrayPrintf(str, "Hex: 0x%x\n", 0x12345678);
     ASSERT(strcmp((char*) str, "One: 1\nHex: 0x12345678\n") == 0);
+
+    ArrayFree(buf);
+    ArrayFit(buf, 25);
+    ASSERT(ArrayLen(buf) == 0);
+    ASSERT(ArrayCap(buf) >= 25);
 }
 #endif

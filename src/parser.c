@@ -59,10 +59,11 @@ b32 isDirective(Parser *p, const char *ident) {
 }
 
 b32 isPrefixOrLoneDirective(Parser *p) {
-    if (p->tok.val.ident == internCallConv) return true;
     if (p->tok.val.ident == internLinkPrefix) return true;
+    if (p->tok.val.ident == internCallConv) return true;
     if (p->tok.val.ident == internForeign) return true;
     if (p->tok.val.ident == internImport) return true;
+    if (p->tok.val.ident == internLink) return true;
     return false;
 }
 
@@ -1009,7 +1010,7 @@ Decl *parseForeignDeclBlock(Parser *p, Position start, Expr *library) {
         } else  if (p->linkPrefix) {
             size_t prefixLen = strlen(p->linkPrefix);
             size_t nameLen = strlen(name);
-            tempStringBuffer = ArrayFit(tempStringBuffer, prefixLen + nameLen + 1);
+            ArrayFit(tempStringBuffer, prefixLen + nameLen + 1);
             strncpy(tempStringBuffer, p->linkPrefix, prefixLen);
             strncpy(tempStringBuffer + prefixLen, name, nameLen + 1);
             linkname = StrInternRange(tempStringBuffer, tempStringBuffer + prefixLen + nameLen);
@@ -1093,9 +1094,18 @@ Stmt *parseStmt(Parser *p) {
                 const char *alias = NULL;
                 if (isToken(p, TK_Ident)) {
                     alias = parseIdent(p);
-                }
+                } else UNIMPLEMENTED(); // TODO: Infer names
                 expectTerminator(p);
                 return (Stmt *) NewDeclImport(pkg, start, path, alias);
+            } else if (isDirective(p, internLink)) {
+                nextToken();
+                Expr *path = parseExpr(p, false);
+                const char *alias = NULL;
+                if (isToken(p, TK_Ident)) {
+                    alias = parseIdent(p);
+                } else UNIMPLEMENTED(); // TODO: Infer names
+                expectTerminator(p);
+                return (Stmt *) NewDeclLink(pkg, start, path, alias);
             }
 
             return NULL;
@@ -1242,7 +1252,6 @@ void parsePackageCode(Package *pkg, const char *code) {
                 }
                 break;
             }
-
             case StmtDeclKind_Import: {
                 decl->owningScope = pkg->scope;
                 // TODO: To properly support out of order declarations things we will need to re-evaluate how we
@@ -1259,7 +1268,18 @@ void parsePackageCode(Package *pkg, const char *code) {
                 decl->Import.symbol = symbol;
                 break;
             }
-
+            case StmtDeclKind_Link: {
+                decl->owningScope = pkg->scope;
+                // TODO: Same comment as above
+                declareSymbol(pkg, pkg->scope, decl->Link.alias, &symbol, decl);
+                symbol->type = NULL;
+                symbol->kind = SymbolKind_Library;
+                symbol->state = SymbolState_Resolved;
+                symbol->flags |= SymbolFlag_Global;
+                symbol->decl = decl;
+                decl->Import.symbol = symbol;
+                break;
+            }
             default:
                 break;
         }

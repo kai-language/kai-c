@@ -457,6 +457,13 @@ Decl *NewDeclImport(Package *package, Position start, Expr *path, const char *al
     return d;
 }
 
+Decl *NewDeclLink(Package *package, Position start, Expr *path, const char *alias) {
+    Decl *d = NewDecl(package, DeclKind_Link, start);
+    d->Link.path = path;
+    d->Link.alias = alias;
+    return d;
+}
+
 #if TEST
 void test_isExpr_and_isDecl() {
     Package pkg = {0};

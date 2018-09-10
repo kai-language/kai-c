@@ -2055,12 +2055,42 @@ void checkDeclImport(Decl *decl, CheckerContext *ctx, Package *pkg) {
         goto error;
     }
 
-    // TODO: Path stuff
+    // TODO: Use the path to resolve a to an entity name? How do we do that while keeping any order declarations?
+    //  I think we check all imports & links first
 
     Symbol *symbol = decl->Import.symbol;
 
     const char *path = (const char *) ctx->val.ptr;
     Package *import = ImportPackage(path, pkg);
+    symbol->backendUserdata = import;
+
+    return;
+
+error:
+    return;
+}
+
+void checkDeclLink(Decl *decl, CheckerContext *ctx, Package *pkg) {
+    ASSERT(decl->kind == DeclKind_Link);
+
+    ctx->desiredType = StringType;
+    Type *type = checkExpr(decl->Import.path, ctx, pkg);
+    if (ctx->mode == ExprMode_Invalid) goto error;
+    if (ctx->mode == ExprMode_Unresolved) return;
+
+    if (!TypesIdentical(type, StringType) || !IsConstant(ctx)) {
+        ReportError(pkg, TODOError, decl->start,
+                    "Could not resolve path %s to string constant", DescribeExpr(decl->Import.path));
+        goto error;
+    }
+
+    // TODO: Use the path to resolve a to an entity name? How do we do that while keeping any order declarations?
+    //  I think we check all imports & links first
+
+    Symbol *symbol = decl->Import.symbol;
+
+    const char *path = (const char *) ctx->val.ptr;
+    Package *import = LinkToPackage(path, pkg);
     symbol->backendUserdata = import;
 
     return;
@@ -2389,6 +2419,10 @@ void checkStmt(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         case StmtDeclKind_Import:
             checkDeclImport((Decl *) stmt, ctx, pkg);
+            break;
+
+        case StmtDeclKind_Link:
+            checkDeclLink((Decl *) stmt, ctx, pkg);
             break;
 
         case StmtKind_Label:

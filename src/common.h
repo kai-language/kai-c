@@ -244,6 +244,13 @@ struct Package {
     Scope *scope;
 };
 
+typedef struct Library Library;
+struct Library {
+    const char *path;
+    const char *fullpath;
+    void *backendUserdata;
+};
+
 typedef union Val {
     b32 b32;
     i8 i8;

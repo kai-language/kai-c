@@ -54,7 +54,8 @@
     FOR_EACH(Constant, "constant", true) \
     FOR_EACH(Foreign, "foreign", true)   \
     FOR_EACH(ForeignBlock, "foreign block", false) \
-    FOR_EACH(Import, "import", true)
+    FOR_EACH(Import, "import", false) \
+    FOR_EACH(Link, "link", false)
 
 typedef u8 ExprKind;
 enum Enum_ExprKind {
@@ -450,6 +451,13 @@ struct Decl_Import {
     Symbol *symbol;
 };
 
+struct Decl_Link {
+    Position start;
+    Expr *path;
+    const char *alias;
+    Symbol *symbol;
+};
+
 #define FOR_EACH(kindName, s, ...) Expr_##kindName kindName;
 typedef union ExprValue ExprValue;
 union ExprValue {
@@ -607,3 +615,4 @@ Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident 
 Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
 Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
 Decl *NewDeclImport(Package *package, Position start, Expr *path, const char *alias);
+Decl *NewDeclLink(Package *package, Position start, Expr *path, const char *alias);

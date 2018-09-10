@@ -33,6 +33,7 @@ const char *internIn;
 // Directive names
 const char *internLine;
 const char *internFile;
+const char *internLink;
 const char *internAssert;
 const char *internImport;
 const char *internCVargs;
@@ -86,6 +87,7 @@ void InitKeywords() {
 
     internLine = StrIntern("line");
     internFile = StrIntern("file");
+    internLink = StrIntern("link");
     internAssert = StrIntern("assert");
     internImport = StrIntern("import");
     internCVargs = StrIntern("cvargs");
@@ -522,6 +524,7 @@ repeat: ;
                     } else {
                         if (*l->stream == '\n') {
                             token.pos.line++;
+                            l->pos.line++;
                         }
                         l->stream++;
                     }
