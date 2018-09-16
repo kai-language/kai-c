@@ -14,7 +14,7 @@ else
 endif
 
 LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
-LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs)
+LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static) -lLLVMAsmParser -lLLVMX86Disassembler -lLLVMX86AsmParser -lLLVMX86CodeGen -lLLVMGlobalISel -lLLVMSelectionDAG -lLLVMAsmPrinter -lLLVMDebugInfoCodeView -lLLVMDebugInfoMSF -lLLVMCodeGen -lLLVMTarget -lLLVMScalarOpts -lLLVMInstCombine -lLLVMTransformUtils -lLLVMBitWriter -lLLVMAnalysis -lLLVMProfileData -lLLVMX86Desc -lLLVMObject -lLLVMMCParser -lLLVMBitReader -lLLVMMCDisassembler -lLLVMX86Info -lLLVMX86AsmPrinter -lLLVMMC -lLLVMX86Utils -lLLVMCore -lLLVMBinaryFormat -lLLVMSupport -lLLVMDemangle -lz -lm
 
 LFLAGS =
 DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
@@ -53,4 +53,4 @@ install:
 clean:
 	rm -f $(TARGET) core.o llvm.o $(TEST_TARGET) $(TEST_LOG) $(TEST_MAIN)
 	
-.PHONY: all clean debug release tests
+.PHONY: all clean debug release tests install
