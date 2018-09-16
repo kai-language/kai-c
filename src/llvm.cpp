@@ -836,7 +836,11 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
 
     std::vector<llvm::Value *> indicies;
 
+    bool prevReturn = ctx->returnAddress;
+    ctx->returnAddress = false;
     llvm::Value *index = emitExpr(ctx, expr->Subscript.index);
+    ctx->returnAddress = prevReturn;
+
     Type *indexType = TypeFromCheckerInfo(indexInfo);
 
     // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
