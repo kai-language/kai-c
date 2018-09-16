@@ -1534,7 +1534,7 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
         ctx->b.CreateBr(cond);
         ctx->b.SetInsertPoint(cond);
 
-        llvm::Value *condVal = emitExpr(ctx, fore.cond);
+        llvm::Value *condVal = emitExpr(ctx, fore.cond, canonicalize(ctx, BoolType));
         condVal = ctx->b.CreateTruncOrBitCast(condVal, llvm::IntegerType::get(ctx->m->getContext(), 1));
         ctx->b.CreateCondBr(condVal, body, post);
     } else {
