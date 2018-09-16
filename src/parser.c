@@ -1285,6 +1285,7 @@ void parsePackage(Package *package) {
         ReportError(package, FatalError, (Position){ .name = package->path }, "Failed to read source file");
         return;
     }
+    package->fileHandle = code;
     parsePackageCode(package, code);
 }
 

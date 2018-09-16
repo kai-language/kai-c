@@ -43,7 +43,7 @@ Package *ImportPackage(const char *path, Package *importer) {
     char resolvedPath[MAX_PATH];
     char *result = AbsolutePath(pathRelativeToImporter, resolvedPath);
     if (!result) {
-        if (FlagVerbose) printf("Failed to resolve absolure path for %s\n", path);
+        if (FlagVerbose) printf("Failed to resolve absolute path for %s\n", path);
         return NULL;
     }
 
