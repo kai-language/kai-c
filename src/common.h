@@ -230,6 +230,7 @@ typedef struct Package Package;
 struct Package {
     const char *path;
     const char *fullpath;
+    const char *fileHandle;
     DiagnosticEngine diagnostics;
     Arena arena;
     DynamicArray(Stmt *) stmts;
