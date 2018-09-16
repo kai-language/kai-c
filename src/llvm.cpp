@@ -471,6 +471,13 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
     return ctx->b.CreateCall(irFunc, args);
 }
 
+llvm::Value *emitExprCast(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_Cast);
+    CheckerInfo_BasicExpr info = ctx->checkerInfo[expr->id].BasicExpr;
+    llvm::Value *value = emitExpr(ctx, expr->Cast.expr);
+    return ctx->b.CreateBitCast(value, canonicalize(ctx, info.type));
+}
+
 llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_LitCompound);
     CheckerInfo_BasicExpr info = ctx->checkerInfo[expr->id].BasicExpr;
@@ -639,6 +646,11 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             break;
         }
 
+        case ExprKind_Paren: {
+            value = emitExpr(ctx, expr->Paren.expr);
+            break;
+        }
+
         case ExprKind_LitCompound: {
             value = emitExprLitCompound(ctx, expr);
             break;
@@ -662,6 +674,10 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
 
         case ExprKind_Call:
             value = emitExprCall(ctx, expr);
+            break;
+
+        case ExprKind_Cast:
+            value = emitExprCast(ctx, expr);
             break;
     }
 
@@ -1755,12 +1771,12 @@ void setupTargetInfo() {
     static b32 init = false;
     if (init) return;
 
-    // TODO: If no target is specified we can get away with initializing just the native target.
-    llvm::InitializeAllTargetInfos();
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmParsers();
-    llvm::InitializeAllAsmPrinters();
+    LLVMInitializeX86Target();
+    LLVMInitializeX86TargetMC();
+    LLVMInitializeX86TargetInfo();
+    LLVMInitializeX86AsmParser();
+    LLVMInitializeX86AsmPrinter();
+    LLVMInitializeX86Disassembler();
 
     init = true;
 }
@@ -1963,8 +1979,31 @@ void printIR(llvm::Type *value) {
     puts("\n");
 }
 
-void printModule(llvm::Module *module) {
-    module->print(llvm::errs(), nullptr);
+// MARK: Hacks for LLVM and libcurses. Sadly, LLVM uses libncurses to try to see
+// if the terminal supports color. We're going to stub all of the ncurses functions
+// and tell LLVM that color isn't supported
+extern "C" {
+    int setupterm(char *term, int filedes, int *errret) {
+        return 1; // Tell LLVM that we've failed and it'll disable colors
+    }
+
+    struct term *set_curterm(struct term *termp) {
+        ASSERT(false);
+        return NULL;
+    }
+
+    int del_curterm(struct term *termp){
+        ASSERT(false);
+        return 1;
+    }
+
+    int tigetnum(char *capname){
+        ASSERT(false);
+        return 0;
+    }
 }
+
+
+
 
 #pragma clang diagnostic pop

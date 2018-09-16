@@ -232,7 +232,7 @@ b32 isFunction(Type *type) {
 }
 
 b32 isNumeric(Type *type) {
-    return IsInteger(type) || IsFloat(type) || isEnum(type);
+    return IsInteger(type) || IsFloat(type);
 }
 
 b32 isBoolean(Type *type) {
@@ -474,8 +474,8 @@ Conversion conversion(Type *type, Type *target) {
         return result;
     }
 
-    if (type->kind == TypeKind_Enum && IsInteger(target)) {
-        return ConversionKind_None;
+    if (isEnum(type) && IsInteger(target)) {
+        return ConversionKind_Enum;
     }
 
     if (IsFloat(type) && IsInteger(target)) {
@@ -910,7 +910,7 @@ Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
         if (item.init) {
             CheckerContext itemCtx = {.scope = ctx->scope, .desiredType = backingType};
             Type *type = checkExpr(item.init, &itemCtx, pkg);
-            if (itemCtx.mode == ExprMode_Unresolved) goto unresolved; // TODO: @Leak this will leak the 'fields' array
+            if (itemCtx.mode == ExprMode_Unresolved) goto unresolved;
 
             if (!IsConstant(&itemCtx)) {
                 ReportError(pkg, TODOError, item.init->start,
@@ -929,7 +929,11 @@ Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         if (hasMinMax && currentValue > maxValue) {
             ReportError(pkg, IntOverflowError, item.init->start,
-                        "Enum case is will overflow backing type");
+                        "Value for enum case exceeds the max value for the enum backing type (%s)", 
+                        DescribeType(backingType));
+            ReportNote(pkg, item.init->start, 
+                       "You can force the overflow by explicitly casting the value '%s(%s)",
+                       DescribeType(backingType), DescribeExpr(item.init));
             continue;
         }
 
@@ -944,6 +948,7 @@ Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
     return type;
 
 unresolved:
+    if (fields) ArrayFree(fields);
     ctx->mode = ExprMode_Unresolved;
     return NULL;
 }
@@ -2435,7 +2440,7 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     Type *switchType = BoolType;
     if (stmt->Switch.match) {
         switchType = checkExpr(stmt->Switch.match, &switchCtx, pkg);
-        if (!isNumericOrPointer(switchType) && !isBoolean(switchType)) {
+        if (!isNumericOrPointer(switchType) && !isBoolean(switchType) && !isEnum(switchType)) {
             ReportError(pkg, CannotSwitchError, stmt->Switch.match->start,
                         "Cannot switch on value of type %s", DescribeType(switchType));
         }
@@ -3243,7 +3248,4 @@ info = GetStmtInfo(&pkg, stmt)->Switch
 
 #undef pkg
 #endif
-
-
-
 

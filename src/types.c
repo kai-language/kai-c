@@ -417,7 +417,17 @@ const char *DescribeType(Type *type) {
         return type->Symbol->name;
     }
 
-    return DescribeTypeKind(type->kind);
+    switch (type->kind) {
+        case TypeKind_Pointer: {
+            String desc = NULL;
+            const char *pointeeType = DescribeType(type->Pointer.pointeeType);
+            ArrayPrintf(desc, "*%s", pointeeType);
+            return (char *)desc;
+        }
+
+        default:
+            return DescribeTypeKind(type->kind);
+    }
 }
 
 #if TEST

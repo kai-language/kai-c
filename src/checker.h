@@ -20,7 +20,7 @@ enum Enum_CheckerInfoKind {
 STATIC_ASSERT(_StmtKind_End <= UINT8_MAX, "enum values overflow storage type");
 
 typedef u8 Conversion;
-#define ConversionKind_Mask 0x07  // Lower 3 bits denote the class
+#define ConversionKind_Mask 0x0F  // Lower 3 bits denote the class
 #define ConversionKind_None 0
 #define ConversionKind_Same 1
 #define ConversionKind_FtoI 2
@@ -28,11 +28,13 @@ typedef u8 Conversion;
 #define ConversionKind_PtoI 4
 #define ConversionKind_ItoP 5
 #define ConversionKind_Bool 6
-#define ConversionKind_Any  7
+#define ConversionKind_Enum 7
+#define ConversionKind_Any  8
 
 #define ConversionFlag_Extend 0x10 // 0001
 #define ConversionFlag_Signed 0x20 // 0010
 #define ConversionFlag_Float  0x40 // 0100 (Source type is a Float)
+#define ConversionFlag_Enum   0x80 // 1000
 
 typedef struct CheckerInfo_Constant CheckerInfo_Constant;
 struct CheckerInfo_Constant {

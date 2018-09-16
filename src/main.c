@@ -16,7 +16,6 @@
 
 #define VERSION "0.0.0 (prerelease)"
 
-
 void outputVersionAndBuildInfo() {
     printf("%s\n\n", VERSION);
 
