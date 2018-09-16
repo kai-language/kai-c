@@ -167,7 +167,7 @@ CheckerInfo *CheckerInfoForDecl(Package *pkg, Decl *decl) {
 }
 
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
-    Symbol *old = Lookup(scope, name);
+    Symbol *old = LookupNoRecurse(scope, name);
     if (old) {
         ReportError(pkg, RedefinitionError, decl->start, "Duplicate definition of symbol %s", name);
         ReportNote(pkg, old->decl->start, "Previous definition of %s", name);
@@ -664,6 +664,10 @@ Symbol *Lookup(Scope *scope, const char *name) {
     return NULL;
 }
 
+Symbol *LookupNoRecurse(Scope *scope, const char *name) {
+    return MapGet(&scope->members, name);
+}
+
 Type *TypeFromCheckerInfo(CheckerInfo info) {
     switch (info.kind) {
         case CheckerInfoKind_BasicExpr:
@@ -963,7 +967,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     DynamicArray(Type *) params = NULL;
     ArrayFit(params, ArrayLen(func.params));
 
-    CheckerContext paramCtx = { pushScope(pkg, ctx->scope) };
+    CheckerContext paramCtx = { .scope = pushScope(pkg, ctx->scope) };
     For (func.params) {
         Type *type = checkExpr(func.params[i]->value, &paramCtx, pkg);
         if (paramCtx.mode == ExprMode_Invalid) goto error;
@@ -1064,7 +1068,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         tuple = NewTypeTuple(TypeFlag_None, resultTypes);
     }
 
-    CheckerContext bodyCtx = { bodyScope, .desiredType = tuple };
+    CheckerContext bodyCtx = { .scope = bodyScope, .desiredType = tuple };
     ForEach(func.body->stmts, Stmt *) {
         checkStmt(it, &bodyCtx, pkg);
         if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;

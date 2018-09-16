@@ -161,6 +161,7 @@ struct CheckerInfo {
 extern "C" {
 #endif
 Symbol *Lookup(Scope *scope, const char *name);
+Symbol *LookupNoRecurse(Scope *scope, const char *name);
 Type *TypeFromCheckerInfo(CheckerInfo info);
 b32 IsInteger(Type *type);
 b32 IsSigned(Type *type);

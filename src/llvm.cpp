@@ -871,7 +871,10 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
     } break;
 
     case TypeKind_Pointer: {
+        bool previousReturnAddress = ctx->returnAddress;
+        ctx->returnAddress = false;
         aggregate = emitExpr(ctx, expr->Subscript.expr);
+        ctx->returnAddress = previousReturnAddress;
         indicies.push_back(index);
         resultType = TypeFromCheckerInfo(recvInfo)->Pointer.pointeeType;
     } break;
@@ -885,7 +888,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
     if (ctx->returnAddress) {
         return val;
     }
-    
+
     return ctx->b.CreateAlignedLoad(val, BytesFromBits(resultType->Align));
 }
 
