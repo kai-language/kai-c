@@ -116,6 +116,8 @@ void emitStmt(Context *ctx, Stmt *stmt);
 llvm::Type *canonicalize(Context *ctx, Type *type) {
     switch (type->kind) {
         case TypeKind_Tuple:
+            // TODO: Should they?
+            PANIC("Tuples are a checker thing, they should not make their way into the backend, unless they do?");
             if (!type->Tuple.types) {
                 return llvm::Type::getVoidTy(ctx->m->getContext());
             }
@@ -142,15 +144,29 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
         } break;
 
         case TypeKind_Function: {
-            ASSERT_MSG(ArrayLen(type->Function.results) == 1, "Currently we don't support multi-return");
             std::vector<llvm::Type *> params;
             For(type->Function.params) {
                 llvm::Type *paramType = canonicalize(ctx, type->Function.params[i]);
                 params.push_back(paramType);
             }
 
-            // TODO(Brett): canonicalize multi-return and Kai vargs
-            llvm::Type *returnType = canonicalize(ctx, type->Function.results[0]);
+            size_t numReturns = ArrayLen(type->Function.results);
+            llvm::Type *returnType;
+            if (numReturns == 0) {
+                returnType = llvm::Type::getVoidTy(ctx->m->getContext());
+            } else if (numReturns == 1) {
+                returnType = canonicalize(ctx, type->Function.results[0]);
+            } else {
+                std::vector<llvm::Type *> elements;
+                for (size_t i = 0; i < numReturns; i++) {
+                    llvm::Type *ty = canonicalize(ctx, type->Function.results[i]);
+                    elements.push_back(ty);
+                }
+
+                returnType = llvm::StructType::create(ctx->m->getContext(), elements);
+            }
+
+            // TODO: Kai vargs
             return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
         } break;
 
@@ -339,6 +355,12 @@ llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Symbol *sym) {
     return alloca;
 }
 
+llvm::AllocaInst *creteEntryBlockAlloca(Context *ctx, llvm::Type *type, const char *name) {
+    llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
+    llvm::AllocaInst *alloca = b.CreateAlloca(type, 0, name);
+    return alloca;
+}
+
 llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
     switch (conversion & ConversionKind_Mask) {
         case ConversionKind_None:
@@ -395,8 +417,12 @@ llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value
             UNIMPLEMENTED();
             return NULL;
 
+        case ConversionKind_Tuple:
+            return value;
+
         default:
-            return NULL;
+            UNIMPLEMENTED();
+            return value;
     }
 }
 
@@ -561,7 +587,11 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             Expr_LitInt lit = expr->LitInt;
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
-            value = llvm::ConstantInt::get(canonicalize(ctx, type), lit.val, type->Flags & TypeFlag_Signed);
+            if (type->kind == TypeKind_Float) {
+                value = llvm::ConstantFP::get(canonicalize(ctx, type), lit.val);
+            } else {
+                value = llvm::ConstantInt::get(canonicalize(ctx, type), lit.val, type->Flags & TypeFlag_Signed);
+            }
             break;
         }
 
@@ -906,11 +936,15 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 
     // Setup return block
 
-    // TODO: multiple returns (we should change TypeFunction to have a single possibly tuple return type)
-    Type *retType = info.BasicExpr.type->Function.results[0];
     ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return", fn);
-    if (!fn->getReturnType()->isVoidTy()) {
-        ctx->retValue = createEntryBlockAlloca(ctx, retType, "result");
+
+    if (info.BasicExpr.type->Function.results) {
+        llvm::IRBuilder<> b(entry, entry->begin());
+        llvm::AllocaInst *alloca = b.CreateAlloca(fn->getReturnType(), 0, "result");
+        if (ArrayLen(info.BasicExpr.type->Function.results) == 1) {
+            alloca->setAlignment(BytesFromBits(info.BasicExpr.type->Function.results[0]->Align));
+        }
+        ctx->retValue = alloca;
     }
     ForEach(expr->LitFunction.body->stmts, Stmt *) {
         emitStmt(ctx, it);
@@ -942,11 +976,17 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         ctx->b.SetInsertPoint(ctx->retBlock);
     }
 
-    if (fn->getReturnType()->isVoidTy()) {
-        ctx->b.CreateRetVoid();
-    } else {
+    if (ArrayLen(info.BasicExpr.type->Function.results) == 1) {
+        Type *retType = info.BasicExpr.type->Function.results[0];
         auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, BytesFromBits(retType->Align));
         ctx->b.CreateRet(retValue);
+    } else if (info.BasicExpr.type->Function.results) {
+        llvm::StructType *retType = llvm::dyn_cast<llvm::StructType>(fn->getReturnType());
+        ASSERT_MSG(retType, "Expect a function with multiple returns to have a struct return type");
+        auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, ctx->dataLayout.getStructLayout(retType)->getAlignment());
+        ctx->b.CreateRet(retValue);
+    } else {
+        ctx->b.CreateRetVoid();
     }
 
     // FIXME: Return to previous scope
@@ -1303,9 +1343,52 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
     ASSERT(stmt->kind == StmtKind_Assign);
     Stmt_Assign assign = stmt->Assign;
 
+    size_t numLhs = ArrayLen(assign.lhs);
+    size_t rhsIndex = 0;
+    for (size_t lhsIndex = 0; lhsIndex < numLhs; lhsIndex++) {
+        Expr *expr = assign.rhs[rhsIndex++];
+        llvm::Value *rhs = emitExpr(ctx, expr);
+
+        Type *exprType = ctx->checkerInfo[expr->id].BasicExpr.type;
+        if (expr->kind == ExprKind_Call) {
+            size_t numValues = ArrayLen(exprType->Tuple.types);
+            if (numValues == 1) {
+                ctx->returnAddress = true;
+                llvm::Value *lhs = emitExpr(ctx, assign.lhs[lhsIndex]);
+                ctx->returnAddress = false;
+                debugPos(ctx, assign.start);
+                ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Tuple.types[0]->Align));
+            } else {
+                // create some stack space to land the returned struct onto
+                llvm::Value *resultAddress = creteEntryBlockAlloca(ctx, rhs->getType(), "");
+                ctx->b.CreateStore(rhs, resultAddress);
+
+                for (size_t resultIndex = 0; resultIndex < numValues; resultIndex++) {
+                    Expr *lhsExpr = assign.lhs[lhsIndex++];
+                    ctx->returnAddress = true;
+                    llvm::Value *lhs = emitExpr(ctx, lhsExpr);
+                    ctx->returnAddress = false;
+                    debugPos(ctx, assign.start);
+
+                    llvm::Value *addr = ctx->b.CreateStructGEP(rhs->getType(), resultAddress, (u32) resultIndex);
+                    llvm::Value *val = ctx->b.CreateLoad(addr);
+
+                    CheckerInfo lhsInfo = ctx->checkerInfo[lhsExpr->id];
+                    // Conversions of tuples like this are stored on the lhs
+                    if (lhsInfo.coerce != ConversionKind_None) {
+                        val = coerceValue(ctx, lhsInfo.coerce, val, lhs->getType());
+                    }
+
+                    ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(TypeFromCheckerInfo(lhsInfo)->Align));
+                }
+            }
+        }
+    }
+
+
+#if 0
     if (ArrayLen(assign.lhs) > 1 && ArrayLen(assign.rhs) == 1 && assign.rhs[0]->kind == ExprKind_Call) {
-//        llvm::Value *value = emitExpr(ctx, assign.rhs[0]);
-        UNIMPLEMENTED();
+
     }
     ForEachWithIndex(assign.lhs, i, Expr *, it) {
         ctx->returnAddress = true; // FIXME: restore previous value.
@@ -1316,6 +1399,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
         debugPos(ctx, assign.start);
         ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(type->Align));
     }
+#endif
 }
 
 void emitStmtIf(Context *ctx, Stmt *stmt) {
@@ -1342,18 +1426,26 @@ void emitStmtIf(Context *ctx, Stmt *stmt) {
 
 void emitStmtReturn(Context *ctx, Stmt *stmt) {
     ASSERT(stmt->kind == StmtKind_Return);
-    if (ArrayLen(stmt->Return.exprs) != 1) UNIMPLEMENTED();
+
+    size_t numReturns = ArrayLen(stmt->Return.exprs);
+
     std::vector<llvm::Value *> values;
-    ForEach(stmt->Return.exprs, Expr *) {
-        // FIXME: getReturnType will no suffice when we support multireturn
-        auto value = emitExpr(ctx, it, ctx->fn->getReturnType());
+    for (size_t i = 0; i < numReturns; i++) {
+        Expr *it = stmt->Return.exprs[i];
+        llvm::Type *desiredType = ctx->fn->getReturnType();
+        if (numReturns > 1) {
+            llvm::StructType *type = llvm::dyn_cast<llvm::StructType>(ctx->fn->getReturnType());
+            ASSERT_MSG(type, "Expected the context struct type for function with multiple return vals");
+            desiredType = type->getElementType((u32) i);
+        }
+        auto value = emitExpr(ctx, it, desiredType);
         values.push_back(value);
     }
     clearDebugPos(ctx);
     if (values.size() > 1) {
         for (u32 idx = 0; idx < values.size(); idx++) {
-            std::vector<u32> idxs = {0, idx};
-            ctx->retValue = ctx->b.CreateInsertValue(ctx->retValue, values[idx], idxs);
+            llvm::Value *elPtr = ctx->b.CreateStructGEP(ctx->fn->getReturnType(), ctx->retValue, idx);
+            ctx->b.CreateStore(values[idx], elPtr);
         }
     } else if (values.size() == 1) {
         ctx->b.CreateStore(values[0], ctx->retValue);

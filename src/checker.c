@@ -435,6 +435,8 @@ b32 representValueSilently(CheckerContext *ctx, Expr *expr, Type *type, Type *ta
 
 Conversion conversion(Type *type, Type *target) {
     Conversion result = 0;
+    if (type == target) return ConversionKind_None;
+    
     if (type->kind == target->kind) {
         result |= ConversionKind_Same;
         switch (type->kind) {
@@ -501,6 +503,10 @@ void changeTypeOrMarkConversionForExpr(Expr *expr, Type *type, Type *target, Pac
         case ExprKind_LitFloat:
         case ExprKind_LitString:
             CheckerInfoForExpr(pkg, expr)->BasicExpr.type = target;
+            break;
+
+        case ExprKind_Call:
+            // Do nothing intentionally
             break;
 
         default:
@@ -890,6 +896,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     DynamicArray(Type *) returnTypes = NULL;
     ArrayFit(returnTypes, ArrayLen(func.result));
 
+    bool isVoid = false;
     ForEach(func.result, Expr *) {
         Type *type = checkExpr(it, &paramCtx, pkg);
         if (paramCtx.mode == ExprMode_Invalid) goto error;
@@ -899,6 +906,18 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
             isInvalid = true;
         }
         ArrayPush(returnTypes, type);
+
+        isVoid |= type == VoidType;
+    }
+
+    if (isVoid) {
+        if (ArrayLen(func.result) > 1) {
+            ReportError(pkg, InvalidUseOfVoidError, expr->start,
+                        "Void must be a functions only return type");
+        } else {
+            ArrayFree(returnTypes);
+            returnTypes = NULL;
+        }
     }
 
     if (isInvalid) goto error;
@@ -957,25 +976,30 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         ArrayPush(paramTypes, type);
     }
 
+    bool isVoid = false;
     ForEach(func.type->TypeFunction.result, Expr *) {
         Type *type = checkExpr(it, &paramCtx, pkg);
         if (!expectType(pkg, type, &paramCtx, it->start)) continue;
         ArrayPush(resultTypes, type);
-        if (type == VoidType) {
-            if (ArrayLen(func.type->TypeFunction.result) > 1) {
-                ReportError(pkg, InvalidUseOfVoidError, it->start,
-                            "Void must be a functions only return type");
-            }
-        }
+        isVoid |= type == VoidType;
     }
 
     Scope *bodyScope = pushScope(pkg, parameterScope);
-    Type *tuple = VoidType;
-    if (resultTypes[0] != VoidType) {
-        tuple = NewTypeTuple(TypeFlag_None, resultTypes);
+    CheckerContext bodyCtx = { bodyScope };
+
+    if (isVoid) {
+        if (ArrayLen(func.type->TypeFunction.result) > 1) {
+            ReportError(pkg, InvalidUseOfVoidError, expr->LitFunction.type->start,
+                        "Void must be a functions only return type");
+        } else {
+            ArrayFree(resultTypes);
+            resultTypes = NULL;
+            bodyCtx.desiredType = VoidType;
+        }
+    } else {
+        bodyCtx.desiredType = NewTypeTuple(TypeFlag_None, resultTypes);
     }
 
-    CheckerContext bodyCtx = { bodyScope, .desiredType = tuple };
     ForEach(func.body->stmts, Stmt *) {
         checkStmt(it, &bodyCtx, pkg);
         if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;
@@ -2112,38 +2136,69 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         }
     }
 
-    if (assign.rhs[0]->kind == ExprKind_Call) {
-        // TODO: Handle void calls (empty tuple) (error)
-        // TODO: Handle single returns
-        // TODO: Handle multiple returns
-        UNIMPLEMENTED();
-        return;
-    }
-
     Type *prevDesiredType = ctx->desiredType;
-    ForEachWithIndex(assign.rhs, i, Expr *, expr) {
-        if (i >= ArrayLen(lhsTypes)) {
-            break;
+
+    int values = 0;
+    size_t numRhs = ArrayLen(assign.rhs);
+    size_t numLhs = ArrayLen(assign.lhs);
+    size_t rhsIndex = 0;
+    for (size_t lhsIndex = 0; lhsIndex < numRhs; lhsIndex++) {
+        Expr *expr = assign.rhs[rhsIndex++];
+
+        ctx->desiredType = lhsTypes[lhsIndex];
+        Type *type = checkExpr(expr, ctx, pkg);
+        if (ctx->mode == ExprMode_Invalid) continue;
+        if (ctx->mode == ExprMode_Unresolved) goto unresolved;
+
+        if (type->kind == TypeKind_Tuple) {
+            // Check each matches individually
+            size_t numTypes = ArrayLen(type->Tuple.types);
+            for (size_t rhsIndex = 0; rhsIndex < numTypes; rhsIndex++) {
+                Type *ty = type->Tuple.types[rhsIndex];
+                Type *target = lhsTypes[lhsIndex];
+                if (!coerceType(expr, ctx, &ty, target, pkg)) {
+                    ReportError(pkg, TypeMismatchError, expr->start,
+                                "Cannot assign %s to value of type %s", DescribeType(ty), DescribeType(lhsTypes[lhsIndex]));
+                    ReportNote(pkg, expr->start,
+                               "Value comes the %zu indexed result from call to %s", rhsIndex, DescribeExpr(expr));
+                }
+                // Coerce type is unable to attach coercions to calls. It doesn't work with tuple types. We do it here.
+                //  The special thing about tuples is their conversions are stored on their receiving value. This is
+                //  indicated by setting the tuple expression coerce to ConversionKind_Tuple outside the loop.
+                CheckerInfoForExpr(pkg, assign.lhs[lhsIndex])->coerce = conversion(ty, target);
+
+                lhsIndex += 1;
+                values += 1;
+            }
+
+            // ConversionKind_Tuple indicates that the conversions are stored on the receiving value.
+            CheckerInfoForExpr(pkg, expr)->coerce = ConversionKind_Tuple;
+            continue;
         }
 
-        ctx->desiredType = lhsTypes[i];
-        Type *type = checkExpr(expr, ctx, pkg);
         if (ctx->mode < ExprMode_Value) {
             ReportError(pkg, NotAValueError, expr->start,
                         "Expected a value but got %s (type %s)", DescribeExpr(expr), DescribeType(type));
         }
-        if (!coerceType(expr, ctx, &type, lhsTypes[i], pkg)) {
+
+        if (!coerceType(expr, ctx, &type, lhsTypes[lhsIndex], pkg)) {
             ReportError(pkg, TypeMismatchError, expr->start,
-                        "Cannot assign %s to value of type %s", DescribeType(type), DescribeType(lhsTypes[i]));
+                        "Cannot assign %s to value of type %s", DescribeType(type), DescribeType(lhsTypes[lhsIndex]));
         }
     }
 
     ctx->desiredType = prevDesiredType;
 
-    if (ArrayLen(assign.rhs) != ArrayLen(assign.lhs)) {
+    if (numLhs != values) {
         ReportError(pkg, AssignmentCountMismatchError, stmt->start,
                     "Left side has %zu values while right side %zu values", ArrayLen(assign.lhs), ArrayLen(assign.rhs));
     }
+
+    return;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return;
 }
 
 void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
