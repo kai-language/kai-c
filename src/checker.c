@@ -474,7 +474,7 @@ Conversion conversion(Type *type, Type *target) {
 
     if (IsFloat(type) && IsInteger(target)) {
         result |= ConversionKind_FtoI & ConversionFlag_Float;
-        if (IsSigned(type)) result |= ConversionFlag_Signed;
+        if (IsSigned(target)) result |= ConversionFlag_Signed;
         return result;
     }
 
@@ -492,7 +492,10 @@ Conversion conversion(Type *type, Type *target) {
 
     // TODO: function to pointer and vica versa
 
-    PANIC("Unhandled or prohibited conversion");
+    if (type == InvalidType || target == InvalidType) return ConversionKind_None;
+
+    // TODO: ConversionKind_Invalid for non developer releases?
+    ASSERT_MSG(false, "Unhandled or prohibited conversion");
     return ConversionKind_None;
 }
 
