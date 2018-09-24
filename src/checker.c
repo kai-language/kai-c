@@ -2141,11 +2141,10 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
     Type *prevDesiredType = ctx->desiredType;
 
-    int values = 0;
-    size_t numRhs = ArrayLen(assign.rhs);
+    size_t values = 0;
     size_t numLhs = ArrayLen(assign.lhs);
     size_t rhsIndex = 0;
-    for (size_t lhsIndex = 0; lhsIndex < numRhs; lhsIndex++) {
+    for (size_t lhsIndex = 0; values < numLhs;) {
         Expr *expr = assign.rhs[rhsIndex++];
 
         ctx->desiredType = lhsTypes[lhsIndex];
@@ -2159,20 +2158,25 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             for (size_t rhsIndex = 0; rhsIndex < numTypes; rhsIndex++) {
                 Type *ty = type->Tuple.types[rhsIndex];
                 Type *target = lhsTypes[lhsIndex];
-                if (!coerceType(expr, ctx, &ty, target, pkg)) {
-                    ReportError(pkg, TypeMismatchError, expr->start,
-                                "Cannot assign %s to value of type %s", DescribeType(ty), DescribeType(lhsTypes[lhsIndex]));
-                    ReportNote(pkg, expr->start,
-                               "Value comes the %zu indexed result from call to %s", rhsIndex, DescribeExpr(expr));
-                }
+
                 // Coerce type is unable to attach coercions to calls. It doesn't work with tuple types. We do it here.
                 //  The special thing about tuples is their conversions are stored on their receiving value. This is
                 //  indicated by setting the tuple expression coerce to ConversionKind_Tuple outside the loop.
+                //  We do this prior to calling coerce type as conversion handles invalid conversions
                 CheckerInfoForExpr(pkg, assign.lhs[lhsIndex])->coerce = conversion(ty, target);
 
+                if (!coerceTypeSilently(expr, ctx, &ty, target, pkg)) {
+                    ReportError(pkg, TypeMismatchError, expr->start,
+                                "Cannot assign %s to value of type %s", DescribeType(ty), DescribeType(lhsTypes[lhsIndex]));
+                    ReportNote(pkg, expr->start,
+                               "Value comes from the %zu indexed result from call to %s", rhsIndex, DescribeExpr(expr));
+                    // TODO: Use the language value comes from the %zu (st|nd|rd|th) result of the call to %s
+                }
+
                 lhsIndex += 1;
-                values += 1;
             }
+
+            values += numTypes;
 
             // ConversionKind_Tuple indicates that the conversions are stored on the receiving value.
             CheckerInfoForExpr(pkg, expr)->coerce = ConversionKind_Tuple;
@@ -2182,19 +2186,19 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         if (ctx->mode < ExprMode_Value) {
             ReportError(pkg, NotAValueError, expr->start,
                         "Expected a value but got %s (type %s)", DescribeExpr(expr), DescribeType(type));
+        } else {
+            coerceType(expr, ctx, &type, lhsTypes[lhsIndex], pkg);
         }
 
-        if (!coerceType(expr, ctx, &type, lhsTypes[lhsIndex], pkg)) {
-            ReportError(pkg, TypeMismatchError, expr->start,
-                        "Cannot assign %s to value of type %s", DescribeType(type), DescribeType(lhsTypes[lhsIndex]));
-        }
+        values += 1;
+        lhsIndex += 1;
     }
 
     ctx->desiredType = prevDesiredType;
 
     if (numLhs != values) {
         ReportError(pkg, AssignmentCountMismatchError, stmt->start,
-                    "Left side has %zu values while right side %zu values", ArrayLen(assign.lhs), ArrayLen(assign.rhs));
+                    "Left side has %zu values while right side has %zu values", ArrayLen(assign.lhs), ArrayLen(assign.rhs));
     }
 
     return;

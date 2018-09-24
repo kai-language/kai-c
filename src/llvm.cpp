@@ -362,6 +362,8 @@ llvm::AllocaInst *creteEntryBlockAlloca(Context *ctx, llvm::Type *type, const ch
 }
 
 llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
+    ASSERT(target);
+    ASSERT(value);
     switch (conversion & ConversionKind_Mask) {
         case ConversionKind_None:
             return value;
@@ -647,7 +649,8 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             break;
     }
 
-    if (ctx->checkerInfo[expr->id].coerce != ConversionKind_None) {
+    if (ctx->checkerInfo[expr->id].coerce != ConversionKind_None && desiredType) {
+        // If desired type is NULL and coerce is not then it maybe because we are emitting the lhs of a expr
         value = coerceValue(ctx, ctx->checkerInfo[expr->id].coerce, value, desiredType);
     }
 
@@ -1345,7 +1348,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
 
     size_t numLhs = ArrayLen(assign.lhs);
     size_t rhsIndex = 0;
-    for (size_t lhsIndex = 0; lhsIndex < numLhs; lhsIndex++) {
+    for (size_t lhsIndex = 0; lhsIndex < numLhs;) {
         Expr *expr = assign.rhs[rhsIndex++];
         llvm::Value *rhs = emitExpr(ctx, expr);
 
@@ -1354,7 +1357,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
             size_t numValues = ArrayLen(exprType->Tuple.types);
             if (numValues == 1) {
                 ctx->returnAddress = true;
-                llvm::Value *lhs = emitExpr(ctx, assign.lhs[lhsIndex]);
+                llvm::Value *lhs = emitExpr(ctx, assign.lhs[lhsIndex++]);
                 ctx->returnAddress = false;
                 debugPos(ctx, assign.start);
                 ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Tuple.types[0]->Align));
@@ -1376,30 +1379,23 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
                     CheckerInfo lhsInfo = ctx->checkerInfo[lhsExpr->id];
                     // Conversions of tuples like this are stored on the lhs
                     if (lhsInfo.coerce != ConversionKind_None) {
-                        val = coerceValue(ctx, lhsInfo.coerce, val, lhs->getType());
+                        ASSERT(lhs->getType()->isPointerTy());
+                        val = coerceValue(ctx, lhsInfo.coerce, val, lhs->getType()->getPointerElementType());
                     }
 
                     ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(TypeFromCheckerInfo(lhsInfo)->Align));
                 }
             }
+        } else {
+            Expr *lhsExpr = assign.lhs[lhsIndex++];
+            ctx->returnAddress = true;
+            llvm::Value *lhs = emitExpr(ctx, lhsExpr);
+            ctx->returnAddress = false;
+            Type *type = TypeFromCheckerInfo(ctx->checkerInfo[lhsExpr->id]);
+            debugPos(ctx, assign.start);
+            ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(type->Align));
         }
     }
-
-
-#if 0
-    if (ArrayLen(assign.lhs) > 1 && ArrayLen(assign.rhs) == 1 && assign.rhs[0]->kind == ExprKind_Call) {
-
-    }
-    ForEachWithIndex(assign.lhs, i, Expr *, it) {
-        ctx->returnAddress = true; // FIXME: restore previous value.
-        llvm::Value *lhs = emitExpr(ctx, it);
-        ctx->returnAddress = false;
-        llvm::Value *rhs = emitExpr(ctx, assign.rhs[i]);
-        Type *type = TypeFromCheckerInfo(ctx->checkerInfo[assign.lhs[i]->id]);
-        debugPos(ctx, assign.start);
-        ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(type->Align));
-    }
-#endif
 }
 
 void emitStmtIf(Context *ctx, Stmt *stmt) {

@@ -286,6 +286,16 @@ void declareBuiltinType(const char *name, Type *type) {
     type->Symbol = symbol;
 }
 
+void declareBuiltinTypeAlias(const char *name, Type *type, Type *alias) {
+    name = StrIntern(name);
+    Symbol *symbol;
+    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, NULL);
+    symbol->state = SymbolState_Resolved;
+    symbol->type = type;
+    symbol->kind = SymbolKind_Type;
+    alias->Symbol = symbol;
+}
+
 bool HaveInitializedBuiltins = false;
 void InitBuiltins() {
     if (HaveInitializedBuiltins) return;
@@ -323,7 +333,7 @@ void InitBuiltins() {
     _global = Alloc(DefaultAllocator, sizeof(Type)); \
     memcpy(_global, _alias, sizeof(Type)); \
     _global->Flags |= TypeFlag_Alias; \
-    declareBuiltinType(_name, _alias)
+    declareBuiltinTypeAlias(_name, _alias, _global)
 
     TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
     TYPE(FileType, "<file>", Invalid, 0, TypeFlag_None);
