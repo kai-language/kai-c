@@ -2132,10 +2132,17 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
     ForEach(assign.lhs, Expr *) {
         Type *type = checkExpr(it, ctx, pkg);
-        ArrayPush(lhsTypes, type);
-        if (ctx->mode < ExprMode_Addressable && ctx->mode != ExprMode_Invalid) {
-            ReportError(pkg, ValueNotAssignableError, it->start,
-                        "Cannot assign to value %s of type %s", DescribeExpr(it), DescribeType(type));
+        // FIXME: Check for null
+        if (type->kind == TypeKind_Enum) {
+            ForEach(type->Tuple.types, Type *) {
+                ArrayPush(lhsTypes, it);
+            }
+        } else {
+            ArrayPush(lhsTypes, type);
+            if (ctx->mode < ExprMode_Addressable && ctx->mode != ExprMode_Invalid) {
+                ReportError(pkg, ValueNotAssignableError, it->start,
+                            "Cannot assign to value %s of type %s", DescribeExpr(it), DescribeType(type));
+            }
         }
     }
 
