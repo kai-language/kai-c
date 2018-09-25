@@ -118,10 +118,10 @@ StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name) {
 
     u32 index = 0;
     TypeField *field = NULL;
-    ForEachWithIndex(type.members, i, TypeField *, it) {
-        if (it->name == name) {
-            index = (u32) i;
-            field = it;
+    for (u32 i = 0; i < type.numMembers; i++) {
+        if (type.members[i].name == name) {
+            index = i;
+            field = &type.members[i];
             break;
         }
     }
@@ -218,12 +218,35 @@ Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
 Map internFunctionTypes;
 
 Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
-    u64 hash = HashMix(HashBytes(params, ArrayLen(params) * sizeof(params)), HashBytes(results, ArrayLen(results) * sizeof(results)));
+    ASSERT(ArrayLen(params) < UINT32_MAX);
+    ASSERT(ArrayLen(results) < UINT32_MAX);
+
+    u32 numParams = (u32) ArrayLen(params);
+    u32 numResults = (u32) ArrayLen(results);
+
+    bool isVoid = numResults == 1 && results[0] == VoidType;
+    if (isVoid) {
+        numResults = 0;
+        results = NULL;
+    }
+
+    u64 hash = HashMix(HashBytes(params, numParams * sizeof(params)), HashBytes(results, numResults * sizeof(results)));
     u64 key = hash ? hash : 1;
     InternType *intern = MapGet(&internFunctionTypes, (void*) key);
     for (InternType *it = intern; it; it = it->next) {
         Type *type = it->type;
-        if (ArraysEqual(params, type->Function.params) && ArraysEqual(results, type->Function.results) && flags == type->Function.Flags) {
+
+        bool nParamsEql    = numParams  == type->Function.numParams;
+        bool nResultsEql   = numResults == type->Function.numResults;
+        bool flagsEql      = flags      == type->Function.Flags;
+        bool paramsPtrEql  = params     == type->Function.params;
+        bool resultsPtrEql = results    == type->Function.results;
+
+        if (nParamsEql && nResultsEql && flagsEql &&
+            ((paramsPtrEql && resultsPtrEql) ||
+             (memcmp(params,  type->Function.params,  numParams) == 0 &&
+              memcmp(results, type->Function.results, numResults) == 0)))
+        {
             return type;
         }
     }
@@ -231,30 +254,46 @@ Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(
     type->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
     type->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
     type->Flags = flags;
-    type->Function.params = params;
-    type->Function.results = results;
-    InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
+
+    Type **p = Alloc(DefaultAllocator, numParams * sizeof *p);
+    Type **r = Alloc(DefaultAllocator, numResults * sizeof *r);
+
+    type->Function.params  = memcpy(p, params, numParams * sizeof *p);
+    type->Function.results = memcpy(r, results, numResults * sizeof *p);
+
+    type->Function.numParams = numParams;
+    type->Function.numResults = numResults;
+
+    InternType *newIntern = Alloc(DefaultAllocator, sizeof *newIntern);
     newIntern->type = type;
     newIntern->next = intern;
     MapSet(&internFunctionTypes, (void*) key, newIntern);
     return type;
 }
 
-Type *NewTypeTuple(TypeFlag flags, DynamicArray(Type *) types) {
+Type *NewTypeTupleFromFunctionResults(TypeFlag flags, Type_Function function) {
     Type *type = AllocType(TypeKind_Tuple);
     type->Flags = flags;
-    type->Tuple.types = types;
-    type->Width = 0;
-    type->Align = 0;
+
+    type->Tuple.numTypes = function.numResults;
+    type->Tuple.types = function.results;
     return type;
 }
 
-Type *NewTypeStruct(u32 Align, u32 Width, TypeFlag flags, DynamicArray(TypeField *) members) {
+Type *NewTypeStruct(u32 Align, u32 Width, TypeFlag flags, DynamicArray(TypeField) members) {
+    ASSERT(ArrayLen(members) < UINT32_MAX);
+
+    u32 numMembers = (u32) ArrayLen(members);
+
     Type *type = AllocType(TypeKind_Struct);
     type->Align = Align;
     type->Width = Width;
     type->Flags = flags;
-    type->Struct.members = members;
+
+    type->Struct.members = Alloc(DefaultAllocator, sizeof(TypeField) * numMembers);
+    memcpy(type->Struct.members, members, sizeof(TypeField) * numMembers);
+
+    type->Struct.numMembers = numMembers;
     return type;
 }
 

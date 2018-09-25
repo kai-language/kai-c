@@ -145,20 +145,19 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 
         case TypeKind_Function: {
             std::vector<llvm::Type *> params;
-            For(type->Function.params) {
+            for (u32 i = 0; i < type->Function.numParams; i++) {
                 llvm::Type *paramType = canonicalize(ctx, type->Function.params[i]);
                 params.push_back(paramType);
             }
 
-            size_t numReturns = ArrayLen(type->Function.results);
             llvm::Type *returnType;
-            if (numReturns == 0) {
+            if (type->Function.numResults == 0) {
                 returnType = llvm::Type::getVoidTy(ctx->m->getContext());
-            } else if (numReturns == 1) {
+            } else if (type->Function.numResults == 1) {
                 returnType = canonicalize(ctx, type->Function.results[0]);
             } else {
                 std::vector<llvm::Type *> elements;
-                for (size_t i = 0; i < numReturns; i++) {
+                for (u32 i = 0; i < type->Function.numResults; i++) {
                     llvm::Type *ty = canonicalize(ctx, type->Function.results[i]);
                     elements.push_back(ty);
                 }
@@ -183,9 +182,9 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 
             ASSERT_MSG(!type->Symbol, "Only unnamed structures should get to here");
             std::vector<llvm::Type *> elements;
-            ForEachWithIndex(type->Struct.members, index, TypeField *, it) {
-                llvm::Type *type = canonicalize(ctx, it->type);
-                elements.push_back(type);
+            for (u32 i = 0; i < type->Struct.numMembers; i++) {
+                llvm::Type *ty = canonicalize(ctx, type->Struct.members[i].type);
+                elements.push_back(ty);
             }
 
             llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elements);
@@ -251,9 +250,9 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         // NOTE: Clang just uses a derived type that is a pointer
         // !44 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !9, size: 64)
         std::vector<llvm::Metadata *> parameterTypes;
-        ForEach(type->Function.params, Type *) {
-            llvm::DIType *type = debugCanonicalize(ctx, it);
-            parameterTypes.push_back(type);
+        for (u32 i = 0; i < type->Function.numParams; i++) {
+            llvm::DIType *ty = debugCanonicalize(ctx, type->Function.params[i]);
+            parameterTypes.push_back(ty);
         }
 
         auto pTypes = ctx->d.builder->getOrCreateTypeArray(parameterTypes);
@@ -267,17 +266,18 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         }
 
         std::vector<llvm::Metadata *> elementTypes;
-        ForEach(type->Struct.members, TypeField *) {
-            llvm::DIType *dtype = debugCanonicalize(ctx, it->type);
+        for (u32 i = 0; i < type->Struct.numMembers; i++) {
+            TypeField it = type->Struct.members[i];
+            llvm::DIType *dtype = debugCanonicalize(ctx, it.type);
 
             auto member = ctx->d.builder->createMemberType(
                 ctx->d.scope,
-                it->name,
+                it.name,
                 ctx->d.file,
                 0, // TODO: LineNo for struct members
-                it->type->Width,
-                it->type->Align,
-                it->offset,
+                it.type->Width,
+                it.type->Align,
+                it.offset,
                 llvm::DINode::DIFlags::FlagZero,
                 dtype
             );
@@ -468,11 +468,11 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
         case TypeKind_Struct: {
             llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
 
-            // FIXME: Determine if, like C all uninitialized Struct members are zero'd or left undefined
+            // FIXME: Determine if, like C, all uninitialized Struct members are zero'd or left undefined
             llvm::Value *agg = llvm::UndefValue::get(type);
             ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
                 TypeField *field = (TypeField *) it->info;
-                u64 index = (field - info.type->Struct.members[0]);
+                u64 index = (field - &info.type->Struct.members[0]);
                 llvm::Value *val = emitExpr(ctx, it->value);
 
                 agg = ctx->b.CreateInsertValue(agg, val, (u32) index);
@@ -944,13 +944,15 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     if (info.BasicExpr.type->Function.results) {
         llvm::IRBuilder<> b(entry, entry->begin());
         llvm::AllocaInst *alloca = b.CreateAlloca(fn->getReturnType(), 0, "result");
-        if (ArrayLen(info.BasicExpr.type->Function.results) == 1) {
+        if (info.BasicExpr.type->Function.numResults == 1) {
             alloca->setAlignment(BytesFromBits(info.BasicExpr.type->Function.results[0]->Align));
         }
         ctx->retValue = alloca;
     }
-    ForEach(expr->LitFunction.body->stmts, Stmt *) {
-        emitStmt(ctx, it);
+
+    size_t len = ArrayLen(expr->LitFunction.body->stmts);
+    for (size_t i = 0; i < len; i++) {
+        emitStmt(ctx, expr->LitFunction.body->stmts[i]);
     }
 
     if (!ctx->b.GetInsertBlock()->getTerminator()) {
@@ -979,11 +981,11 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         ctx->b.SetInsertPoint(ctx->retBlock);
     }
 
-    if (ArrayLen(info.BasicExpr.type->Function.results) == 1) {
+    if (info.BasicExpr.type->Function.numResults == 1) {
         Type *retType = info.BasicExpr.type->Function.results[0];
         auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, BytesFromBits(retType->Align));
         ctx->b.CreateRet(retValue);
-    } else if (info.BasicExpr.type->Function.results) {
+    } else if (info.BasicExpr.type->Function.numResults) {
         llvm::StructType *retType = llvm::dyn_cast<llvm::StructType>(fn->getReturnType());
         ASSERT_MSG(retType, "Expect a function with multiple returns to have a struct return type");
         auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, ctx->dataLayout.getStructLayout(retType)->getAlignment());
@@ -1029,7 +1031,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     u32 index = 0;
     for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
         AggregateItem item = expr->TypeStruct.items[i];
-        Type *fieldType = type->Struct.members[index]->type;
+        Type *fieldType = type->Struct.members[index].type;
 
         llvm::Type *ty = canonicalize(ctx, fieldType);
         llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
@@ -1042,7 +1044,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
                 item.start.line,
                 fieldType->Width,
                 fieldType->Align,
-                type->Struct.members[index]->offset,
+                type->Struct.members[index].offset,
                 llvm::DINode::DIFlags::FlagZero,
                 dty
             );
@@ -1096,9 +1098,8 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 #if DEBUG
     // Checks the frontend layout matches the llvm backend
     const llvm::StructLayout *layout = ctx->dataLayout.getStructLayout(ty);
-    size_t numElements = ArrayLen(type->Struct.members);
-    for (u32 i = 0; i < numElements; i++) {
-        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i]->offset);
+    for (u32 i = 0; i < type->Struct.numMembers; i++) {
+        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i].offset);
         ASSERT(layout->getSizeInBits() == type->Width);
         ASSERT(layout->getAlignment() == type->Align / 8);
     }
@@ -1354,7 +1355,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
 
         Type *exprType = ctx->checkerInfo[expr->id].BasicExpr.type;
         if (expr->kind == ExprKind_Call) {
-            size_t numValues = ArrayLen(exprType->Tuple.types);
+            size_t numValues = exprType->Tuple.numTypes;
             if (numValues == 1) {
                 ctx->returnAddress = true;
                 llvm::Value *lhs = emitExpr(ctx, assign.lhs[lhsIndex++]);

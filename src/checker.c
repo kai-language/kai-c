@@ -336,7 +336,7 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
     if (TypesIdentical(type, target)) return true;
     if (target->kind == TypeKind_Any) return true;
 
-    if (isTuple(type) && ArrayLen(type->Tuple.types) == 1) {
+    if (isTuple(type) && type->Tuple.numTypes == 1) {
         return canCoerce(type->Tuple.types[0], target, ctx);
     }
 
@@ -455,7 +455,7 @@ Conversion conversion(Type *type, Type *target) {
         }
     }
 
-    if (type->kind == TypeKind_Tuple && ArrayLen(type->Tuple.types) == 1) {
+    if (type->kind == TypeKind_Tuple && type->Tuple.numTypes == 1) {
         return conversion(type->Tuple.types[0], target);
     }
 
@@ -896,8 +896,8 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         ArrayPush(params, type);
     }
 
-    DynamicArray(Type *) returnTypes = NULL;
-    ArrayFit(returnTypes, ArrayLen(func.result));
+    DynamicArray(Type *) results = NULL;
+    ArrayFit(results, ArrayLen(func.result));
 
     bool isVoid = false;
     ForEach(func.result, Expr *) {
@@ -908,7 +908,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         if (!expectType(pkg, type, &paramCtx, it->start)) {
             isInvalid = true;
         }
-        ArrayPush(returnTypes, type);
+        ArrayPush(results, type);
 
         isVoid |= type == VoidType;
     }
@@ -918,14 +918,16 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
             ReportError(pkg, InvalidUseOfVoidError, expr->start,
                         "Void must be a functions only return type");
         } else {
-            ArrayFree(returnTypes);
-            returnTypes = NULL;
+            ArrayFree(results);
         }
     }
 
     if (isInvalid) goto error;
 
-    Type *type = NewTypeFunction(flags, params, returnTypes);
+    Type *type = NewTypeFunction(flags, params, results);
+
+    ArrayFree(params);
+    ArrayFree(results);
 
     ctx->mode = ExprMode_Type;
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -946,12 +948,10 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Scope *parameterScope = pushScope(pkg, ctx->scope);
     CheckerContext paramCtx = { parameterScope };
 
-    DynamicArray(Type *) paramTypes = NULL;
-    DynamicArray(Type *) resultTypes = NULL;
-    DynamicArray(Symbol *) paramSymbols = NULL;
-    ArrayFit(paramTypes, ArrayLen(func.type->TypeFunction.params));
-    ArrayFit(resultTypes, ArrayLen(func.type->TypeFunction.result));
-    ArrayFit(paramSymbols, ArrayLen(func.type->TypeFunction.params));
+    DynamicArray(Type *) params = NULL;
+    DynamicArray(Type *) results = NULL;
+    ArrayFit(params, ArrayLen(func.type->TypeFunction.params));
+    ArrayFit(results, ArrayLen(func.type->TypeFunction.result));
 
     TypeFlag typeFlags = TypeFlag_None;
 
@@ -965,7 +965,6 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         Symbol *symbol;
         declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, (Decl *) it);
         symbol->kind = SymbolKind_Variable;
-        ArrayPush(paramSymbols, symbol);
 
         Type *type = checkExpr(it->value, &paramCtx, pkg);
         if (!expectType(pkg, type, &paramCtx, it->value->start)) continue;
@@ -976,16 +975,23 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         typeFlags |= type->Flags & TypeFlag_Variadic;
         typeFlags |= type->Flags & TypeFlag_CVargs;
-        ArrayPush(paramTypes, type);
+        ArrayPush(params, type);
     }
 
     bool isVoid = false;
     ForEach(func.type->TypeFunction.result, Expr *) {
         Type *type = checkExpr(it, &paramCtx, pkg);
         if (!expectType(pkg, type, &paramCtx, it->start)) continue;
-        ArrayPush(resultTypes, type);
+        ArrayPush(results, type);
         isVoid |= type == VoidType;
     }
+
+    Type *type = NewTypeFunction(typeFlags, params, results);
+
+    ArrayFree(params);
+    ArrayFree(results);
+
+    storeInfoBasicExpr(pkg, expr, type, ctx);
 
     Scope *bodyScope = pushScope(pkg, parameterScope);
     CheckerContext bodyCtx = { bodyScope };
@@ -995,21 +1001,19 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
             ReportError(pkg, InvalidUseOfVoidError, expr->LitFunction.type->start,
                         "Void must be a functions only return type");
         } else {
-            ArrayFree(resultTypes);
-            resultTypes = NULL;
+            ArrayFree(results);
             bodyCtx.desiredType = VoidType;
         }
     } else {
-        bodyCtx.desiredType = NewTypeTuple(TypeFlag_None, resultTypes);
+        bodyCtx.desiredType = NewTypeTupleFromFunctionResults(TypeFlag_None, type->Function);
     }
 
-    ForEach(func.body->stmts, Stmt *) {
-        checkStmt(it, &bodyCtx, pkg);
+    size_t len = ArrayLen(func.body->stmts);
+    for (size_t i = 0; i < len; i++) {
+        checkStmt(func.body->stmts[i], &bodyCtx, pkg);
         if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;
     }
 
-    Type *type = NewTypeFunction(typeFlags, paramTypes, resultTypes);
-    storeInfoBasicExpr(pkg, expr, type, ctx);
 
     ctx->flags |= CheckerContextFlag_Constant;
     ctx->mode = ExprMode_Value;
@@ -1098,7 +1102,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
         } else {
             switch (type->kind) {
                 case TypeKind_Struct: {
-                    TypeField *field = type->Struct.members[currentIndex];
+                    TypeField *field = &type->Struct.members[currentIndex];
                     it->info = field;
                     expectedValueType = field->type;
                     break;
@@ -1254,30 +1258,33 @@ error:
 Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeStruct);
 
-    DynamicArray(TypeField *) fields = NULL;
+    DynamicArray(TypeField) fields = NULL;
     ArrayFit(fields, ArrayLen(expr->TypeStruct.items));
 
     u32 align = 0;
     u32 width = 0;
-    for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
+    size_t numItems = ArrayLen(expr->TypeStruct.items);
+    for (size_t i = 0; i < numItems; i++) {
         AggregateItem item = expr->TypeStruct.items[i];
 
         Type *type = checkExpr(item.type, ctx, pkg);
         align = MAX(align, type->Align);
-        for (size_t j = 0; j < ArrayLen(item.names); j++) {
+
+        size_t numNames = ArrayLen(item.names);
+        for (size_t j = 0; j < numNames; j++) {
             // TODO: Check for duplicate names!
             // TODO: Check the max alignment of the Target Arch and cap alignment requirements to that
-            TypeField *field = AllocAst(pkg, sizeof(TypeField));
-            ArrayPush(fields, field);
 
-            field->name = item.names[j];
-            field->type = type;
-            field->offset = ALIGN_UP(width, type->Align);
-            width = field->offset + type->Width;
+            u32 offset = ALIGN_UP(width, type->Align);
+            TypeField field = {item.names[j], type, offset};
+            width = offset + type->Width;
+            ArrayPush(fields, field);
         }
     }
 
     Type *type = NewTypeStruct(align, width, TypeFlag_None, fields);
+    ArrayFree(fields);
+
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
@@ -1697,7 +1704,7 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
-    size_t nParams = ArrayLen(calleeType->Function.params);
+    size_t nParams = calleeType->Function.numParams;
     CheckerContext argCtx = { ctx->scope };
     ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
         if (i >= nParams) {
@@ -1714,7 +1721,7 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         coerceType(arg->value, &argCtx, &type, calleeType->Function.params[i], pkg);
     }
     // TODO: Implement checking for calls
-    Type *type = NewTypeTuple(TypeFlag_None, calleeType->Function.results);
+    Type *type = NewTypeTupleFromFunctionResults(TypeFlag_None, calleeType->Function);
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Value;
     return type;
@@ -2161,8 +2168,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         if (type->kind == TypeKind_Tuple) {
             // Check each matches individually
-            size_t numTypes = ArrayLen(type->Tuple.types);
-            for (size_t rhsIndex = 0; rhsIndex < numTypes; rhsIndex++) {
+            for (size_t rhsIndex = 0; rhsIndex < type->Tuple.numTypes; rhsIndex++) {
                 Type *ty = type->Tuple.types[rhsIndex];
                 Type *target = lhsTypes[lhsIndex];
 
@@ -2183,7 +2189,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
                 lhsIndex += 1;
             }
 
-            values += numTypes;
+            values += type->Tuple.numTypes;
 
             // ConversionKind_Tuple indicates that the conversions are stored on the receiving value.
             CheckerInfoForExpr(pkg, expr)->coerce = ConversionKind_Tuple;
@@ -2219,14 +2225,14 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(stmt->kind == StmtKind_Return);
     ASSERT(ctx->desiredType && ctx->desiredType->kind == TypeKind_Tuple);
 
-    size_t nTypes = ArrayLen(ctx->desiredType->Tuple.types);
+    u32 nTypes = ctx->desiredType->Tuple.numTypes;
     size_t nExprs = ArrayLen(stmt->Return.exprs);
     // FIXME: What about returns that are tuples? We need a nice splat helper
 
     if (nExprs != nTypes) {
         ReportError(pkg, WrongNumberOfReturnsError, stmt->start,
                     "Wrong number of return expressions, expected %zu, got %zu",
-                    ArrayLen(ctx->desiredType->Tuple.types), ArrayLen(stmt->Return.exprs));
+                    nTypes, ArrayLen(stmt->Return.exprs));
     }
     for (size_t i = 0; i < MIN(nTypes, nExprs); i++) {
         Expr *expr = stmt->Return.exprs[i];
@@ -2634,14 +2640,14 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
     checkTypeFunction("fn () -> void");
     ASSERT(type->kind == TypeKind_Function);
     ASSERT(info.type == type);
-    ASSERT(ArrayLen(type->Function.params) == 0);
-    ASSERT(ArrayLen(type->Function.results) == 1);
+    ASSERT(type->Function.numParams == 0);
+    ASSERT(type->Function.numResults == 0);
 
     checkTypeFunction("fn (u8, u8, u8, u8) -> (u8, u8, u8, u8)");
     ASSERT(type->kind == TypeKind_Function);
     ASSERT(info.type == type);
-    ASSERT(ArrayLen(type->Function.params) == 4);
-    ASSERT(ArrayLen(type->Function.results) == 4);
+    ASSERT(type->Function.numParams == 4);
+    ASSERT(type->Function.numResults == 4);
 }
 
 void test_checkTypePointer() {
@@ -2723,12 +2729,12 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeStruct("struct {}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(!type->Struct.members);
+    ASSERT(type->Struct.numMembers == 0);
     ASSERT(!pkg.diagnostics.errors);
 
     checkTypeStruct("struct {a: u8}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.members[0].type == U8Type);
     ASSERT(type->Struct.Flags == TypeFlag_None);
     ASSERT(type->Align == 8);
     ASSERT(type->Width == 8);
@@ -2736,9 +2742,9 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeStruct("struct {a: u8; b: u16}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(type->Struct.members[0]->type == U8Type);
-    ASSERT(type->Struct.members[1]->type == U16Type);
-    ASSERT_MSG(type->Struct.members[1]->offset == 16, "Fields should be aligned to at least their size");
+    ASSERT(type->Struct.members[0].type == U8Type);
+    ASSERT(type->Struct.members[1].type == U16Type);
+    ASSERT_MSG(type->Struct.members[1].offset == 16, "Fields should be aligned to at least their size");
     ASSERT(type->Struct.Flags == TypeFlag_None);
     ASSERT(type->Align == 16);
     ASSERT(type->Width == 32);
@@ -2746,17 +2752,17 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeStruct("struct {a: u8; b: u8; b: u16; c: u32; d: u32}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(type->Struct.members[0]->type == U8Type);
-    ASSERT(type->Struct.members[1]->type == U8Type);
-    ASSERT(type->Struct.members[2]->type == U16Type);
-    ASSERT(type->Struct.members[3]->type == U32Type);
-    ASSERT(type->Struct.members[4]->type == U32Type);
+    ASSERT(type->Struct.members[0].type == U8Type);
+    ASSERT(type->Struct.members[1].type == U8Type);
+    ASSERT(type->Struct.members[2].type == U16Type);
+    ASSERT(type->Struct.members[3].type == U32Type);
+    ASSERT(type->Struct.members[4].type == U32Type);
 
-    ASSERT_MSG(type->Struct.members[0]->offset == 0, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[1]->offset == 8, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[2]->offset == 16, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[3]->offset == 32, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[4]->offset == 64, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[0].offset == 0, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[1].offset == 8, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[2].offset == 16, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[3].offset == 32, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[4].offset == 64, "Fields should be aligned to at least their size");
     ASSERT(type->Struct.Flags == TypeFlag_None);
     ASSERT(type->Align == 32);
     ASSERT(type->Width == 96);
@@ -3174,7 +3180,6 @@ void test_checkStmtReturn() {
     REINIT_COMPILER();
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
-    DynamicArray(Type *) types = NULL;
 
 #define checkReturn(_CODE) \
 stmt = resetAndParseReturningLastStmt(_CODE); \
@@ -3182,15 +3187,15 @@ checkStmtReturn(stmt, &ctx, &pkg); \
 RESET_CONTEXT(ctx); \
 ArrayClear(types)
 
-    ArrayPush(types, I64Type);
-    ctx.desiredType = NewTypeTuple(TypeFlag_None, types);
+    Type *types[3] = {I64Type, I64Type, F64Type};
+    Type type = {TypeKind_Tuple, .Tuple = {TypeFlag_None, types, 1}};
+
+    ctx.desiredType = &type;
     checkReturn("return 42");
     ASSERT(!pkg.diagnostics.errors);
 
-    ArrayPush(types, I64Type);
-    ArrayPush(types, I64Type);
-    ArrayPush(types, F64Type);
-    ctx.desiredType = NewTypeTuple(TypeFlag_None, types);
+    type.Tuple.numTypes = 3;
+    ctx.desiredType = &type;
     checkReturn("return 1, 2, 6.28");
     ASSERT(!pkg.diagnostics.errors);
 }
