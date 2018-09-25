@@ -142,7 +142,7 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
         } break;
 
         case TypeKind_Function: {
-            ASSERT_MSG(ArrayLen(type->Function.results) == 1, "Currently we don't support multi-return");
+            ASSERT_MSG(type->Function.numResults == 1, "Currently we don't support multi-return");
             std::vector<llvm::Type *> params;
             For(type->Function.params) {
                 llvm::Type *paramType = canonicalize(ctx, type->Function.params[i]);
@@ -167,9 +167,9 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 
             ASSERT_MSG(!type->Symbol, "Only unnamed structures should get to here");
             std::vector<llvm::Type *> elements;
-            ForEachWithIndex(type->Struct.members, index, TypeField *, it) {
-                llvm::Type *type = canonicalize(ctx, it->type);
-                elements.push_back(type);
+            for (u32 i = 0; i < type->Struct.numMembers; i++) {
+                llvm::Type *ty = canonicalize(ctx, type->Struct.members[i].type);
+                elements.push_back(ty);
             }
 
             llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elements);
@@ -251,17 +251,18 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         }
 
         std::vector<llvm::Metadata *> elementTypes;
-        ForEach(type->Struct.members, TypeField *) {
-            llvm::DIType *dtype = debugCanonicalize(ctx, it->type);
+        for (u32 i = 0; i < type->Struct.numMembers; i++) {
+            TypeField it = type->Struct.members[i];
+            llvm::DIType *dtype = debugCanonicalize(ctx, it.type);
 
             auto member = ctx->d.builder->createMemberType(
                 ctx->d.scope,
-                it->name,
+                it.name,
                 ctx->d.file,
                 0, // TODO: LineNo for struct members
-                it->type->Width,
-                it->type->Align,
-                it->offset,
+                it.type->Width,
+                it.type->Align,
+                it.offset,
                 llvm::DINode::DIFlags::FlagZero,
                 dtype
             );
@@ -440,11 +441,11 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
         case TypeKind_Struct: {
             llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
 
-            // FIXME: Determine if, like C all uninitialized Struct members are zero'd or left undefined
+            // FIXME: Determine if, like C, all uninitialized Struct members are zero'd or left undefined
             llvm::Value *agg = llvm::UndefValue::get(type);
             ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
                 TypeField *field = (TypeField *) it->info;
-                u64 index = (field - info.type->Struct.members[0]);
+                u64 index = (field - &info.type->Struct.members[0]);
                 llvm::Value *val = emitExpr(ctx, it->value);
 
                 agg = ctx->b.CreateInsertValue(agg, val, (u32) index);
@@ -986,7 +987,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     u32 index = 0;
     for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
         AggregateItem item = expr->TypeStruct.items[i];
-        Type *fieldType = type->Struct.members[index]->type;
+        Type *fieldType = type->Struct.members[index].type;
 
         llvm::Type *ty = canonicalize(ctx, fieldType);
         llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
@@ -999,7 +1000,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
                 item.start.line,
                 fieldType->Width,
                 fieldType->Align,
-                type->Struct.members[index]->offset,
+                type->Struct.members[index].offset,
                 llvm::DINode::DIFlags::FlagZero,
                 dty
             );
@@ -1053,9 +1054,8 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 #if DEBUG
     // Checks the frontend layout matches the llvm backend
     const llvm::StructLayout *layout = ctx->dataLayout.getStructLayout(ty);
-    size_t numElements = ArrayLen(type->Struct.members);
-    for (u32 i = 0; i < numElements; i++) {
-        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i]->offset);
+    for (u32 i = 0; i < type->Struct.numMembers; i++) {
+        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i].offset);
         ASSERT(layout->getSizeInBits() == type->Width);
         ASSERT(layout->getAlignment() == type->Align / 8);
     }

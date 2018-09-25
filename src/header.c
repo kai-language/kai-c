@@ -91,9 +91,10 @@ void cgenDecl(HeaderContext *ctx, DynamicArray(Expr_Ident *) names, Type *type, 
             }
 
             ArrayPrintf(ctx->complexDecls, "struct %s {\n", it->name);
-            ForEach(type->Struct.members, TypeField *) {
+            for (u32 i = 0; i < type->Struct.numMembers; i++) {
+                TypeField it = type->Struct.members[i];
                 ArrayPrintf(ctx->complexDecls, "    ");
-                cgenType(&ctx->complexDecls, it->name, it->type);
+                cgenType(&ctx->complexDecls, it.name, it.type);
                 ArrayPrintf(ctx->complexDecls, ";\n");
             }
             ArrayPrintf(ctx->complexDecls, "};\n");
