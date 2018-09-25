@@ -7,8 +7,8 @@ compiler:
     - clang
 
 before_install:
-    - brew install https://raw.github.com/Homebrew/homebrew-core/master/Formula/llvm.rb
-    - brew link llvm --overwrite
+    - brew install https://raw.githubusercontent.com/Homebrew/homebrew-core/master/Formula/llvm%406.rb
+    - brew link llvm@6 --overwrite
     - export PATH="/usr/local/opt/llvm/bin:$PATH"
 
 script:
