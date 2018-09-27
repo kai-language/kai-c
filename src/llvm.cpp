@@ -1284,7 +1284,40 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
             Symbol *symbol = symbols[lhsIndex];
             llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
             debugPos(ctx, decl->start);
-            ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Align));
+
+            if (symbol->flags & SymbolFlag_Global) {
+                ASSERT(llvm::isa<llvm::GlobalVariable>((llvm::Value *) symbol->backendUserdata));
+                llvm::GlobalVariable *global = (llvm::GlobalVariable *) symbol->backendUserdata;
+
+                if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(rhs)) {
+                    global->setInitializer(constant);
+                } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(rhs)) {
+
+                    // This handles a file scope variables refering to one another where the initializer is a constant
+
+                    // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
+                    //  It could be much better to have in the context a flag that says, *if* a global is encountered then
+                    //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
+                    // -vdka September 2018
+
+                    llvm::Value *loaded = inst->getPointerOperand();
+                    if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
+
+                        inst->removeFromParent();
+                        inst->deleteValue();
+
+                        global->setInitializer(other->getInitializer());
+                    }
+
+                } else {
+                    global->setExternallyInitialized(true);
+                    // TODO: Add initializer to some sort of premain?
+                    // -vdka September 2018
+                    UNIMPLEMENTED();
+                }
+            } else {
+                ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Align));
+            }
             lhsIndex += 1;
         }
     }
