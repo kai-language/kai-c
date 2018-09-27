@@ -416,6 +416,45 @@ llvm::Value *createVariable(Symbol *symbol, Position pos, Context *ctx) {
     }
 }
 
+void setVariableInitializer(Symbol *symbol, Context *ctx, llvm::Value *value) {
+
+    if (symbol->flags & SymbolFlag_Global) {
+        ASSERT(llvm::isa<llvm::GlobalVariable>((llvm::Value *) symbol->backendUserdata));
+        llvm::GlobalVariable *global = (llvm::GlobalVariable *) symbol->backendUserdata;
+
+        if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
+            global->setInitializer(constant);
+        } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
+
+            // This handles a file scope variables refering to one another where the initializer is a constant
+
+            // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
+            //  It could be much better to have in the context a flag that says, *if* a global is encountered then
+            //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
+            // -vdka September 2018
+
+            llvm::Value *loaded = inst->getPointerOperand();
+            if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
+
+                inst->removeFromParent();
+                inst->deleteValue();
+
+                global->setInitializer(other->getInitializer());
+            } else {
+                PANIC("Attempt to set global variable from non global variable. Should not pass checking!");
+            }
+
+        } else {
+            global->setExternallyInitialized(true);
+            // TODO: Add initializer to some sort of premain?
+            // -vdka September 2018
+            UNIMPLEMENTED();
+        }
+    } else {
+        ctx->b.CreateAlignedStore(value, (llvm::Value *) symbol->backendUserdata, BytesFromBits(symbol->type->Align));
+    }
+}
+
 llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
     ASSERT(target);
     ASSERT(value);
@@ -1246,19 +1285,18 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
                 Symbol *symbol = symbols[lhsIndex];
                 llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
 
+                // Conversions of tuples like this are stored on the lhs
                 if (conversions[lhsIndex] != ConversionKind_None) {
-                    UNIMPLEMENTED();
+                    ASSERT(lhs->getType()->isPointerTy());
+                    rhs = coerceValue(ctx, conversions[lhsIndex], rhs, lhs->getType()->getPointerElementType());
                 }
 
-                if (symbol->flags & SymbolFlag_Global) {
-                    // Handle global scope variables being initialized by a call to something
-                    UNIMPLEMENTED();
-                } else {
-                    ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(symbol->type->Align));
-                }
-
+                setVariableInitializer(symbol, ctx, rhs);
                 lhsIndex += 1;
             } else {
+                // FIXME: Globals are not handled here at all
+                // -vdka September 2018
+                ASSERT_MSG(decl->owningScope != decl->owningPackage->scope, "Multiple Global variable declarations from calls unimplemented");
                 llvm::Value *resultAddress = createEntryBlockAlloca(ctx, rhs->getType(), "");
                 ctx->b.CreateStore(rhs, resultAddress);
 
@@ -1266,161 +1304,27 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
                     Symbol *symbol = symbols[lhsIndex];
                     llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
 
-                    if (symbol->flags & SymbolFlag_Global) UNIMPLEMENTED();
                     llvm::Value *addr = ctx->b.CreateStructGEP(rhs->getType(), resultAddress, (u32) resultIndex);
                     llvm::Value *val = ctx->b.CreateLoad(addr);
 
+                    // Conversions of tuples like this are stored on the lhs
                     if (conversions[lhsIndex] != ConversionKind_None) {
                         ASSERT(lhs->getType()->isPointerTy());
                         val = coerceValue(ctx, conversions[lhsIndex], val, lhs->getType()->getPointerElementType());
                     }
 
                     ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(symbol->type->Align));
-
                     lhsIndex += 1;
                 }
             }
         } else {
             Symbol *symbol = symbols[lhsIndex];
-            llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
+            createVariable(symbol, var.names[lhsIndex]->start, ctx);
             debugPos(ctx, decl->start);
-
-            if (symbol->flags & SymbolFlag_Global) {
-                ASSERT(llvm::isa<llvm::GlobalVariable>((llvm::Value *) symbol->backendUserdata));
-                llvm::GlobalVariable *global = (llvm::GlobalVariable *) symbol->backendUserdata;
-
-                if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(rhs)) {
-                    global->setInitializer(constant);
-                } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(rhs)) {
-
-                    // This handles a file scope variables refering to one another where the initializer is a constant
-
-                    // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
-                    //  It could be much better to have in the context a flag that says, *if* a global is encountered then
-                    //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
-                    // -vdka September 2018
-
-                    llvm::Value *loaded = inst->getPointerOperand();
-                    if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
-
-                        inst->removeFromParent();
-                        inst->deleteValue();
-
-                        global->setInitializer(other->getInitializer());
-                    }
-
-                } else {
-                    global->setExternallyInitialized(true);
-                    // TODO: Add initializer to some sort of premain?
-                    // -vdka September 2018
-                    UNIMPLEMENTED();
-                }
-            } else {
-                ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Align));
-            }
+            setVariableInitializer(symbol, ctx, rhs);
             lhsIndex += 1;
         }
     }
-
-    // FIXME: Remove
-#if false
-    For (symbols) {
-        Symbol *symbol = symbols[i];
-        // FIXME: Global variables
-        debugPos(ctx, var.names[i]->start);
-
-        if (symbol->flags & SymbolFlag_Global) {
-
-            llvm::GlobalVariable *global = new llvm::GlobalVariable(
-                *ctx->m,
-                canonicalize(ctx, symbol->type),
-                false, // IsConstant
-                llvm::GlobalValue::ExternalLinkage,
-                NULL, // Initializer
-                symbol->name
-            );
-            global->setAlignment(BytesFromBits(symbol->type->Align));
-            symbol->backendUserdata = global;
-
-            if (FlagDebug) {
-                ctx->d.builder->createGlobalVariableExpression(
-                    ctx->d.scope,
-                    symbol->name, // Name
-                    symbol->name, // LinkageName
-                    ctx->d.file,
-                    decl->start.line,
-                    debugCanonicalize(ctx, symbol->type),
-                    false,        // isLocalToUnit
-                    nullptr,      // Expr
-                    nullptr,      // Decl
-                    symbol->type->Align
-                );
-            }
-
-            llvm::Value *value = emitExpr(ctx, decl->Variable.values[0]);
-
-            if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
-                global->setInitializer(constant);
-            } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
-
-                // This handles a file scope variables refering to one another where the initializer is a constant
-
-                // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
-                //  It could be much better to have in the context a flag that says, *if* a global is encountered then
-                //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
-                // -vdka September 2018
-
-                llvm::Value *loaded = inst->getPointerOperand();
-                if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
-
-                    inst->removeFromParent();
-                    inst->deleteValue();
-
-                    global->setInitializer(other->getInitializer());
-                }
-
-            } else {
-                global->setExternallyInitialized(true);
-                // TODO: Add initializer to some sort of premain
-                UNIMPLEMENTED();
-            }
-            break;
-        } else {
-
-            llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
-            symbol->backendUserdata = alloca;
-
-            if (FlagDebug) {
-                auto d = ctx->d.builder->createAutoVariable(
-                    ctx->d.scope,
-                    symbol->name,
-                    ctx->d.file,
-                    decl->start.line,
-                    debugCanonicalize(ctx, symbol->type)
-                );
-
-                ctx->d.builder->insertDeclare(
-                    alloca,
-                    d,
-                    ctx->d.builder->createExpression(),
-                    llvm::DebugLoc::get(decl->start.line, decl->start.column, ctx->d.scope),
-                    ctx->b.GetInsertBlock()
-                );
-            }
-        }
-        
-        if (i < ArrayLen(var.values)) {
-            Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
-            llvm::Value *value = emitExpr(ctx, var.values[i]);
-            if (symbol->flags & SymbolFlag_Global) {
-                ((llvm::GlobalVariable *)symbol->backendUserdata)->setInitializer((llvm::Constant *)value);
-            } else {
-                ctx->b.CreateAlignedStore(value, (llvm::Value *)symbol->backendUserdata, BytesFromBits(type->Align));
-            }
-        }
-
-    }
-#endif
     ctx->returnAddress = prevReturnAddress;
 }
 
@@ -1904,22 +1808,24 @@ b32 CodegenLLVM(Package *p) {
     setupTargetInfo();
 
     std::string error;
-    auto triple = llvm::sys::getDefaultTargetTriple();
-    auto target = llvm::TargetRegistry::lookupTarget(triple, error);
+    llvm::Triple triple = llvm::Triple(llvm::sys::getDefaultTargetTriple());
+    if (triple.getOS() == llvm::Triple::Darwin) {
+        triple.setOS(llvm::Triple::MacOSX);
+    }
 
+    auto target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
     if (!target) {
         llvm::errs() << error;
         return 1;
     }
 
-    if (FlagVerbose) printf("Target: %s\n", triple.c_str());
+    if (FlagVerbose) printf("Target: %s\n", triple.str().c_str());
 
     const char *cpu = "generic";
     const char *features = "";
 
     llvm::TargetOptions opt;
-    llvm::Optional<llvm::Reloc::Model> rm = llvm::Optional<llvm::Reloc::Model>();
-    llvm::TargetMachine *targetMachine = target->createTargetMachine(triple, cpu, features, opt, rm);
+    llvm::TargetMachine *targetMachine = target->createTargetMachine(triple.str(), cpu, features, opt, llvm::None);
 
     // TODO: Only on unoptimized builds
     targetMachine->setO0WantsFastISel(true);
@@ -1927,7 +1833,7 @@ b32 CodegenLLVM(Package *p) {
     llvm::DataLayout dataLayout = targetMachine->createDataLayout();
 
     // TODO: Handle targets correctly by using TargetOs & TargetArch globals
-    module->setTargetTriple(triple);
+    module->setTargetTriple(triple.str());
     module->setDataLayout(dataLayout);
     module->getOrInsertModuleFlagsMetadata();
     module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
