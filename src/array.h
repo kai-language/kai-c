@@ -44,3 +44,7 @@ extern u8 *_arrayPrintf(u8 *array, const char *fmt, ...);
 #ifdef __cplusplus
 }
 #endif
+
+#if DEBUG
+ArrayHdr *ArrayHeader(void *array);
+#endif

@@ -116,7 +116,9 @@ void emitStmt(Context *ctx, Stmt *stmt);
 llvm::Type *canonicalize(Context *ctx, Type *type) {
     switch (type->kind) {
         case TypeKind_Tuple:
-            if (!type->Tuple.types) {
+            // TODO: Should they?
+            PANIC("Tuples are a checker thing, they should not make their way into the backend, unless they do?");
+            if (!type->Tuple.numTypes) {
                 return llvm::Type::getVoidTy(ctx->m->getContext());
             }
             UNIMPLEMENTED(); // Multiple returns
@@ -142,15 +144,28 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
         } break;
 
         case TypeKind_Function: {
-            ASSERT_MSG(ArrayLen(type->Function.results) == 1, "Currently we don't support multi-return");
             std::vector<llvm::Type *> params;
-            For(type->Function.params) {
+            for (u32 i = 0; i < type->Function.numParams; i++) {
                 llvm::Type *paramType = canonicalize(ctx, type->Function.params[i]);
                 params.push_back(paramType);
             }
 
-            // TODO(Brett): canonicalize multi-return and Kai vargs
-            llvm::Type *returnType = canonicalize(ctx, type->Function.results[0]);
+            llvm::Type *returnType;
+            if (type->Function.numResults == 0) {
+                returnType = llvm::Type::getVoidTy(ctx->m->getContext());
+            } else if (type->Function.numResults == 1) {
+                returnType = canonicalize(ctx, type->Function.results[0]);
+            } else {
+                std::vector<llvm::Type *> elements;
+                for (u32 i = 0; i < type->Function.numResults; i++) {
+                    llvm::Type *ty = canonicalize(ctx, type->Function.results[i]);
+                    elements.push_back(ty);
+                }
+
+                returnType = llvm::StructType::create(ctx->m->getContext(), elements);
+            }
+
+            // TODO: Kai vargs
             return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
         } break;
 
@@ -167,9 +182,9 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 
             ASSERT_MSG(!type->Symbol, "Only unnamed structures should get to here");
             std::vector<llvm::Type *> elements;
-            ForEachWithIndex(type->Struct.members, index, TypeField *, it) {
-                llvm::Type *type = canonicalize(ctx, it->type);
-                elements.push_back(type);
+            for (u32 i = 0; i < type->Struct.numMembers; i++) {
+                llvm::Type *ty = canonicalize(ctx, type->Struct.members[i].type);
+                elements.push_back(ty);
             }
 
             llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elements);
@@ -208,7 +223,7 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         return type->Width == 32 ? types.f32 : types.f64;
     }
 
-    if (type->kind == TypeKind_Tuple && !type->Tuple.types) {
+    if (type->kind == TypeKind_Tuple && !type->Tuple.numTypes) {
         return NULL;
     }
 
@@ -235,9 +250,9 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         // NOTE: Clang just uses a derived type that is a pointer
         // !44 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !9, size: 64)
         std::vector<llvm::Metadata *> parameterTypes;
-        ForEach(type->Function.params, Type *) {
-            llvm::DIType *type = debugCanonicalize(ctx, it);
-            parameterTypes.push_back(type);
+        for (u32 i = 0; i < type->Function.numParams; i++) {
+            llvm::DIType *ty = debugCanonicalize(ctx, type->Function.params[i]);
+            parameterTypes.push_back(ty);
         }
 
         auto pTypes = ctx->d.builder->getOrCreateTypeArray(parameterTypes);
@@ -251,17 +266,18 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         }
 
         std::vector<llvm::Metadata *> elementTypes;
-        ForEach(type->Struct.members, TypeField *) {
-            llvm::DIType *dtype = debugCanonicalize(ctx, it->type);
+        for (u32 i = 0; i < type->Struct.numMembers; i++) {
+            TypeField it = type->Struct.members[i];
+            llvm::DIType *dtype = debugCanonicalize(ctx, it.type);
 
             auto member = ctx->d.builder->createMemberType(
                 ctx->d.scope,
-                it->name,
+                it.name,
                 ctx->d.file,
                 0, // TODO: LineNo for struct members
-                it->type->Width,
-                it->type->Align,
-                it->offset,
+                it.type->Width,
+                it.type->Align,
+                it.offset,
                 llvm::DINode::DIFlags::FlagZero,
                 dtype
             );
@@ -339,7 +355,109 @@ llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Symbol *sym) {
     return alloca;
 }
 
+llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, llvm::Type *type, const char *name) {
+    llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
+    llvm::AllocaInst *alloca = b.CreateAlloca(type, 0, name);
+    return alloca;
+}
+
+llvm::Value *createVariable(Symbol *symbol, Position pos, Context *ctx) {
+    ASSERT(symbol->kind == SymbolKind_Variable);
+
+    if (symbol->flags & SymbolFlag_Global) {
+        llvm::GlobalVariable *global = new llvm::GlobalVariable(
+            *ctx->m,
+            canonicalize(ctx, symbol->type),
+            false, // IsConstant
+            llvm::GlobalValue::ExternalLinkage,
+            NULL,  // Initializer
+            symbol->name
+        );
+        global->setAlignment(BytesFromBits(symbol->type->Align));
+        symbol->backendUserdata = global;
+
+        if (FlagDebug) {
+            ctx->d.builder->createGlobalVariableExpression(
+                ctx->d.scope,
+                symbol->name, // Name
+                symbol->name, // LinkageName
+                ctx->d.file,
+                pos.line,
+                debugCanonicalize(ctx, symbol->type),
+                false,        // isLocalToUnit
+                nullptr,      // Expr
+                nullptr,      // Decl
+                symbol->type->Align
+            );
+        }
+        return global;
+    } else {
+        llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
+        symbol->backendUserdata = alloca;
+
+        if (FlagDebug) {
+            auto d = ctx->d.builder->createAutoVariable(
+                ctx->d.scope,
+                symbol->name,
+                ctx->d.file,
+                pos.line,
+                debugCanonicalize(ctx, symbol->type)
+            );
+
+            ctx->d.builder->insertDeclare(
+                alloca,
+                d,
+                ctx->d.builder->createExpression(),
+                llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope),
+                ctx->b.GetInsertBlock()
+            );
+        }
+        return alloca;
+    }
+}
+
+void setVariableInitializer(Symbol *symbol, Context *ctx, llvm::Value *value) {
+
+    if (symbol->flags & SymbolFlag_Global) {
+        ASSERT(llvm::isa<llvm::GlobalVariable>((llvm::Value *) symbol->backendUserdata));
+        llvm::GlobalVariable *global = (llvm::GlobalVariable *) symbol->backendUserdata;
+
+        if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
+            global->setInitializer(constant);
+        } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
+
+            // This handles a file scope variables refering to one another where the initializer is a constant
+
+            // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
+            //  It could be much better to have in the context a flag that says, *if* a global is encountered then
+            //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
+            // -vdka September 2018
+
+            llvm::Value *loaded = inst->getPointerOperand();
+            if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
+
+                inst->removeFromParent();
+                inst->deleteValue();
+
+                global->setInitializer(other->getInitializer());
+            } else {
+                PANIC("Attempt to set global variable from non global variable. Should not pass checking!");
+            }
+
+        } else {
+            global->setExternallyInitialized(true);
+            // TODO: Add initializer to some sort of premain?
+            // -vdka September 2018
+            UNIMPLEMENTED();
+        }
+    } else {
+        ctx->b.CreateAlignedStore(value, (llvm::Value *) symbol->backendUserdata, BytesFromBits(symbol->type->Align));
+    }
+}
+
 llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
+    ASSERT(target);
+    ASSERT(value);
     switch (conversion & ConversionKind_Mask) {
         case ConversionKind_None:
             return value;
@@ -395,8 +513,12 @@ llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value
             UNIMPLEMENTED();
             return NULL;
 
+        case ConversionKind_Tuple:
+            return value;
+
         default:
-            return NULL;
+            UNIMPLEMENTED();
+            return value;
     }
 }
 
@@ -440,11 +562,11 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
         case TypeKind_Struct: {
             llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
 
-            // FIXME: Determine if, like C all uninitialized Struct members are zero'd or left undefined
+            // FIXME: Determine if, like C, all uninitialized Struct members are zero'd or left undefined
             llvm::Value *agg = llvm::UndefValue::get(type);
             ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
                 TypeField *field = (TypeField *) it->info;
-                u64 index = (field - info.type->Struct.members[0]);
+                u64 index = (field - &info.type->Struct.members[0]);
                 llvm::Value *val = emitExpr(ctx, it->value);
 
                 agg = ctx->b.CreateInsertValue(agg, val, (u32) index);
@@ -561,7 +683,11 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             Expr_LitInt lit = expr->LitInt;
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
-            value = llvm::ConstantInt::get(canonicalize(ctx, type), lit.val, type->Flags & TypeFlag_Signed);
+            if (type->kind == TypeKind_Float) {
+                value = llvm::ConstantFP::get(canonicalize(ctx, type), lit.val);
+            } else {
+                value = llvm::ConstantInt::get(canonicalize(ctx, type), lit.val, type->Flags & TypeFlag_Signed);
+            }
             break;
         }
 
@@ -617,7 +743,8 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             break;
     }
 
-    if (ctx->checkerInfo[expr->id].coerce != ConversionKind_None) {
+    if (ctx->checkerInfo[expr->id].coerce != ConversionKind_None && desiredType) {
+        // If desired type is NULL and coerce is not then it maybe because we are emitting the lhs of a expr
         value = coerceValue(ctx, ctx->checkerInfo[expr->id].coerce, value, desiredType);
     }
 
@@ -906,14 +1033,20 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 
     // Setup return block
 
-    // TODO: multiple returns (we should change TypeFunction to have a single possibly tuple return type)
-    Type *retType = info.BasicExpr.type->Function.results[0];
     ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return", fn);
-    if (!fn->getReturnType()->isVoidTy()) {
-        ctx->retValue = createEntryBlockAlloca(ctx, retType, "result");
+
+    if (info.BasicExpr.type->Function.numResults) {
+        llvm::IRBuilder<> b(entry, entry->begin());
+        llvm::AllocaInst *alloca = b.CreateAlloca(fn->getReturnType(), 0, "result");
+        if (info.BasicExpr.type->Function.numResults == 1) {
+            alloca->setAlignment(BytesFromBits(info.BasicExpr.type->Function.results[0]->Align));
+        }
+        ctx->retValue = alloca;
     }
-    ForEach(expr->LitFunction.body->stmts, Stmt *) {
-        emitStmt(ctx, it);
+
+    size_t len = ArrayLen(expr->LitFunction.body->stmts);
+    for (size_t i = 0; i < len; i++) {
+        emitStmt(ctx, expr->LitFunction.body->stmts[i]);
     }
 
     if (!ctx->b.GetInsertBlock()->getTerminator()) {
@@ -942,11 +1075,17 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         ctx->b.SetInsertPoint(ctx->retBlock);
     }
 
-    if (fn->getReturnType()->isVoidTy()) {
-        ctx->b.CreateRetVoid();
-    } else {
+    if (info.BasicExpr.type->Function.numResults == 1) {
+        Type *retType = info.BasicExpr.type->Function.results[0];
         auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, BytesFromBits(retType->Align));
         ctx->b.CreateRet(retValue);
+    } else if (info.BasicExpr.type->Function.numResults) {
+        llvm::StructType *retType = llvm::dyn_cast<llvm::StructType>(fn->getReturnType());
+        ASSERT_MSG(retType, "Expect a function with multiple returns to have a struct return type");
+        auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, ctx->dataLayout.getStructLayout(retType)->getAlignment());
+        ctx->b.CreateRet(retValue);
+    } else {
+        ctx->b.CreateRetVoid();
     }
 
     // FIXME: Return to previous scope
@@ -986,7 +1125,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     u32 index = 0;
     for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
         AggregateItem item = expr->TypeStruct.items[i];
-        Type *fieldType = type->Struct.members[index]->type;
+        Type *fieldType = type->Struct.members[index].type;
 
         llvm::Type *ty = canonicalize(ctx, fieldType);
         llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
@@ -999,7 +1138,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
                 item.start.line,
                 fieldType->Width,
                 fieldType->Align,
-                type->Struct.members[index]->offset,
+                type->Struct.members[index].offset,
                 llvm::DINode::DIFlags::FlagZero,
                 dty
             );
@@ -1053,9 +1192,8 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 #if DEBUG
     // Checks the frontend layout matches the llvm backend
     const llvm::StructLayout *layout = ctx->dataLayout.getStructLayout(ty);
-    size_t numElements = ArrayLen(type->Struct.members);
-    for (u32 i = 0; i < numElements; i++) {
-        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i]->offset);
+    for (u32 i = 0; i < type->Struct.numMembers; i++) {
+        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i].offset);
         ASSERT(layout->getSizeInBits() == type->Width);
         ASSERT(layout->getAlignment() == type->Align / 8);
     }
@@ -1124,107 +1262,68 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
 
     // TODO: CreateLifetimeStart for this symbol
     CheckerInfo info = ctx->checkerInfo[decl->id];
-    DynamicArray(Symbol *) symbols = info.Variable.symbols;
+    Symbol **symbols = info.Variable.symbols;
     Decl_Variable var = decl->Variable;
 
     bool prevReturnAddress = ctx->returnAddress;
     ctx->returnAddress = false;
 
-    For (symbols) {
-        Symbol *symbol = symbols[i];
-        // FIXME: Global variables
-        debugPos(ctx, var.names[i]->start);
+    size_t numLhs = ArrayLen(var.names);
+    size_t rhsIndex = 0;
+    for (size_t lhsIndex = 0; lhsIndex < numLhs;) {
+        Expr *expr = var.values[rhsIndex++];
+        llvm::Value *rhs = emitExpr(ctx, expr);
 
-        if (symbol->flags & SymbolFlag_Global) {
+        Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
+        if (expr->kind == ExprKind_Call) {
+            Conversion *conversions = ctx->checkerInfo[decl->id].Variable.conversions;
 
-            llvm::GlobalVariable *global = new llvm::GlobalVariable(
-                *ctx->m,
-                canonicalize(ctx, symbol->type),
-                false, // IsConstant
-                llvm::GlobalValue::ExternalLinkage,
-                NULL, // Initializer
-                symbol->name
-            );
-            global->setAlignment(BytesFromBits(symbol->type->Align));
-            symbol->backendUserdata = global;
+            size_t numValues = exprType->Tuple.numTypes;
+            debugPos(ctx, var.names[lhsIndex]->start);
 
-            if (FlagDebug) {
-                ctx->d.builder->createGlobalVariableExpression(
-                    ctx->d.scope,
-                    symbol->name, // Name
-                    symbol->name, // LinkageName
-                    ctx->d.file,
-                    decl->start.line,
-                    debugCanonicalize(ctx, symbol->type),
-                    false,        // isLocalToUnit
-                    nullptr,      // Expr
-                    nullptr,      // Decl
-                    symbol->type->Align
-                );
-            }
+            if (numValues == 1) {
+                Symbol *symbol = symbols[lhsIndex];
+                llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
 
-            llvm::Value *value = emitExpr(ctx, decl->Variable.values[0]);
-
-            if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
-                global->setInitializer(constant);
-            } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
-
-                // This handles a file scope variables refering to one another where the initializer is a constant
-
-                // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
-                //  It could be much better to have in the context a flag that says, *if* a global is encountered then
-                //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
-                // -vdka September 2018
-
-                llvm::Value *loaded = inst->getPointerOperand();
-                if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
-
-                    inst->removeFromParent();
-                    inst->deleteValue();
-
-                    global->setInitializer(other->getInitializer());
+                // Conversions of tuples like this are stored on the lhs
+                if (conversions[lhsIndex] != ConversionKind_None) {
+                    ASSERT(lhs->getType()->isPointerTy());
+                    rhs = coerceValue(ctx, conversions[lhsIndex], rhs, lhs->getType()->getPointerElementType());
                 }
 
+                setVariableInitializer(symbol, ctx, rhs);
+                lhsIndex += 1;
             } else {
-                global->setExternallyInitialized(true);
-                // TODO: Add initializer to some sort of premain
-                UNIMPLEMENTED();
+                // FIXME: Globals are not handled here at all
+                // -vdka September 2018
+                ASSERT_MSG(decl->owningScope != decl->owningPackage->scope, "Multiple Global variable declarations from calls unimplemented");
+                llvm::Value *resultAddress = createEntryBlockAlloca(ctx, rhs->getType(), "");
+                ctx->b.CreateStore(rhs, resultAddress);
+
+                for (size_t resultIndex = 0; resultIndex < numValues; resultIndex++) {
+                    Symbol *symbol = symbols[lhsIndex];
+                    llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
+
+                    llvm::Value *addr = ctx->b.CreateStructGEP(rhs->getType(), resultAddress, (u32) resultIndex);
+                    llvm::Value *val = ctx->b.CreateLoad(addr);
+
+                    // Conversions of tuples like this are stored on the lhs
+                    if (conversions[lhsIndex] != ConversionKind_None) {
+                        ASSERT(lhs->getType()->isPointerTy());
+                        val = coerceValue(ctx, conversions[lhsIndex], val, lhs->getType()->getPointerElementType());
+                    }
+
+                    ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(symbol->type->Align));
+                    lhsIndex += 1;
+                }
             }
-            break;
         } else {
-
-            llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
-            symbol->backendUserdata = alloca;
-
-            if (FlagDebug) {
-                auto d = ctx->d.builder->createAutoVariable(
-                    ctx->d.scope,
-                    symbol->name,
-                    ctx->d.file,
-                    decl->start.line,
-                    debugCanonicalize(ctx, symbol->type)
-                );
-
-                ctx->d.builder->insertDeclare(
-                    alloca,
-                    d,
-                    ctx->d.builder->createExpression(),
-                    llvm::DebugLoc::get(decl->start.line, decl->start.column, ctx->d.scope),
-                    ctx->b.GetInsertBlock()
-                );
-            }
+            Symbol *symbol = symbols[lhsIndex];
+            createVariable(symbol, var.names[lhsIndex]->start, ctx);
+            debugPos(ctx, decl->start);
+            setVariableInitializer(symbol, ctx, rhs);
+            lhsIndex += 1;
         }
-        
-        if (i < ArrayLen(var.values)) {
-            Type *type = TypeFromCheckerInfo(ctx->checkerInfo[var.values[i]->id]);
-            llvm::Value *value = emitExpr(ctx, var.values[i]);
-            if (symbol->flags & SymbolFlag_Global) {
-                ((llvm::GlobalVariable *)symbol->backendUserdata)->setInitializer((llvm::Constant *)value);
-            } else {
-                ctx->b.CreateAlignedStore(value, (llvm::Value *)symbol->backendUserdata, BytesFromBits(type->Align));
-            }
-        }
-
     }
     ctx->returnAddress = prevReturnAddress;
 }
@@ -1303,18 +1402,55 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
     ASSERT(stmt->kind == StmtKind_Assign);
     Stmt_Assign assign = stmt->Assign;
 
-    if (ArrayLen(assign.lhs) > 1 && ArrayLen(assign.rhs) == 1 && assign.rhs[0]->kind == ExprKind_Call) {
-//        llvm::Value *value = emitExpr(ctx, assign.rhs[0]);
-        UNIMPLEMENTED();
-    }
-    ForEachWithIndex(assign.lhs, i, Expr *, it) {
-        ctx->returnAddress = true; // FIXME: restore previous value.
-        llvm::Value *lhs = emitExpr(ctx, it);
-        ctx->returnAddress = false;
-        llvm::Value *rhs = emitExpr(ctx, assign.rhs[i]);
-        Type *type = TypeFromCheckerInfo(ctx->checkerInfo[assign.lhs[i]->id]);
-        debugPos(ctx, assign.start);
-        ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(type->Align));
+    size_t numLhs = ArrayLen(assign.lhs);
+    size_t rhsIndex = 0;
+    for (size_t lhsIndex = 0; lhsIndex < numLhs;) {
+        Expr *expr = assign.rhs[rhsIndex++];
+        llvm::Value *rhs = emitExpr(ctx, expr);
+
+        Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
+        if (expr->kind == ExprKind_Call) {
+            size_t numValues = exprType->Tuple.numTypes;
+            if (numValues == 1) {
+                ctx->returnAddress = true;
+                llvm::Value *lhs = emitExpr(ctx, assign.lhs[lhsIndex++]);
+                ctx->returnAddress = false;
+                debugPos(ctx, assign.start);
+                ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Tuple.types[0]->Align));
+            } else {
+                // create some stack space to land the returned struct onto
+                llvm::Value *resultAddress = createEntryBlockAlloca(ctx, rhs->getType(), "");
+                ctx->b.CreateStore(rhs, resultAddress);
+
+                for (size_t resultIndex = 0; resultIndex < numValues; resultIndex++) {
+                    Expr *lhsExpr = assign.lhs[lhsIndex++];
+                    ctx->returnAddress = true;
+                    llvm::Value *lhs = emitExpr(ctx, lhsExpr);
+                    ctx->returnAddress = false;
+                    debugPos(ctx, assign.start);
+
+                    llvm::Value *addr = ctx->b.CreateStructGEP(rhs->getType(), resultAddress, (u32) resultIndex);
+                    llvm::Value *val = ctx->b.CreateLoad(addr);
+
+                    CheckerInfo lhsInfo = ctx->checkerInfo[lhsExpr->id];
+                    // Conversions of tuples like this are stored on the lhs
+                    if (lhsInfo.coerce != ConversionKind_None) {
+                        ASSERT(lhs->getType()->isPointerTy());
+                        val = coerceValue(ctx, lhsInfo.coerce, val, lhs->getType()->getPointerElementType());
+                    }
+
+                    ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(TypeFromCheckerInfo(lhsInfo)->Align));
+                }
+            }
+        } else {
+            Expr *lhsExpr = assign.lhs[lhsIndex++];
+            ctx->returnAddress = true;
+            llvm::Value *lhs = emitExpr(ctx, lhsExpr);
+            ctx->returnAddress = false;
+            Type *type = TypeFromCheckerInfo(ctx->checkerInfo[lhsExpr->id]);
+            debugPos(ctx, assign.start);
+            ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(type->Align));
+        }
     }
 }
 
@@ -1342,18 +1478,26 @@ void emitStmtIf(Context *ctx, Stmt *stmt) {
 
 void emitStmtReturn(Context *ctx, Stmt *stmt) {
     ASSERT(stmt->kind == StmtKind_Return);
-    if (ArrayLen(stmt->Return.exprs) != 1) UNIMPLEMENTED();
+
+    size_t numReturns = ArrayLen(stmt->Return.exprs);
+
     std::vector<llvm::Value *> values;
-    ForEach(stmt->Return.exprs, Expr *) {
-        // FIXME: getReturnType will no suffice when we support multireturn
-        auto value = emitExpr(ctx, it, ctx->fn->getReturnType());
+    for (size_t i = 0; i < numReturns; i++) {
+        Expr *it = stmt->Return.exprs[i];
+        llvm::Type *desiredType = ctx->fn->getReturnType();
+        if (numReturns > 1) {
+            llvm::StructType *type = llvm::dyn_cast<llvm::StructType>(ctx->fn->getReturnType());
+            ASSERT_MSG(type, "Expected the context struct type for function with multiple return vals");
+            desiredType = type->getElementType((u32) i);
+        }
+        auto value = emitExpr(ctx, it, desiredType);
         values.push_back(value);
     }
     clearDebugPos(ctx);
     if (values.size() > 1) {
         for (u32 idx = 0; idx < values.size(); idx++) {
-            std::vector<u32> idxs = {0, idx};
-            ctx->retValue = ctx->b.CreateInsertValue(ctx->retValue, values[idx], idxs);
+            llvm::Value *elPtr = ctx->b.CreateStructGEP(ctx->fn->getReturnType(), ctx->retValue, idx);
+            ctx->b.CreateStore(values[idx], elPtr);
         }
     } else if (values.size() == 1) {
         ctx->b.CreateStore(values[0], ctx->retValue);
@@ -1664,22 +1808,24 @@ b32 CodegenLLVM(Package *p) {
     setupTargetInfo();
 
     std::string error;
-    auto triple = llvm::sys::getDefaultTargetTriple();
-    auto target = llvm::TargetRegistry::lookupTarget(triple, error);
+    llvm::Triple triple = llvm::Triple(llvm::sys::getDefaultTargetTriple());
+    if (triple.getOS() == llvm::Triple::Darwin) {
+        triple.setOS(llvm::Triple::MacOSX);
+    }
 
+    auto target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
     if (!target) {
         llvm::errs() << error;
         return 1;
     }
 
-    if (FlagVerbose) printf("Target: %s\n", triple.c_str());
+    if (FlagVerbose) printf("Target: %s\n", triple.str().c_str());
 
     const char *cpu = "generic";
     const char *features = "";
 
     llvm::TargetOptions opt;
-    llvm::Optional<llvm::Reloc::Model> rm = llvm::Optional<llvm::Reloc::Model>();
-    llvm::TargetMachine *targetMachine = target->createTargetMachine(triple, cpu, features, opt, rm);
+    llvm::TargetMachine *targetMachine = target->createTargetMachine(triple.str(), cpu, features, opt, llvm::None);
 
     // TODO: Only on unoptimized builds
     targetMachine->setO0WantsFastISel(true);
@@ -1687,7 +1833,7 @@ b32 CodegenLLVM(Package *p) {
     llvm::DataLayout dataLayout = targetMachine->createDataLayout();
 
     // TODO: Handle targets correctly by using TargetOs & TargetArch globals
-    module->setTargetTriple(triple);
+    module->setTargetTriple(triple.str());
     module->setDataLayout(dataLayout);
     module->getOrInsertModuleFlagsMetadata();
     module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
