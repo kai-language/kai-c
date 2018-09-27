@@ -355,10 +355,65 @@ llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Symbol *sym) {
     return alloca;
 }
 
-llvm::AllocaInst *creteEntryBlockAlloca(Context *ctx, llvm::Type *type, const char *name) {
+llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, llvm::Type *type, const char *name) {
     llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
     llvm::AllocaInst *alloca = b.CreateAlloca(type, 0, name);
     return alloca;
+}
+
+llvm::Value *createVariable(Symbol *symbol, Position pos, Context *ctx) {
+    ASSERT(symbol->kind == SymbolKind_Variable);
+
+    if (symbol->flags & SymbolFlag_Global) {
+        llvm::GlobalVariable *global = new llvm::GlobalVariable(
+            *ctx->m,
+            canonicalize(ctx, symbol->type),
+            false, // IsConstant
+            llvm::GlobalValue::ExternalLinkage,
+            NULL,  // Initializer
+            symbol->name
+        );
+        global->setAlignment(BytesFromBits(symbol->type->Align));
+        symbol->backendUserdata = global;
+
+        if (FlagDebug) {
+            ctx->d.builder->createGlobalVariableExpression(
+                ctx->d.scope,
+                symbol->name, // Name
+                symbol->name, // LinkageName
+                ctx->d.file,
+                pos.line,
+                debugCanonicalize(ctx, symbol->type),
+                false,        // isLocalToUnit
+                nullptr,      // Expr
+                nullptr,      // Decl
+                symbol->type->Align
+            );
+        }
+        return global;
+    } else {
+        llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
+        symbol->backendUserdata = alloca;
+
+        if (FlagDebug) {
+            auto d = ctx->d.builder->createAutoVariable(
+                ctx->d.scope,
+                symbol->name,
+                ctx->d.file,
+                pos.line,
+                debugCanonicalize(ctx, symbol->type)
+            );
+
+            ctx->d.builder->insertDeclare(
+                alloca,
+                d,
+                ctx->d.builder->createExpression(),
+                llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope),
+                ctx->b.GetInsertBlock()
+            );
+        }
+        return alloca;
+    }
 }
 
 llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
@@ -1168,12 +1223,74 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
 
     // TODO: CreateLifetimeStart for this symbol
     CheckerInfo info = ctx->checkerInfo[decl->id];
-    DynamicArray(Symbol *) symbols = info.Variable.symbols;
+    Symbol **symbols = info.Variable.symbols;
     Decl_Variable var = decl->Variable;
 
     bool prevReturnAddress = ctx->returnAddress;
     ctx->returnAddress = false;
 
+    size_t numLhs = ArrayLen(var.names);
+    size_t rhsIndex = 0;
+    for (size_t lhsIndex = 0; lhsIndex < numLhs;) {
+        Expr *expr = var.values[rhsIndex++];
+        llvm::Value *rhs = emitExpr(ctx, expr);
+
+        Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
+        if (expr->kind == ExprKind_Call) {
+            Conversion *conversions = ctx->checkerInfo[decl->id].Variable.conversions;
+
+            size_t numValues = exprType->Tuple.numTypes;
+            debugPos(ctx, var.names[lhsIndex]->start);
+
+            if (numValues == 1) {
+                Symbol *symbol = symbols[lhsIndex];
+                llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
+
+                if (conversions[lhsIndex] != ConversionKind_None) {
+                    UNIMPLEMENTED();
+                }
+
+                if (symbol->flags & SymbolFlag_Global) {
+                    // Handle global scope variables being initialized by a call to something
+                    UNIMPLEMENTED();
+                } else {
+                    ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(symbol->type->Align));
+                }
+
+                lhsIndex += 1;
+            } else {
+                llvm::Value *resultAddress = createEntryBlockAlloca(ctx, rhs->getType(), "");
+                ctx->b.CreateStore(rhs, resultAddress);
+
+                for (size_t resultIndex = 0; resultIndex < numValues; resultIndex++) {
+                    Symbol *symbol = symbols[lhsIndex];
+                    llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
+
+                    if (symbol->flags & SymbolFlag_Global) UNIMPLEMENTED();
+                    llvm::Value *addr = ctx->b.CreateStructGEP(rhs->getType(), resultAddress, (u32) resultIndex);
+                    llvm::Value *val = ctx->b.CreateLoad(addr);
+
+                    if (conversions[lhsIndex] != ConversionKind_None) {
+                        ASSERT(lhs->getType()->isPointerTy());
+                        val = coerceValue(ctx, conversions[lhsIndex], val, lhs->getType()->getPointerElementType());
+                    }
+
+                    ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(symbol->type->Align));
+
+                    lhsIndex += 1;
+                }
+            }
+        } else {
+            Symbol *symbol = symbols[lhsIndex];
+            llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->start, ctx);
+            debugPos(ctx, decl->start);
+            ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Align));
+            lhsIndex += 1;
+        }
+    }
+
+    // FIXME: Remove
+#if false
     For (symbols) {
         Symbol *symbol = symbols[i];
         // FIXME: Global variables
@@ -1270,6 +1387,7 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
         }
 
     }
+#endif
     ctx->returnAddress = prevReturnAddress;
 }
 
@@ -1353,7 +1471,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
         Expr *expr = assign.rhs[rhsIndex++];
         llvm::Value *rhs = emitExpr(ctx, expr);
 
-        Type *exprType = ctx->checkerInfo[expr->id].BasicExpr.type;
+        Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
         if (expr->kind == ExprKind_Call) {
             size_t numValues = exprType->Tuple.numTypes;
             if (numValues == 1) {
@@ -1364,7 +1482,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
                 ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Tuple.types[0]->Align));
             } else {
                 // create some stack space to land the returned struct onto
-                llvm::Value *resultAddress = creteEntryBlockAlloca(ctx, rhs->getType(), "");
+                llvm::Value *resultAddress = createEntryBlockAlloca(ctx, rhs->getType(), "");
                 ctx->b.CreateStore(rhs, resultAddress);
 
                 for (size_t resultIndex = 0; resultIndex < numValues; resultIndex++) {

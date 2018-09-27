@@ -96,9 +96,9 @@ void storeInfoConstant(Package *pkg, Decl *decl, Symbol *symbol) {
     pkg->checkerInfo[decl->id] = info;
 }
 
-void storeInfoVariable(Package *pkg, Decl *decl, Symbol **symbols) {
+void storeInfoVariable(Package *pkg, Decl *decl, Symbol **symbols, Conversion *conversions) {
     ASSERT(decl->kind == DeclKind_Variable);
-    CheckerInfo info = {CheckerInfoKind_Variable, .Variable.symbols = symbols};
+    CheckerInfo info = {CheckerInfoKind_Variable, .Variable.symbols = symbols, .Variable.conversions = conversions};
     pkg->checkerInfo[decl->id] = info;
 }
 
@@ -1013,7 +1013,6 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         checkStmt(func.body->stmts[i], &bodyCtx, pkg);
         if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;
     }
-
 
     ctx->flags |= CheckerContextFlag_Constant;
     ctx->mode = ExprMode_Value;
@@ -1960,30 +1959,33 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
         expectType(pkg, expectedType, ctx, var.type->start);
     }
 
-    DynamicArray(Symbol *) symbols = NULL;
-    ArrayFit(symbols, ArrayLen(var.names));
+    u32 numLhs = (u32) ArrayLen(var.names);
+
+    Conversion *conversions = ArenaAlloc(&pkg->arena, numLhs * sizeof *conversions);
+    Symbol **symbols = ArenaAlloc(&pkg->arena, numLhs * sizeof *symbols);
 
     if (ctx->scope == pkg->scope) {
-        ForEach(var.names, Expr_Ident *) {
-            Symbol *symbol = MapGet(&pkg->scope->members, it->name);
+        for (size_t i = 0; i < numLhs; i++) {
+            Symbol *symbol = MapGet(&pkg->scope->members, var.names[i]->name);
             ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
-            ArrayPush(symbols, symbol);
+            symbols[i] = symbol;
         }
     } else {
-        ForEach(var.names, Expr_Ident *) {
+        for (size_t i = 0; i < numLhs; i++) {
             Symbol *symbol;
-            // FIXME(Brett): figure out how I want to recover from a duplicate
-            declareSymbol(pkg, ctx->scope, it->name, &symbol, decl);
-            ArrayPush(symbols, symbol);
+            // FIXME: figure out how to recover from a duplicate
+            // -vdka September 2018
+            declareSymbol(pkg, ctx->scope, var.names[i]->name, &symbol, decl);
+            symbols[i] = symbol;
         }
     }
 
     // NOTE: decl like `x, y: i32`
     if (ArrayLen(var.values) == 0) {
         ASSERT(expectedType);
-        ForEach(symbols, Symbol *) {
-            it->type = expectedType;
-            it->state = SymbolState_Resolved;
+        for (u32 i = 0; i < numLhs; i++) {
+            symbols[i]->type = expectedType;
+            symbols[i]->state = SymbolState_Resolved;
         }
 
         if (expectedType->kind == TypeKind_Function) {
@@ -1993,64 +1995,69 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
                        "If you want an uninitialized function pointer use *%s instead", DescribeType(expectedType));
         }
     } else {
-        if (ArrayLen(var.values) != ArrayLen(var.names)) {
-            // TODO: ensure that this is a function call otherwise report this error
-            ReportError(
-                pkg, ArityMismatchError, var.start, 
-                "The amount of identifiers (%zu) doesn't match the amount of values (%zu)",
-                ArrayLen(var.names), ArrayLen(var.values)
-            );
-
-            For (symbols) {
-                markSymbolInvalid(symbols[i]);
-            }
-            return;
-        }
-
-        // TODO(Brett): check for multi-value call
-
-        if (var.values && var.values[0]->kind == ExprKind_Call) {
-            UNIMPLEMENTED();
-            return;
-        }
-
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
-        For (var.names) {
-            Type *type = checkExpr(var.values[i], &exprCtx, pkg);
+
+        size_t values = 0;
+        size_t rhsIndex = 0;
+        for (size_t lhsIndex = 0; values < numLhs;) {
+            Expr *expr = var.values[rhsIndex++];
+
+            Type *type = checkExpr(expr, &exprCtx, pkg);
             if (exprCtx.mode == ExprMode_Unresolved) goto unresolved;
             if (exprCtx.mode == ExprMode_Invalid) {
-                markSymbolInvalid(symbols[i]);
+                // This may not best handle users declaring from mixed calls & not calls
+                markSymbolInvalid(symbols[lhsIndex]);
                 continue;
-            };
+            }
+
+            if (type->kind == TypeKind_Tuple) {
+                for (size_t rhsIndex = 0; rhsIndex < type->Tuple.numTypes; rhsIndex++) {
+                    Type *ty = type->Tuple.types[rhsIndex];
+
+                    if (expectedType) {
+                        conversions[lhsIndex] = conversion(ty, expectedType);
+                    }
+
+                    if (expectedType && !coerceTypeSilently(expr, &exprCtx, &ty, expectedType, pkg)) {
+                        ReportError(pkg, TypeMismatchError, expr->start,
+                                    "Cannot convert %s to expected type %s",
+                                    DescribeType(ty), DescribeType(expectedType));
+                        ReportNote(pkg, expr->start,
+                                   "Value comes from the %zu indexed result from call to %s",
+                                   rhsIndex, DescribeExpr(expr));
+                        // TODO: Use the language value comes from the %zu (st|nd|rd|th) result of the call to %s
+                        // -vdka September 2018
+                    }
+
+                    symbols[lhsIndex]->kind = SymbolKind_Variable;
+                    markSymbolResolved(symbols[lhsIndex], ty);
+
+                    lhsIndex += 1;
+                }
+
+                values += type->Tuple.numTypes;
+
+                // ConversionKind_Tuple indicates that the conversions are stored on the receiving value.
+                CheckerInfoForExpr(pkg, expr)->coerce = ConversionKind_Tuple;
+                continue;
+            }
 
             if (exprCtx.mode < ExprMode_Value) {
-                ReportError(pkg, NotAValueError, var.values[i]->start,
-                            "Expected a value but got %s (type %s)", DescribeExpr(var.values[i]), DescribeType(type));
+                ReportError(pkg, NotAValueError, expr->start,
+                            "Expected a value but got %s (type %s)", DescribeExpr(expr), DescribeType(type));
+            } else if (expectedType) {
+                coerceType(expr, &exprCtx, &type, expectedType, pkg);
             }
 
-            if (expectedType && !coerceType(var.values[i], &exprCtx, &type, expectedType, pkg)) {
-                ReportError(pkg, InvalidConversionError, var.values[i]->start,
-                            "Unable to convert type %s to expected type type %s",
-                            DescribeType(type), DescribeType(expectedType));
-                markSymbolInvalid(symbols[i]);
-                return;
-            }
+            symbols[lhsIndex]->kind = SymbolKind_Variable;
+            markSymbolResolved(symbols[lhsIndex], type);
 
-            if (exprCtx.mode == ExprMode_Type) {
-                ReportError(pkg, TypeNotAnExpressionError, var.values[i]->start,
-                            "Type %s is not an expression in this context", DescribeType(type));
-                ReportNote(pkg, var.values[i]->start,
-                           "Type metadata can be retrieved using the typeof or typeid functions");
-                markSymbolInvalid(symbols[i]);
-                continue;
-            }
-
-            symbols[i]->kind = SymbolKind_Variable;
-            markSymbolResolved(symbols[i], type);
+            values += 1;
+            lhsIndex += 1;
         }
     }
 
-    storeInfoVariable(pkg, decl, symbols);
+    storeInfoVariable(pkg, decl, symbols, conversions);
     return;
 
 unresolved:
@@ -2140,9 +2147,9 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ForEach(assign.lhs, Expr *) {
         Type *type = checkExpr(it, ctx, pkg);
         // FIXME: Check for null
-        if (type->kind == TypeKind_Enum) {
-            ForEach(type->Tuple.types, Type *) {
-                ArrayPush(lhsTypes, it);
+        if (type->kind == TypeKind_Tuple) {
+            for (u32 i = 0; i < type->Tuple.numTypes; i++) {
+                ArrayPush(lhsTypes, type->Tuple.types[i]);
             }
         } else {
             ArrayPush(lhsTypes, type);
@@ -2184,6 +2191,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
                     ReportNote(pkg, expr->start,
                                "Value comes from the %zu indexed result from call to %s", rhsIndex, DescribeExpr(expr));
                     // TODO: Use the language value comes from the %zu (st|nd|rd|th) result of the call to %s
+                    // -vdka September 2018
                 }
 
                 lhsIndex += 1;

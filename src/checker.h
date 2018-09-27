@@ -42,7 +42,8 @@ struct CheckerInfo_Constant {
 
 typedef struct CheckerInfo_Variable CheckerInfo_Variable;
 struct CheckerInfo_Variable {
-    DynamicArray(Symbol *) symbols;
+    Symbol **symbols;
+    Conversion *conversions;
 };
 
 typedef struct CheckerInfo_Foreign CheckerInfo_Foreign;
