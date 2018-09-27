@@ -118,7 +118,7 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
         case TypeKind_Tuple:
             // TODO: Should they?
             PANIC("Tuples are a checker thing, they should not make their way into the backend, unless they do?");
-            if (!type->Tuple.types) {
+            if (!type->Tuple.numTypes) {
                 return llvm::Type::getVoidTy(ctx->m->getContext());
             }
             UNIMPLEMENTED(); // Multiple returns
@@ -223,7 +223,7 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         return type->Width == 32 ? types.f32 : types.f64;
     }
 
-    if (type->kind == TypeKind_Tuple && !type->Tuple.types) {
+    if (type->kind == TypeKind_Tuple && !type->Tuple.numTypes) {
         return NULL;
     }
 
@@ -996,7 +996,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 
     ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return", fn);
 
-    if (info.BasicExpr.type->Function.results) {
+    if (info.BasicExpr.type->Function.numResults) {
         llvm::IRBuilder<> b(entry, entry->begin());
         llvm::AllocaInst *alloca = b.CreateAlloca(fn->getReturnType(), 0, "result");
         if (info.BasicExpr.type->Function.numResults == 1) {
