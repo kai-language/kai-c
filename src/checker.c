@@ -436,6 +436,7 @@ b32 representValueSilently(CheckerContext *ctx, Expr *expr, Type *type, Type *ta
 Conversion conversion(Type *type, Type *target) {
     Conversion result = 0;
     if (type == target) return ConversionKind_None;
+    if (target == AnyType) return ConversionKind_Any;
     
     if (type->kind == target->kind) {
         result |= ConversionKind_Same;
@@ -505,6 +506,7 @@ void changeTypeOrMarkConversionForExpr(Expr *expr, Type *type, Type *target, Pac
         case ExprKind_LitInt:
         case ExprKind_LitFloat:
         case ExprKind_LitString:
+            if (target == AnyType) goto markConversion;
             CheckerInfoForExpr(pkg, expr)->BasicExpr.type = target;
             break;
 
@@ -512,6 +514,7 @@ void changeTypeOrMarkConversionForExpr(Expr *expr, Type *type, Type *target, Pac
             // Do nothing intentionally
             break;
 
+        markConversion:
         default:
             CheckerInfoForExpr(pkg, expr)->coerce = conversion(type, target);
     }
@@ -863,7 +866,7 @@ Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *type = checkExpr(expr->TypeVariadic.type, ctx, pkg);
     if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
     TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlag_CVargs ? TypeFlag_CVargs : TypeFlag_None;
-    type = NewTypeSlice(flags, type);
+    type = NewTypeSlice(flags | TypeFlag_Variadic, type);
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
@@ -1705,19 +1708,31 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     size_t nParams = calleeType->Function.numParams;
     CheckerContext argCtx = { ctx->scope };
-    ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
-        if (i >= nParams) {
+    size_t numArgs = ArrayLen(expr->Call.args);
+    for (size_t i = 0; i < numArgs; i++) {
+        // TODO: check args keys match
+        // -vdka September 2018
+        Expr_KeyValue *arg = expr->Call.args[i];
+
+        if (i >= nParams && !(calleeType->Function.Flags & TypeFlag_Variadic)) {
             ReportError(pkg, TODOError, arg->start,
                         "Too many arguments in call to '%s'", DescribeExpr(expr->Call.expr));
             break;
-        };
+        }
 
-        argCtx.desiredType = calleeType->Function.params[i];
+        // The min is to allow variadics to keep the last type 
+        Type *expectedType = calleeType->Function.params[MIN(calleeType->Function.numParams - 1, i)];
+        if (isSlice(expectedType) && expectedType->Flags & TypeFlag_Variadic) {
+            expectedType = expectedType->Slice.elementType;
+        }
+
+        argCtx.desiredType = expectedType;
+
         Type *type = checkExpr(arg->value, &argCtx, pkg);
         if (argCtx.mode == ExprMode_Unresolved) goto unresolved;
         if (argCtx.mode == ExprMode_Invalid) goto error;
 
-        coerceType(arg->value, &argCtx, &type, calleeType->Function.params[i], pkg);
+        coerceType(arg->value, &argCtx, &type, expectedType, pkg);
     }
     // TODO: Implement checking for calls
     Type *type = NewTypeTupleFromFunctionResults(TypeFlag_None, calleeType->Function);
@@ -2924,6 +2939,23 @@ void test_checkConstantCastExpression() {
     ASSERT(type == U8Type);
     ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u64 == 42);
+}
+
+void test_callToCVargs() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+
+#define checkCall(_CODE) \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
+    RESET_CONTEXT(ctx); \
+    type = checkExprCall((Expr *) stmt, &ctx, &pkg)
+
+    checkCall("#foreign libc\n"
+              "printf :: fn(rawptr, #cvargs ..any) -> void;"
+              "printf(\"%d %d %d\", 1, 2, 3);");
+    ASSERT(!pkg.diagnostics.errors);
 }
 
 void test_checkExprSelector() {

@@ -146,8 +146,10 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
         case TypeKind_Function: {
             std::vector<llvm::Type *> params;
             for (u32 i = 0; i < type->Function.numParams; i++) {
-                llvm::Type *paramType = canonicalize(ctx, type->Function.params[i]);
-                params.push_back(paramType);
+                Type *paramType = type->Function.params[i];
+                if (paramType->Flags & TypeFlag_CVargs) break;
+                llvm::Type *irParamType = canonicalize(ctx, paramType);
+                params.push_back(irParamType);
             }
 
             llvm::Type *returnType;
@@ -544,9 +546,17 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
     auto fnType = TypeFromCheckerInfo(ctx->checkerInfo[expr->Call.expr->id]);
 
     std::vector<llvm::Value *> args;
-    ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
-        auto irArgType = canonicalize(ctx, fnType->Function.params[i]);
-        auto irArg = emitExpr(ctx, expr->Call.args[i]->value, irArgType);
+
+    size_t numArgs = ArrayLen(expr->Call.args);
+    for (size_t i = 0; i < numArgs; i++) {
+        Expr_KeyValue *arg = expr->Call.args[i];
+
+        Type *argType = TypeFromCheckerInfo(ctx->checkerInfo[arg->value->id]);
+        llvm::Type *irArgType = canonicalize(ctx, argType);
+        if (fnType->Flags & TypeFlag_CVargs) {
+            irArgType = nullptr;
+        }
+        llvm::Value *irArg = emitExpr(ctx, expr->Call.args[i]->value, irArgType);
         args.push_back(irArg);
     }
     auto irFunc = emitExpr(ctx, expr->Call.expr);
