@@ -557,6 +557,21 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
             irArgType = nullptr;
         }
         llvm::Value *irArg = emitExpr(ctx, expr->Call.args[i]->value, irArgType);
+
+        if (fnType->Flags == TypeFlag_CVargs && (i - 1 >= fnType->Function.numParams)) {
+            // Apply C ABI rules at least for C style variadic parameters
+
+            // TODO: We need to work out how to apply calling conventions across the board for functions!
+            // -vdka September 2018
+            if (IsInteger(argType) && argType->Width < 32) {
+                // C ABI requires promoting integers to at least 32 bits
+                irArg = coerceValue(ctx, ConversionKind_Same, irArg, llvm::Type::getInt32Ty(ctx->m->getContext()));
+            } else if (IsFloat(argType) && argType->Width < 64) {
+                // C ABI requires promoting floats to doubles
+                irArg = coerceValue(ctx, ConversionKind_Same, irArg, llvm::Type::getDoubleTy(ctx->m->getContext()));
+            }
+        }
+
         args.push_back(irArg);
     }
     auto irFunc = emitExpr(ctx, expr->Call.expr);
