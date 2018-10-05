@@ -2022,6 +2022,9 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
             if (exprCtx.mode == ExprMode_Invalid) {
                 // This may not best handle users declaring from mixed calls & not calls
                 markSymbolInvalid(symbols[lhsIndex]);
+
+                values += 1;
+                lhsIndex += 1;
                 continue;
             }
 
@@ -2185,7 +2188,11 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
         ctx->desiredType = lhsTypes[lhsIndex];
         Type *type = checkExpr(expr, ctx, pkg);
-        if (ctx->mode == ExprMode_Invalid) continue;
+        if (ctx->mode == ExprMode_Invalid) {
+            values += 1;
+            lhsIndex += 1;
+            continue;
+        }
         if (ctx->mode == ExprMode_Unresolved) goto unresolved;
 
         if (type->kind == TypeKind_Tuple) {

@@ -1,5 +1,7 @@
 
 #foreign llvm #callconv "c" {
-    printf :: fn(rawptr, u64) -> i32
+    printf :: fn(rawptr, #cvargs ..any) -> i32
+    strlen :: fn(*u8) -> u64
+    malloc :: (size: u64) -> rawptr
 }
 
