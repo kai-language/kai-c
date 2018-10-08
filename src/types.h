@@ -72,9 +72,6 @@ typedef u8 TypeFlag;
 // Enum
 #define TypeFlag_EnumFlags 0x1
 
-// Struct
-#define TypeFlag_StructTuple 0x1
-
 // Tuple
 #define TypeFlag_NoReturn 0x1
 
@@ -96,8 +93,10 @@ struct Type_Array {
 
 struct Type_Function {
     TypeFlag Flags;
-    DynamicArray(Type *) params;
-    DynamicArray(Type *) results;
+    Type **params;
+    Type **results;
+    u32 numParams;
+    u32 numResults;
 };
 
 typedef struct TypeField TypeField;
@@ -115,15 +114,16 @@ struct EnumField {
 
 struct Type_Struct {
     TypeFlag Flags;
-    // TODO: This shouldn't be an indirect type
-    DynamicArray(TypeField *) members;
+    TypeField *members;
+    u32 numMembers;
 };
 
 struct Type_Union {
     TypeFlag Flags;
     u32 tagWidth;
     u32 dataWidth;
-    DynamicArray(Type *) cases;
+    Type **cases;
+    u32 numCases;
 };
 
 struct Type_Enum {
@@ -134,7 +134,8 @@ struct Type_Enum {
 
 struct Type_Tuple {
     TypeFlag Flags;
-    DynamicArray(Type *) types;
+    Type **types;
+    u32 numTypes;
 };
 
 STATIC_ASSERT(offsetof(Type_Pointer,  Flags) == 0, "Flags must be at offset 0");

@@ -63,3 +63,9 @@ void test_array() {
     ASSERT(strcmp((char*) str, "One: 1\nHex: 0x12345678\n") == 0);
 }
 #endif
+
+#if DEBUG
+ArrayHdr *ArrayHeader(void *array) {
+    return (ArrayHdr *) ((u8 *) array - sizeof(ArrayHdr));
+}
+#endif

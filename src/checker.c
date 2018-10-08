@@ -96,9 +96,9 @@ void storeInfoConstant(Package *pkg, Decl *decl, Symbol *symbol) {
     pkg->checkerInfo[decl->id] = info;
 }
 
-void storeInfoVariable(Package *pkg, Decl *decl, Symbol **symbols) {
+void storeInfoVariable(Package *pkg, Decl *decl, Symbol **symbols, Conversion *conversions) {
     ASSERT(decl->kind == DeclKind_Variable);
-    CheckerInfo info = {CheckerInfoKind_Variable, .Variable.symbols = symbols};
+    CheckerInfo info = {CheckerInfoKind_Variable, .Variable.symbols = symbols, .Variable.conversions = conversions};
     pkg->checkerInfo[decl->id] = info;
 }
 
@@ -336,7 +336,7 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
     if (TypesIdentical(type, target)) return true;
     if (target->kind == TypeKind_Any) return true;
 
-    if (isTuple(type) && ArrayLen(type->Tuple.types) == 1) {
+    if (isTuple(type) && type->Tuple.numTypes == 1) {
         return canCoerce(type->Tuple.types[0], target, ctx);
     }
 
@@ -439,6 +439,9 @@ b32 representValueSilently(CheckerContext *ctx, Expr *expr, Type *type, Type *ta
 
 Conversion conversion(Type *type, Type *target) {
     Conversion result = 0;
+    if (type == target) return ConversionKind_None;
+    if (target == AnyType) return ConversionKind_Any;
+    
     if (type->kind == target->kind) {
         result |= ConversionKind_Same;
         switch (type->kind) {
@@ -457,7 +460,7 @@ Conversion conversion(Type *type, Type *target) {
         }
     }
 
-    if (type->kind == TypeKind_Tuple && ArrayLen(type->Tuple.types) == 1) {
+    if (type->kind == TypeKind_Tuple && type->Tuple.numTypes == 1) {
         return conversion(type->Tuple.types[0], target);
     }
 
@@ -480,7 +483,7 @@ Conversion conversion(Type *type, Type *target) {
 
     if (IsFloat(type) && IsInteger(target)) {
         result |= ConversionKind_FtoI & ConversionFlag_Float;
-        if (IsSigned(type)) result |= ConversionFlag_Signed;
+        if (IsSigned(target)) result |= ConversionFlag_Signed;
         return result;
     }
 
@@ -498,7 +501,10 @@ Conversion conversion(Type *type, Type *target) {
 
     // TODO: function to pointer and vica versa
 
-    PANIC("Unhandled or prohibited conversion");
+    if (type == InvalidType || target == InvalidType) return ConversionKind_None;
+
+    // TODO: ConversionKind_Invalid for non developer releases?
+    ASSERT_MSG(false, "Unhandled or prohibited conversion");
     return ConversionKind_None;
 }
 
@@ -508,9 +514,15 @@ void changeTypeOrMarkConversionForExpr(Expr *expr, Type *type, Type *target, Pac
         case ExprKind_LitInt:
         case ExprKind_LitFloat:
         case ExprKind_LitString:
+            if (target == AnyType) goto markConversion;
             CheckerInfoForExpr(pkg, expr)->BasicExpr.type = target;
             break;
 
+        case ExprKind_Call:
+            // Do nothing intentionally
+            break;
+
+        markConversion:
         default:
             CheckerInfoForExpr(pkg, expr)->coerce = conversion(type, target);
     }
@@ -866,7 +878,7 @@ Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *type = checkExpr(expr->TypeVariadic.type, ctx, pkg);
     if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
     TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlag_CVargs ? TypeFlag_CVargs : TypeFlag_None;
-    type = NewTypeSlice(flags, type);
+    type = NewTypeSlice(flags | TypeFlag_Variadic, type);
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
@@ -980,9 +992,10 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         ArrayPush(params, type);
     }
 
-    DynamicArray(Type *) returnTypes = NULL;
-    ArrayFit(returnTypes, ArrayLen(func.result));
+    DynamicArray(Type *) results = NULL;
+    ArrayFit(results, ArrayLen(func.result));
 
+    bool isVoid = false;
     ForEach(func.result, Expr *) {
         Type *type = checkExpr(it, &paramCtx, pkg);
         if (paramCtx.mode == ExprMode_Invalid) goto error;
@@ -991,12 +1004,26 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         if (!expectType(pkg, type, &paramCtx, it->start)) {
             isInvalid = true;
         }
-        ArrayPush(returnTypes, type);
+        ArrayPush(results, type);
+
+        isVoid |= type == VoidType;
+    }
+
+    if (isVoid) {
+        if (ArrayLen(func.result) > 1) {
+            ReportError(pkg, InvalidUseOfVoidError, expr->start,
+                        "Void must be a functions only return type");
+        } else {
+            ArrayFree(results);
+        }
     }
 
     if (isInvalid) goto error;
 
-    Type *type = NewTypeFunction(flags, params, returnTypes);
+    Type *type = NewTypeFunction(flags, params, results);
+
+    ArrayFree(params);
+    ArrayFree(results);
 
     ctx->mode = ExprMode_Type;
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1017,12 +1044,10 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Scope *parameterScope = pushScope(pkg, ctx->scope);
     CheckerContext paramCtx = { parameterScope };
 
-    DynamicArray(Type *) paramTypes = NULL;
-    DynamicArray(Type *) resultTypes = NULL;
-    DynamicArray(Symbol *) paramSymbols = NULL;
-    ArrayFit(paramTypes, ArrayLen(func.type->TypeFunction.params));
-    ArrayFit(resultTypes, ArrayLen(func.type->TypeFunction.result));
-    ArrayFit(paramSymbols, ArrayLen(func.type->TypeFunction.params));
+    DynamicArray(Type *) params = NULL;
+    DynamicArray(Type *) results = NULL;
+    ArrayFit(params, ArrayLen(func.type->TypeFunction.params));
+    ArrayFit(results, ArrayLen(func.type->TypeFunction.result));
 
     TypeFlag typeFlags = TypeFlag_None;
 
@@ -1036,7 +1061,6 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         Symbol *symbol;
         declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, (Decl *) it);
         symbol->kind = SymbolKind_Variable;
-        ArrayPush(paramSymbols, symbol);
 
         Type *type = checkExpr(it->value, &paramCtx, pkg);
         if (!expectType(pkg, type, &paramCtx, it->value->start)) continue;
@@ -1047,35 +1071,46 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         typeFlags |= type->Flags & TypeFlag_Variadic;
         typeFlags |= type->Flags & TypeFlag_CVargs;
-        ArrayPush(paramTypes, type);
+        ArrayPush(params, type);
     }
 
+    bool isVoid = false;
     ForEach(func.type->TypeFunction.result, Expr *) {
         Type *type = checkExpr(it, &paramCtx, pkg);
         if (!expectType(pkg, type, &paramCtx, it->start)) continue;
-        ArrayPush(resultTypes, type);
-        if (type == VoidType) {
-            if (ArrayLen(func.type->TypeFunction.result) > 1) {
-                ReportError(pkg, InvalidUseOfVoidError, it->start,
-                            "Void must be a functions only return type");
-            }
-        }
+        ArrayPush(results, type);
+        isVoid |= type == VoidType;
     }
 
+    Type *type = NewTypeFunction(typeFlags, params, results);
+
+    ArrayFree(params);
+    ArrayFree(results);
+
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+
     Scope *bodyScope = pushScope(pkg, parameterScope);
-    Type *tuple = VoidType;
-    if (resultTypes[0] != VoidType) {
-        tuple = NewTypeTuple(TypeFlag_None, resultTypes);
+    CheckerContext bodyCtx = { bodyScope };
+
+    if (isVoid) {
+        if (ArrayLen(func.type->TypeFunction.result) > 1) {
+            ReportError(pkg, InvalidUseOfVoidError, expr->LitFunction.type->start,
+                        "Void must be a functions only return type");
+        } else {
+            ArrayFree(results);
+            bodyCtx.desiredType = VoidType;
+        }
+    } else {
+        bodyCtx.desiredType = NewTypeTupleFromFunctionResults(TypeFlag_None, type->Function);
     }
 
     CheckerContext bodyCtx = { .scope = bodyScope, .desiredType = tuple };
-    ForEach(func.body->stmts, Stmt *) {
-        checkStmt(it, &bodyCtx, pkg);
+
+    size_t len = ArrayLen(func.body->stmts);
+    for (size_t i = 0; i < len; i++) {
+        checkStmt(func.body->stmts[i], &bodyCtx, pkg);
         if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;
     }
-
-    Type *type = NewTypeFunction(typeFlags, paramTypes, resultTypes);
-    storeInfoBasicExpr(pkg, expr, type, ctx);
 
     ctx->flags |= CheckerContextFlag_Constant;
     ctx->mode = ExprMode_Value;
@@ -1164,7 +1199,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
         } else {
             switch (type->kind) {
                 case TypeKind_Struct: {
-                    TypeField *field = type->Struct.members[currentIndex];
+                    TypeField *field = &type->Struct.members[currentIndex];
                     it->info = field;
                     expectedValueType = field->type;
                     break;
@@ -1320,30 +1355,33 @@ error:
 Type *checkExprTypeStruct(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeStruct);
 
-    DynamicArray(TypeField *) fields = NULL;
+    DynamicArray(TypeField) fields = NULL;
     ArrayFit(fields, ArrayLen(expr->TypeStruct.items));
 
     u32 align = 0;
     u32 width = 0;
-    for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
+    size_t numItems = ArrayLen(expr->TypeStruct.items);
+    for (size_t i = 0; i < numItems; i++) {
         AggregateItem item = expr->TypeStruct.items[i];
 
         Type *type = checkExpr(item.type, ctx, pkg);
         align = MAX(align, type->Align);
-        for (size_t j = 0; j < ArrayLen(item.names); j++) {
+
+        size_t numNames = ArrayLen(item.names);
+        for (size_t j = 0; j < numNames; j++) {
             // TODO: Check for duplicate names!
             // TODO: Check the max alignment of the Target Arch and cap alignment requirements to that
-            TypeField *field = AllocAst(pkg, sizeof(TypeField));
-            ArrayPush(fields, field);
 
-            field->name = item.names[j];
-            field->type = type;
-            field->offset = ALIGN_UP(width, type->Align);
-            width = field->offset + type->Width;
+            u32 offset = ALIGN_UP(width, type->Align);
+            TypeField field = {item.names[j], type, offset};
+            width = offset + type->Width;
+            ArrayPush(fields, field);
         }
     }
 
     Type *type = NewTypeStruct(align, width, TypeFlag_None, fields);
+    ArrayFree(fields);
+
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Type;
     return type;
@@ -1782,24 +1820,36 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         return checkExprCast(expr, ctx, pkg);
     }
 
-    size_t nParams = ArrayLen(calleeType->Function.params);
+    size_t nParams = calleeType->Function.numParams;
     CheckerContext argCtx = { ctx->scope };
-    ForEachWithIndex(expr->Call.args, i, Expr_KeyValue *, arg) {
-        if (i >= nParams) {
+    size_t numArgs = ArrayLen(expr->Call.args);
+    for (size_t i = 0; i < numArgs; i++) {
+        // TODO: check args keys match
+        // -vdka September 2018
+        Expr_KeyValue *arg = expr->Call.args[i];
+
+        if (i >= nParams && !(calleeType->Function.Flags & TypeFlag_Variadic)) {
             ReportError(pkg, TODOError, arg->start,
                         "Too many arguments in call to '%s'", DescribeExpr(expr->Call.expr));
             break;
-        };
+        }
 
-        argCtx.desiredType = calleeType->Function.params[i];
+        // The min is to allow variadics to keep the last type 
+        Type *expectedType = calleeType->Function.params[MIN(calleeType->Function.numParams - 1, i)];
+        if (isSlice(expectedType) && expectedType->Flags & TypeFlag_Variadic) {
+            expectedType = expectedType->Slice.elementType;
+        }
+
+        argCtx.desiredType = expectedType;
+
         Type *type = checkExpr(arg->value, &argCtx, pkg);
         if (argCtx.mode == ExprMode_Unresolved) goto unresolved;
         if (argCtx.mode == ExprMode_Invalid) goto error;
 
-        coerceType(arg->value, &argCtx, &type, calleeType->Function.params[i], pkg);
+        coerceType(arg->value, &argCtx, &type, expectedType, pkg);
     }
     // TODO: Implement checking for calls
-    Type *type = NewTypeTuple(TypeFlag_None, calleeType->Function.results);
+    Type *type = NewTypeTupleFromFunctionResults(TypeFlag_None, calleeType->Function);
     storeInfoBasicExpr(pkg, expr, type, ctx);
     ctx->mode = ExprMode_Value;
     return type;
@@ -2045,30 +2095,33 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
         expectType(pkg, expectedType, ctx, var.type->start);
     }
 
-    DynamicArray(Symbol *) symbols = NULL;
-    ArrayFit(symbols, ArrayLen(var.names));
+    u32 numLhs = (u32) ArrayLen(var.names);
+
+    Conversion *conversions = ArenaAlloc(&pkg->arena, numLhs * sizeof *conversions);
+    Symbol **symbols = ArenaAlloc(&pkg->arena, numLhs * sizeof *symbols);
 
     if (ctx->scope == pkg->scope) {
-        ForEach(var.names, Expr_Ident *) {
-            Symbol *symbol = MapGet(&pkg->scope->members, it->name);
+        for (size_t i = 0; i < numLhs; i++) {
+            Symbol *symbol = MapGet(&pkg->scope->members, var.names[i]->name);
             ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
-            ArrayPush(symbols, symbol);
+            symbols[i] = symbol;
         }
     } else {
-        ForEach(var.names, Expr_Ident *) {
+        for (size_t i = 0; i < numLhs; i++) {
             Symbol *symbol;
-            // FIXME(Brett): figure out how I want to recover from a duplicate
-            declareSymbol(pkg, ctx->scope, it->name, &symbol, decl);
-            ArrayPush(symbols, symbol);
+            // FIXME: figure out how to recover from a duplicate
+            // -vdka September 2018
+            declareSymbol(pkg, ctx->scope, var.names[i]->name, &symbol, decl);
+            symbols[i] = symbol;
         }
     }
 
     // NOTE: decl like `x, y: i32`
     if (ArrayLen(var.values) == 0) {
         ASSERT(expectedType);
-        ForEach(symbols, Symbol *) {
-            it->type = expectedType;
-            it->state = SymbolState_Resolved;
+        for (u32 i = 0; i < numLhs; i++) {
+            symbols[i]->type = expectedType;
+            symbols[i]->state = SymbolState_Resolved;
         }
 
         if (expectedType->kind == TypeKind_Function) {
@@ -2078,64 +2131,69 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
                        "If you want an uninitialized function pointer use *%s instead", DescribeType(expectedType));
         }
     } else {
-        if (ArrayLen(var.values) != ArrayLen(var.names)) {
-            // TODO: ensure that this is a function call otherwise report this error
-            ReportError(
-                pkg, ArityMismatchError, var.start, 
-                "The amount of identifiers (%zu) doesn't match the amount of values (%zu)",
-                ArrayLen(var.names), ArrayLen(var.values)
-            );
-
-            For (symbols) {
-                markSymbolInvalid(symbols[i]);
-            }
-            return;
-        }
-
-        // TODO(Brett): check for multi-value call
-
-        if (var.values && var.values[0]->kind == ExprKind_Call) {
-            UNIMPLEMENTED();
-            return;
-        }
-
         CheckerContext exprCtx = { ctx->scope, .desiredType = expectedType };
-        For (var.names) {
-            Type *type = checkExpr(var.values[i], &exprCtx, pkg);
+
+        size_t values = 0;
+        size_t rhsIndex = 0;
+        for (size_t lhsIndex = 0; values < numLhs;) {
+            Expr *expr = var.values[rhsIndex++];
+
+            Type *type = checkExpr(expr, &exprCtx, pkg);
             if (exprCtx.mode == ExprMode_Unresolved) goto unresolved;
             if (exprCtx.mode == ExprMode_Invalid) {
-                markSymbolInvalid(symbols[i]);
+                // This may not best handle users declaring from mixed calls & not calls
+                markSymbolInvalid(symbols[lhsIndex]);
                 continue;
-            };
+            }
+
+            if (type->kind == TypeKind_Tuple) {
+                for (size_t rhsIndex = 0; rhsIndex < type->Tuple.numTypes; rhsIndex++) {
+                    Type *ty = type->Tuple.types[rhsIndex];
+
+                    if (expectedType) {
+                        conversions[lhsIndex] = conversion(ty, expectedType);
+                    }
+
+                    if (expectedType && !coerceTypeSilently(expr, &exprCtx, &ty, expectedType, pkg)) {
+                        ReportError(pkg, TypeMismatchError, expr->start,
+                                    "Cannot convert %s to expected type %s",
+                                    DescribeType(ty), DescribeType(expectedType));
+                        ReportNote(pkg, expr->start,
+                                   "Value comes from the %zu indexed result from call to %s",
+                                   rhsIndex, DescribeExpr(expr));
+                        // TODO: Use the language value comes from the %zu (st|nd|rd|th) result of the call to %s
+                        // -vdka September 2018
+                    }
+
+                    symbols[lhsIndex]->kind = SymbolKind_Variable;
+                    markSymbolResolved(symbols[lhsIndex], ty);
+
+                    lhsIndex += 1;
+                }
+
+                values += type->Tuple.numTypes;
+
+                // ConversionKind_Tuple indicates that the conversions are stored on the receiving value.
+                CheckerInfoForExpr(pkg, expr)->coerce = ConversionKind_Tuple;
+                continue;
+            }
 
             if (exprCtx.mode < ExprMode_Value) {
-                ReportError(pkg, NotAValueError, var.values[i]->start,
-                            "Expected a value but got %s (type %s)", DescribeExpr(var.values[i]), DescribeType(type));
+                ReportError(pkg, NotAValueError, expr->start,
+                            "Expected a value but got %s (type %s)", DescribeExpr(expr), DescribeType(type));
+            } else if (expectedType) {
+                coerceType(expr, &exprCtx, &type, expectedType, pkg);
             }
 
-            if (expectedType && !coerceType(var.values[i], &exprCtx, &type, expectedType, pkg)) {
-                ReportError(pkg, InvalidConversionError, var.values[i]->start,
-                            "Unable to convert type %s to expected type type %s",
-                            DescribeType(type), DescribeType(expectedType));
-                markSymbolInvalid(symbols[i]);
-                return;
-            }
+            symbols[lhsIndex]->kind = SymbolKind_Variable;
+            markSymbolResolved(symbols[lhsIndex], type);
 
-            if (exprCtx.mode == ExprMode_Type) {
-                ReportError(pkg, TypeNotAnExpressionError, var.values[i]->start,
-                            "Type %s is not an expression in this context", DescribeType(type));
-                ReportNote(pkg, var.values[i]->start,
-                           "Type metadata can be retrieved using the typeof or typeid functions");
-                markSymbolInvalid(symbols[i]);
-                continue;
-            }
-
-            symbols[i]->kind = SymbolKind_Variable;
-            markSymbolResolved(symbols[i], type);
+            values += 1;
+            lhsIndex += 1;
         }
     }
 
-    storeInfoVariable(pkg, decl, symbols);
+    storeInfoVariable(pkg, decl, symbols, conversions);
     return;
 
 unresolved:
@@ -2224,59 +2282,101 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
     ForEach(assign.lhs, Expr *) {
         Type *type = checkExpr(it, ctx, pkg);
-        ArrayPush(lhsTypes, type);
-        if (ctx->mode < ExprMode_Addressable && ctx->mode != ExprMode_Invalid) {
-            ReportError(pkg, ValueNotAssignableError, it->start,
-                        "Cannot assign to value %s of type %s", DescribeExpr(it), DescribeType(type));
+        // FIXME: Check for null
+        if (type->kind == TypeKind_Tuple) {
+            for (u32 i = 0; i < type->Tuple.numTypes; i++) {
+                ArrayPush(lhsTypes, type->Tuple.types[i]);
+            }
+        } else {
+            ArrayPush(lhsTypes, type);
+            if (ctx->mode < ExprMode_Addressable && ctx->mode != ExprMode_Invalid) {
+                ReportError(pkg, ValueNotAssignableError, it->start,
+                            "Cannot assign to value %s of type %s", DescribeExpr(it), DescribeType(type));
+            }
         }
-    }
-
-    if (assign.rhs[0]->kind == ExprKind_Call) {
-        // TODO: Handle void calls (empty tuple) (error)
-        // TODO: Handle single returns
-        // TODO: Handle multiple returns
-        UNIMPLEMENTED();
-        return;
     }
 
     Type *prevDesiredType = ctx->desiredType;
-    ForEachWithIndex(assign.rhs, i, Expr *, expr) {
-        if (i >= ArrayLen(lhsTypes)) {
-            break;
+
+    size_t values = 0;
+    size_t numLhs = ArrayLen(assign.lhs);
+    size_t rhsIndex = 0;
+    for (size_t lhsIndex = 0; values < numLhs;) {
+        Expr *expr = assign.rhs[rhsIndex++];
+
+        ctx->desiredType = lhsTypes[lhsIndex];
+        Type *type = checkExpr(expr, ctx, pkg);
+        if (ctx->mode == ExprMode_Invalid) continue;
+        if (ctx->mode == ExprMode_Unresolved) goto unresolved;
+
+        if (type->kind == TypeKind_Tuple) {
+            // Check each matches individually
+            for (size_t rhsIndex = 0; rhsIndex < type->Tuple.numTypes; rhsIndex++) {
+                Type *ty = type->Tuple.types[rhsIndex];
+                Type *target = lhsTypes[lhsIndex];
+
+                // Coerce type is unable to attach coercions to calls. It doesn't work with tuple types. We do it here.
+                //  The special thing about tuples is their conversions are stored on their receiving value. This is
+                //  indicated by setting the tuple expression coerce to ConversionKind_Tuple outside the loop.
+                //  We do this prior to calling coerce type as conversion handles invalid conversions
+                CheckerInfoForExpr(pkg, assign.lhs[lhsIndex])->coerce = conversion(ty, target);
+
+                if (!coerceTypeSilently(expr, ctx, &ty, target, pkg)) {
+                    ReportError(pkg, TypeMismatchError, expr->start,
+                                "Cannot assign %s to value of type %s", DescribeType(ty), DescribeType(lhsTypes[lhsIndex]));
+                    ReportNote(pkg, expr->start,
+                               "Value comes from the %zu indexed result from call to %s", rhsIndex, DescribeExpr(expr));
+                    // TODO: Use the language value comes from the %zu (st|nd|rd|th) result of the call to %s
+                    // -vdka September 2018
+                }
+
+                lhsIndex += 1;
+            }
+
+            values += type->Tuple.numTypes;
+
+            // ConversionKind_Tuple indicates that the conversions are stored on the receiving value.
+            CheckerInfoForExpr(pkg, expr)->coerce = ConversionKind_Tuple;
+            continue;
         }
 
-        ctx->desiredType = lhsTypes[i];
-        Type *type = checkExpr(expr, ctx, pkg);
         if (ctx->mode < ExprMode_Value) {
             ReportError(pkg, NotAValueError, expr->start,
                         "Expected a value but got %s (type %s)", DescribeExpr(expr), DescribeType(type));
+        } else {
+            coerceType(expr, ctx, &type, lhsTypes[lhsIndex], pkg);
         }
-        if (!coerceType(expr, ctx, &type, lhsTypes[i], pkg)) {
-            ReportError(pkg, TypeMismatchError, expr->start,
-                        "Cannot assign %s to value of type %s", DescribeType(type), DescribeType(lhsTypes[i]));
-        }
+
+        values += 1;
+        lhsIndex += 1;
     }
 
     ctx->desiredType = prevDesiredType;
 
-    if (ArrayLen(assign.rhs) != ArrayLen(assign.lhs)) {
+    if (numLhs != values) {
         ReportError(pkg, AssignmentCountMismatchError, stmt->start,
-                    "Left side has %zu values while right side %zu values", ArrayLen(assign.lhs), ArrayLen(assign.rhs));
+                    "Left side has %zu values while right side has %zu values", ArrayLen(assign.lhs), ArrayLen(assign.rhs));
     }
+
+    return;
+
+unresolved:
+    ctx->mode = ExprMode_Unresolved;
+    return;
 }
 
 void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(stmt->kind == StmtKind_Return);
     ASSERT(ctx->desiredType && ctx->desiredType->kind == TypeKind_Tuple);
 
-    size_t nTypes = ArrayLen(ctx->desiredType->Tuple.types);
+    u32 nTypes = ctx->desiredType->Tuple.numTypes;
     size_t nExprs = ArrayLen(stmt->Return.exprs);
     // FIXME: What about returns that are tuples? We need a nice splat helper
 
     if (nExprs != nTypes) {
         ReportError(pkg, WrongNumberOfReturnsError, stmt->start,
                     "Wrong number of return expressions, expected %zu, got %zu",
-                    ArrayLen(ctx->desiredType->Tuple.types), ArrayLen(stmt->Return.exprs));
+                    nTypes, ArrayLen(stmt->Return.exprs));
     }
     for (size_t i = 0; i < MIN(nTypes, nExprs); i++) {
         Expr *expr = stmt->Return.exprs[i];
@@ -2684,14 +2784,14 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
     checkTypeFunction("fn () -> void");
     ASSERT(type->kind == TypeKind_Function);
     ASSERT(info.type == type);
-    ASSERT(ArrayLen(type->Function.params) == 0);
-    ASSERT(ArrayLen(type->Function.results) == 1);
+    ASSERT(type->Function.numParams == 0);
+    ASSERT(type->Function.numResults == 0);
 
     checkTypeFunction("fn (u8, u8, u8, u8) -> (u8, u8, u8, u8)");
     ASSERT(type->kind == TypeKind_Function);
     ASSERT(info.type == type);
-    ASSERT(ArrayLen(type->Function.params) == 4);
-    ASSERT(ArrayLen(type->Function.results) == 4);
+    ASSERT(type->Function.numParams == 4);
+    ASSERT(type->Function.numResults == 4);
 }
 
 void test_checkTypePointer() {
@@ -2773,12 +2873,12 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeStruct("struct {}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(!type->Struct.members);
+    ASSERT(type->Struct.numMembers == 0);
     ASSERT(!pkg.diagnostics.errors);
 
     checkTypeStruct("struct {a: u8}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(type->Struct.members[0]->type == U8Type);
+    ASSERT(type->Struct.members[0].type == U8Type);
     ASSERT(type->Struct.Flags == TypeFlag_None);
     ASSERT(type->Align == 8);
     ASSERT(type->Width == 8);
@@ -2786,9 +2886,9 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeStruct("struct {a: u8; b: u16}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(type->Struct.members[0]->type == U8Type);
-    ASSERT(type->Struct.members[1]->type == U16Type);
-    ASSERT_MSG(type->Struct.members[1]->offset == 16, "Fields should be aligned to at least their size");
+    ASSERT(type->Struct.members[0].type == U8Type);
+    ASSERT(type->Struct.members[1].type == U16Type);
+    ASSERT_MSG(type->Struct.members[1].offset == 16, "Fields should be aligned to at least their size");
     ASSERT(type->Struct.Flags == TypeFlag_None);
     ASSERT(type->Align == 16);
     ASSERT(type->Width == 32);
@@ -2796,17 +2896,17 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 
     checkTypeStruct("struct {a: u8; b: u8; b: u16; c: u32; d: u32}");
     ASSERT(type->kind == TypeKind_Struct);
-    ASSERT(type->Struct.members[0]->type == U8Type);
-    ASSERT(type->Struct.members[1]->type == U8Type);
-    ASSERT(type->Struct.members[2]->type == U16Type);
-    ASSERT(type->Struct.members[3]->type == U32Type);
-    ASSERT(type->Struct.members[4]->type == U32Type);
+    ASSERT(type->Struct.members[0].type == U8Type);
+    ASSERT(type->Struct.members[1].type == U8Type);
+    ASSERT(type->Struct.members[2].type == U16Type);
+    ASSERT(type->Struct.members[3].type == U32Type);
+    ASSERT(type->Struct.members[4].type == U32Type);
 
-    ASSERT_MSG(type->Struct.members[0]->offset == 0, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[1]->offset == 8, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[2]->offset == 16, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[3]->offset == 32, "Fields should be aligned to at least their size");
-    ASSERT_MSG(type->Struct.members[4]->offset == 64, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[0].offset == 0, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[1].offset == 8, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[2].offset == 16, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[3].offset == 32, "Fields should be aligned to at least their size");
+    ASSERT_MSG(type->Struct.members[4].offset == 64, "Fields should be aligned to at least their size");
     ASSERT(type->Struct.Flags == TypeFlag_None);
     ASSERT(type->Align == 32);
     ASSERT(type->Width == 96);
@@ -2960,6 +3060,23 @@ void test_checkConstantCastExpression() {
     ASSERT(type == U8Type);
     ASSERT(IsConstant(&ctx));
     ASSERT(ctx.val.u64 == 42);
+}
+
+void test_callToCVargs() {
+    REINIT_COMPILER();
+    Stmt *stmt;
+    CheckerContext ctx = { pkg.scope };
+    Type *type;
+
+#define checkCall(_CODE) \
+    stmt = resetAndParseReturningLastStmt(_CODE); \
+    RESET_CONTEXT(ctx); \
+    type = checkExprCall((Expr *) stmt, &ctx, &pkg)
+
+    checkCall("#foreign libc\n"
+              "printf :: fn(rawptr, #cvargs ..any) -> void;"
+              "printf(\"%d %d %d\", 1, 2, 3);");
+    ASSERT(!pkg.diagnostics.errors);
 }
 
 void test_checkExprSelector() {
@@ -3224,7 +3341,6 @@ void test_checkStmtReturn() {
     REINIT_COMPILER();
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
-    DynamicArray(Type *) types = NULL;
 
 #define checkReturn(_CODE) \
 stmt = resetAndParseReturningLastStmt(_CODE); \
@@ -3232,15 +3348,15 @@ checkStmtReturn(stmt, &ctx, &pkg); \
 RESET_CONTEXT(ctx); \
 ArrayClear(types)
 
-    ArrayPush(types, I64Type);
-    ctx.desiredType = NewTypeTuple(TypeFlag_None, types);
+    Type *types[3] = {I64Type, I64Type, F64Type};
+    Type type = {TypeKind_Tuple, .Tuple = {TypeFlag_None, types, 1}};
+
+    ctx.desiredType = &type;
     checkReturn("return 42");
     ASSERT(!pkg.diagnostics.errors);
 
-    ArrayPush(types, I64Type);
-    ArrayPush(types, I64Type);
-    ArrayPush(types, F64Type);
-    ctx.desiredType = NewTypeTuple(TypeFlag_None, types);
+    type.Tuple.numTypes = 3;
+    ctx.desiredType = &type;
     checkReturn("return 1, 2, 6.28");
     ASSERT(!pkg.diagnostics.errors);
 }
