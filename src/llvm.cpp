@@ -98,6 +98,12 @@ struct Context {
     std::vector<llvm::BasicBlock *> deferStack;
 };
 
+typedef struct BackendUserdataAndDebug BackendUserdataAndDebug;
+struct BackendUserdataAndDebug {
+    llvm::Type *type;
+    llvm::DIType *debugType;
+};
+
 typedef struct BackendStructUserdata BackendStructUserdata;
 struct BackendStructUserdata {
     llvm::StructType *type;
@@ -134,6 +140,10 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
                 ASSERT(false);
             }
         } break;
+
+        case TypeKind_Enum: {
+            return llvm::IntegerType::get(ctx->m->getContext(), type->Width);
+        };
 
         case TypeKind_Array: {
             return llvm::ArrayType::get(canonicalize(ctx, type->Array.elementType), type->Array.length);
@@ -259,6 +269,35 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
 
         auto pTypes = ctx->d.builder->getOrCreateTypeArray(parameterTypes);
         return ctx->d.builder->createSubroutineType(pTypes);
+    }
+
+    if (type->kind == TypeKind_Enum) {
+        if (type->Symbol && type->Symbol->backendUserdata) {
+            return ((BackendUserdataAndDebug *) type->Symbol->backendUserdata)->debugType;
+        }
+
+        std::vector<llvm::Metadata *> enumerations;
+        For(type->Enum.cases) {
+            EnumField it = type->Enum.cases[i];
+            auto enumeration = ctx->d.builder->createEnumerator(
+                it.name,
+                it.val
+            );
+
+            enumerations.push_back(enumeration);
+        }
+
+        auto elements = ctx->d.builder->getOrCreateArray(enumerations);
+        ctx->d.builder->createEnumerationType(
+            ctx->d.scope,
+            type->Symbol->name,
+            ctx->d.file,
+            0,
+            type->Width,
+            type->Align,
+            elements,
+            debugCanonicalize(ctx, type->Enum.backingType)
+        );
     }
 
     if (type->kind == TypeKind_Struct) {
@@ -579,6 +618,13 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
     return ctx->b.CreateCall(irFunc, args);
 }
 
+llvm::Value *emitExprCast(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_Cast);
+    CheckerInfo_BasicExpr info = ctx->checkerInfo[expr->id].BasicExpr;
+    llvm::Value *value = emitExpr(ctx, expr->Cast.expr);
+    return ctx->b.CreateBitCast(value, canonicalize(ctx, info.type));
+}
+
 llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_LitCompound);
     CheckerInfo_BasicExpr info = ctx->checkerInfo[expr->id].BasicExpr;
@@ -659,6 +705,15 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
 
             if (ctx->returnAddress) return addr;
             return ctx->b.CreateAlignedLoad(addr, BytesFromBits(info.value.Struct.index));
+        }
+
+        case SelectorKind_Enum: {
+            llvm::Type *type = canonicalize(ctx, info.type);
+            if (ctx->returnAddress) {
+                UNIMPLEMENTED();
+            }
+            
+            return llvm::ConstantInt::get(type, info.value.Enum.value);
         }
 
         case SelectorKind_Import: {
@@ -742,6 +797,11 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             break;
         }
 
+        case ExprKind_Paren: {
+            value = emitExpr(ctx, expr->Paren.expr);
+            break;
+        }
+
         case ExprKind_LitCompound: {
             value = emitExprLitCompound(ctx, expr);
             break;
@@ -765,6 +825,10 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
 
         case ExprKind_Call:
             value = emitExprCall(ctx, expr);
+            break;
+
+        case ExprKind_Cast:
+            value = emitExprCast(ctx, expr);
             break;
     }
 
@@ -924,7 +988,11 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
 
     std::vector<llvm::Value *> indicies;
 
+    bool prevReturn = ctx->returnAddress;
+    ctx->returnAddress = false;
     llvm::Value *index = emitExpr(ctx, expr->Subscript.index);
+    ctx->returnAddress = prevReturn;
+
     Type *indexType = TypeFromCheckerInfo(indexInfo);
 
     // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
@@ -959,7 +1027,10 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
     } break;
 
     case TypeKind_Pointer: {
+        bool previousReturnAddress = ctx->returnAddress;
+        ctx->returnAddress = false;
         aggregate = emitExpr(ctx, expr->Subscript.expr);
+        ctx->returnAddress = previousReturnAddress;
         indicies.push_back(index);
         resultType = TypeFromCheckerInfo(recvInfo)->Pointer.pointeeType;
     } break;
@@ -973,7 +1044,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
     if (ctx->returnAddress) {
         return val;
     }
-    
+
     return ctx->b.CreateAlignedLoad(val, BytesFromBits(resultType->Align));
 }
 
@@ -1134,6 +1205,63 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     return fn;
 }
 
+llvm::Type *emitExprTypeEnum(Context *ctx, Expr *expr) {
+    ASSERT(expr->kind == ExprKind_TypeEnum);
+
+    Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
+
+    if (type->Symbol->backendUserdata && !FlagDebug) {
+        BackendUserdataAndDebug *userdata = (BackendUserdataAndDebug *)type->Symbol->backendUserdata;
+        return userdata->type;
+    }
+
+    Type_Enum enm = type->Enum;
+
+    llvm::Type *ty;
+    if (type->Symbol->backendUserdata) {
+        ty = ((BackendUserdataAndDebug *)type->Symbol->backendUserdata)->type;
+    } else {
+        ty = canonicalize(ctx, enm.backingType);
+    }
+
+    BackendUserdataAndDebug *userdata;
+    if (type->Symbol->backendUserdata) {
+        userdata = (BackendUserdataAndDebug *) type->Symbol->backendUserdata;
+        ASSERT_MSG(!userdata->debugType, "debugType is only set here, which means this run twice");
+    } else {
+        userdata = (BackendUserdataAndDebug *) ArenaAlloc(&ctx->arena, sizeof(*userdata));
+        userdata->type = ty;
+        type->Symbol->backendUserdata = userdata;
+    }
+
+    if (FlagDebug) {
+        llvm::DIType *dbTy = debugCanonicalize(ctx, enm.backingType);
+        std::vector<llvm::Metadata *> enumerations;
+
+        For (enm.cases) {
+            EnumField cse = enm.cases[i];
+            llvm::DIEnumerator *e = ctx->d.builder->createEnumerator(cse.name, cse.val);
+            enumerations.push_back(e);
+        }
+
+        auto elements = ctx->d.builder->getOrCreateArray(enumerations);
+        dbTy = ctx->d.builder->createEnumerationType(
+            ctx->d.scope,
+            type->Symbol->name,
+            ctx->d.file,
+            expr->start.line,
+            type->Width,
+            type->Align,
+            elements,
+            dbTy
+        );
+
+        userdata->debugType = dbTy;
+    }
+
+    return ty;
+}
+
 llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
     ASSERT(expr->kind == ExprKind_TypeStruct);
 
@@ -1153,22 +1281,25 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         Type *fieldType = type->Struct.members[index].type;
 
         llvm::Type *ty = canonicalize(ctx, fieldType);
-        llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
+        llvm::DIType *dty = NULL;
+        if (FlagDebug)
+            dty = debugCanonicalize(ctx, fieldType);
+
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
             if (FlagDebug) {
-            llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
-                ctx->d.scope,
-                item.names[j],
-                ctx->d.file,
-                item.start.line,
-                fieldType->Width,
-                fieldType->Align,
-                type->Struct.members[index].offset,
-                llvm::DINode::DIFlags::FlagZero,
-                dty
-            );
+                llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
+                    ctx->d.scope,
+                    item.names[j],
+                    ctx->d.file,
+                    item.start.line,
+                    fieldType->Width,
+                    fieldType->Align,
+                    type->Struct.members[index]->offset,
+                    llvm::DINode::DIFlags::FlagZero,
+                    dty
+                );
 
-            debugMembers.push_back(member);
+                debugMembers.push_back(member);
             }
             elementTypes.push_back(ty);
 
@@ -1178,23 +1309,9 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 
     llvm::StructType *ty;
     if (type->Symbol->backendUserdata) {
-        ty = (llvm::StructType *) type->Symbol->backendUserdata;
+        ty = ((BackendStructUserdata *) type->Symbol->backendUserdata)->type;
     } else {
         ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
-    }
-    llvm::DICompositeType *debugType;
-    if (FlagDebug) {
-        debugType = ctx->d.builder->createStructType(
-        ctx->d.scope,
-        type->Symbol->name,
-        ctx->d.file,
-        type->Symbol->decl->start.line,
-        type->Width,
-        type->Align,
-        llvm::DINode::DIFlags::FlagZero,
-        NULL, // DerivedFrom
-        ctx->d.builder->getOrCreateArray(debugMembers)
-    );
     }
 
     if (type->Symbol) {
@@ -1205,11 +1322,23 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
             userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
             ASSERT_MSG(!userdata->debugType, "debugType is only set here, which means this run twice");
         } else {
-            userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
+            userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(*userdata));
             userdata->type = ty;
             type->Symbol->backendUserdata = userdata;
         }
+      
         if (FlagDebug) {
+            llvm::DICompositeType *debugType = ctx->d.builder->createStructType(
+                ctx->d.scope,
+                type->Symbol->name,
+                ctx->d.file,
+                type->Symbol->decl->start.line,
+                type->Width,
+                type->Align,
+                llvm::DINode::DIFlags::FlagZero,
+                NULL, // DerivedFrom
+                ctx->d.builder->getOrCreateArray(debugMembers)
+            );
             userdata->debugType = debugType;
         }
     }
@@ -1258,6 +1387,11 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
     switch (decl->Constant.values[0]->kind) {
         case ExprKind_TypeStruct: {
             emitExprTypeStruct(ctx, decl->Constant.values[0]);
+            break;
+        }
+
+        case ExprKind_TypeEnum: {
+            emitExprTypeEnum(ctx, decl->Constant.values[0]);
             break;
         }
 
@@ -1576,7 +1710,7 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
         ctx->b.CreateBr(cond);
         ctx->b.SetInsertPoint(cond);
 
-        llvm::Value *condVal = emitExpr(ctx, fore.cond);
+        llvm::Value *condVal = emitExpr(ctx, fore.cond, canonicalize(ctx, BoolType));
         condVal = ctx->b.CreateTruncOrBitCast(condVal, llvm::IntegerType::get(ctx->m->getContext(), 1));
         ctx->b.CreateCondBr(condVal, body, post);
     } else {
@@ -1816,11 +1950,10 @@ void setupTargetInfo() {
     static b32 init = false;
     if (init) return;
 
-    // TODO: Initialize only for the targets we are outputting.
     LLVMInitializeX86Target();
     LLVMInitializeX86TargetMC();
-    LLVMInitializeX86AsmParser();
     LLVMInitializeX86TargetInfo();
+    LLVMInitializeX86AsmParser();
     LLVMInitializeX86AsmPrinter();
 
     init = true;
@@ -2025,5 +2158,32 @@ void printIR(llvm::Type *value) {
     value->print(llvm::outs());
     puts("\n");
 }
+
+// MARK: Hacks for LLVM and libcurses. Sadly, LLVM uses libncurses to try to see
+// if the terminal supports color. We're going to stub all of the ncurses functions
+// and tell LLVM that color isn't supported
+extern "C" {
+    int setupterm(char *term, int filedes, int *errret) {
+        return 1; // Tell LLVM that we've failed and it'll disable colors
+    }
+
+    struct term *set_curterm(struct term *termp) {
+        ASSERT(false);
+        return NULL;
+    }
+
+    int del_curterm(struct term *termp){
+        ASSERT(false);
+        return 1;
+    }
+
+    int tigetnum(char *capname){
+        ASSERT(false);
+        return 0;
+    }
+}
+
+
+
 
 #pragma clang diagnostic pop

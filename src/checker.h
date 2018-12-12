@@ -20,7 +20,7 @@ enum Enum_CheckerInfoKind {
 STATIC_ASSERT(_StmtKind_End <= UINT8_MAX, "enum values overflow storage type");
 
 typedef u8 Conversion;
-#define ConversionKind_Mask 0x0F // Lower 3 bits denote the class
+#define ConversionKind_Mask 0x0F // Lower 4 bits denote the class
 #define ConversionKind_None    0
 #define ConversionKind_Same    1
 #define ConversionKind_FtoI    2
@@ -29,11 +29,13 @@ typedef u8 Conversion;
 #define ConversionKind_ItoP    5
 #define ConversionKind_Bool    6
 #define ConversionKind_Tuple   7 // Information on the conversion can be found on their receiver.
+#define ConversionKind_Enum    8
 #define ConversionKind_Any    15
 
 #define ConversionFlag_Extend 0x10 // 0001
 #define ConversionFlag_Signed 0x20 // 0010
 #define ConversionFlag_Float  0x40 // 0100 (Source type is a Float)
+#define ConversionFlag_Enum   0x80 // 1000
 
 typedef struct CheckerInfo_Constant CheckerInfo_Constant;
 struct CheckerInfo_Constant {
@@ -60,12 +62,18 @@ struct CheckerInfo_Ident {
 typedef u8 SelectorKind;
 #define SelectorKind_None   0x0
 #define SelectorKind_Struct 0x1
-#define SelectorKind_Import 0x2
+#define SelectorKind_Enum   0x2
+#define SelectorKind_Import 0x3
 
 typedef struct Selector_Struct Selector_Struct;
 struct Selector_Struct {
     u32 index;  // The member index in the structure
     u32 offset; // The member offset in the structure (in bits)
+};
+
+typedef struct Selector_Enum Selector_Enum;
+struct Selector_Enum {
+    u64 value;
 };
 
 typedef struct Selector_Import Selector_Import;
@@ -77,6 +85,7 @@ struct Selector_Import {
 typedef union SelectorValue SelectorValue;
 union SelectorValue {
     Selector_Struct Struct;
+    Selector_Enum Enum;
     Selector_Import Import;
 };
 
@@ -154,6 +163,7 @@ struct CheckerInfo {
 extern "C" {
 #endif
 Symbol *Lookup(Scope *scope, const char *name);
+Symbol *LookupNoRecurse(Scope *scope, const char *name);
 Type *TypeFromCheckerInfo(CheckerInfo info);
 b32 IsInteger(Type *type);
 b32 IsSigned(Type *type);

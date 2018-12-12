@@ -106,6 +106,12 @@ struct TypeField {
     u32 offset;
 };
 
+typedef struct EnumField EnumField;
+struct EnumField {
+    const char *name;
+    u64 val;
+};
+
 struct Type_Struct {
     TypeFlag Flags;
     TypeField *members;
@@ -122,6 +128,8 @@ struct Type_Union {
 
 struct Type_Enum {
     TypeFlag Flags;
+    Type *backingType;
+    DynamicArray(EnumField) cases;
 };
 
 struct Type_Tuple {
@@ -150,6 +158,7 @@ struct Type {
         Type_Pointer Pointer;
         Type_Array Array;
         Type_Slice Slice;
+        Type_Enum Enum;
         Type_Struct Struct;
         Type_Union Union;
         Type_Function Function;
@@ -161,6 +170,12 @@ typedef struct StructFieldLookupResult StructFieldLookupResult;
 struct StructFieldLookupResult {
     u32 index;
     TypeField *field;
+};
+
+typedef struct EnumFieldLookupResult EnumFieldLookupResult;
+struct EnumFieldLookupResult {
+    u32 index;
+    EnumField *field;
 };
 
 #ifdef __cplusplus

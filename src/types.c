@@ -115,7 +115,6 @@ b32 TypesIdentical(Type *type, Type *target) {
 }
 
 StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name) {
-
     u32 index = 0;
     TypeField *field = NULL;
     for (u32 i = 0; i < type.numMembers; i++) {
@@ -128,6 +127,22 @@ StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name) {
     
     return (StructFieldLookupResult){index, field};
 }
+
+EnumFieldLookupResult EnumFieldLookup(Type_Enum type, const char *name) {
+    u32 index = 0;
+    EnumField *field = NULL;
+    For(type.cases) {
+        EnumField *it = &type.cases[i];
+        if (it->name == name) {
+            index = (u32) i;
+            field = it;
+            break;
+        }
+    }
+    
+    return (EnumFieldLookupResult){index, field};
+}
+
 
 #if TEST
 void test_SmallestIntTypeForValue() {
@@ -268,6 +283,16 @@ Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(
     newIntern->type = type;
     newIntern->next = intern;
     MapSet(&internFunctionTypes, (void*) key, newIntern);
+    return type;
+}
+
+Type *NewTypeEnum(TypeFlag flags, Type *backingType, DynamicArray(EnumField) items) {
+    Type *type = AllocType(TypeKind_Enum);
+    type->Width = backingType->Width;
+    type->Align = backingType->Align;
+    type->Flags = flags;
+    type->Enum.cases = items;
+    type->Enum.backingType = backingType;
     return type;
 }
 
@@ -441,7 +466,17 @@ const char *DescribeType(Type *type) {
         return type->Symbol->name;
     }
 
-    return DescribeTypeKind(type->kind);
+    switch (type->kind) {
+        case TypeKind_Pointer: {
+            String desc = NULL;
+            const char *pointeeType = DescribeType(type->Pointer.pointeeType);
+            ArrayPrintf(desc, "*%s", pointeeType);
+            return (char *)desc;
+        }
+
+        default:
+            return DescribeTypeKind(type->kind);
+    }
 }
 
 #if TEST

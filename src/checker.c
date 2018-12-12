@@ -167,7 +167,7 @@ CheckerInfo *CheckerInfoForDecl(Package *pkg, Decl *decl) {
 }
 
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
-    Symbol *old = Lookup(scope, name);
+    Symbol *old = LookupNoRecurse(scope, name);
     if (old) {
         ReportError(pkg, RedefinitionError, decl->start, "Duplicate definition of symbol %s", name);
         ReportNote(pkg, old->decl->start, "Previous definition of %s", name);
@@ -223,6 +223,10 @@ b32 IsFloat(Type *type) {
     return type->kind == TypeKind_Float;
 }
 
+b32 isEnum(Type *type) {
+    return type->kind == TypeKind_Enum;
+}
+
 b32 isFunction(Type *type) {
     return type->kind == TypeKind_Function;
 }
@@ -265,10 +269,6 @@ b32 isArray(Type *type) {
 
 b32 isSlice(Type *type) {
     return type->kind == TypeKind_Slice;
-}
-
-b32 isEnum(Type *type) {
-    return type->kind == TypeKind_Enum;
 }
 
 b32 isEnumFlags(Type *type) {
@@ -364,6 +364,10 @@ b32 canCoerce(Type *type, Type *target, CheckerContext *ctx) {
 
         // The two integer types have the same signedness. The target must be the same or a larger size.
         return type->Width <= target->Width;
+    }
+
+    if (isEnum(type) && IsInteger(target)) {
+        return canCoerce(type->Enum.backingType, target, ctx);
     }
 
     if (IsFloat(type)) {
@@ -471,6 +475,10 @@ Conversion conversion(Type *type, Type *target) {
         result |= ConversionKind_ItoF;
         if (IsSigned(type)) result |= ConversionFlag_Signed;
         return result;
+    }
+
+    if (isEnum(type) && IsInteger(target)) {
+        return ConversionKind_Enum;
     }
 
     if (IsFloat(type) && IsInteger(target)) {
@@ -666,6 +674,10 @@ Symbol *Lookup(Scope *scope, const char *name) {
     } while (scope);
 
     return NULL;
+}
+
+Symbol *LookupNoRecurse(Scope *scope, const char *name) {
+    return MapGet(&scope->members, name);
 }
 
 Type *TypeFromCheckerInfo(CheckerInfo info) {
@@ -876,6 +888,87 @@ error:
     return InvalidType;
 }
 
+Type *checkExprTypeEnum(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_TypeEnum);
+    Expr_TypeEnum enm = expr->TypeEnum;
+
+    b32 hasMinMax = false;
+    u64 maxValue;
+
+    Type *backingType = NULL;
+    if (enm.explicitType) {
+        Type *type = checkExpr(enm.explicitType, ctx, pkg);
+        if (ctx->mode == ExprMode_Unresolved) goto unresolved;
+
+        if (ctx->mode != ExprMode_Invalid) {
+            expectType(pkg, type, ctx, enm.explicitType->start);
+            if (IsInteger(type)) {
+                // TODO: flags
+                maxValue = MaxValueForIntOrPointerType(type);
+                hasMinMax = true;
+                backingType = type;
+            } else {
+                ReportError(pkg, TypeMismatchError, enm.explicitType->start,
+                            "Enum backing type must be an integer. Got: %s", DescribeType(type));
+            }
+        }
+    }
+
+    DynamicArray(EnumField) fields = NULL;
+    ArrayFit(fields, ArrayLen(enm.items));
+
+    u64 currentValue = 0;
+    u64 largestValue = 0;
+
+    For(enm.items) {
+        EnumItem item = enm.items[i];
+
+        if (item.init) {
+            CheckerContext itemCtx = {.scope = ctx->scope, .desiredType = backingType};
+            Type *type = checkExpr(item.init, &itemCtx, pkg);
+            if (itemCtx.mode == ExprMode_Unresolved) goto unresolved;
+
+            if (!IsConstant(&itemCtx)) {
+                ReportError(pkg, TODOError, item.init->start,
+                    "Enum cases must be a constant value");
+                continue;
+            }
+
+            if (backingType && !coerceType(item.init, ctx, &type, backingType, pkg)) {
+                continue;
+            }
+
+            u64 val = itemCtx.val.u64;
+            currentValue = val;
+            largestValue = MAX(largestValue, val);
+        }
+
+        if (hasMinMax && currentValue > maxValue) {
+            ReportError(pkg, IntOverflowError, item.init->start,
+                        "Value for enum case exceeds the max value for the enum backing type (%s)", 
+                        DescribeType(backingType));
+            ReportNote(pkg, item.init->start, 
+                       "You can force the overflow by explicitly casting the value '%s(%s)",
+                       DescribeType(backingType), DescribeExpr(item.init));
+            continue;
+        }
+
+        ArrayPush(fields, (EnumField){.name = item.name, .val = currentValue});
+        currentValue++;
+    }
+
+    backingType = backingType ? backingType : SmallestIntTypeForPositiveValue(largestValue);
+    Type *type = NewTypeEnum(TypeFlag_None, backingType, fields);
+    storeInfoBasicExpr(pkg, expr, type, ctx);
+    ctx->mode = ExprMode_Type;
+    return type;
+
+unresolved:
+    if (fields) ArrayFree(fields);
+    ctx->mode = ExprMode_Unresolved;
+    return NULL;
+}
+
 Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeFunction);
     Expr_TypeFunction func = expr->TypeFunction;
@@ -886,7 +979,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     DynamicArray(Type *) params = NULL;
     ArrayFit(params, ArrayLen(func.params));
 
-    CheckerContext paramCtx = { pushScope(pkg, ctx->scope) };
+    CheckerContext paramCtx = { .scope = pushScope(pkg, ctx->scope) };
     For (func.params) {
         Type *type = checkExpr(func.params[i]->value, &paramCtx, pkg);
         if (paramCtx.mode == ExprMode_Invalid) goto error;
@@ -1010,6 +1103,8 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     } else {
         bodyCtx.desiredType = NewTypeTupleFromFunctionResults(TypeFlag_None, type->Function);
     }
+
+    CheckerContext bodyCtx = { .scope = bodyScope, .desiredType = tuple };
 
     size_t len = ArrayLen(func.body->stmts);
     for (size_t i = 0; i < len; i++) {
@@ -1626,6 +1721,25 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
         }
 
+        case TypeKind_Enum: {
+            if (ctx->mode == ExprMode_Type) {
+                EnumFieldLookupResult result = EnumFieldLookup(base->Enum, expr->Selector.name);
+                if (!result.field) {
+                    ReportError(pkg, TODOError, expr->Selector.start, "Enum %s has no member named %s",
+                        DescribeType(base), expr->Selector.name);
+                    goto error;
+                }
+
+                ctx->val.u64 = result.field->val;
+                SelectorValue val = {.Enum.value = result.field->val};
+                storeInfoSelector(pkg, expr, base, SelectorKind_Enum, val, ctx);
+                type = base;
+                ctx->mode = ExprMode_Addressable;
+                ctx->flags |= CheckerContextFlag_Constant;
+                break;
+            }
+        } 
+
         TypeKind_File: {
             Symbol *file = pkg->checkerInfo[expr->Selector.expr->id].Ident.symbol;
             Package *import = (Package *) file->backendUserdata;
@@ -1805,6 +1919,9 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_TypeEnum:
+            type = checkExprTypeEnum(expr, ctx, pkg);
+            break;
+
         case ExprKind_TypeUnion:
         case ExprKind_TypePolymorphic:
             UNIMPLEMENTED();
@@ -1918,8 +2035,12 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
             break;
         }
 
-        case ExprKind_TypeUnion:
         case ExprKind_TypeEnum: {
+            symbol->state = SymbolState_Resolving;
+            symbol->kind = SymbolKind_Type;
+        } break;
+
+        case ExprKind_TypeUnion: {
             UNIMPLEMENTED();
         } break;
 
@@ -2452,7 +2573,7 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     Type *switchType = BoolType;
     if (stmt->Switch.match) {
         switchType = checkExpr(stmt->Switch.match, &switchCtx, pkg);
-        if (!isNumericOrPointer(switchType) && !isBoolean(switchType)) {
+        if (!isNumericOrPointer(switchType) && !isBoolean(switchType) && !isEnum(switchType)) {
             ReportError(pkg, CannotSwitchError, stmt->Switch.match->start,
                         "Cannot switch on value of type %s", DescribeType(switchType));
         }
@@ -3276,7 +3397,4 @@ info = GetStmtInfo(&pkg, stmt)->Switch
 
 #undef pkg
 #endif
-
-
-
 

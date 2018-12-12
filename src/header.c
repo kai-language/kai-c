@@ -11,6 +11,9 @@ void cgenType(String *buffer, const char * name, Type *type) {
 
     switch (type->kind) {
     case TypeKind_Int:
+        if (type->Width == 1)
+            return cgenType(buffer, name, I8Type);
+
         ArrayPrintf(*buffer, "Kai%s%d", type->Flags & TypeFlag_Signed ? "I" : "U", type->Width);
         break;
 
@@ -19,10 +22,19 @@ void cgenType(String *buffer, const char * name, Type *type) {
         break;
 
     case TypeKind_Pointer: {
-        String pointee = NULL;
-        cgenType(&pointee, NULL, type->Pointer.pointeeType);
-        ArrayPrintf(*buffer, "%s*", pointee);
-        ArrayFree(pointee);
+        if (type == RawptrType) {
+            ArrayPrintf(*buffer, "KaiRawptr");
+        } else {
+            String pointee = NULL;
+            cgenType(&pointee, NULL, type->Pointer.pointeeType);
+            ArrayPrintf(*buffer, "%s*", pointee);
+            ArrayFree(pointee);
+        }
+    } break;
+
+    case TypeKind_Enum: {
+        cgenType(buffer, name, type->Enum.backingType);
+        return;
     } break;
 
     case TypeKind_Struct: {
@@ -82,6 +94,19 @@ void cgenDecl(HeaderContext *ctx, DynamicArray(Expr_Ident *) names, Type *type, 
             cgenFuncPrototype(&ctx->functions, it->name, type);
             break;
 
+        case TypeKind_Enum: {
+            For(type->Enum.cases) {
+                struct EnumField field = type->Enum.cases[i];
+                ArrayPrintf(
+                    ctx->primitiveDecls,
+                    "#define %s_%s %lu\n",
+                    type->Symbol->name,
+                    field.name,
+                    field.val
+                );
+            }
+        } break;
+
         case TypeKind_Struct: {
             if (type->Symbol->backendUserdata != HEAD_GENERATED) {
                 ArrayPrintf(ctx->primitiveDecls, "typedef ");
@@ -97,7 +122,7 @@ void cgenDecl(HeaderContext *ctx, DynamicArray(Expr_Ident *) names, Type *type, 
                 cgenType(&ctx->complexDecls, it.name, it.type);
                 ArrayPrintf(ctx->complexDecls, ";\n");
             }
-            ArrayPrintf(ctx->complexDecls, "};\n");
+            ArrayPrintf(ctx->complexDecls, "};\n\n");
         } break;
 
         default: {
@@ -127,7 +152,7 @@ void cgenStmt(HeaderContext *ctx, CheckerInfo *info, Stmt *stmt) {
     }
 }
 
-const char *headerPreface = "#ifndef KAI_%s_H\n#define KAI_%s_H\n\n#ifndef KAI_TYPES\n#define KAI_TYPES\n#include <inttypes.h>\n\ntypedef int8_t  KaiI8;\ntypedef int16_t KaiI16;\ntypedef int32_t KaiI32;\ntypedef int64_t KaiI64;\n\ntypedef uint8_t  KaiU8;\ntypedef uint16_t KaiU16;\ntypedef uint32_t KaiU32;\ntypedef uint64_t KaiU64;\n\ntypedef float  KaiF32;\ntypedef double KaiF64;\n#endif\n";
+const char *headerPreface = "#ifndef KAI_%s_H\n#define KAI_%s_H\n\n#ifndef KAI_TYPES\n#define KAI_TYPES\n#include <inttypes.h>\n\ntypedef int8_t  KaiI8;\ntypedef int16_t KaiI16;\ntypedef int32_t KaiI32;\ntypedef int64_t KaiI64;\n\ntypedef uint8_t  KaiU8;\ntypedef uint16_t KaiU16;\ntypedef uint32_t KaiU32;\ntypedef uint64_t KaiU64;\n\ntypedef float  KaiF32;\ntypedef double KaiF64;\n\ntypedef void * KaiRawptr;\n#endif\n";
 
 void CodegenCHeader(Package *pkg) {
     char buff[MAX_PATH];
