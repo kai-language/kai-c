@@ -30,6 +30,10 @@ const char *internSemicolon;
 const char *internUnderscore;
 const char *internIn;
 
+const char *internRaw;
+const char *internLen;
+const char *internCap;
+
 // Directive names
 const char *internLine;
 const char *internFile;
@@ -83,6 +87,10 @@ void InitKeywords() {
 
     internUnderscore = StrIntern("_");
     internIn = StrIntern("in");
+
+    internRaw = StrIntern("raw");
+    internLen = StrIntern("len");
+    internCap = StrIntern("cap");
 
     internLine = StrIntern("line");
     internFile = StrIntern("file");

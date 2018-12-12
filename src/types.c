@@ -1,7 +1,8 @@
 
 #include "types.h"
 
-TargetMetrics *TargetTypeMetrics = NULL;
+// Metrics (width & alignment) of pointers on the target platform
+TargetPointerMetrics *TargetPointer = NULL;
 
 Type *InvalidType;
 Type *FileType;
@@ -251,8 +252,8 @@ Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(
         }
     }
     Type *type = AllocType(TypeKind_Function);
-    type->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-    type->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
+    type->Width = TargetPointer->Width;
+    type->Align = TargetPointer->Align;
     type->Flags = flags;
 
     Type **p = Alloc(DefaultAllocator, numParams * sizeof *p);
@@ -342,19 +343,19 @@ void InitBuiltins() {
 
     switch (TargetOs) {
         case Os_Linux:
-            TargetTypeMetrics = Os_Linux_ArchSupport[TargetArch];
+            TargetPointer = Os_Linux_ArchSupport[TargetArch];
             break;
         case Os_Darwin:
-            TargetTypeMetrics = Os_Darwin_ArchSupport[TargetArch];
+            TargetPointer = Os_Darwin_ArchSupport[TargetArch];
             break;
         case Os_Windows:
-            TargetTypeMetrics = Os_Windows_ArchSupport[TargetArch];
+            TargetPointer = Os_Windows_ArchSupport[TargetArch];
             break;
 
         default:
             break;
     }
-    if (!TargetTypeMetrics) {
+    if (!TargetPointer) {
         printf("Unsupported os & arch combination: %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
         exit(1);
     }
@@ -406,7 +407,7 @@ void InitBuiltins() {
 
     TYPE(StringType, "string", Struct, 128, TypeFlag_None);
 
-    switch (TargetTypeMetrics[TargetMetrics_Pointer].Width) {
+    switch (TargetPointer->Width) {
         case 32:
             TYPEALIAS(IntptrType,   "intptr", I32Type);
             TYPEALIAS(UintptrType, "uintptr", U32Type);
@@ -425,10 +426,10 @@ void InitBuiltins() {
 
     RawptrType->Pointer.pointeeType = U8Type;
 
-    AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
-    AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;
+    AnyType->Align = TargetPointer->Align;
+    AnyType->Width = TargetPointer->Width * 2;
 
-    RawptrType->Align = RawptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    RawptrType->Align = RawptrType->Width = TargetPointer->Width;
 
 #undef TYPE
 }

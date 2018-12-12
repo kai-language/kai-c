@@ -1,5 +1,5 @@
 
-extern struct TargetMetrics *TargetTypeMetrics;
+extern struct TargetPointerMetrics *TargetPointer;
 
 extern Type *InvalidType;
 extern Type *FileType;

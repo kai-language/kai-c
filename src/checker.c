@@ -223,6 +223,10 @@ b32 IsFloat(Type *type) {
     return type->kind == TypeKind_Float;
 }
 
+b32 IsPointer(Type *type) {
+    return (type->kind == TypeKind_Pointer);
+}
+
 b32 isFunction(Type *type) {
     return type->kind == TypeKind_Function;
 }
@@ -1626,6 +1630,31 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
         }
 
+        case TypeKind_Slice: {
+            SelectorValue val;
+            if (expr->Selector.name == internRaw) {
+                type = NewTypePointer(TypeFlag_None, base->Slice.elementType);
+                val.Struct.index = 0;
+                val.Struct.offset = TargetPointer->Width;
+            } else if (expr->Selector.name == internLen) {
+                type = U64Type;
+                val.Struct.index = 1;
+                val.Struct.offset = TargetPointer->Width * 2;
+            } else if (expr->Selector.name == internCap) {
+                type = U64Type;
+                val.Struct.index = 2;
+                val.Struct.offset = TargetPointer->Width * 3;
+            } else {
+                ReportError(pkg, TODOError, expr->Selector.start, "Slice %s has no member %s",
+                            DescribeExpr(expr->Selector.expr), expr->Selector.name);
+                goto error;
+            }
+            storeInfoSelector(pkg, expr, type, SelectorKind_Slice, val, ctx);
+            ctx->mode = ExprMode_Addressable;
+            ctx->flags &= ~CheckerContextFlag_Constant;
+            break;
+        }
+
         TypeKind_File: {
             Symbol *file = pkg->checkerInfo[expr->Selector.expr->id].Ident.symbol;
             Package *import = (Package *) file->backendUserdata;
@@ -1664,7 +1693,8 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
         }
 
         default: {
-            ReportError(pkg, TODOError, expr->start, "%s has no member '%s'", DescribeExpr(expr->Selector.expr), expr->Selector.name);
+            ReportError(pkg, TODOError, expr->start, "%s (type %s) has no member '%s'",
+                        DescribeExpr(expr->Selector.expr), DescribeType(base), expr->Selector.name);
             goto error;
         }
     }

@@ -32,6 +32,8 @@
 		5D41B52C20CE32E8005E9A8E /* gen_xcode_tests.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = gen_xcode_tests.cpp; sourceTree = "<group>"; };
 		5D41B53420CE393F005E9A8E /* kai-xctests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "kai-xctests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D41B53820CE393F005E9A8E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		5D50634C21BF57AF0054B90E /* ast_descriptions.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ast_descriptions.c; path = src/ast_descriptions.c; sourceTree = "<group>"; };
+		5D50634E21C08B920054B90E /* targets.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = targets.h; path = src/targets.h; sourceTree = "<group>"; };
 		5D5612AD20ABA02E00E2F4E8 /* targets.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = targets.c; path = src/targets.c; sourceTree = "<group>"; };
 		5D5612AE20ABAD5B00E2F4E8 /* os.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = os.c; path = src/os.c; sourceTree = "<group>"; };
 		5D9C729920A5E7C400755A1B /* flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = flags.c; path = src/flags.c; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 				5DBC259A20BC133A0086904A /* tools */,
 				B25AB22520B987D0002E1440 /* array.h */,
 				B25AB22620B987D0002E1440 /* ast.h */,
+				5D50634E21C08B920054B90E /* targets.h */,
 				B25AB22B20B987D1002E1440 /* checker.h */,
 				5D405841212E4EF3007A7E8F /* string.h */,
 				B25AB22720B987D0002E1440 /* common.h */,
@@ -170,6 +173,7 @@
 				B249A258209B80E00016B49E /* lexer.c */,
 				B249A25A209B80E00016B49E /* map.c */,
 				5DA7CA2720A9653F00E4640D /* ast.c */,
+				5D50634C21BF57AF0054B90E /* ast_descriptions.c */,
 				B249A259209B80E00016B49E /* parser.c */,
 				B249A25E209B80E00016B49E /* string.c */,
 				B249A25F209B80E00016B49E /* utf.c */,
@@ -471,7 +475,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				GCC_WARN_CHECK_SWITCH_STATEMENTS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.13;
+				MACOSX_DEPLOYMENT_TARGET = 10.14;
 				OTHER_CFLAGS = (
 					"-Wno-c99-extensions",
 					"-Wno-c11-extensions",
@@ -501,7 +505,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				GCC_WARN_CHECK_SWITCH_STATEMENTS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.13;
+				MACOSX_DEPLOYMENT_TARGET = 10.14;
 				OTHER_CFLAGS = (
 					"-Wno-c99-extensions",
 					"-Wno-c11-extensions",
