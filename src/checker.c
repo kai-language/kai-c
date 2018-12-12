@@ -1603,6 +1603,66 @@ error:
     return InvalidType;
 }
 
+Type *checkExprSlice(Expr *expr, CheckerContext *ctx, Package *pkg) {
+    ASSERT(expr->kind == ExprKind_Slice);
+    CheckerContext recvCtx = { ctx->scope };
+    Type *recv = checkExpr(expr->Subscript.expr, &recvCtx, pkg);
+    if (recvCtx.mode == ExprMode_Invalid) goto error;
+
+    CheckerContext loCtx = { ctx->scope };
+    CheckerContext hiCtx = { ctx->scope };
+    Type *loType;
+    Type *hiType;
+    if (expr->Slice.lo) {
+        loType = checkExpr(expr->Slice.lo, &loCtx, pkg);
+        if (!IsInteger(loType)) {
+            ReportError(pkg, TODOError, expr->Slice.lo->start,
+                        "Cannot slice with non integer type %s", DescribeType(loType));
+            goto error;
+        }
+    }
+    if (expr->Slice.hi) {
+        hiType = checkExpr(expr->Slice.hi, &hiCtx, pkg);
+        if (!IsInteger(hiType)) {
+            ReportError(pkg, TODOError, expr->Slice.lo->start,
+                        "Cannot slice with non integer type %s", DescribeType(hiType));
+            goto error;
+        }
+    }
+
+    // Check indexes
+    if (IsConstant(&loCtx)) {
+        if (IsSigned(loType) && loCtx.val.i64 < 0) {
+            ReportError(pkg, TODOError, expr->Slice.lo->start,
+                        "Invalid negative slice index %lld", loCtx.val.i64);
+        }
+    }
+    if (IsConstant(&hiCtx)) {
+        if (IsSigned(hiType) && hiCtx.val.i64 < 0) {
+            ReportError(pkg, TODOError, expr->Slice.lo->start,
+                        "Invalid negative slice index %lld", loCtx.val.i64);
+        }
+    }
+    if (IsConstant(&loCtx) && IsConstant(&hiCtx) && loCtx.val.u64 > hiCtx.val.u64) {
+        ReportError(pkg, TODOError, expr->Slice.lo->start,
+                    "Cannot slice with low (%llu) > high (%llu)", loCtx.val.u64, hiCtx.val.u64);
+    }
+
+    Type *ty = recv;
+    if (!isSlice(recv)) {
+        ASSERT(isArray(recv));
+        ty = NewTypeSlice(TypeFlag_None, recv->Array.elementType);
+    }
+
+    ctx->mode = ExprMode_Value;
+    storeInfoBasicExpr(pkg, expr, ty, ctx);
+    return ty;
+
+error:
+    ctx->mode = ExprMode_Invalid;
+    return InvalidType;
+}
+
 Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Selector);
     
@@ -1877,7 +1937,7 @@ Type *checkExpr(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
 
         case ExprKind_Slice:
-            UNIMPLEMENTED();
+            type = checkExprSlice(expr, ctx, pkg);
             break;
 
         default:

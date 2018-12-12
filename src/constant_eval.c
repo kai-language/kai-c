@@ -57,6 +57,7 @@ b32 evalBinary(TokenKind op, Type *type, Val lhsValue, Val rhsValue, CheckerCont
     return true;
 }
 
+// TODO: Ensure we always sign extend the result
 i64 evalUnarySigned(TokenKind op, Val val) {
     switch (op) {
         case TK_Add:
@@ -103,6 +104,7 @@ f64 evalUnaryFloat(TokenKind op, Val val) {
     return 0;
 }
 
+// TODO: Ensure we always sign extend the result
 i64 evalBinarySigned(TokenKind op, i64 left, i64 right) {
     switch (op) {
         case TK_Mul:

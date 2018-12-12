@@ -129,6 +129,7 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx);
 llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType = nullptr);
 llvm::Value *emitExprBinary(Context *ctx, Expr *expr);
 llvm::Value *emitExprUnary(Context *ctx, Expr *expr);
+llvm::Value *emitExprSlice(Context *ctx, Expr *expr);
 llvm::Value *emitExprSubscript(Context *ctx, Expr *expr);
 void emitStmt(Context *ctx, Stmt *stmt);
 
@@ -889,6 +890,10 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             value = emitExprSubscript(ctx, expr);
             break;
 
+        case ExprKind_Slice:
+            value = emitExprSlice(ctx, expr);
+            break;
+
         case ExprKind_Call:
             value = emitExprCall(ctx, expr);
             break;
@@ -1106,6 +1111,76 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
     }
     
     return ctx->b.CreateAlignedLoad(val, BytesFromBits(resultType->Align));
+}
+
+llvm::Value *emitExprSlice(Context *ctx, Expr *expr) {
+    CheckerInfo recvInfo = ctx->checkerInfo[expr->Subscript.expr->id];
+    Type *recvType = TypeFromCheckerInfo(recvInfo);
+
+    llvm::Value *lo = NULL;
+    llvm::Value *hi = NULL;
+
+    if (expr->Slice.lo) {
+        lo = emitExpr(ctx, expr->Slice.lo);
+    }
+    if (expr->Slice.hi) {
+        hi = emitExpr(ctx, expr->Slice.hi);
+    }
+
+    b32 prevReturnAddress = ctx->returnAddress;
+
+    llvm::Value *zero = llvm::ConstantInt::get(ctx->types.i32, 0);
+    llvm::Value *one  = llvm::ConstantInt::get(ctx->types.i32, 1);
+    llvm::Value *two  = llvm::ConstantInt::get(ctx->types.i32, 2);
+
+    llvm::Value *ptr;
+    llvm::Value *len;
+    llvm::Value *cap;
+    switch (recvType->kind) {
+    case TypeKind_Slice: {
+        ctx->returnAddress = true;
+        llvm::Value *recv = emitExpr(ctx, expr->Slice.expr);
+        llvm::Value *prevLen = ctx->b.CreateLoad(ctx->b.CreateInBoundsGEP(recv, {zero, one}));
+        llvm::Value *prevCap = ctx->b.CreateLoad(ctx->b.CreateInBoundsGEP(recv, {zero, two}));
+
+        lo = lo ? lo : zero;
+        hi = hi ? hi : prevLen;
+
+        ptr = ctx->b.CreateGEP(recv, lo);
+//        llvm::Value *foo = ctx->b.CreateGEP(recv, {llvm::ConstantInt::get(ctx->types.i64, 0), lo});
+
+//        ptr = ctx->b.CreateLoad(ctx->b.CreateGEP(recv, {llvm::ConstantInt::get(ctx->types.i64, 0), lo}));
+        len = ctx->b.CreateSub(hi, lo);
+        cap = ctx->b.CreateSub(prevCap, lo);
+        break;
+    }
+    case TypeKind_Array: {
+        ctx->returnAddress = true;
+        llvm::Value *recv = emitExpr(ctx, expr->Slice.expr);
+        u64 prevLen = recvType->Array.length;
+
+        lo = lo ? lo : zero;
+        hi = hi ? hi : llvm::ConstantInt::get(ctx->types.i32, prevLen);
+
+        ptr = ctx->b.CreateInBoundsGEP(recv, {0, lo});
+        len = ctx->b.CreateSub(hi, lo);
+        cap = ctx->b.CreateSub(llvm::ConstantInt::get(ctx->types.i64, prevLen), lo);
+        break;
+    }
+    default:
+        ASSERT(false);
+        return NULL;
+    }
+
+    ctx->returnAddress = prevReturnAddress;
+
+    llvm::Value *val = llvm::UndefValue::get(canonicalize(ctx, TypeFromCheckerInfo(ctx->checkerInfo[expr->id])));
+    val = ctx->b.CreateInsertValue(val, ptr, { 0 });
+    val = ctx->b.CreateInsertValue(val, len, { 1 });
+    val = ctx->b.CreateInsertValue(val, cap, { 2 });
+
+    if (ctx->returnAddress) UNIMPLEMENTED();
+    return val;
 }
 
 llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn = nullptr) {
