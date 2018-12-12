@@ -7,6 +7,7 @@
 #include "types.h"
 #include "checker.h"
 #include "llvm.h"
+#include "targets.h"
 
 // Save our definition of DEBUG and undefine it to avoid conflict with LLVM's
 // definition
@@ -66,6 +67,13 @@ typedef struct DebugTypes {
     llvm::DIType *u32;
     llvm::DIType *u64;
 
+    llvm::DIType *int_;
+    llvm::DIType *uint;
+    llvm::DIType *intptr;
+    llvm::DIType *uintptr;
+
+    llvm::DIType *rawptr;
+
     llvm::DIType *f32;
     llvm::DIType *f64;
 } DebugTypes;
@@ -77,6 +85,16 @@ typedef struct Debug {
     DebugTypes types;
     llvm::DIScope *scope;
 } Debug;
+
+typedef struct Types Types;
+struct Types {
+    llvm::IntegerType *i8;
+    llvm::IntegerType *i16;
+    llvm::IntegerType *i32;
+    llvm::IntegerType *i64;
+    llvm::IntegerType *intptr;
+    llvm::PointerType *rawptr;
+};
 
 typedef struct Context Context;
 struct Context {
@@ -92,6 +110,7 @@ struct Context {
     llvm::Value *retValue;
     bool returnAddress;
 
+    Types types;
     Debug d;
     Arena arena;
 
@@ -171,6 +190,16 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
             return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
         } break;
 
+        case TypeKind_Slice: {
+            std::vector<llvm::Type *> elements;
+            llvm::Type *tys[3] = {
+                llvm::PointerType::getUnqual(canonicalize(ctx, type->Slice.elementType)),
+                ctx->types.intptr,
+                ctx->types.intptr,
+            };
+            return llvm::StructType::create(tys);
+        } break;
+
         case TypeKind_Struct: {
             if (type->Symbol && type->Symbol->backendUserdata) {
                 BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
@@ -248,6 +277,68 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         return ctx->d.builder->createArrayType(type->Width, type->Align, debugCanonicalize(ctx, elementType), subscriptsArray);
     }
 
+    if (type->kind == TypeKind_Slice) {
+        // TODO: Work out how to take advantage of debug info for C VLA's so that we can make this appear better
+        if (type->Symbol && type->Symbol->backendUserdata) {
+            BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
+            if (userdata->debugType) return userdata->debugType;
+        }
+
+        std::vector<llvm::Metadata *> elementTypes;
+
+        auto ptr = ctx->d.builder->createMemberType(
+            ctx->d.scope,
+            "raw",
+            ctx->d.file,
+            0,
+            TargetPointer->Width,
+            TargetPointer->Align,
+            0,
+            llvm::DINode::DIFlags::FlagZero,
+            debugCanonicalize(ctx, type->Slice.elementType)
+        );
+
+        auto len = ctx->d.builder->createMemberType(
+            ctx->d.scope,
+            "len",
+            ctx->d.file,
+            0,
+            TargetPointer->Width,
+            TargetPointer->Align,
+            0,
+            llvm::DINode::DIFlags::FlagZero,
+            ctx->d.types.uint
+        );
+
+        auto cap = ctx->d.builder->createMemberType(
+            ctx->d.scope,
+            "cap",
+            ctx->d.file,
+            0,
+            TargetPointer->Width,
+            TargetPointer->Align,
+            0,
+            llvm::DINode::DIFlags::FlagZero,
+            ctx->d.types.uint
+        );
+
+        char buf[1024];
+        sprintf(buf, "Slice(%s)", DescribeType(type->Slice.elementType));
+
+        auto elements = ctx->d.builder->getOrCreateArray({ptr, len, cap});
+        return ctx->d.builder->createStructType(
+            ctx->d.scope,
+            buf,
+            ctx->d.file,
+            0,
+            type->Width,
+            type->Align,
+            llvm::DINode::DIFlags::FlagZero,
+            NULL, // DerivedFrom
+            elements
+        );
+    }
+
     if (type->kind == TypeKind_Function) {
         // NOTE: Clang just uses a derived type that is a pointer
         // !44 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !9, size: 64)
@@ -317,6 +408,13 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
     types->u16 = b->createBasicType("u16", 16, DW_ATE_unsigned);
     types->u32 = b->createBasicType("u32", 32, DW_ATE_unsigned);
     types->u64 = b->createBasicType("u64", 64, DW_ATE_unsigned);
+
+    types->int_    = b->createBasicType("int", TargetPointer->Width, DW_ATE_signed);
+    types->uint   = b->createBasicType("uint", TargetPointer->Width, DW_ATE_unsigned);
+    types->intptr  = b->createBasicType("intptr", TargetPointer->Width, DW_ATE_signed);
+    types->uintptr = b->createBasicType("uintptr", TargetPointer->Width, DW_ATE_unsigned);
+
+    types->rawptr  = b->createPointerType(types->u8, TargetPointer->Width);
 
     types->f32 = b->createBasicType("f32", 32, DW_ATE_float);
     types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
@@ -623,7 +721,34 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
             return value;
         }
 
-        case TypeKind_Union: case TypeKind_Enum: case TypeKind_Slice:
+        case TypeKind_Slice: {
+            llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
+            llvm::Type *elementType = canonicalize(ctx, info.type->Slice.elementType);
+            llvm::Value *value;
+            if (!expr->LitCompound.elements) {
+                value = llvm::Constant::getNullValue(type);
+            } else {
+                value = llvm::UndefValue::get(type); // {*Element, u64, u64}
+                ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
+                    // For both Array and Slice type Compound Literals the info on KeyValue is the constant index
+                    u64 index = (u64) it->info;
+                    llvm::Value *el = emitExpr(ctx, it->value, elementType);
+                    value = ctx->b.CreateInsertValue(value, el, (u32) index);
+                }
+
+                u64 length = ArrayLen(expr->LitCompound.elements);
+                value = ctx->b.CreateInsertValue(value, llvm::ConstantInt::get(ctx->types.intptr, length), 1);
+
+                // Capacity = 0 indicates that the slice recides on the stack, any operation to resize the slice must
+                // create a new heap allocation
+                value = ctx->b.CreateInsertValue(value, llvm::ConstantInt::getNullValue(ctx->types.intptr), 2);
+            }
+
+            if (ctx->returnAddress) UNIMPLEMENTED();
+            return value;
+        }
+
+        case TypeKind_Union: case TypeKind_Enum:
             UNIMPLEMENTED();
             break;
     }
@@ -642,6 +767,7 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
             break;
         }
 
+        case SelectorKind_Slice:
         case SelectorKind_Struct: {
             bool previousReturnAddress = ctx->returnAddress;
             ctx->returnAddress = true;
@@ -798,8 +924,13 @@ llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
         case TK_Sub:
             return ctx->b.CreateNeg(val);
         case TK_Not:
-        case TK_BNot:
+        case TK_BNot: {
+            if (val->getType()->isPointerTy()) {
+                llvm::PointerType *ty = (llvm::PointerType *) val->getType();
+                return ctx->b.CreateICmpEQ(val, llvm::ConstantPointerNull::get(ty));
+            }
             return ctx->b.CreateNot(val);
+        }
 
         case TK_Lss: {
             if (ctx->returnAddress)
@@ -931,7 +1062,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
     // of an unsigned integer would get wrapped and become negative. We can
     // prevent this by ZExt-ing the index
     if (indexType->Width < 64 && !IsSigned(indexType)) {
-        index = ctx->b.CreateZExt(index, canonicalize(ctx, I64Type));
+        index = ctx->b.CreateZExt(index, ctx->types.i64);
     }
 
     Type *recvType = TypeFromCheckerInfo(recvInfo);
@@ -942,7 +1073,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
         ctx->returnAddress = true;
         aggregate = emitExpr(ctx, expr->Subscript.expr);
         ctx->returnAddress = previousReturnAddress;
-        indicies.push_back(llvm::ConstantInt::get(canonicalize(ctx, I64Type), 0));
+        indicies.push_back(llvm::ConstantInt::get(ctx->types.i64, 0));
         indicies.push_back(index);
         resultType = TypeFromCheckerInfo(recvInfo)->Array.elementType;
     } break;
@@ -1902,6 +2033,14 @@ b32 CodegenLLVM(Package *p) {
         .dataLayout = dataLayout,
         .b = b,
         .fn = nullptr,
+        .types = {
+            .i8  = llvm::IntegerType::get(context, 8),
+            .i16 = llvm::IntegerType::get(context, 16),
+            .i32 = llvm::IntegerType::get(context, 32),
+            .i64 = llvm::IntegerType::get(context, 64),
+            .intptr = llvm::IntegerType::get(context, TargetPointer->Width),
+            .rawptr = llvm::PointerType::getInt8PtrTy(context),
+        },
         .d = debug,
     };
 

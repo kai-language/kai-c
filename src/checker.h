@@ -61,6 +61,7 @@ typedef u8 SelectorKind;
 #define SelectorKind_None   0x0
 #define SelectorKind_Struct 0x1
 #define SelectorKind_Import 0x2
+#define SelectorKind_Slice  0x4
 
 typedef struct Selector_Struct Selector_Struct;
 struct Selector_Struct {
@@ -158,6 +159,7 @@ Type *TypeFromCheckerInfo(CheckerInfo info);
 b32 IsInteger(Type *type);
 b32 IsSigned(Type *type);
 b32 IsFloat(Type *type);
+b32 IsPointer(Type *type);
 #ifdef __cplusplus
 }
 #endif

@@ -52,19 +52,7 @@ b32 isDecl(Stmt *stmt) {
     return stmt->kind > _DeclKind_Start && stmt->kind < _DeclKind_End;
 }
 
-// @ErrorQuality
-// FIXME: Better description
-const char *DescribeStmt(Stmt *stmt) {
-    return AstDescriptions[stmt->kind];
-}
-
-const char *DescribeExpr(Expr *expr) {
-    return AstDescriptions[expr->kind];
-}
-
-const char *DescribeDecl(Decl *decl) {
-    return AstDescriptions[decl->kind];
-}
+#include "ast_descriptions.c"
 
 void *AllocAst(Package *package, size_t size) {
     ASSERT(size != 0);
