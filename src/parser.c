@@ -1180,7 +1180,7 @@ DynamicArray(Stmt *) parseStmtsUntilEof(Parser *p) {
 }
 
 void parsePackageCode(Package *pkg, const char *code) {
-    Lexer lexer = MakeLexer(code, pkg->path);
+    Lexer lexer = MakeLexer(code, pkg);
     Token tok = NextToken(&lexer);
     Parser parser = {lexer, .tok = tok, pkg};
     pkg->stmts = parseStmtsUntilEof(&parser);

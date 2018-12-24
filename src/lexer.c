@@ -131,14 +131,14 @@ const char *DescribeToken(Token tok) {
     return DescribeTokenKind(tok.kind);
 }
 
-Lexer MakeLexer(const char *data, const char *name) {
+Lexer MakeLexer(const char *data, Package *pkg) {
     Lexer l = {0};
 
     l.stream = data;
     l.startOfLine = data;
     l.startOfFile = data;
 
-    l.pos.name = name;
+    l.pos.name = pkg->path;
     l.pos.line = 1;
 
     return l;
