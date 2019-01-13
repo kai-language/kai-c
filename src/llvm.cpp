@@ -953,7 +953,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
         llvm::Value *structPtr = emitExpr(ctx, expr->Subscript.expr);
         ctx->returnAddress = previousReturnAddress;
         llvm::Value *arrayPtr = ctx->b.CreateStructGEP(NULL, structPtr, 0);
-        aggregate = ctx->b.CreateAlignedLoad(arrayPtr, ctx->targetMachine->getPointerSize());
+        aggregate = ctx->b.CreateAlignedLoad(arrayPtr, ctx->targetMachine->getPointerSize(0));
         indicies.push_back(index);
         resultType = TypeFromCheckerInfo(recvInfo)->Slice.elementType;
     } break;
@@ -1956,7 +1956,7 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
 
     llvm::legacy::PassManager pass;
     llvm::TargetMachine::CodeGenFileType fileType = llvm::TargetMachine::CGFT_ObjectFile;
-    if (ctx->targetMachine->addPassesToEmitFile(pass, dest, fileType)) {
+    if (ctx->targetMachine->addPassesToEmitFile(pass, dest, nullptr, fileType)) {
         llvm::errs() << "TargetMachine can't emit a file of this type";
         return 1;
     }
