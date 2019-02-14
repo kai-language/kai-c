@@ -1368,14 +1368,14 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     // Both lhs & rhs have this type.
     Type *type = lhs;
 
-    if (!binaryPredicates[expr->Binary.op](type)) {
+    if (!binaryPredicates[expr->Binary.op.kind](type)) {
         ReportError(pkg, InvalidBinaryOperationError, expr->Binary.pos,
                     "Operation '%s' undefined for type %s",
-                    DescribeTokenKind(expr->Binary.op), DescribeType(lhs));
+                    DescribeTokenKind(expr->Binary.op.kind), DescribeType(lhs));
         goto error;
     }
 
-    switch (expr->Binary.op) {
+    switch (expr->Binary.op.kind) {
         case TK_Eql:
         case TK_Neq:
         case TK_Leq:
@@ -1393,13 +1393,13 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
     }
 
-    if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && IsConstant(&rhsCtx) && rhsCtx.val.i64 == 0) {
+    if ((expr->Binary.op.kind == TK_Div || expr->Binary.op.kind == TK_Rem) && IsConstant(&rhsCtx) && rhsCtx.val.i64 == 0) {
         ReportError(pkg, DivisionByZeroError, expr->Binary.rhs->start, "Division by zero");
     }
 
     ctx->flags |= lhsCtx.flags & rhsCtx.flags & CheckerContextFlag_Constant;
     b32 isConstantNegative;
-    if (evalBinary(expr->Binary.op, type, lhsCtx.val, rhsCtx.val, ctx, &isConstantNegative)) {
+    if (evalBinary(expr->Binary.op.kind, type, lhsCtx.val, rhsCtx.val, ctx, &isConstantNegative)) {
         changeTypeOrRecordCoercionIfNeeded(&type, expr, ctx, isConstantNegative, pkg);
     }
     storeInfoBasicExpr(pkg, expr, type, ctx);

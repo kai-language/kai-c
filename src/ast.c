@@ -114,21 +114,18 @@ Decl *NewDecl(Package *package, DeclKind kind, Position start) {
     return d;
 }
 
-Expr *NewExprInvalid(Package *package, Position start, Position end) {
+Expr *NewExprInvalid(Package *package, Position start) {
     Expr *e = NewExpr(package, ExprKind_Invalid, start);
-    e->Invalid.end = end;
     return e;
 }
 
-Stmt *NewStmtInvalid(Package *package, Position start, Position end) {
+Stmt *NewStmtInvalid(Package *package, Position start) {
     Stmt *s = NewStmt(package, StmtKind_Invalid, start);
-    s->Invalid.end = end;
     return s;
 }
 
-Decl *NewDeclInvalid(Package *package, Position start, Position end) {
+Decl *NewDeclInvalid(Package *package, Position start) {
     Decl *d = NewDecl(package, DeclKind_Invalid, start);
-    d->Invalid.end = end;
     return d;
 }
 
@@ -138,43 +135,38 @@ Expr *NewExprIdent(Package *package, Position start, const char *name) {
     return e;
 }
 
-Expr *NewExprParen(Package *package, Expr *expr, Position start, Position end) {
+Expr *NewExprParen(Package *package, Expr *expr, Position start) {
     Expr *e = NewExpr(package, ExprKind_Paren, start);
     e->Paren.expr = expr;
-    e->Paren.end = end;
     return e;
 }
 
-Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args, Position end) {
+Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args) {
     Expr *e = NewExpr(package, ExprKind_Call, expr->start);
     e->Call.expr = expr;
     e->Call.args = args;
-    e->Call.end = end;
     return e;
 }
 
-Expr *NewExprSelector(Package *package, Expr *expr, const char *name, Position end) {
+Expr *NewExprSelector(Package *package, Expr *expr, const char *name) {
     Expr *e = NewExpr(package, ExprKind_Selector, expr->start);
     e->Selector.expr = expr;
     e->Selector.name = name;
-    e->Selector.end = end;
     return e;
 }
 
-Expr *NewExprSubscript(Package *package, Expr *expr, Expr *index, Position end) {
+Expr *NewExprSubscript(Package *package, Expr *expr, Expr *index) {
     Expr *e = NewExpr(package, ExprKind_Subscript, expr->start);
     e->Subscript.expr = expr;
     e->Subscript.index = index;
-    e->Subscript.end = end;
     return e;
 }
 
-Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi, Position end) {
+Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi) {
     Expr *e = NewExpr(package, ExprKind_Slice, expr->start);
     e->Slice.expr = expr;
     e->Slice.lo = lo;
     e->Slice.hi = hi;
-    e->Slice.end = end;
     return e;
 }
 
@@ -185,7 +177,7 @@ Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr) {
     return e;
 }
 
-Expr *NewExprBinary(Package *package, TokenKind op, Position pos, Expr *lhs, Expr *rhs) {
+Expr *NewExprBinary(Package *package, Token op, Position pos, Expr *lhs, Expr *rhs) {
     Expr *e = NewExpr(package, ExprKind_Binary, lhs->start);
     e->Binary.op = op;
     e->Binary.pos = pos;
@@ -251,11 +243,10 @@ Expr *NewExprLitString(Package *package, Position start, const char *val) {
     return e;
 }
 
-Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end) {
+Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements) {
     Expr *e = NewExpr(package, ExprKind_LitCompound, start);
     e->LitCompound.type = type;
     e->LitCompound.elements = elements;
-    e->LitCompound.end = end;
     return e;
 }
 
@@ -367,10 +358,9 @@ Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr *t
     return s;
 }
 
-Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts, Position end) {
+Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts) {
     Stmt *s = NewStmt(package, StmtKind_Block, start);
     s->Block.stmts = stmts;
-    s->Block.end = end;
     return s;
 }
 

@@ -125,7 +125,6 @@ DECL_KINDS
 typedef struct AstInvalid AstInvalid;
 struct AstInvalid {
     Position start;
-    Position end;
 };
 
 struct Expr_Ident {
@@ -136,28 +135,24 @@ struct Expr_Ident {
 struct Expr_Paren {
     Position start;
     Expr *expr;
-    Position end;
 };
 
 struct Expr_Call {
     Position start;
     Expr *expr;
     DynamicArray(Expr_KeyValue *) args;
-    Position end;
 };
 
 struct Expr_Selector {
     Position start;
     Expr *expr;
     const char *name;
-    Position end;
 };
 
 struct Expr_Subscript {
     Position start;
     Expr *expr;
     Expr *index;
-    Position end;
 };
 
 struct Expr_Slice {
@@ -165,7 +160,6 @@ struct Expr_Slice {
     Expr *expr;
     Expr *lo;
     Expr *hi;
-    Position end;
 };
 
 struct Expr_Unary {
@@ -176,7 +170,7 @@ struct Expr_Unary {
 
 struct Expr_Binary {
     Position start;
-    TokenKind op;
+    Token op;
     Position pos;
     Expr *lhs;
     Expr *rhs;
@@ -248,7 +242,6 @@ struct Expr_LitCompound {
     Position start;
     Expr *type;
     DynamicArray(Expr_KeyValue *) elements;
-    Position end;
 };
 
 struct Expr_LitFunction {
@@ -364,7 +357,6 @@ struct Stmt_Goto {
 struct Stmt_Block {
     Position start;
     DynamicArray(Stmt *) stmts;
-    Position end;
 };
 
 struct Stmt_If {
@@ -554,17 +546,17 @@ Position EndForDecl(Decl *decl);
 Expr *NewExpr(Package *package, ExprKind kind, Position start);
 Stmt *NewStmt(Package *package, StmtKind kind, Position start);
 Decl *NewDecl(Package *package, DeclKind kind, Position start);
-Expr *NewExprInvalid(Package *package, Position start, Position end);
-Stmt *NewStmtInvalid(Package *package, Position start, Position end);
-Decl *NewDeclInvalid(Package *package, Position start, Position end);
+Expr *NewExprInvalid(Package *package, Position start);
+Stmt *NewStmtInvalid(Package *package, Position start);
+Decl *NewDeclInvalid(Package *package, Position start);
 Expr *NewExprIdent(Package *package, Position start, const char *name);
-Expr *NewExprParen(Package *package, Expr *expr, Position start, Position end);
-Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args, Position end);
-Expr *NewExprSelector(Package *package, Expr *expr, const char *name, Position end);
-Expr *NewExprSubscript(Package *package, Expr *expr, Expr *index, Position end);
-Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi, Position end);
+Expr *NewExprParen(Package *package, Expr *expr, Position start);
+Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args);
+Expr *NewExprSelector(Package *package, Expr *expr, const char *name);
+Expr *NewExprSubscript(Package *package, Expr *expr, Expr *index);
+Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi);
 Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr);
-Expr *NewExprBinary(Package *package, TokenKind op, Position pos, Expr *lhs, Expr *rhs);
+Expr *NewExprBinary(Package *package, Token op, Position pos, Expr *lhs, Expr *rhs);
 Expr *NewExprTernary(Package *package, Expr *cond, Expr *pass, Expr *fail);
 Expr *NewExprCast(Package *package, Position start, Expr *type, Expr *expr);
 Expr *NewExprAutocast(Package *package, Position start, Expr *expr);
@@ -574,7 +566,7 @@ Expr *NewExprLitNil(Package *package, Position start);
 Expr *NewExprLitInt(Package *package, Position start, u64 val);
 Expr *NewExprLitFloat(Package *package, Position start, f64 val);
 Expr *NewExprLitString(Package *package, Position start, const char *val);
-Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements, Position end);
+Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements);
 Expr *NewExprLitFunction(Package *package, Expr *type, Stmt_Block *body, u8 flags);
 Expr *NewExprTypePointer(Package *package, Position start, Expr *type);
 Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *type);
@@ -594,7 +586,7 @@ Stmt *NewStmtReturn(Package *package, Position start, DynamicArray(Expr *) exprs
 Stmt *NewStmtDefer(Package *package, Position start, Stmt *stmt);
 Stmt *NewStmtUsing(Package *package, Position start, Expr *expr);
 Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr *target);
-Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts, Position end);
+Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts);
 Stmt *NewStmtIf(Package *package, Position start, Expr *cond, Stmt *pass, Stmt *fail);
 Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body);
 Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body);

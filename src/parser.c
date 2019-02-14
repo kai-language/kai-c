@@ -158,7 +158,7 @@ Expr *parseExprAtom(Parser *p) {
             if (p->tok.kind == TK_Dot) {  // package.Member
                 nextToken();
                 const char *ident = parseIdent(p);
-                return NewExprSelector(pkg, e, ident, p->prevEnd);
+                return NewExprSelector(pkg, e, ident);
             }
             return e;
         }
@@ -186,7 +186,7 @@ Expr *parseExprAtom(Parser *p) {
             nextToken();
             Expr *expr = parseExpr(p, false);
             expectToken(p, TK_Rparen);
-            return NewExprParen(pkg, expr, start, p->prevStart);
+            return NewExprParen(pkg, expr, start);
         }
 
         case TK_Lbrack: {
@@ -220,7 +220,7 @@ Expr *parseExprAtom(Parser *p) {
             }
 
             expectToken(p, TK_Rbrace);
-            return NewExprLitCompound(pkg, start, NULL, elements, p->prevEnd);
+            return NewExprLitCompound(pkg, start, NULL, elements);
         }
 
         case TK_Dollar: {
@@ -425,7 +425,7 @@ Expr *parseExprAtom(Parser *p) {
 
     Position start = p->tok.pos;
     nextToken();
-    return NewExprInvalid(pkg, start, p->tok.pos);
+    return NewExprInvalid(pkg, start);
 }
 
 Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
@@ -435,7 +435,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
         switch (p->tok.kind) {
             case TK_Dot: {
                 nextToken();
-                x = NewExprSelector(pkg, x, parseIdent(p), p->prevEnd);
+                x = NewExprSelector(pkg, x, parseIdent(p));
                 continue;
             }
 
@@ -443,27 +443,27 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                 nextToken();
                 if (matchToken(p, TK_Colon)) {
                     if (matchToken(p, TK_Rbrack)) {
-                        x = NewExprSlice(pkg, x, NULL, NULL, p->prevEnd);
+                        x = NewExprSlice(pkg, x, NULL, NULL);
                         continue;
                     }
                     Expr *hi = parseExpr(p, noCompoundLiteral);
                     expectToken(p, TK_Rbrack);
-                    x = NewExprSlice(pkg, x, NULL, hi, p->prevEnd);
+                    x = NewExprSlice(pkg, x, NULL, hi);
                     continue;
                 }
                 Expr *index = parseExpr(p, noCompoundLiteral);
                 if (matchToken(p, TK_Colon)) {
                     if (matchToken(p, TK_Rbrack)) {
-                        x = NewExprSlice(pkg, x, index, NULL, p->prevEnd);
+                        x = NewExprSlice(pkg, x, index, NULL);
                         continue;
                     }
                     Expr *hi = parseExpr(p, noCompoundLiteral);
                     expectToken(p, TK_Rbrack);
-                    x = NewExprSlice(pkg, x, index, hi, p->prevEnd);
+                    x = NewExprSlice(pkg, x, index, hi);
                     continue;
                 }
                 expectToken(p, TK_Rbrack);
-                x = NewExprSubscript(pkg, x, index, p->prevEnd);
+                x = NewExprSubscript(pkg, x, index);
                 continue;
             }
 
@@ -493,7 +493,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                     }
                 }
                 expectToken(p, TK_Rparen);
-                x = NewExprCall(pkg, x, args, p->prevEnd);
+                x = NewExprCall(pkg, x, args);
                 continue;
             }
 
@@ -510,7 +510,6 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                     Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
                     block->start = startOfBlock;
                     block->stmts = stmts;
-                    block->end = p->prevEnd;
                     x = NewExprLitFunction(pkg, x, block, 0);
                     continue;
                 }
@@ -529,7 +528,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                     }
                 }
                 expectToken(p, TK_Rbrace);
-                x = NewExprLitCompound(pkg, x->start, x, elements, p->prevEnd);
+                x = NewExprLitCompound(pkg, x->start, x, elements);
                 continue;
             }
 
@@ -557,12 +556,12 @@ Expr *parseExprUnary(Parser *p, b32 noCompoundLiteral) {
 Expr *parseExprBinary(Parser *p, i32 prec1, b32 noCompoundLiteral) {
     Expr *lhs = parseExprUnary(p, noCompoundLiteral);
     for (;;) {
-        TokenKind op = p->tok.kind;
+        Token op = p->tok;
         Position pos = p->tok.pos;
-        i32 precedence = PrecedenceForTokenKind[op];
+        i32 precedence = PrecedenceForTokenKind[op.kind];
         if (precedence < prec1) return lhs;
         nextToken();
-        if (op == TK_Question) {
+        if (op.kind == TK_Question) {
             // NOTE: Ternary supports missing pass expressions ie: `cond ?: default`
             Expr *pass = NULL;
             if (!isToken(p, TK_Colon)) {
@@ -731,7 +730,6 @@ Stmt_Block *parseBlock(Parser *p) {
     Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
     block->start = start;
     block->stmts = stmts;
-    block->end = p->prevEnd;
     return block;
 }
 
@@ -752,7 +750,8 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
         case TK_RemAssign: case TK_AndAssign: case TK_OrAssign:
         case TK_XorAssign: case TK_ShlAssign: case TK_ShrAssign: {
             Position pos = p->tok.pos;
-            TokenKind op = TokenAssignOffset(p->tok.kind);
+            Token op = p->tok;
+            op.kind = TokenAssignOffset(op.kind);
             nextToken();
             DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
             if (ArrayLen(rhs) > 1) {
@@ -897,7 +896,6 @@ Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
         Stmt_Block *block = AllocAst(pkg, sizeof(Stmt_Block));
         block->start = caseStart;
         block->stmts = stmts;
-        block->end = p->prevEnd;
         Stmt *scase = NewStmtSwitchCase(pkg, caseStart, exprs, block);
         ArrayPush(cases, scase);
     }
@@ -1045,7 +1043,7 @@ Stmt *parseStmt(Parser *p) {
 
         case TK_Lbrace: {
             Stmt_Block *block = parseBlock(p);
-            return NewStmtBlock(pkg, block->start, block->stmts, block->end);
+            return NewStmtBlock(pkg, block->start, block->stmts);
         }
 
         case TK_Directive: {
@@ -1160,7 +1158,8 @@ Stmt *parseStmt(Parser *p) {
             return NULL;
     }
 
-    return NewStmtInvalid(pkg, start, start);
+    return NewStmtInvalid(pkg, start
+                          );
 }
 
 DynamicArray(Stmt *) parseStmts(Parser *p) {
@@ -1426,11 +1425,11 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
     Parser p = newTestParser("a + b * c");
     ASSERT_EXPR_KIND(ExprKind_Binary);
-    ASSERT(expr->Binary.op == TK_Add);
+    ASSERT(expr->Binary.op.kind == TK_Add);
 
     p = newTestParser("(a + b) * c");
     ASSERT_EXPR_KIND(ExprKind_Binary);
-    ASSERT(expr->Binary.op == TK_Mul);
+    ASSERT(expr->Binary.op.kind == TK_Mul);
 
 #undef ASSERT_EXPR_KIND
 }
