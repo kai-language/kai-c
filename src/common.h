@@ -177,6 +177,13 @@ struct Position {
     u32 offset, line, column;
 };
 
+typedef struct SourceRange {
+    const char *name;
+    u32 offset;    // offset in file
+    u32 endOffset; // offset in file
+    u32 line, column;
+} SourceRange;
+
 /// Allocators
 typedef enum AllocKind {
     AT_Alloc,

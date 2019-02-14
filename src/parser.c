@@ -23,6 +23,46 @@ i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
     [TK_Assign] = 0,
 };
 
+SourceRange rangeFromTokens(Token start, Token end) {
+    u32 endOffset = (u32) (end.end - start.start) + start.pos.offset;
+    SourceRange range = {
+        start.pos.name,
+        start.pos.offset, endOffset,
+        start.pos.line, start.pos.column
+    };
+    return range;
+}
+
+SourceRange rangeFromTokenToEndOffset(Token token, u32 endOffset) {
+    SourceRange range = {
+        token.pos.name,
+        token.pos.offset, endOffset,
+        token.pos.line, token.pos.column,
+    };
+    return range;
+}
+
+SourceRange rangeFromNodes(AstNode start, AstNode end) {
+    Stmt *s = (Stmt*) start;
+    Stmt *e = (Stmt*) end;
+    SourceRange range = {
+        s->pos.name,
+        s->pos.offset, e->pos.endOffset,
+        s->pos.line, s->pos.column,
+    };
+    return range;
+}
+
+SourceRange rangeFromTokenToEndOfNode(Token token, AstNode node) {
+    Stmt *stmt = (Stmt *) node;
+    SourceRange range = {
+        token.pos.name,
+        token.pos.offset, stmt->pos.endOffset,
+        token.pos.line, token.pos.column,
+    };
+    return range;
+}
+
 typedef struct Parser Parser;
 struct Parser {
     Lexer lexer;
@@ -39,8 +79,6 @@ struct Parser {
     p->prevStart = p->tok.pos; \
     p->prevEnd = p->lexer.pos; \
     p->tok = NextToken(&p->lexer)
-
-#define CurrentToken p->tok
 
 b32 isToken(Parser *p, TokenKind kind) {
     return p->tok.kind == kind;
@@ -151,50 +189,59 @@ Stmt *parseStmt(Parser *p);
 
 Expr *parseExprAtom(Parser *p) {
     Package *pkg = p->package;
+    Token start = p->tok;
+
     switch (p->tok.kind) {
         case TK_Ident: {
-            Expr *e = NewExprIdent(pkg, p->tok.pos, p->tok.val.ident);
+            SourceRange range = rangeFromTokens(start, start);
+            Expr *e = NewExprIdent(pkg, range, p->tok.val.ident);
             nextToken();
             if (p->tok.kind == TK_Dot) {  // package.Member
                 nextToken();
+                SourceRange range = rangeFromTokens(start, p->tok);
                 const char *ident = parseIdent(p);
-                return NewExprSelector(pkg, e, ident);
+                return NewExprSelector(pkg, range, e, ident);
             }
             return e;
         }
 
         case TK_Int: {
-            Expr *e = NewExprLitInt(pkg, p->tok.pos, p->tok.val.i);
+            SourceRange range = rangeFromTokens(start, start);
+            Expr *e = NewExprLitInt(pkg, range, p->tok.val.i);
             nextToken();
             return e;
         }
 
         case TK_Float: {
-            Expr *e = NewExprLitFloat(pkg, p->tok.pos, p->tok.val.f);
+            SourceRange range = rangeFromTokens(start, start);
+            Expr *e = NewExprLitFloat(pkg, range, p->tok.val.f);
             nextToken();
             return e;
         }
 
         case TK_String: {
-            Expr *e = NewExprLitString(pkg, p->tok.pos, p->tok.val.s);
+            SourceRange range = rangeFromTokens(start, start);
+            Expr *e = NewExprLitString(pkg, range, p->tok.val.s);
             nextToken();
             return e;
         }
 
         case TK_Lparen: {
-            Position start = p->tok.pos;
             nextToken();
             Expr *expr = parseExpr(p, false);
+            Token end = p->tok;
             expectToken(p, TK_Rparen);
-            return NewExprParen(pkg, expr, start);
+
+            SourceRange range = rangeFromTokens(start, end);
+            return NewExprParen(pkg, range, expr);
         }
 
         case TK_Lbrack: {
-            Position start = p->tok.pos;
             nextToken();
             if (matchToken(p, TK_Rbrack)) {
                 Expr *type = parseType(p);
-                return NewExprTypeSlice(pkg, start, type);
+                SourceRange range = rangeFromTokenToEndOfNode(start, type);
+                return NewExprTypeSlice(pkg, range, type);
             }
             Expr *length = NULL;
             if (!matchToken(p, TK_Ellipsis)) {
@@ -202,11 +249,11 @@ Expr *parseExprAtom(Parser *p) {
             }
             expectToken(p, TK_Rbrack);
             Expr *type = parseType(p);
-            return NewExprTypeArray(pkg, start, length, type);
+            SourceRange range = rangeFromTokenToEndOfNode(start, type);
+            return NewExprTypeArray(pkg, range, length, type);
         }
 
         case TK_Lbrace: {
-            Position start = p->tok.pos;
             nextToken();
 
             DynamicArray(Expr_KeyValue *) elements = NULL;
@@ -219,36 +266,40 @@ Expr *parseExprAtom(Parser *p) {
                 }
             }
 
+            SourceRange range = rangeFromTokens(start, p->tok);
             expectToken(p, TK_Rbrace);
-            return NewExprLitCompound(pkg, start, NULL, elements);
+            return NewExprLitCompound(pkg, range, NULL, elements);
         }
 
         case TK_Dollar: {
-            Position start = p->tok.pos;
             nextToken();
+            Token end = p->tok;
             const char *name = parseIdent(p);
-            return NewExprTypePolymorphic(pkg, start, name);
+            SourceRange range = rangeFromTokens(start, end);
+            return NewExprTypePolymorphic(pkg, range, name);
         }
 
         caseEllipsis: // For `case TK_Directive` for #cvargs
         case TK_Ellipsis: {
             u8 flags = 0;
             flags |= matchDirective(p, internCVargs) ? TypeVariadicFlag_CVargs : 0;
-            Position start = p->tok.pos;
             expectToken(p, TK_Ellipsis); // NOTE: We must expect here because we handle the case of having #cvargs prior
-            return NewExprTypeVariadic(pkg, start, parseType(p), flags);
+            Expr *type = parseType(p);
+            SourceRange range = rangeFromTokenToEndOfNode(start, type);
+            return NewExprTypeVariadic(pkg, range, type, flags);
         }
 
         case TK_Mul: {
-            Position start = p->tok.pos;
             nextToken();
             Expr *type = parseType(p);
-            return NewExprTypePointer(pkg, start, type);
+            SourceRange range = rangeFromTokenToEndOfNode(start, type);
+            return NewExprTypePointer(pkg, range, type);
         }
 
         case TK_Directive: {
             if (p->tok.val.ident == internLocation || p->tok.val.ident == internFile || p->tok.val.ident == internLine || p->tok.val.ident == internFunction) {
-                Expr *expr = NewExprLocationDirective(pkg, p->tok.pos, p->tok.val.ident);
+                SourceRange range = rangeFromTokens(start, start);
+                Expr *expr = NewExprLocationDirective(pkg, range, p->tok.val.ident);
                 nextToken();
                 return expr;
             } else if (p->tok.val.ident == internCVargs) {
@@ -263,7 +314,8 @@ Expr *parseExprAtom(Parser *p) {
             if (ident == Keyword_fn) {
                 return parseFunctionType(p);
             } else if (ident == Keyword_nil) {
-                Expr *expr = NewExprLitNil(pkg, p->tok.pos);
+                SourceRange range = rangeFromTokens(start, start);
+                Expr *expr = NewExprLitNil(pkg, range);
                 nextToken();
                 return expr;
             } else if (ident == Keyword_struct) {
@@ -282,24 +334,23 @@ Expr *parseExprAtom(Parser *p) {
         }
 
         caseCast: { // See `case TK_Keyword:`
-            Position start = p->tok.pos;
             nextToken();
             expectToken(p, TK_Lparen);
             Expr *type = parseType(p);
             expectToken(p, TK_Rparen);
             Expr *expr = parseExpr(p, false);
-            return NewExprCast(pkg, start, type, expr);
+            SourceRange range = rangeFromTokenToEndOfNode(start, expr);
+            return NewExprCast(pkg, range, type, expr);
         }
 
         caseAutocast: { // See `case TK_Keyword:`
-            Position start = p->tok.pos;
             nextToken();
             Expr *expr = parseExpr(p, false);
-            return NewExprAutocast(pkg, start, expr);
+            SourceRange range = rangeFromTokenToEndOfNode(start, expr);
+            return NewExprAutocast(pkg, range, expr);
         }
 
         caseStruct: { // See `case TK_Keyword:`
-            Position start = p->tok.pos;
             nextToken();
 
             // TODO(Brett, vdka): directives
@@ -314,7 +365,7 @@ Expr *parseExprAtom(Parser *p) {
             DynamicArray(AggregateItem) items = NULL;
 
             while (!isToken(p, TK_Rbrace)) {
-                Position start = p->tok.pos;
+                Token start = p->tok;
 
                 DynamicArray(const char *) names = parseIdentList(p);
 
@@ -322,7 +373,8 @@ Expr *parseExprAtom(Parser *p) {
 
                 Expr *type = parseType(p);
 
-                AggregateItem item = {.start = start, .names = names, .type = type};
+                SourceRange range = rangeFromTokenToEndOfNode(start, type);
+                AggregateItem item = {range, .names = names, .type = type};
                 ArrayPush(items, item);
 
                 if (isToken(p, TK_Rbrace)) {
@@ -333,13 +385,13 @@ Expr *parseExprAtom(Parser *p) {
                 if (isTokenEof(p)) break;
             }
 
+            SourceRange range = rangeFromTokens(start, p->tok);
             expectToken(p, TK_Rbrace);
 
-            return NewExprTypeStruct(pkg, start, items);
+            return NewExprTypeStruct(pkg, range, items);
         }
 
         caseUnion: { // See `case TK_Keyword:`
-            Position start = p->tok.pos;
             nextToken();
 
             // TODO(Brett, vdka): directives
@@ -349,15 +401,15 @@ Expr *parseExprAtom(Parser *p) {
             DynamicArray(AggregateItem) items = NULL;
 
             while (!isToken(p, TK_Rbrace)) {
-                Position start = p->tok.pos;
+                Token start = p->tok;
 
                 DynamicArray(const char *) names = parseIdentList(p);
 
                 expectToken(p, TK_Colon);
 
                 Expr *type = parseType(p);
-
-                AggregateItem item = {.start = start, .names = names, .type = type};
+                SourceRange range = rangeFromTokenToEndOfNode(start, type);
+                AggregateItem item = {range, .names = names, .type = type};
                 ArrayPush(items, item);
 
                 if (isToken(p, TK_Rbrace)) {
@@ -368,17 +420,16 @@ Expr *parseExprAtom(Parser *p) {
                 if (isTokenEof(p)) break;
             }
 
+            SourceRange range = rangeFromTokens(start, p->tok);
             expectToken(p, TK_Rbrace);
 
-            return NewExprTypeUnion(pkg, start, items);
+            return NewExprTypeUnion(pkg, range, items);
         }
 
         caseEnum: { // See `case TK_Keyword:`
-            Position start = p->tok.pos;
-            Expr *explicitType = NULL;
-
             nextToken();
 
+            Expr *explicitType = NULL;
             if (!isToken(p, TK_Lbrace) && !isToken(p, TK_Directive)) {
                 explicitType = parseType(p);
             }
@@ -387,7 +438,7 @@ Expr *parseExprAtom(Parser *p) {
 
             DynamicArray(EnumItem) items = NULL;
             while (!isToken(p, TK_Rbrace)) {
-                Position start = p->tok.pos;
+                Token start = p->tok;
                 const char *name = parseIdent(p);
                 Expr *init = NULL;
 
@@ -403,7 +454,8 @@ Expr *parseExprAtom(Parser *p) {
                     init = parseExpr(p, true);
                 }
 
-                EnumItem item = {.start = start, .name = name, .init = init};
+                SourceRange range = init ? rangeFromTokenToEndOfNode(start, init) : rangeFromTokens(start, start);
+                EnumItem item = {range, .name = name, .init = init};
                 ArrayPush(items, item);
 
                 if (isToken(p, TK_Rbrace)) {
@@ -414,103 +466,122 @@ Expr *parseExprAtom(Parser *p) {
                 if (isTokenEof(p)) break;
             }
 
+            SourceRange range = rangeFromTokens(start, p->tok);
             expectToken(p, TK_Rbrace);
 
-            return NewExprTypeEnum(pkg, start, explicitType, items);
+            return NewExprTypeEnum(pkg, range, explicitType, items);
         }
 
         default:
             ReportError(p->package, SyntaxError, p->tok.pos, "Unexpected token '%s'", DescribeToken(p->tok));
     }
 
-    Position start = p->tok.pos;
+    SourceRange range = rangeFromTokens(start, start);
     nextToken();
-    return NewExprInvalid(pkg, start);
+    return NewExprInvalid(pkg, range);
 }
 
 Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
     Package *pkg = p->package;
+    Token start = p->tok;
     Expr *x = parseExprAtom(p);
     for (;;) {
         switch (p->tok.kind) {
-            case TK_Dot: {
+            case TK_Dot: { // Selector
                 nextToken();
-                x = NewExprSelector(pkg, x, parseIdent(p));
+                SourceRange range = rangeFromTokens(start, p->tok);
+                x = NewExprSelector(pkg, range, x, parseIdent(p));
                 continue;
             }
 
-            case TK_Lbrack: {
+            case TK_Lbrack: { // Slice | Subscript
                 nextToken();
                 if (matchToken(p, TK_Colon)) {
+                    Token end = p->tok;
                     if (matchToken(p, TK_Rbrack)) {
-                        x = NewExprSlice(pkg, x, NULL, NULL);
+                        SourceRange range = rangeFromTokens(start, end);
+                        x = NewExprSlice(pkg, range, x, NULL, NULL);
                         continue;
                     }
                     Expr *hi = parseExpr(p, noCompoundLiteral);
+                    end = p->tok;
                     expectToken(p, TK_Rbrack);
-                    x = NewExprSlice(pkg, x, NULL, hi);
+                    SourceRange range = rangeFromTokens(start, end);
+                    x = NewExprSlice(pkg, range, x, NULL, hi);
                     continue;
                 }
                 Expr *index = parseExpr(p, noCompoundLiteral);
                 if (matchToken(p, TK_Colon)) {
+                    Token end = p->tok;
                     if (matchToken(p, TK_Rbrack)) {
-                        x = NewExprSlice(pkg, x, index, NULL);
+                        SourceRange range = rangeFromTokens(start, end);
+                        x = NewExprSlice(pkg, range, x, index, NULL);
                         continue;
                     }
                     Expr *hi = parseExpr(p, noCompoundLiteral);
+                    end = p->tok;
                     expectToken(p, TK_Rbrack);
-                    x = NewExprSlice(pkg, x, index, hi);
+                    SourceRange range = rangeFromTokens(start, end);
+                    x = NewExprSlice(pkg, range, x, index, hi);
                     continue;
                 }
+                Token end = p->tok;
                 expectToken(p, TK_Rbrack);
-                x = NewExprSubscript(pkg, x, index);
+                SourceRange range = rangeFromTokens(start, end);
+                x = NewExprSubscript(pkg, range, x, index);
                 continue;
             }
 
-            case TK_Lparen: {
+            case TK_Lparen: { // Call Expr
                 nextToken();
                 DynamicArray(Expr_KeyValue *) args = NULL;
                 if (!isToken(p, TK_Rparen)) {
+                    Token start = p->tok;
+
                     Expr_KeyValue *arg = AllocAst(pkg, sizeof(Expr_KeyValue));
-                    arg->start = p->tok.pos;
                     arg->value = parseExpr(p, noCompoundLiteral);
                     if (isToken(p, TK_Colon) && arg->value->kind == ExprKind_Ident) {
                         arg->key = arg->value;
                         arg->value = parseExpr(p, noCompoundLiteral);
                     }
+                    arg->pos = rangeFromTokenToEndOfNode(start, arg->value);
                     ArrayPush(args, arg);
                     while (matchToken(p, TK_Comma)) {
                         if (isToken(p, TK_Rparen)) break; // Allow trailing comma in argument list
+                        start = p->tok;
 
                         arg = AllocAst(pkg, sizeof(Expr_KeyValue));
-                        arg->start = p->tok.pos;
                         arg->value = parseExpr(p, noCompoundLiteral);
                         if (isToken(p, TK_Colon) && arg->value->kind == ExprKind_Ident) {
                             arg->key = arg->value;
                             arg->value = parseExpr(p, noCompoundLiteral);
                         }
+                        arg->pos = rangeFromTokenToEndOfNode(start, arg->value);
                         ArrayPush(args, arg);
                     }
                 }
+                SourceRange range = rangeFromTokens(start, p->tok);
                 expectToken(p, TK_Rparen);
-                x = NewExprCall(pkg, x, args);
+                x = NewExprCall(pkg, range, x, args);
                 continue;
             }
 
             case TK_Lbrace: {
                 if (x->kind == ExprKind_TypeFunction) {
-                    Position startOfBlock = p->tok.pos;
+                    Token startOfBlock = p->tok;
                     nextToken();
                     DynamicArray(Stmt *) stmts = NULL;
                     while (isNotRbraceOrEOF(p)) {
                         ArrayPush(stmts, parseStmt(p));
                         matchToken(p, TK_Terminator);
                     }
+                    SourceRange blockRange = rangeFromTokens(startOfBlock, p->tok);
+                    SourceRange functionRange = rangeFromTokens(start, p->tok);
                     expectToken(p, TK_Rbrace);
                     Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
-                    block->start = startOfBlock;
+                    block->pos = blockRange;
                     block->stmts = stmts;
-                    x = NewExprLitFunction(pkg, x, block, 0);
+                    x = NewExprLitFunction(pkg, functionRange, x, block, 0);
                     continue;
                 }
                 if (noCompoundLiteral) return x;
@@ -527,8 +598,9 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                         matchToken(p, TK_Terminator);
                     }
                 }
+                SourceRange range = rangeFromTokens(start, p->tok);
                 expectToken(p, TK_Rbrace);
-                x = NewExprLitCompound(pkg, x->start, x, elements);
+                x = NewExprLitCompound(pkg, range, x, elements);
                 continue;
             }
 
@@ -539,14 +611,19 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
 }
 
 Expr *parseExprUnary(Parser *p, b32 noCompoundLiteral) {
+    Token start = p->tok;
     if (matchToken(p, TK_Mul)) {
-        return NewExprTypePointer(p->package, p->prevStart, parseType(p));
+        Expr *type = parseType(p);
+        SourceRange range = rangeFromTokenToEndOfNode(start, type);
+        return NewExprTypePointer(p->package, range, type);
     }
     switch (p->tok.kind) {
         case TK_Add: case TK_Sub: case TK_Not: case TK_BNot: case TK_Xor: case TK_And: case TK_Lss: {
             TokenKind op = p->tok.kind;
             nextToken();
-            return NewExprUnary(p->package, p->prevStart, op, parseExprUnary(p, noCompoundLiteral));
+            Expr *expr = parseExprUnary(p, noCompoundLiteral);
+            SourceRange range = rangeFromTokenToEndOfNode(start, expr);
+            return NewExprUnary(p->package, range, op, expr);
         }
         default:
             return parseExprPrimary(p, noCompoundLiteral);
@@ -568,10 +645,12 @@ Expr *parseExprBinary(Parser *p, i32 prec1, b32 noCompoundLiteral) {
             }
             expectToken(p, TK_Colon);
             Expr *fail = parseExpr(p, noCompoundLiteral);
-            return NewExprTernary(p->package, lhs, pass, fail);
+            SourceRange range = rangeFromNodes(lhs, fail);
+            return NewExprTernary(p->package, range, lhs, pass, fail);
         }
         Expr *rhs = parseExprBinary(p, precedence + 1, noCompoundLiteral);
-        lhs = NewExprBinary(p->package, op, lhs, rhs);
+        SourceRange range = rangeFromNodes(lhs, rhs);
+        lhs = NewExprBinary(p->package, range, op, lhs, rhs);
     }
 }
 
@@ -580,14 +659,15 @@ Expr *parseExpr(Parser *p, b32 noCompoundLiteral) {
 }
 
 Expr_KeyValue *parseExprCompoundField(Parser *p) {
+    Token start = p->tok;
     Expr_KeyValue *field = AllocAst(p->package, sizeof(Expr_KeyValue));
-    field->start = p->tok.pos;
     if (matchToken(p, TK_Lbrack)) {
         field->flags = KeyValueFlag_Index;
         field->key = parseExpr(p, false);
         expectToken(p, TK_Rbrack);
         expectToken(p, TK_Colon);
         field->value = parseExpr(p, false);
+        field->pos = rangeFromTokenToEndOfNode(start, field->value);
         return field;
     } else {
         field->value = parseExpr(p, false);
@@ -597,8 +677,8 @@ Expr_KeyValue *parseExprCompoundField(Parser *p) {
                 ReportError(p->package, SyntaxError, p->prevStart, "Named initializer value must be an identifier or surrounded in '[]'");
             }
             field->value = parseExpr(p, false);
-            return field;
         }
+        field->pos = rangeFromTokenToEndOfNode(start, field->value);
         return field;
     }
 }
@@ -626,7 +706,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                     continue;
                 }
                 Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
-                kv->start = exprs[i]->start;
+                kv->pos = exprs[i]->pos;
                 kv->key = exprs[i];
                 kv->value = type;
                 ArrayPush(*params, kv);
@@ -659,15 +739,17 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
 }
 
 Expr *parseFunctionType(Parser *p) {
-    Position start = p->tok.pos;
+    Token start = p->tok;
     nextToken();
     DynamicArray(Expr_KeyValue *) params = NULL;
     u32 nVarargs;
     b32 namedParameters;
     parseFunctionParameters(&nVarargs, &namedParameters, p, &params);
     expectToken(p, TK_RetArrow);
+
+    SourceRange range;
     DynamicArray(Expr *) results = NULL;
-    if (matchToken(p, TK_Lparen)) {
+    if (matchToken(p, TK_Lparen)) { // We need to handle labels in the result list eg. `(Node, ok: bool)`
         nVarargs = 0;
         namedParameters = false;
         do {
@@ -698,14 +780,17 @@ Expr *parseFunctionType(Parser *p) {
                 }
             }
         } while (matchToken(p, TK_Comma));
+        range = rangeFromTokens(start, p->tok);
         expectToken(p, TK_Rparen);
-    } else {
+    } else { // Result list cannot have labels
         ArrayPush(results, parseType(p));
         while (matchToken(p, TK_Comma)) {
             ArrayPush(results, parseType(p));
         }
+        Expr *last = results[ArrayLen(results) - 1];
+        range = rangeFromTokenToEndOfNode(start, last);
     }
-    return NewExprTypeFunction(p->package, start, params, results);
+    return NewExprTypeFunction(p->package, range, params, results);
 }
 
 DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral) {
@@ -718,16 +803,18 @@ DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral) {
 }
 
 Stmt_Block *parseBlock(Parser *p) {
-    Position start = p->tok.pos;
+    Token start = p->tok;
     expectToken(p, TK_Lbrace);
     DynamicArray(Stmt *) stmts = NULL;
     while (isNotRbraceOrEOF(p)) {
         ArrayPush(stmts, parseStmt(p));
     }
+
+    SourceRange range = rangeFromTokens(start, p->tok);
     expectToken(p, TK_Rbrace);
     matchToken(p, TK_Terminator); // consume terminator if needed `if a {} else {}
     Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
-    block->start = start;
+    block->pos = range;
     block->stmts = stmts;
     return block;
 }
@@ -735,14 +822,16 @@ Stmt_Block *parseBlock(Parser *p) {
 // isIdentList being non NULL indicates that an ident list is permitted (for ... in)
 Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
     Package *pkg = p->package;
-    Position start = p->tok.pos;
+    Token start = p->tok;
 
     DynamicArray(Expr *) exprs = parseExprList(p, noCompoundLiteral);
     switch (p->tok.kind) {
         case TK_Assign: {
             nextToken();
             DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
-            return NewStmtAssign(pkg, start, exprs, rhs);
+            Expr *last = rhs[ArrayLen(rhs) - 1];
+            SourceRange range = rangeFromTokenToEndOfNode(start, last);
+            return NewStmtAssign(pkg, range, exprs, rhs);
         }
 
         case TK_AddAssign: case TK_SubAssign: case TK_MulAssign: case TK_DivAssign:
@@ -755,14 +844,17 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             if (ArrayLen(rhs) > 1) {
                 ReportError(p->package, SyntaxError, op.pos, "Only regular assignment may have multiple left or right values");
             }
-            rhs[0] = NewExprBinary(pkg, op, exprs[0], rhs[0]);
-            return NewStmtAssign(pkg, start, exprs, rhs);
+            SourceRange range = rangeFromNodes(exprs[0], rhs[0]);
+            rhs[0] = NewExprBinary(pkg, range, op, exprs[0], rhs[0]);
+            return NewStmtAssign(pkg, range, exprs, rhs);
         }
 
         case TK_Colon: {
+            Token colon = p->tok;
             nextToken();
             if (ArrayLen(exprs) == 1 && exprs[0]->kind == ExprKind_Ident && (matchToken(p, TK_Terminator) || isTokenEof(p))) {
-                return NewStmtLabel(pkg, start, exprs[0]->Ident.name);
+                SourceRange range = rangeFromTokens(start, colon);
+                return NewStmtLabel(pkg, range, exprs[0]->Ident.name);
             }
 
             DynamicArray(Expr_Ident *) idents = NULL;
@@ -779,26 +871,31 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
 
             if (matchToken(p, TK_Assign)) {
                 rhs = parseExprList(p, noCompoundLiteral);
-                return (Stmt *) NewDeclVariable(pkg, start, idents, NULL, rhs);
+                SourceRange range = rangeFromNodes(exprs[0], rhs[ArrayLen(rhs) - 1]);
+                return (Stmt *) NewDeclVariable(pkg, range, idents, NULL, rhs);
             } 
             
             if (matchToken(p, TK_Colon)) {
                 rhs = parseExprList(p, noCompoundLiteral);
-                return (Stmt *) NewDeclConstant(pkg, start, idents, NULL, rhs);
+                SourceRange range = rangeFromNodes(exprs[0], rhs[ArrayLen(rhs) - 1]);
+                return (Stmt *) NewDeclConstant(pkg, range, idents, NULL, rhs);
             }
 
             Expr *type = parseExpr(p, noCompoundLiteral);
             if (matchToken(p, TK_Assign)) {
                 rhs = parseExprList(p, noCompoundLiteral);
-                return (Stmt *) NewDeclVariable(pkg, start, idents, type, rhs);
+                SourceRange range = rangeFromNodes(exprs[0], rhs[ArrayLen(rhs) - 1]);
+                return (Stmt *) NewDeclVariable(pkg, range, idents, type, rhs);
             } 
             
             if (matchToken(p, TK_Colon)) {
                 rhs = parseExprList(p, noCompoundLiteral);
-                return (Stmt *) NewDeclConstant(pkg, start, idents, type, rhs);
+                SourceRange range = rangeFromNodes(exprs[0], rhs[ArrayLen(rhs) - 1]);
+                return (Stmt *) NewDeclConstant(pkg, range, idents, type, rhs);
             }
 
-            return (Stmt *) NewDeclVariable(pkg, start, idents, type, NULL);
+            SourceRange range = rangeFromNodes(exprs[0], type);
+            return (Stmt *) NewDeclVariable(pkg, range, idents, type, NULL);
         }
 
         default:
@@ -823,9 +920,14 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
     return (Stmt *) exprs[0];
 }
 
-Stmt *parseStmtFor(Parser *p, Package *pkg, Position start) {
+Stmt *parseStmtFor(Parser *p, Package *pkg) {
+    ASSERT(p->tok.val.s == Keyword_for);
+    Token start = p->tok;
+    nextToken();
     if (isToken(p, TK_Lbrace)) {
-        return NewStmtFor(pkg, start, NULL, NULL, NULL, parseBlock(p));
+        Stmt_Block *body = parseBlock(p);
+        SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
+        return NewStmtFor(pkg, range, NULL, NULL, NULL, body);
     }
     Stmt *s1, *s2, *s3;
     s1 = s2 = s3 = NULL;
@@ -846,7 +948,8 @@ Stmt *parseStmtFor(Parser *p, Package *pkg, Position start) {
                 }
                 aggregate = parseExpr(p, true);
                 Stmt_Block *body = parseBlock(p);
-                return NewStmtForIn(pkg, start, valueName, indexName, aggregate, body);
+                SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
+                return NewStmtForIn(pkg, range, valueName, indexName, aggregate, body);
             } else {
                 ReportError(p->package, SyntaxError, p->tok.pos, "Expected single expression or 'in' for iterator");
             }
@@ -868,10 +971,15 @@ Stmt *parseStmtFor(Parser *p, Package *pkg, Position start) {
     }
 
     Stmt_Block *body = parseBlock(p);
-    return NewStmtFor(pkg, start, s1, (Expr *) s2, s3, body);
+    SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
+    return NewStmtFor(pkg, range, s1, (Expr *) s2, s3, body);
 }
 
-Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
+Stmt *parseStmtSwitch(Parser *p, Package *pkg) {
+    ASSERT(p->tok.val.s == Keyword_switch);
+    Token start = p->tok;
+    nextToken();
+
     Expr *match = NULL;
     if (!isToken(p, TK_Lbrace)) match = parseExpr(p, true);
     expectToken(p, TK_Lbrace);
@@ -879,10 +987,12 @@ Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
     for (;;) {
         if (!matchKeyword(p, Keyword_case)) break;
 
-        Position caseStart = p->tok.pos;
+        Token caseStart = p->tok;
+        Token bodyStart = p->tok;
         DynamicArray(Expr *) exprs = NULL;
         if (!matchToken(p, TK_Colon)) {
             exprs = parseExprList(p, true);
+            bodyStart = p->tok;
             expectToken(p, TK_Colon);
         }
 
@@ -892,15 +1002,21 @@ Stmt *parseStmtSwitch(Parser *p, Package *pkg, Position start) {
             ArrayPush(stmts, stmt);
         }
         Stmt_Block *block = AllocAst(pkg, sizeof(Stmt_Block));
-        block->start = caseStart;
+        if (stmts) {
+            block->pos = rangeFromTokenToEndOfNode(bodyStart, stmts[ArrayLen(stmts) - 1]);
+        } else {
+            block->pos = rangeFromTokenToEndOffset(bodyStart, p->tok.pos.offset); // from the ':' to w/e is next
+        }
         block->stmts = stmts;
-        Stmt *scase = NewStmtSwitchCase(pkg, caseStart, exprs, block);
+        SourceRange range = rangeFromTokenToEndOffset(caseStart, block->pos.endOffset);
+        Stmt *scase = NewStmtSwitchCase(pkg, range, exprs, block);
         ArrayPush(cases, scase);
     }
 
+    SourceRange range = rangeFromTokens(start, p->tok);
     expectToken(p, TK_Rbrace);
 
-    return NewStmtSwitch(pkg, start, match, cases);
+    return NewStmtSwitch(pkg, range, match, cases);
 }
 
 void parsePrefixDirectives(Parser *p) {
@@ -928,12 +1044,15 @@ void parsePrefixDirectives(Parser *p) {
 typedef struct SuffixDirectives SuffixDirectives;
 struct SuffixDirectives {
     const char *linkname;
+    SourceRange pos;
 };
 
 SuffixDirectives parseSuffixDirectives(Parser *p) {
     SuffixDirectives val = {0};
+    Token start = p->tok;
+    Token end = start;
     while (isSuffixDirective(p) && !isTokenEof(p)) {
-        Position start = p->tok.pos;
+        end = p->tok;
         if (p->tok.val.ident == internLinkName) {
             nextToken();
             const char *name = p->tok.val.s;
@@ -947,10 +1066,11 @@ SuffixDirectives parseSuffixDirectives(Parser *p) {
             UNIMPLEMENTED();
         }
     }
+    val.pos = rangeFromTokens(start, end);
     return val;
 }
 
-Decl *parseForeignDecl(Parser *p, Position start, Expr *library) {
+Decl *parseForeignDecl(Parser *p, Token start, Expr *library) {
     const char *name = parseIdent(p);
 
     bool isConstant = false;
@@ -977,17 +1097,18 @@ Decl *parseForeignDecl(Parser *p, Position start, Expr *library) {
         linkname = name;
     }
 
-    return NewDeclForeign(p->package, start, library, isConstant, name, type, linkname, p->callingConvention);
+    SourceRange range = rangeFromTokenToEndOffset(start, suffixDirectives.pos.endOffset);
+    return NewDeclForeign(p->package, range, library, isConstant, name, type, linkname, p->callingConvention);
 }
 
-Decl *parseForeignDeclBlock(Parser *p, Position start, Expr *library) {
+Decl *parseForeignDeclBlock(Parser *p, Token start, Expr *library) {
 
     DynamicArray(char) tempStringBuffer = NULL;
     DynamicArray(Decl_ForeignBlockMember) members = NULL;
 
     while (!isToken(p, TK_Rbrace) && !isTokenEof(p)) {
 
-        Position start = p->tok.pos;
+        Token start = p->tok;
         const char *name = parseIdent(p);
 
         bool isConstant = false;
@@ -997,6 +1118,7 @@ Decl *parseForeignDeclBlock(Parser *p, Position start, Expr *library) {
         }
         Expr *type = parseType(p);
 
+        // FIXME: @position If there is no suffix directive then the end used from this is the start of the next token
         SuffixDirectives suffixDirectives = parseSuffixDirectives(p);
 
         const char *linkname;
@@ -1015,18 +1137,20 @@ Decl *parseForeignDeclBlock(Parser *p, Position start, Expr *library) {
 
         expectTerminator(p);
 
-        Decl_ForeignBlockMember member = {start, name, isConstant, type, linkname};
+        SourceRange range = rangeFromTokenToEndOffset(start, suffixDirectives.pos.endOffset);
+        Decl_ForeignBlockMember member = {range, name, isConstant, type, linkname};
         ArrayPush(members, member);
     }
 
+    SourceRange range = rangeFromTokens(start, p->tok);
     expectToken(p, TK_Rbrace);
 
-    return NewDeclForeignBlock(p->package, start, library, p->callingConvention, members);
+    return NewDeclForeignBlock(p->package, range, library, p->callingConvention, members);
 }
 
 Stmt *parseStmt(Parser *p) {
     Package *pkg = p->package;
-    Position start = p->tok.pos;
+    Token start = p->tok;
 
     switch (p->tok.kind) {
         exprStart:
@@ -1040,8 +1164,8 @@ Stmt *parseStmt(Parser *p) {
         }
 
         case TK_Lbrace: {
-            Stmt_Block *block = parseBlock(p);
-            return NewStmtBlock(pkg, block->start, block->stmts);
+            Stmt_Block *block = parseBlock(p); // FIXME: @extra_alloc
+            return NewStmtBlock(pkg, block->pos, block->stmts);
         }
 
         case TK_Directive: {
@@ -1058,7 +1182,7 @@ Stmt *parseStmt(Parser *p) {
                 // #foreign glfw #callconv "c" #linkprefix "glfw"
                 nextToken();
                 Expr *library = parseExpr(p, false);
-                matchToken(p, TK_Terminator);
+                matchToken(p, TK_Terminator); // FIXME: Allow only @newlines_only
 
                 // This will update the parser state, setting callingConvention and linkPrefix
                 parsePrefixDirectives(p);
@@ -1086,12 +1210,14 @@ Stmt *parseStmt(Parser *p) {
             if (isDirective(p, internImport)) {
                 nextToken();
                 Expr *path = parseExpr(p, false);
+                SourceRange range = rangeFromTokenToEndOfNode(start, path);
                 const char *alias = NULL;
                 if (isToken(p, TK_Ident)) {
+                    range = rangeFromTokens(start, p->tok);
                     alias = parseIdent(p);
                 }
                 expectTerminator(p);
-                return (Stmt *) NewDeclImport(pkg, start, path, alias);
+                return (Stmt *) NewDeclImport(pkg, range, path, alias);
             }
 
             return NULL;
@@ -1131,8 +1257,8 @@ Stmt *parseStmt(Parser *p) {
                 Expr *target = parseExpr(p, true);
                 return NewStmtGoto(pkg, start, keyword, target);
             }
-            if (matchKeyword(p, Keyword_for)) {
-                return parseStmtFor(p, pkg, start);
+            if (isKeyword(p, Keyword_for)) {
+                return parseStmtFor(p, pkg);
             }
             if (matchKeyword(p, Keyword_return)) {
                 DynamicArray(Expr *) exprs = NULL;
@@ -1142,8 +1268,8 @@ Stmt *parseStmt(Parser *p) {
                 if (p->tok.kind != TK_Rbrace) expectTerminator(p);
                 return NewStmtReturn(pkg, start, exprs);
             }
-            if (matchKeyword(p, Keyword_switch)) {
-                return parseStmtSwitch(p, pkg, start);
+            if (isKeyword(p, Keyword_switch)) {
+                return parseStmtSwitch(p, pkg);
             }
             if (matchKeyword(p, Keyword_using)) UNIMPLEMENTED();
 

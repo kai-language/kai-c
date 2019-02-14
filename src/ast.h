@@ -105,6 +105,7 @@ STATIC_ASSERT(_ExprKind_End <= UINT8_MAX, "enum values overflow storage type");
 STATIC_ASSERT(_StmtKind_End <= UINT8_MAX, "enum values overflow storage type");
 STATIC_ASSERT(_DeclKind_End <= UINT8_MAX, "enum values overflow storage type");
 
+typedef void * AstNode;
 typedef struct Expr Expr;
 typedef struct Stmt Stmt;
 typedef struct Decl Decl;
@@ -124,72 +125,72 @@ DECL_KINDS
 
 typedef struct AstInvalid AstInvalid;
 struct AstInvalid {
-    Position start;
+    SourceRange pos;
 };
 
 struct Expr_Ident {
-    Position start;
+    SourceRange pos;
     const char *name;
 };
 
 struct Expr_Paren {
-    Position start;
+    SourceRange pos;
     Expr *expr;
 };
 
 struct Expr_Call {
-    Position start;
+    SourceRange pos;
     Expr *expr;
     DynamicArray(Expr_KeyValue *) args;
 };
 
 struct Expr_Selector {
-    Position start;
+    SourceRange pos;
     Expr *expr;
     const char *name;
 };
 
 struct Expr_Subscript {
-    Position start;
+    SourceRange pos;
     Expr *expr;
     Expr *index;
 };
 
 struct Expr_Slice {
-    Position start;
+    SourceRange pos;
     Expr *expr;
     Expr *lo;
     Expr *hi;
 };
 
 struct Expr_Unary {
-    Position start;
+    SourceRange pos;
     TokenKind op;
     Expr *expr;
 };
 
 struct Expr_Binary {
-    Position start;
+    SourceRange pos;
     Token op;
     Expr *lhs;
     Expr *rhs;
 };
 
 struct Expr_Ternary {
-    Position start;
+    SourceRange pos;
     Expr *cond;
     Expr *pass;
     Expr *fail;
 };
 
 struct Expr_Cast {
-    Position start;
+    SourceRange pos;
     Expr *type;
     Expr *expr;
 };
 
 struct Expr_Autocast {
-    Position start;
+    SourceRange pos;
     Expr *expr;
 };
 
@@ -198,7 +199,7 @@ enum Enum_KeyValueFlag {
     KeyValueFlag_Index = 1,
 };
 struct Expr_KeyValue {
-    Position start;
+    SourceRange pos;
     Expr *key;
     Expr *value;
     KeyValueFlag flags;
@@ -214,90 +215,90 @@ struct Expr_KeyValue {
 };
 
 struct Expr_LocationDirective {
-    Position start;
+    SourceRange pos;
     const char *name;
 };
 
 struct Expr_LitNil {
-    Position start;
+    SourceRange pos;
 };
 
 struct Expr_LitInt {
-    Position start;
+    SourceRange pos;
     u64 val;
 };
 
 struct Expr_LitFloat {
-    Position start;
+    SourceRange pos;
     f64 val;
 };
 
 struct Expr_LitString {
-    Position start;
+    SourceRange pos;
     const char *val;
 };
 
 struct Expr_LitCompound {
-    Position start;
+    SourceRange pos;
     Expr *type;
     DynamicArray(Expr_KeyValue *) elements;
 };
 
 struct Expr_LitFunction {
-    Position start;
+    SourceRange pos;
     Expr *type;
     Stmt_Block *body;
     u8 flags;
 };
 
 struct Expr_TypePointer {
-    Position start;
+    SourceRange pos;
     Expr *type;
 };
 
 struct Expr_TypeArray {
-    Position start;
+    SourceRange pos;
     Expr *length;
     Expr *type;
 };
 
 struct Expr_TypeSlice {
-    Position start;
+    SourceRange pos;
     Expr *type;
 };
 
 typedef struct AggregateItem AggregateItem;
 struct AggregateItem {
-    Position start;
+    SourceRange pos;
     DynamicArray(const char *) names;
     Expr *type;
 };
 
 struct Expr_TypeStruct {
-    Position start;
+    SourceRange pos;
     DynamicArray(AggregateItem) items;
 };
 
 struct Expr_TypeUnion {
-    Position start;
+    SourceRange pos;
     DynamicArray(AggregateItem) items;
 };
 
 typedef struct EnumItem EnumItem;
 struct EnumItem {
-    Position start;
+    SourceRange pos;
     const char *name;
     Expr *init;
 };
 
 struct Expr_TypeEnum {
-    Position start;
+    SourceRange pos;
     Expr *explicitType;
     DynamicArray(EnumItem) items;
 };
 
 struct Expr_TypePolymorphic {
-    Position start;
+    SourceRange pos;
     const char *name;
 };
 
@@ -306,67 +307,67 @@ enum Enum_TypeVariadicFlag {
     TypeVariadicFlag_CVargs = 1,
 };
 struct Expr_TypeVariadic {
-    Position start;
+    SourceRange pos;
     Expr *type;
     TypeVariadicFlag flags;
 };
 
 struct Expr_TypeFunction {
-    Position start;
+    SourceRange pos;
     DynamicArray(Expr *) result;
     DynamicArray(Expr_KeyValue *) params;
 };
 
 struct Stmt_Empty {
-    Position start;
+    SourceRange pos;
 };
 
 struct Stmt_Label {
-    Position start;
+    SourceRange pos;
     const char *name;
 };
 
 struct Stmt_Assign {
-    Position start;
+    SourceRange pos;
     DynamicArray(Expr *) lhs;
     DynamicArray(Expr *) rhs;
 };
 
 struct Stmt_Return {
-    Position start;
+    SourceRange pos;
     DynamicArray(Expr *) exprs;
 };
 
 struct Stmt_Defer {
-    Position start;
+    SourceRange pos;
     Stmt *stmt;
 };
 
 struct Stmt_Using {
-    Position start;
+    SourceRange pos;
     Expr *expr;
 };
 
 struct Stmt_Goto {
-    Position start;
+    SourceRange pos;
     const char *keyword;
     Expr *target;
 };
 
 struct Stmt_Block {
-    Position start;
+    SourceRange pos;
     DynamicArray(Stmt *) stmts;
 };
 
 struct Stmt_If {
-    Position start;
+    SourceRange pos;
     Expr *cond;
     Stmt *pass;
     Stmt *fail;
 };
 
 struct Stmt_For {
-    Position start;
+    SourceRange pos;
     Stmt *init;
     Expr *cond;
     Stmt *step;
@@ -374,7 +375,7 @@ struct Stmt_For {
 };
 
 struct Stmt_ForIn {
-    Position start;
+    SourceRange pos;
     Expr_Ident *valueName;
     Expr_Ident *indexName;
     Expr *aggregate;
@@ -382,33 +383,33 @@ struct Stmt_ForIn {
 };
 
 struct Stmt_Switch {
-    Position start;
+    SourceRange pos;
     Expr *match;
     DynamicArray(Stmt *) cases;
 };
 
 struct Stmt_SwitchCase {
-    Position start;
+    SourceRange pos;
     DynamicArray(Expr *) matches;
     Stmt_Block *block;
 };
 
 struct Decl_Variable {
-    Position start;
+    SourceRange pos;
     DynamicArray(Expr_Ident *) names;
     Expr *type;
     DynamicArray(Expr *) values;
 };
 
 struct Decl_Constant {
-    Position start;
+    SourceRange pos;
     DynamicArray(Expr_Ident *) names;
     Expr *type;
     DynamicArray(Expr *) values;
 };
 
 struct Decl_Foreign {
-    Position start;
+    SourceRange pos;
     Expr *library;
     bool isConstant;
     const char *name;
@@ -419,7 +420,7 @@ struct Decl_Foreign {
 
 typedef struct Decl_ForeignBlockMember Decl_ForeignBlockMember;
 struct Decl_ForeignBlockMember {
-    Position start;
+    SourceRange pos;
     const char *name;
     bool isConstant;
     Expr *type;
@@ -428,14 +429,14 @@ struct Decl_ForeignBlockMember {
 };
 
 struct Decl_ForeignBlock {
-    Position start;
+    SourceRange pos;
     Expr *library;
     const char *callingConvention;
     DynamicArray(Decl_ForeignBlockMember) members;
 };
 
 struct Decl_Import {
-    Position start;
+    SourceRange pos;
     Expr *path;
     const char *alias;
     Symbol *symbol;
@@ -466,7 +467,7 @@ struct Stmt {
     u64 id;
     StmtKind kind;
     union {
-        Position start;
+        SourceRange pos;
         StmtValue stmt;
         ExprValue expr;
         DeclValue decl;
@@ -490,7 +491,7 @@ struct Expr {
     u64 id;
     ExprKind kind;
     union {
-        Position start;
+        SourceRange pos;
         ExprValue expr;
         AstInvalid Invalid;
         
@@ -505,7 +506,7 @@ struct Decl {
     u64 id;
     DeclKind kind;
     union {
-        Position start;
+        SourceRange pos;
         DeclValue decl;
         AstInvalid Invalid;
         
@@ -536,65 +537,60 @@ const char *DescribeDecl(Decl *decl);
 
 void *AllocAst(Package *package, size_t size);
 
-// - MARK: Ends
-Position EndForStmt(Stmt *stmt);
-Position EndForExpr(Expr *expr);
-Position EndForDecl(Decl *decl);
-
 // - MARK: Exprs
-Expr *NewExpr(Package *package, ExprKind kind, Position start);
-Stmt *NewStmt(Package *package, StmtKind kind, Position start);
-Decl *NewDecl(Package *package, DeclKind kind, Position start);
-Expr *NewExprInvalid(Package *package, Position start);
-Stmt *NewStmtInvalid(Package *package, Position start);
-Decl *NewDeclInvalid(Package *package, Position start);
-Expr *NewExprIdent(Package *package, Position start, const char *name);
-Expr *NewExprParen(Package *package, Expr *expr, Position start);
-Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args);
-Expr *NewExprSelector(Package *package, Expr *expr, const char *name);
-Expr *NewExprSubscript(Package *package, Expr *expr, Expr *index);
-Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi);
-Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr);
-Expr *NewExprBinary(Package *package, Token op, Expr *lhs, Expr *rhs);
-Expr *NewExprTernary(Package *package, Expr *cond, Expr *pass, Expr *fail);
-Expr *NewExprCast(Package *package, Position start, Expr *type, Expr *expr);
-Expr *NewExprAutocast(Package *package, Position start, Expr *expr);
+Expr *NewExpr(Package *package, ExprKind kind, SourceRange pos);
+Stmt *NewStmt(Package *package, StmtKind kind, SourceRange pos);
+Decl *NewDecl(Package *package, DeclKind kind, SourceRange pos);
+Expr *NewExprInvalid(Package *package, SourceRange pos);
+Stmt *NewStmtInvalid(Package *package, SourceRange pos);
+Decl *NewDeclInvalid(Package *package, SourceRange pos);
+Expr *NewExprIdent(Package *package, SourceRange pos, const char *name);
+Expr *NewExprParen(Package *package, SourceRange pos, Expr *expr);
+Expr *NewExprCall(Package *package, SourceRange pos, Expr *expr, DynamicArray(Expr_KeyValue *) args);
+Expr *NewExprSelector(Package *package, SourceRange pos, Expr *expr, const char *name);
+Expr *NewExprSubscript(Package *package, SourceRange pos, Expr *expr, Expr *index);
+Expr *NewExprSlice(Package *package, SourceRange pos, Expr *expr, Expr *lo, Expr *hi);
+Expr *NewExprUnary(Package *package, SourceRange pos, TokenKind op, Expr *expr);
+Expr *NewExprBinary(Package *package, SourceRange pos, Token op, Expr *lhs, Expr *rhs);
+Expr *NewExprTernary(Package *package, SourceRange pos, Expr *cond, Expr *pass, Expr *fail);
+Expr *NewExprCast(Package *package, SourceRange pos, Expr *type, Expr *expr);
+Expr *NewExprAutocast(Package *package, SourceRange pos, Expr *expr);
 Expr *NewExprKeyValue(Package *package, Expr *key, Expr *value);
-Expr *NewExprLocationDirective(Package *package, Position start, const char *name);
-Expr *NewExprLitNil(Package *package, Position start);
-Expr *NewExprLitInt(Package *package, Position start, u64 val);
-Expr *NewExprLitFloat(Package *package, Position start, f64 val);
-Expr *NewExprLitString(Package *package, Position start, const char *val);
-Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements);
-Expr *NewExprLitFunction(Package *package, Expr *type, Stmt_Block *body, u8 flags);
-Expr *NewExprTypePointer(Package *package, Position start, Expr *type);
-Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *type);
-Expr *NewExprTypeSlice(Package *package, Position start, Expr *type);
-Expr *NewExprTypeStruct(Package *package, Position start, DynamicArray(AggregateItem) items);
-Expr *NewExprTypeEnum(Package *package, Position start, Expr *explicitType, DynamicArray(EnumItem) items);
-Expr *NewExprTypeUnion(Package *package, Position start, DynamicArray(AggregateItem) items);
-Expr *NewExprTypePolymorphic(Package *package, Position start, const char *name);
-Expr *NewExprTypeVariadic(Package *package, Position start, Expr *type, u8 flags);
-Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result);
+Expr *NewExprLocationDirective(Package *package, SourceRange pos, const char *name);
+Expr *NewExprLitNil(Package *package, SourceRange pos);
+Expr *NewExprLitInt(Package *package, SourceRange pos, u64 val);
+Expr *NewExprLitFloat(Package *package, SourceRange pos, f64 val);
+Expr *NewExprLitString(Package *package, SourceRange pos, const char *val);
+Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(Expr_KeyValue *) elements);
+Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt_Block *body, u8 flags);
+Expr *NewExprTypePointer(Package *package, SourceRange pos, Expr *type);
+Expr *NewExprTypeArray(Package *package, SourceRange pos, Expr *length, Expr *type);
+Expr *NewExprTypeSlice(Package *package, SourceRange pos, Expr *type);
+Expr *NewExprTypeStruct(Package *package, SourceRange pos, DynamicArray(AggregateItem) items);
+Expr *NewExprTypeEnum(Package *package, SourceRange pos, Expr *explicitType, DynamicArray(EnumItem) items);
+Expr *NewExprTypeUnion(Package *package, SourceRange pos, DynamicArray(AggregateItem) items);
+Expr *NewExprTypePolymorphic(Package *package, SourceRange pos, const char *name);
+Expr *NewExprTypeVariadic(Package *package, SourceRange pos, Expr *type, u8 flags);
+Expr *NewExprTypeFunction(Package *package, SourceRange pos, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result);
 
 // - MARK: Stmts
-Stmt *NewStmtEmpty(Package *package, Position start);
-Stmt *NewStmtLabel(Package *package, Position start, const char *name);
-Stmt *NewStmtAssign(Package *package, Position start, DynamicArray(Expr *) lhs, DynamicArray(Expr*) rhs);
-Stmt *NewStmtReturn(Package *package, Position start, DynamicArray(Expr *) exprs);
-Stmt *NewStmtDefer(Package *package, Position start, Stmt *stmt);
-Stmt *NewStmtUsing(Package *package, Position start, Expr *expr);
-Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr *target);
-Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts);
-Stmt *NewStmtIf(Package *package, Position start, Expr *cond, Stmt *pass, Stmt *fail);
-Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body);
-Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body);
-Stmt *NewStmtSwitch(Package *package, Position start, Expr *match, DynamicArray(Stmt *) cases);
-Stmt *NewStmtSwitchCase(Package *package, Position start, DynamicArray(Expr *) matches, Stmt_Block *block);
+Stmt *NewStmtEmpty(Package *package, SourceRange pos);
+Stmt *NewStmtLabel(Package *package, SourceRange pos, const char *name);
+Stmt *NewStmtAssign(Package *package, SourceRange pos, DynamicArray(Expr *) lhs, DynamicArray(Expr*) rhs);
+Stmt *NewStmtReturn(Package *package, SourceRange pos, DynamicArray(Expr *) exprs);
+Stmt *NewStmtDefer(Package *package, SourceRange pos, Stmt *stmt);
+Stmt *NewStmtUsing(Package *package, SourceRange pos, Expr *expr);
+Stmt *NewStmtGoto(Package *package, SourceRange pos, const char *keyword, Expr *target);
+Stmt *NewStmtBlock(Package *package, SourceRange pos, DynamicArray(Stmt *) stmts);
+Stmt *NewStmtIf(Package *package, SourceRange pos, Expr *cond, Stmt *pass, Stmt *fail);
+Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body);
+Stmt *NewStmtForIn(Package *package, SourceRange pos, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body);
+Stmt *NewStmtSwitch(Package *package, SourceRange pos, Expr *match, DynamicArray(Stmt *) cases);
+Stmt *NewStmtSwitchCase(Package *package, SourceRange pos, DynamicArray(Expr *) matches, Stmt_Block *block);
 
 // - MARK: Decls
-Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
-Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
-Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
-Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
-Decl *NewDeclImport(Package *package, Position start, Expr *path, const char *alias);
+Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
+Decl *NewDeclConstant(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
+Decl *NewDeclForeign(Package *package, SourceRange pos, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
+Decl *NewDeclForeignBlock(Package *package, SourceRange pos, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
+Decl *NewDeclImport(Package *package, SourceRange pos, Expr *path, const char *alias);

@@ -72,40 +72,26 @@ void *AllocAst(Package *package, size_t size) {
     return mem;
 }
 
-// TODO: We can implement these correctly to improve error quality at some point
-// Alternatively we *may* be able to come up with something smarter
-Position EndForStmt(Stmt *stmt) {
-    return stmt->start;
-}
-
-Position EndForExpr(Expr *expr) {
-    return expr->start;
-}
-
-Position EndForDecl(Decl *decl) {
-    return decl->start;
-}
-
-Expr *NewExpr(Package *package, ExprKind kind, Position start) {
+Expr *NewExpr(Package *package, ExprKind kind, SourceRange pos) {
     Expr *e = AllocAst(package, sizeof(Expr));
     e->kind = kind;
-    e->start = start;
+    e->pos = pos;
     e->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
     return e;
 }
 
-Stmt *NewStmt(Package *package, StmtKind kind, Position start) {
+Stmt *NewStmt(Package *package, StmtKind kind, SourceRange pos) {
     Stmt *s = AllocAst(package, sizeof(Stmt));
     s->kind = kind;
-    s->start = start;
+    s->pos = pos;
     s->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
     return s;
 }
 
-Decl *NewDecl(Package *package, DeclKind kind, Position start) {
+Decl *NewDecl(Package *package, DeclKind kind, SourceRange pos) {
     Decl *d = AllocAst(package, sizeof(Decl));
     d->kind = kind;
-    d->start = start;
+    d->pos = pos;
     d->id = DoesStmtKindAllocateTypeInfo[kind] ? ++package->astIdCount: 0;
 
 #if DEBUG
@@ -114,265 +100,265 @@ Decl *NewDecl(Package *package, DeclKind kind, Position start) {
     return d;
 }
 
-Expr *NewExprInvalid(Package *package, Position start) {
-    Expr *e = NewExpr(package, ExprKind_Invalid, start);
+Expr *NewExprInvalid(Package *package, SourceRange pos) {
+    Expr *e = NewExpr(package, ExprKind_Invalid, pos);
     return e;
 }
 
-Stmt *NewStmtInvalid(Package *package, Position start) {
-    Stmt *s = NewStmt(package, StmtKind_Invalid, start);
+Stmt *NewStmtInvalid(Package *package, SourceRange pos) {
+    Stmt *s = NewStmt(package, StmtKind_Invalid, pos);
     return s;
 }
 
-Decl *NewDeclInvalid(Package *package, Position start) {
-    Decl *d = NewDecl(package, DeclKind_Invalid, start);
+Decl *NewDeclInvalid(Package *package, SourceRange pos) {
+    Decl *d = NewDecl(package, DeclKind_Invalid, pos);
     return d;
 }
 
-Expr *NewExprIdent(Package *package, Position start, const char *name) {
-    Expr *e = NewExpr(package, ExprKind_Ident, start);
+Expr *NewExprIdent(Package *package, SourceRange pos, const char *name) {
+    Expr *e = NewExpr(package, ExprKind_Ident, pos);
     e->Ident.name = name;
     return e;
 }
 
-Expr *NewExprParen(Package *package, Expr *expr, Position start) {
-    Expr *e = NewExpr(package, ExprKind_Paren, start);
+Expr *NewExprParen(Package *package, SourceRange pos, Expr *expr) {
+    Expr *e = NewExpr(package, ExprKind_Paren, pos);
     e->Paren.expr = expr;
     return e;
 }
 
-Expr *NewExprCall(Package *package, Expr *expr, DynamicArray(Expr_KeyValue *) args) {
-    Expr *e = NewExpr(package, ExprKind_Call, expr->start);
+Expr *NewExprCall(Package *package, SourceRange pos, Expr *expr, DynamicArray(Expr_KeyValue *) args) {
+    Expr *e = NewExpr(package, ExprKind_Call, pos);
     e->Call.expr = expr;
     e->Call.args = args;
     return e;
 }
 
-Expr *NewExprSelector(Package *package, Expr *expr, const char *name) {
-    Expr *e = NewExpr(package, ExprKind_Selector, expr->start);
+Expr *NewExprSelector(Package *package, SourceRange pos, Expr *expr, const char *name) {
+    Expr *e = NewExpr(package, ExprKind_Selector, pos);
     e->Selector.expr = expr;
     e->Selector.name = name;
     return e;
 }
 
-Expr *NewExprSubscript(Package *package, Expr *expr, Expr *index) {
-    Expr *e = NewExpr(package, ExprKind_Subscript, expr->start);
+Expr *NewExprSubscript(Package *package, SourceRange pos, Expr *expr, Expr *index) {
+    Expr *e = NewExpr(package, ExprKind_Subscript, pos);
     e->Subscript.expr = expr;
     e->Subscript.index = index;
     return e;
 }
 
-Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi) {
-    Expr *e = NewExpr(package, ExprKind_Slice, expr->start);
+Expr *NewExprSlice(Package *package, SourceRange pos, Expr *expr, Expr *lo, Expr *hi) {
+    Expr *e = NewExpr(package, ExprKind_Slice, pos);
     e->Slice.expr = expr;
     e->Slice.lo = lo;
     e->Slice.hi = hi;
     return e;
 }
 
-Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr) {
-    Expr *e = NewExpr(package, ExprKind_Unary, start);
+Expr *NewExprUnary(Package *package, SourceRange pos, TokenKind op, Expr *expr) {
+    Expr *e = NewExpr(package, ExprKind_Unary, pos);
     e->Unary.op = op;
     e->Unary.expr = expr;
     return e;
 }
 
-Expr *NewExprBinary(Package *package, Token op, Expr *lhs, Expr *rhs) {
-    Expr *e = NewExpr(package, ExprKind_Binary, lhs->start);
+Expr *NewExprBinary(Package *package, SourceRange pos, Token op, Expr *lhs, Expr *rhs) {
+    Expr *e = NewExpr(package, ExprKind_Binary, pos);
     e->Binary.op = op;
     e->Binary.lhs = lhs;
     e->Binary.rhs = rhs;
     return e;
 }
 
-Expr *NewExprTernary(Package *package, Expr *cond, Expr *pass, Expr *fail) {
-    Expr *e = NewExpr(package, ExprKind_Ternary, cond->start);
+Expr *NewExprTernary(Package *package, SourceRange pos, Expr *cond, Expr *pass, Expr *fail) {
+    Expr *e = NewExpr(package, ExprKind_Ternary, pos);
     e->Ternary.cond = cond;
     e->Ternary.pass = pass;
     e->Ternary.fail = fail;
     return e;
 }
 
-Expr *NewExprCast(Package *package, Position start, Expr *type, Expr *expr) {
-    Expr *e = NewExpr(package, ExprKind_Cast, start);
+Expr *NewExprCast(Package *package, SourceRange pos, Expr *type, Expr *expr) {
+    Expr *e = NewExpr(package, ExprKind_Cast, pos);
     e->Cast.type = type;
     e->Cast.expr = expr;
     return e;
 }
 
-Expr *NewExprAutocast(Package *package, Position start, Expr *expr) {
-    Expr *e = NewExpr(package, ExprKind_Autocast, start);
+Expr *NewExprAutocast(Package *package, SourceRange pos, Expr *expr) {
+    Expr *e = NewExpr(package, ExprKind_Autocast, pos);
     e->Autocast.expr = expr;
     return e;
 }
 
 Expr *NewExprKeyValue(Package *package, Expr *key, Expr *value) {
-    Expr *e = NewExpr(package, ExprKind_KeyValue, key->start);
+    Expr *e = NewExpr(package, ExprKind_KeyValue, key->pos);
     e->KeyValue.key = key;
     e->KeyValue.value = value;
     return e;
 }
 
-Expr *NewExprLocationDirective(Package *package, Position start, const char *name) {
-    Expr *e = NewExpr(package, ExprKind_LocationDirective, start);
+Expr *NewExprLocationDirective(Package *package, SourceRange pos, const char *name) {
+    Expr *e = NewExpr(package, ExprKind_LocationDirective, pos);
     e->LocationDirective.name = name;
     return e;
 }
 
-Expr *NewExprLitNil(Package *package, Position start) {
-    Expr *e = NewExpr(package, ExprKind_LitNil, start);
+Expr *NewExprLitNil(Package *package, SourceRange pos) {
+    Expr *e = NewExpr(package, ExprKind_LitNil, pos);
     return e;
 }
 
-Expr *NewExprLitInt(Package *package, Position start, u64 val) {
-    Expr *e = NewExpr(package, ExprKind_LitInt, start);
+Expr *NewExprLitInt(Package *package, SourceRange pos, u64 val) {
+    Expr *e = NewExpr(package, ExprKind_LitInt, pos);
     e->LitInt.val = val;
     return e;
 }
 
-Expr *NewExprLitFloat(Package *package, Position start, f64 val) {
-    Expr *e = NewExpr(package, ExprKind_LitFloat, start);
+Expr *NewExprLitFloat(Package *package, SourceRange pos, f64 val) {
+    Expr *e = NewExpr(package, ExprKind_LitFloat, pos);
     e->LitFloat.val = val;
     return e;
 }
 
-Expr *NewExprLitString(Package *package, Position start, const char *val) {
-    Expr *e = NewExpr(package, ExprKind_LitString, start);
+Expr *NewExprLitString(Package *package, SourceRange pos, const char *val) {
+    Expr *e = NewExpr(package, ExprKind_LitString, pos);
     e->LitString.val = val;
     return e;
 }
 
-Expr *NewExprLitCompound(Package *package, Position start, Expr *type, DynamicArray(Expr_KeyValue *) elements) {
-    Expr *e = NewExpr(package, ExprKind_LitCompound, start);
+Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(Expr_KeyValue *) elements) {
+    Expr *e = NewExpr(package, ExprKind_LitCompound, pos);
     e->LitCompound.type = type;
     e->LitCompound.elements = elements;
     return e;
 }
 
-Expr *NewExprLitFunction(Package *package, Expr *type, Stmt_Block *body, u8 flags) {
-    Expr *e = NewExpr(package, ExprKind_LitFunction, type->start);
+Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt_Block *body, u8 flags) {
+    Expr *e = NewExpr(package, ExprKind_LitFunction, pos);
     e->LitFunction.type = type;
     e->LitFunction.body = body;
     e->LitFunction.flags = flags;
     return e;
 }
 
-Expr *NewExprTypePointer(Package *package, Position start, Expr *type) {
-    Expr *e = NewExpr(package, ExprKind_TypePointer, start);
+Expr *NewExprTypePointer(Package *package, SourceRange pos, Expr *type) {
+    Expr *e = NewExpr(package, ExprKind_TypePointer, pos);
     e->TypePointer.type = type;
     return e;
 }
 
-Expr *NewExprTypeArray(Package *package, Position start, Expr *length, Expr *type) {
-    Expr *e = NewExpr(package, ExprKind_TypeArray, start);
+Expr *NewExprTypeArray(Package *package, SourceRange pos, Expr *length, Expr *type) {
+    Expr *e = NewExpr(package, ExprKind_TypeArray, pos);
     e->TypeArray.length = length;
     e->TypeArray.type = type;
     return e;
 }
 
-Expr *NewExprTypeSlice(Package *package, Position start, Expr *type) {
-    Expr *e = NewExpr(package, ExprKind_TypeSlice, start);
+Expr *NewExprTypeSlice(Package *package, SourceRange pos, Expr *type) {
+    Expr *e = NewExpr(package, ExprKind_TypeSlice, pos);
     e->TypeSlice.type = type;
     return e;
 }
 
-Expr *NewExprTypeStruct(Package *package, Position start, DynamicArray(AggregateItem) items) {
-    Expr *e = NewExpr(package, ExprKind_TypeStruct, start);
+Expr *NewExprTypeStruct(Package *package, SourceRange pos, DynamicArray(AggregateItem) items) {
+    Expr *e = NewExpr(package, ExprKind_TypeStruct, pos);
     e->TypeStruct.items = items;
     return e;
 }
 
-Expr *NewExprTypeEnum(Package *package, Position start, Expr *explicitType, DynamicArray(EnumItem) items) {
-    Expr *e = NewExpr(package, ExprKind_TypeEnum, start);
+Expr *NewExprTypeEnum(Package *package, SourceRange pos, Expr *explicitType, DynamicArray(EnumItem) items) {
+    Expr *e = NewExpr(package, ExprKind_TypeEnum, pos);
     e->TypeEnum.explicitType = explicitType;
     e->TypeEnum.items = items;
     return e;
 }
 
-Expr *NewExprTypeUnion(Package *package, Position start, DynamicArray(AggregateItem) items) {
-    Expr *e = NewExpr(package, ExprKind_TypeUnion, start);
+Expr *NewExprTypeUnion(Package *package, SourceRange pos, DynamicArray(AggregateItem) items) {
+    Expr *e = NewExpr(package, ExprKind_TypeUnion, pos);
     e->TypeUnion.items = items;
     return e;
 }
 
-Expr *NewExprTypePolymorphic(Package *package, Position start, const char *name) {
-    Expr *e = NewExpr(package, ExprKind_TypePolymorphic, start);
+Expr *NewExprTypePolymorphic(Package *package, SourceRange pos, const char *name) {
+    Expr *e = NewExpr(package, ExprKind_TypePolymorphic, pos);
     e->TypePolymorphic.name = name;
     return e;
 }
 
-Expr *NewExprTypeVariadic(Package *package, Position start, Expr *type, u8 flags) {
-    Expr *e = NewExpr(package, ExprKind_TypeVariadic, start);
+Expr *NewExprTypeVariadic(Package *package, SourceRange pos, Expr *type, u8 flags) {
+    Expr *e = NewExpr(package, ExprKind_TypeVariadic, pos);
     e->TypeVariadic.type = type;
     e->TypeVariadic.flags = flags;
     return e;
 }
 
-Expr *NewExprTypeFunction(Package *package, Position start, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result) {
-    Expr *e = NewExpr(package, ExprKind_TypeFunction, start);
+Expr *NewExprTypeFunction(Package *package, SourceRange pos, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result) {
+    Expr *e = NewExpr(package, ExprKind_TypeFunction, pos);
     e->TypeFunction.params = params;
     e->TypeFunction.result = result;
     return e;
 }
 
-Stmt *NewStmtEmpty(Package *package, Position start) {
-    return NewStmt(package, StmtKind_Empty, start);
+Stmt *NewStmtEmpty(Package *package, SourceRange pos) {
+    return NewStmt(package, StmtKind_Empty, pos);
 }
 
-Stmt *NewStmtLabel(Package *package, Position start, const char *name) {
-    Stmt *s = NewStmt(package, StmtKind_Label, start);
+Stmt *NewStmtLabel(Package *package, SourceRange pos, const char *name) {
+    Stmt *s = NewStmt(package, StmtKind_Label, pos);
     s->Label.name = name;
     return s;
 }
 
-Stmt *NewStmtAssign(Package *package, Position start, DynamicArray(Expr *) lhs, DynamicArray(Expr*) rhs) {
-    Stmt *s = NewStmt(package, StmtKind_Assign, start);
+Stmt *NewStmtAssign(Package *package, SourceRange pos, DynamicArray(Expr *) lhs, DynamicArray(Expr*) rhs) {
+    Stmt *s = NewStmt(package, StmtKind_Assign, pos);
     s->Assign.lhs = lhs;
     s->Assign.rhs = rhs;
     return s;
 }
 
-Stmt *NewStmtReturn(Package *package, Position start, DynamicArray(Expr *) exprs) {
-    Stmt *s = NewStmt(package, StmtKind_Return, start);
+Stmt *NewStmtReturn(Package *package, SourceRange pos, DynamicArray(Expr *) exprs) {
+    Stmt *s = NewStmt(package, StmtKind_Return, pos);
     s->Return.exprs = exprs;
     return s;
 }
 
-Stmt *NewStmtDefer(Package *package, Position start, Stmt *stmt) {
-    Stmt *s = NewStmt(package, StmtKind_Defer, start);
+Stmt *NewStmtDefer(Package *package, SourceRange pos, Stmt *stmt) {
+    Stmt *s = NewStmt(package, StmtKind_Defer, pos);
     s->Defer.stmt = stmt;
     return s;
 }
 
-Stmt *NewStmtUsing(Package *package, Position start, Expr *expr) {
-    Stmt *s = NewStmt(package, StmtKind_Using, start);
+Stmt *NewStmtUsing(Package *package, SourceRange pos, Expr *expr) {
+    Stmt *s = NewStmt(package, StmtKind_Using, pos);
     s->Using.expr = expr;
     return s;
 }
 
-Stmt *NewStmtGoto(Package *package, Position start, const char *keyword, Expr *target) {
-    Stmt *s = NewStmt(package, StmtKind_Goto, start);
+Stmt *NewStmtGoto(Package *package, SourceRange pos, const char *keyword, Expr *target) {
+    Stmt *s = NewStmt(package, StmtKind_Goto, pos);
     s->Goto.keyword = keyword;
     s->Goto.target = target;
     return s;
 }
 
-Stmt *NewStmtBlock(Package *package, Position start, DynamicArray(Stmt *) stmts) {
-    Stmt *s = NewStmt(package, StmtKind_Block, start);
+Stmt *NewStmtBlock(Package *package, SourceRange pos, DynamicArray(Stmt *) stmts) {
+    Stmt *s = NewStmt(package, StmtKind_Block, pos);
     s->Block.stmts = stmts;
     return s;
 }
 
-Stmt *NewStmtIf(Package *package, Position start, Expr *cond, Stmt *pass, Stmt *fail) {
-    Stmt *s = NewStmt(package, StmtKind_If, start);
+Stmt *NewStmtIf(Package *package, SourceRange pos, Expr *cond, Stmt *pass, Stmt *fail) {
+    Stmt *s = NewStmt(package, StmtKind_If, pos);
     s->If.cond = cond;
     s->If.pass = pass;
     s->If.fail = fail;
     return s;
 }
 
-Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body) {
-    Stmt *s = NewStmt(package, StmtKind_For, start);
+Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body) {
+    Stmt *s = NewStmt(package, StmtKind_For, pos);
     s->For.init = init;
     s->For.cond = cond;
     s->For.step = step;
@@ -380,8 +366,8 @@ Stmt *NewStmtFor(Package *package, Position start, Stmt *init, Expr *cond, Stmt 
     return s;
 }
 
-Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body) {
-    Stmt *s = NewStmt(package, StmtKind_ForIn, start);
+Stmt *NewStmtForIn(Package *package, SourceRange pos, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body) {
+    Stmt *s = NewStmt(package, StmtKind_ForIn, pos);
     s->ForIn.valueName = valueName;
     s->ForIn.indexName = indexName;
     s->ForIn.aggregate = aggregate;
@@ -389,39 +375,38 @@ Stmt *NewStmtForIn(Package *package, Position start, Expr_Ident *valueName, Expr
     return s;
 }
 
-Stmt *NewStmtSwitch(Package *package, Position start, Expr *match, DynamicArray(Stmt *) cases) {
-    Stmt *s = NewStmt(package, StmtKind_Switch, start);
+Stmt *NewStmtSwitch(Package *package, SourceRange pos, Expr *match, DynamicArray(Stmt *) cases) {
+    Stmt *s = NewStmt(package, StmtKind_Switch, pos);
     s->Switch.match = match;
     s->Switch.cases = cases;
     return s;
 }
 
-Stmt *NewStmtSwitchCase(Package *package, Position start, DynamicArray(Expr *) matches, Stmt_Block *block) {
-    Stmt *s = NewStmt(package, StmtKind_SwitchCase, start);
-    s->SwitchCase.start = start;
+Stmt *NewStmtSwitchCase(Package *package, SourceRange pos, DynamicArray(Expr *) matches, Stmt_Block *block) {
+    Stmt *s = NewStmt(package, StmtKind_SwitchCase, pos);
     s->SwitchCase.matches = matches;
     s->SwitchCase.block = block;
     return s;
 }
 
-Decl *NewDeclVariable(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values) {
-    Decl *d = NewDecl(package, DeclKind_Variable, start);
+Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values) {
+    Decl *d = NewDecl(package, DeclKind_Variable, pos);
     d->Variable.names = names;
     d->Variable.type = type;
     d->Variable.values = values;
     return d;
 }
 
-Decl *NewDeclConstant(Package *package, Position start, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values) {
-    Decl *d = NewDecl(package, DeclKind_Constant, start);
+Decl *NewDeclConstant(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values) {
+    Decl *d = NewDecl(package, DeclKind_Constant, pos);
     d->Constant.names = names;
     d->Constant.type = type;
     d->Constant.values = values;
     return d;
 }
 
-Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention) {
-    Decl *d = NewDecl(package, DeclKind_Foreign, start);
+Decl *NewDeclForeign(Package *package, SourceRange pos, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention) {
+    Decl *d = NewDecl(package, DeclKind_Foreign, pos);
     d->Foreign.library = library;
     d->Foreign.isConstant = isConstant;
     d->Foreign.name = name;
@@ -431,16 +416,16 @@ Decl *NewDeclForeign(Package *package, Position start, Expr *library, bool isCon
     return d;
 }
 
-Decl *NewDeclForeignBlock(Package *package, Position start, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members) {
-    Decl *d = NewDecl(package, DeclKind_ForeignBlock, start);
+Decl *NewDeclForeignBlock(Package *package, SourceRange pos, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members) {
+    Decl *d = NewDecl(package, DeclKind_ForeignBlock, pos);
     d->ForeignBlock.library = library;
     d->ForeignBlock.members = members;
     d->ForeignBlock.callingConvention = callingConvention;
     return d;
 }
 
-Decl *NewDeclImport(Package *package, Position start, Expr *path, const char *alias) {
-    Decl *d = NewDecl(package, DeclKind_Import, start);
+Decl *NewDeclImport(Package *package, SourceRange pos, Expr *path, const char *alias) {
+    Decl *d = NewDecl(package, DeclKind_Import, pos);
     d->Import.path = path;
     d->Import.alias = alias;
     return d;
