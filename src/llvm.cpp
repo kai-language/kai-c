@@ -822,7 +822,7 @@ llvm::Value *emitExprBinary(Context *ctx, Expr *expr) {
     lhs = emitExpr(ctx, expr->Binary.lhs, /*desiredType:*/ ty);
     rhs = emitExpr(ctx, expr->Binary.rhs, /*desiredType:*/ ty);
 
-    debugPos(ctx, expr->Binary.pos);
+    debugPos(ctx, expr->Binary.op.pos);
     switch (expr->Binary.op.kind) {
         case TK_Add:
             return isInt ? ctx->b.CreateAdd(lhs, rhs) : ctx->b.CreateFAdd(lhs, rhs);
