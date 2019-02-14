@@ -557,7 +557,6 @@ Expr *parseExprBinary(Parser *p, i32 prec1, b32 noCompoundLiteral) {
     Expr *lhs = parseExprUnary(p, noCompoundLiteral);
     for (;;) {
         Token op = p->tok;
-        Position pos = p->tok.pos;
         i32 precedence = PrecedenceForTokenKind[op.kind];
         if (precedence < prec1) return lhs;
         nextToken();
@@ -572,7 +571,7 @@ Expr *parseExprBinary(Parser *p, i32 prec1, b32 noCompoundLiteral) {
             return NewExprTernary(p->package, lhs, pass, fail);
         }
         Expr *rhs = parseExprBinary(p, precedence + 1, noCompoundLiteral);
-        lhs = NewExprBinary(p->package, op, pos, lhs, rhs);
+        lhs = NewExprBinary(p->package, op, lhs, rhs);
     }
 }
 
@@ -749,15 +748,14 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
         case TK_AddAssign: case TK_SubAssign: case TK_MulAssign: case TK_DivAssign:
         case TK_RemAssign: case TK_AndAssign: case TK_OrAssign:
         case TK_XorAssign: case TK_ShlAssign: case TK_ShrAssign: {
-            Position pos = p->tok.pos;
             Token op = p->tok;
             op.kind = TokenAssignOffset(op.kind);
             nextToken();
             DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
             if (ArrayLen(rhs) > 1) {
-                ReportError(p->package, SyntaxError, pos, "Only regular assignment may have multiple left or right values");
+                ReportError(p->package, SyntaxError, op.pos, "Only regular assignment may have multiple left or right values");
             }
-            rhs[0] = NewExprBinary(pkg, op, pos, exprs[0], rhs[0]);
+            rhs[0] = NewExprBinary(pkg, op, exprs[0], rhs[0]);
             return NewStmtAssign(pkg, start, exprs, rhs);
         }
 

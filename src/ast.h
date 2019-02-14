@@ -171,7 +171,6 @@ struct Expr_Unary {
 struct Expr_Binary {
     Position start;
     Token op;
-    Position pos;
     Expr *lhs;
     Expr *rhs;
 };
@@ -556,7 +555,7 @@ Expr *NewExprSelector(Package *package, Expr *expr, const char *name);
 Expr *NewExprSubscript(Package *package, Expr *expr, Expr *index);
 Expr *NewExprSlice(Package *package, Expr *expr, Expr *lo, Expr *hi);
 Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr);
-Expr *NewExprBinary(Package *package, Token op, Position pos, Expr *lhs, Expr *rhs);
+Expr *NewExprBinary(Package *package, Token op, Expr *lhs, Expr *rhs);
 Expr *NewExprTernary(Package *package, Expr *cond, Expr *pass, Expr *fail);
 Expr *NewExprCast(Package *package, Position start, Expr *type, Expr *expr);
 Expr *NewExprAutocast(Package *package, Position start, Expr *expr);

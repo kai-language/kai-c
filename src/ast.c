@@ -177,10 +177,9 @@ Expr *NewExprUnary(Package *package, Position start, TokenKind op, Expr *expr) {
     return e;
 }
 
-Expr *NewExprBinary(Package *package, Token op, Position pos, Expr *lhs, Expr *rhs) {
+Expr *NewExprBinary(Package *package, Token op, Expr *lhs, Expr *rhs) {
     Expr *e = NewExpr(package, ExprKind_Binary, lhs->start);
     e->Binary.op = op;
-    e->Binary.pos = pos;
     e->Binary.lhs = lhs;
     e->Binary.rhs = rhs;
     return e;

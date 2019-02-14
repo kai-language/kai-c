@@ -1369,7 +1369,7 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *type = lhs;
 
     if (!binaryPredicates[expr->Binary.op.kind](type)) {
-        ReportError(pkg, InvalidBinaryOperationError, expr->Binary.pos,
+        ReportError(pkg, InvalidBinaryOperationError, expr->Binary.op.pos,
                     "Operation '%s' undefined for type %s",
                     DescribeTokenKind(expr->Binary.op.kind), DescribeType(lhs));
         goto error;
