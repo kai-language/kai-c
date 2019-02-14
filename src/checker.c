@@ -3231,8 +3231,7 @@ void test_checkStmtReturn() {
 #define checkReturn(_CODE) \
 stmt = resetAndParseReturningLastStmt(_CODE); \
 checkStmtReturn(stmt, &ctx, &pkg); \
-RESET_CONTEXT(ctx); \
-ArrayClear(types)
+RESET_CONTEXT(ctx)
 
     Type *types[3] = {I64Type, I64Type, F64Type};
     Type type = {TypeKind_Tuple, .Tuple = {TypeFlag_None, types, 1}};
