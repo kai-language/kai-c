@@ -138,7 +138,7 @@ Lexer MakeLexer(const char *data, Package *pkg) {
     l.startOfLine = data;
     l.startOfFile = data;
 
-    l.pos.name = pkg->path;
+    l.pos.name = pkg ? pkg->path : "<builtin>";
     l.pos.line = 1;
 
     return l;
