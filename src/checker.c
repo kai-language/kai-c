@@ -579,7 +579,7 @@ void convertValue(Type *type, Type *target, Val *val) {
 
 b32 coerceTypeSilently(Expr *expr, CheckerContext *ctx, Type **type, Type *target, Package *pkg) {
     if (*type == InvalidType || target == InvalidType)
-        return false;
+        return true; // Prevent errors about type conversion to <invalid>
     if (TypesIdentical(*type, target))
         return true;
 
