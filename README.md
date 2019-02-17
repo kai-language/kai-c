@@ -47,28 +47,23 @@ To build on Ubuntu Linux you will need to have LLVM 6.0, Clang and libz installe
 apt-get install llvm-6.0-dev clang libz-dev 
 ```
 
-## Building Kai
-On macOS and Linux there is a `Makefile` that is responsible for making debug, release and test builds. See [configuration](#congiuration) for details on build customization.
+## Working on Kai
 
-#### macOS & Linux (make)
-##### debug
+### Building
+
+#### Commandline
 ```
 make
-```
-
-##### release
-```
+make tests
 make release
 ```
 
+#### Xcode
+If you wish to use Xcode to work on Kai on macOS there is an included `.xcodeproj` file configured to build in the same manner as the Makefile. If you add any files make sure you do not include them in the target directly in xcode, instead go to `main.c` and `#include` them there. We do this to keep the number of object files clang produces to a minimum. Less compiler work means quicker compile times ​👍​.
+
+You may need to make changes tot he scheme in order to point the compiler to the files you wish to compile.
+
 #### Windows
+
 On Windows there is `build.bat`. At the moment, the script does not support anything other than building a debug build.
-
-## Testing Kai
-```
-make tests
-```
-
-## Configuration
-`Makefile` tries to follow common make practices and allows you to configure many common variables, such as `CC`, `CXX` and `CFLAGS`.
 
