@@ -75,6 +75,7 @@ struct DiagnosticNote {
 typedef struct DiagnosticError DiagnosticError;
 struct DiagnosticError {
     const char *msg;
+    const char *sourceDescription;
     DiagnosticNote *note;
 };
 
@@ -82,18 +83,148 @@ b32 shouldPrintErrorCode() {
     return FlagErrorCodes;
 }
 
+SourceRange rangeFromPosition(Position pos) {
+    SourceRange range = {pos.name, pos.offset, pos.offset, pos.line, pos.column};
+    return range;
+}
+
 #define HasErrors(p) (p)->diagnostics.errors
 
-void ReportError(Package *p, ErrorCode code, Position pos, const char *msg, ...) {
+char *highlightLine(
+                   char *buf, const char *bufend,
+                   const char *line, const char *lineEnd,
+                   const char *start, const char *end)
+{
+
+    ASSERT(line <= start);
+    ASSERT(lineEnd >= end);
+    int lengthRequired = 0;
+
+    // Print line up until start into buf
+    lengthRequired = snprintf(buf, bufend - buf, "%.*s", (int)(start - line), line);
+    if (lengthRequired > bufend - buf) return NULL;
+    buf += lengthRequired;
+    line += lengthRequired;
+
+    if (FlagErrorColors) {
+        // Print highlight codes
+        lengthRequired = snprintf(buf, bufend - buf, "\x1B[31m");
+        if (lengthRequired > bufend - buf) return NULL;
+        buf += lengthRequired;
+    }
+
+    ASSERT(line == start);
+
+    // Print error range
+    lengthRequired = snprintf(buf, bufend - buf, "%.*s", (int)(end - start), line);
+    if (lengthRequired > bufend - buf) return NULL;
+    buf += lengthRequired;
+    line += lengthRequired;
+
+    if (FlagErrorColors) {
+        // Print reset code
+        lengthRequired = snprintf(buf, bufend - buf, "\x1B[0m");
+        if (lengthRequired > bufend - buf) return NULL;
+        buf += lengthRequired;
+    }
+
+    // Print the remaining line
+    lengthRequired = snprintf(buf, bufend - buf, "%.*s\n", (int)(lineEnd - line), line);
+    if (lengthRequired > bufend - buf) return NULL;
+    buf += lengthRequired;
+    line += lengthRequired;
+
+    // + 1 because we append a newline
+    ASSERT(line == lineEnd + 1);
+
+    return buf;
+}
+
+const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
+    if (!p->fileHandle) return NULL;
+
+#define MAX_LINES 3
+#define MAX_LINE_LENGTH 512
+
+    const char *fileStart = p->fileHandle;
+
+    // We add 1 so we have a buffer incase we have color turned off and need to add ^^^^^^ pointers.
+    char lines[MAX_LINES + 1][MAX_LINE_LENGTH];
+    char noColorHighlight[MAX_LINE_LENGTH];
+
+    const char *cursor = &fileStart[range.offset];
+
+    int numberOfBytes = 0;
+    int numberOfLines = 0;
+    for (int line = 0; line < MAX_LINES; line++) {
+        const char *lineStart = cursor;
+        const char *lineEnd = cursor;
+        while(*cursor != '\n') {
+            if (!isspace(*cursor)) lineStart = cursor;
+            cursor--;
+        }
+
+        while(*lineEnd != '\n') lineEnd++;
+
+        if (line != 0) {
+            numberOfBytes += snprintf(lines[line], sizeof(lines[line]), "%.*s\n", (int)(lineEnd - lineStart), lineStart);
+        } else {
+
+            char *buf = &lines[line][0];
+
+            u32 lineStartOffset = (u32) (lineStart - fileStart);
+            u32 errorStartOffsetInLine = range.offset - lineStartOffset;
+            u32 errorEndOffsetInLine = errorStartOffsetInLine + range.endOffset - range.offset;
+
+            char *result = highlightLine(
+               buf, buf + MAX_LINE_LENGTH,
+               lineStart, lineEnd,
+               lineStart + errorStartOffsetInLine, lineStart + errorEndOffsetInLine
+            );
+            if (!result) return NULL;
+            numberOfBytes += strlen(buf);
+
+            if (!FlagErrorColors) {
+                memset(noColorHighlight, ' ', lineEnd - lineStart + 1);
+                memset(noColorHighlight + errorStartOffsetInLine, '^', range.endOffset - range.offset);
+                noColorHighlight[lineEnd - lineStart] = '\n';
+            }
+        }
+
+        cursor--;
+        if (*cursor == '\n') {
+            // The line is empty, break
+            break;
+        }
+
+        numberOfLines++;
+    }
+
+    numberOfBytes += 4 + 1; // 4 for indentation 1 for nul termination.
+    if (!FlagErrorColors) numberOfBytes += strlen(lines[numberOfLines - 1]) + 1;
+    char *results = ArenaAlloc(&p->diagnostics.arena, numberOfBytes + 1 + 40);
+
+    char *resultsCursor = results;
+    for (int line = numberOfLines - 1; line >= 0; line--) {
+        resultsCursor += sprintf(resultsCursor, "\t%s", lines[line]);
+    }
+    if (!FlagErrorColors)
+        resultsCursor += sprintf(resultsCursor, "\t%s", noColorHighlight);
+    *resultsCursor = '\0';
+    return results;
+#undef MAX_LINES
+}
+
+void ReportError(Package *p, ErrorCode code, SourceRange range, const char *msg, ...) {
     va_list args;
-    char msgBuffer[512]; // TODO: Static & Thread Local?
+    char msgBuffer[512];
     va_start(args, msg);
     vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
     char errorBuffer[512];
 
     int errlen = shouldPrintErrorCode() ?
-        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u, E%04d): %s\n", pos.name, pos.line, pos.column, code, msgBuffer) :
-        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u): %s\n",        pos.name, pos.line, pos.column,       msgBuffer);
+        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u, E%04d): %s\n", range.name, range.line, range.column, code, msgBuffer) :
+        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u): %s\n",        range.name, range.line, range.column,       msgBuffer);
 
     // NOTE: snprintf returns how long the string would have been instead of its truncated length
     // We're clamping it here to prevent an overrun.
@@ -103,11 +234,16 @@ void ReportError(Package *p, ErrorCode code, Position pos, const char *msg, ...)
     memcpy(errorMsg, errorBuffer, errlen + 1);
     va_end(args);
 
-    DiagnosticError error = { .msg = errorMsg, .note = NULL };
+    const char *codeBlock = NULL;
+    if (FlagErrorSource) {
+        codeBlock = findCodeBlockAndHighlightError(p, range);
+    }
+
+    DiagnosticError error = { errorMsg, codeBlock };
     ArrayPush(p->diagnostics.errors, error);
 }
 
-void ReportNote(Package *p, Position pos, const char *msg, ...) {
+void ReportNote(Package *p, SourceRange pos, const char *msg, ...) {
     ASSERT(p->diagnostics.errors);
     va_list args;
     char msgBuffer[512]; // TODO: Static & Thread Local?
@@ -141,11 +277,15 @@ char outputErrorBuffer[8096];
 #define outputDiagnostic(fmt, __VA_ARGS__) snprintf(outputErrorBuffer, sizeof(outputErrorBuffer), fmt, __VA_ARGS__)
 #else
 #define outputDiagnostic(fmt, __VA_ARGS__) fprintf(stderr, fmt, __VA_ARGS__)
+
 #endif
 
 void OutputReportedErrors(Package *p) {
     For (p->diagnostics.errors) {
         outputDiagnostic("%s", p->diagnostics.errors[i].msg);
+        if (p->diagnostics.errors[i].sourceDescription) {
+            fprintf(stderr, "\n%s\n", p->diagnostics.errors[i].sourceDescription);
+        }
         for (DiagnosticNote *note = p->diagnostics.errors[i].note; note; note = note->next) {
             outputDiagnostic("%s", note->msg);
         }
@@ -158,7 +298,7 @@ void OutputReportedErrors(Package *p) {
 #if TEST
 void test_errorReporting() {
 
-    Position builtinPosition = {0};
+    SourceRange builtinPosition = {0};
     Package mainPackage = {0};
     ReportError(&mainPackage, SyntaxError, builtinPosition, "Error Reporting value of five %d", 5);
     ReportNote(&mainPackage, builtinPosition, "Note Reporting value of six %d", 6);

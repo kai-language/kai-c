@@ -3,6 +3,8 @@
 
 bool FlagParseComments;
 bool FlagErrorCodes = true;
+bool FlagErrorColors = true;
+bool FlagErrorSource = true;
 bool FlagVerbose;
 bool FlagVersion;
 bool FlagHelp;
@@ -31,12 +33,16 @@ CLIFlag CLIFlags[] = {
 
     { CLIFlagKind_String, "output", "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file (default: out_<input>)" },
 
-    { CLIFlagKind_Bool, "verbose", "v", .ptr.b = &FlagVerbose,         .help = "Enable verbose output" },
-    { CLIFlagKind_Bool, "dump-ir", .ptr.b = &FlagDumpIR,               .help = "Dump LLVM IR" },
-    { CLIFlagKind_Bool, "emit-ir", .ptr.b = &FlagEmitIR,               .help = "Emit LLVM IR file(s)" },
-    { CLIFlagKind_Bool, "emit-header", .ptr.b = &FlagEmitHeader,       .help = "Emit C header file(s)" },
-    { CLIFlagKind_Bool, "emit-times", .ptr = NULL,                     .help = "Emit times for each stage of compilation" },
-    { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,       .help = "Display error codes along side error location" },
+    { CLIFlagKind_Bool, "verbose", "v", .ptr.b = &FlagVerbose,   .help = "Enable verbose output" },
+    { CLIFlagKind_Bool, "dump-ir", .ptr.b = &FlagDumpIR,         .help = "Dump LLVM IR" },
+    { CLIFlagKind_Bool, "emit-ir", .ptr.b = &FlagEmitIR,         .help = "Emit LLVM IR file(s)" },
+    { CLIFlagKind_Bool, "emit-header", .ptr.b = &FlagEmitHeader, .help = "Emit C header file(s)" },
+    { CLIFlagKind_Bool, "emit-times", .ptr = NULL,               .help = "Emit times for each stage of compilation" },
+
+    { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,              .help = "Show error codes along side error location" },
+    { CLIFlagKind_Bool, "error-colors", .ptr.b = &FlagErrorColors,            .help = "Show errors in souce code by highlighting in color" },
+    { CLIFlagKind_Bool, "error-source", .ptr.b = &FlagErrorSource,            .help = "Show source code when printing errors" },
+
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },
     { CLIFlagKind_Bool, "debug", "g",  .ptr.b = &FlagDebug,            .help = "Include debug symbols"},
     { CLIFlagKind_Bool, "link", .ptr.b = &FlagLink,                    .help = "Link object files (default)"},

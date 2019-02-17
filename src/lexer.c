@@ -131,14 +131,14 @@ const char *DescribeToken(Token tok) {
     return DescribeTokenKind(tok.kind);
 }
 
-Lexer MakeLexer(const char *data, const char *name) {
+Lexer MakeLexer(const char *data, Package *pkg) {
     Lexer l = {0};
 
     l.stream = data;
     l.startOfLine = data;
     l.startOfFile = data;
 
-    l.pos.name = name;
+    l.pos.name = pkg ? pkg->path : "<builtin>";
     l.pos.line = 1;
 
     return l;
@@ -199,7 +199,7 @@ u32 scanNumericEscape(Lexer *l, i32 n, u32 max) {
     return x;
 
 error:
-    ReportError(l->package, InvalidEscapeError, l->pos, "Escape sequence is an invalid Unicode codepoint");
+    ReportError(l->package, InvalidEscapeError, rangeFromPosition(l->pos), "Escape sequence is an invalid Unicode codepoint");
     return 0;
 }
 
@@ -220,8 +220,8 @@ const char *scanString(Lexer *l) {
         u32 cp = NextCodePoint(l);
         u32 val;
         if (cp == '\n' && !isMultiline) {
-            ReportError(l->package, StringContainsNewlineError, l->pos, "String literal cannot contain a newline");
-            ReportNote(l->package, l->pos, "Multiline string literals use `backticks` instead of \"quotes\"");
+            ReportError(l->package, StringContainsNewlineError, rangeFromPosition(l->pos), "String literal cannot contain a newline");
+            ReportNote(l->package, rangeFromPosition(l->pos), "Multiline string literals use `backticks` instead of \"quotes\"");
             return NULL;
         } else if (cp == '\\') {
             cp = NextCodePoint(l);
@@ -245,7 +245,7 @@ const char *scanString(Lexer *l) {
                     error: ;
                         u32 cpWidth;
                         DecodeCodePoint(&cpWidth, l->stream);
-                        ReportError(l->package, InvalidCharacterEscapeError, l->pos, "Invalid character literal escape '\\%.*s'", cpWidth, l->stream);
+                        ReportError(l->package, InvalidCharacterEscapeError, rangeFromPosition(l->pos), "Invalid character literal escape '\\%.*s'", cpWidth, l->stream);
                         return NULL;
                     }
             }
@@ -259,8 +259,8 @@ const char *scanString(Lexer *l) {
 
     u32 closingQuote = NextCodePoint(l);
     if (closingQuote == FileEnd) {
-        ReportError(l->package, UnexpectedEOFError, l->pos, "Unexpectedly reached end of file while parsing string literal");
-        ReportNote(l->package, start, "String began here");
+        ReportError(l->package, UnexpectedEOFError, rangeFromPosition(l->pos), "Unexpectedly reached end of file while parsing string literal");
+        ReportNote(l->package, rangeFromPosition(start), "String began here");
         return NULL;
     }
     ASSERT(closingQuote == quote);
@@ -290,7 +290,7 @@ double scanFloat(Lexer *l) {
         if (!isdigit(*l->stream)) {
             u32 cpWidth;
             DecodeCodePoint(&cpWidth, l->stream);
-            ReportError(l->package, ExpectedDigitError, l->pos, "Expected digit after float literal exponent, found '%.*s'", cpWidth, l->stream);
+            ReportError(l->package, ExpectedDigitError, rangeFromPosition(l->pos), "Expected digit after float literal exponent, found '%.*s'", cpWidth, l->stream);
         }
         while (isdigit(*l->stream)) {
             l->stream++;
@@ -299,7 +299,7 @@ double scanFloat(Lexer *l) {
 
     double val = strtod(start, NULL);
     if (val == HUGE_VAL) {
-        ReportError(l->package, FloatOverflowError, l->pos, "Float literal is larger than maximum allowed value");
+        ReportError(l->package, FloatOverflowError, rangeFromPosition(l->pos), "Float literal is larger than maximum allowed value");
         return 0.f;
     }
     return val;
@@ -341,10 +341,10 @@ u64 scanInt(Lexer *l) {
         if (digit >= base) {
             u32 cpWidth;
             DecodeCodePoint(&cpWidth, l->stream);
-            ReportError(l->package, DigitOutOfRangeError, l->pos, "Digit '%.*s' out of range for base '%d'", cpWidth, l->stream, base);
+            ReportError(l->package, DigitOutOfRangeError, rangeFromPosition(l->pos), "Digit '%.*s' out of range for base '%d'", cpWidth, l->stream, base);
         }
         if (val > (ULLONG_MAX - digit) / base) {
-            ReportError(l->package, IntOverflowError, l->pos, "Integer literal is larger than maximum allowed value");
+            ReportError(l->package, IntOverflowError, rangeFromPosition(l->pos), "Integer literal is larger than maximum allowed value");
             while (isdigit(*l->stream)) {
                 l->stream++;
             }
@@ -357,7 +357,7 @@ u64 scanInt(Lexer *l) {
     if (l->stream == start_digits) {
         u32 cpWidth;
         DecodeCodePoint(&cpWidth, l->stream);
-        ReportError(l->package, DigitOutOfRangeError, l->pos, "Digit '%.*s' out of range for base '%d'", cpWidth, l->stream, base);
+        ReportError(l->package, DigitOutOfRangeError, rangeFromPosition(l->pos), "Digit '%.*s' out of range for base '%d'", cpWidth, l->stream, base);
     }
     return val;
 }
@@ -567,7 +567,7 @@ repeat: ;
         case '#': {
             token.kind = TK_Directive;
             l->stream++;
-            if (*l->stream == FileEnd) ReportError(l->package, UnexpectedEOFError, l->pos, "Unexpectedly reached end of file while parsing directive");
+            if (*l->stream == FileEnd) ReportError(l->package, UnexpectedEOFError, rangeFromPosition(l->pos), "Unexpectedly reached end of file while parsing directive");
 
             u32 cpWidth;
             u32 cp = DecodeCodePoint(&cpWidth, l->stream);
@@ -591,12 +591,12 @@ repeat: ;
             if (!IsIdentifierHead(cp)) {
                 switch (cp) {
                     case LeftDoubleQuote:
-                        ReportError(l->package, WrongDoubleQuoteError, l->pos, "Unsupported unicode character '“' (0x201c). Did you mean `\"`?");
+                        ReportError(l->package, WrongDoubleQuoteError, rangeFromPosition(l->pos), "Unsupported unicode character '“' (0x201c). Did you mean `\"`?");
                         break;
                     default: {
                         char buff[4];
                         u32 len = EncodeCodePoint(buff, cp);
-                        ReportError(l->package, InvalidCodePointError, l->pos, "Invalid Unicode codepoint '%.*s'", len, buff);
+                        ReportError(l->package, InvalidCodePointError, rangeFromPosition(l->pos), "Invalid Unicode codepoint '%.*s'", len, buff);
                     }
                 }
                 l->stream++;

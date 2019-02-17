@@ -471,7 +471,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				GCC_WARN_CHECK_SWITCH_STATEMENTS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.13;
+				MACOSX_DEPLOYMENT_TARGET = 10.14;
 				OTHER_CFLAGS = (
 					"-Wno-c99-extensions",
 					"-Wno-c11-extensions",
@@ -501,7 +501,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				GCC_C_LANGUAGE_STANDARD = c11;
 				GCC_WARN_CHECK_SWITCH_STATEMENTS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.13;
+				MACOSX_DEPLOYMENT_TARGET = 10.14;
 				OTHER_CFLAGS = (
 					"-Wno-c99-extensions",
 					"-Wno-c11-extensions",

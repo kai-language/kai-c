@@ -169,8 +169,8 @@ CheckerInfo *CheckerInfoForDecl(Package *pkg, Decl *decl) {
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
     Symbol *old = Lookup(scope, name);
     if (old) {
-        ReportError(pkg, RedefinitionError, decl->start, "Duplicate definition of symbol %s", name);
-        ReportNote(pkg, old->decl->start, "Previous definition of %s", name);
+        ReportError(pkg, RedefinitionError, decl->pos, "Duplicate definition of symbol %s", name);
+        ReportNote(pkg, old->decl->pos, "Previous definition of %s", name);
         if (symbol) *symbol = old;
         return true;
     }
@@ -203,7 +203,7 @@ Symbol *declareLabelSymbol(Package *pkg, Scope *scope, const char *name) {
     return symbol;
 }
 
-b32 expectType(Package *pkg, Type *type, CheckerContext *ctx, Position pos) {
+b32 expectType(Package *pkg, Type *type, CheckerContext *ctx, SourceRange pos) {
     if (ctx->mode != ExprMode_Type && ctx->mode != ExprMode_Invalid) {
         ReportError(pkg, NotATypeError, pos, "%s cannot be used as a type", DescribeTypeKind(type->kind));
     }
@@ -579,7 +579,7 @@ void convertValue(Type *type, Type *target, Val *val) {
 
 b32 coerceTypeSilently(Expr *expr, CheckerContext *ctx, Type **type, Type *target, Package *pkg) {
     if (*type == InvalidType || target == InvalidType)
-        return false;
+        return true; // Prevent errors about type conversion to <invalid>
     if (TypesIdentical(*type, target))
         return true;
 
@@ -600,7 +600,7 @@ b32 coerceType(Expr *expr, CheckerContext *ctx, Type **type, Type *target, Packa
 
     b32 success = coerceTypeSilently(expr, ctx, type, target, pkg);
     if (!success) {
-        ReportError(pkg, InvalidConversionError, expr->start,
+        ReportError(pkg, InvalidConversionError, expr->pos,
                     "Cannot convert %s to type %s", DescribeExpr(expr), DescribeType(target));
         *type = InvalidType;
     }
@@ -689,7 +689,7 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Expr_Ident ident = expr->Ident;
     Symbol *symbol = Lookup(ctx->scope, ident.name);
     if (!symbol) {
-        ReportError(pkg, UndefinedIdentError, expr->start, "Use of undefined identifier '%s'", ident.name);
+        ReportError(pkg, UndefinedIdentError, expr->pos, "Use of undefined identifier '%s'", ident.name);
         ctx->mode = ExprMode_Invalid;
         return InvalidType;
     }
@@ -707,7 +707,7 @@ Type *checkExprIdent(Expr *expr, CheckerContext *ctx, Package *pkg) {
         case SymbolState_Resolving:
             // TODO: For cyclic types we need a ctx->hasIndirection to check and see if
             // We have a cyclic reference error.
-            ReportError(pkg, ReferenceToDeclarationError, expr->start,
+            ReportError(pkg, ReferenceToDeclarationError, expr->pos,
                         "Declaration initial value refers to itself");
             break;
 
@@ -766,10 +766,10 @@ Type *checkExprLitInt(Expr *expr, CheckerContext *ctx, Package *pkg) {
             ctx->val.u64 = lit.val;
 
             if (lit.val > MaxValueForIntOrPointerType(ctx->desiredType)) {
-                ReportError(pkg, InvalidConversionError, expr->start,
+                ReportError(pkg, InvalidConversionError, expr->pos,
                             "Cannot coerce value '%s' to type %s as loss of information would occur",
                             DescribeExpr(expr), DescribeType(ctx->desiredType));
-                ReportNote(pkg, expr->start, "If you wish for this overflow to occur add an explicit cast");
+                ReportNote(pkg, expr->pos, "If you wish for this overflow to occur add an explicit cast");
             }
         } else if (IsFloat(ctx->desiredType)) {
             ctx->val.f64 = (f64)lit.val;
@@ -803,7 +803,7 @@ Type *checkExprLitFloat(Expr *expr, CheckerContext *ctx, Package *pkg) {
                 ctx->val.f64 = lit.val;
             }
         } else {
-            ReportError(pkg, InvalidConversionError, expr->start,
+            ReportError(pkg, InvalidConversionError, expr->pos,
                         "Unable to coerce %s to expected type %s",
                         DescribeExpr(expr), DescribeType(ctx->desiredType));
             // TODO: Check if it's possible through casting and add note that you can cast to make the conversion occur @ErrorQuality
@@ -828,7 +828,7 @@ error:
 Type *checkExprLitNil(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_LitNil);
     if (ctx->desiredType && !isNilable(ctx->desiredType)) {
-        ReportError(pkg, NotNilableError, expr->start,
+        ReportError(pkg, NotNilableError, expr->pos,
                     "'nil' is not convertable to '%s'", DescribeType(ctx->desiredType));
         goto error;
     }
@@ -864,7 +864,7 @@ Type *checkExprLitString(Expr *expr, CheckerContext *ctx, Package *pkg) {
 Type *checkExprTypeVariadic(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeVariadic);
     Type *type = checkExpr(expr->TypeVariadic.type, ctx, pkg);
-    if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->start)) goto error;
+    if (!expectType(pkg, type, ctx, expr->TypeVariadic.type->pos)) goto error;
     TypeFlag flags = expr->TypeVariadic.flags & TypeVariadicFlag_CVargs ? TypeFlag_CVargs : TypeFlag_None;
     type = NewTypeSlice(flags | TypeFlag_Variadic, type);
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -892,7 +892,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         if (paramCtx.mode == ExprMode_Invalid) goto error;
         if (paramCtx.mode == ExprMode_Unresolved) goto unresolved;
 
-        if (!expectType(pkg, type, &paramCtx, func.params[i]->start)) isInvalid = true;
+        if (!expectType(pkg, type, &paramCtx, func.params[i]->pos)) isInvalid = true;
 
         flags |= type->Flags & TypeFlag_Variadic;
         flags |= type->Flags & TypeFlag_CVargs;
@@ -908,7 +908,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         if (paramCtx.mode == ExprMode_Invalid) goto error;
         if (paramCtx.mode == ExprMode_Unresolved) goto unresolved;
 
-        if (!expectType(pkg, type, &paramCtx, it->start)) {
+        if (!expectType(pkg, type, &paramCtx, it->pos)) {
             isInvalid = true;
         }
         ArrayPush(results, type);
@@ -918,7 +918,7 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     if (isVoid) {
         if (ArrayLen(func.result) > 1) {
-            ReportError(pkg, InvalidUseOfVoidError, expr->start,
+            ReportError(pkg, InvalidUseOfVoidError, expr->pos,
                         "Void must be a functions only return type");
         } else {
             ArrayFree(results);
@@ -961,7 +961,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     // FIXME: We need to extract and pass on desired types parameters & results
     ForEach(func.type->TypeFunction.params, Expr_KeyValue *) {
         if (!it->key || it->key->kind != ExprKind_Ident) {
-            ReportError(pkg, ParamNameMissingError, it->start, "Parameters for a function literal must be named");
+            ReportError(pkg, ParamNameMissingError, it->pos, "Parameters for a function literal must be named");
             continue;
         }
 
@@ -970,7 +970,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         symbol->kind = SymbolKind_Variable;
 
         Type *type = checkExpr(it->value, &paramCtx, pkg);
-        if (!expectType(pkg, type, &paramCtx, it->value->start)) continue;
+        if (!expectType(pkg, type, &paramCtx, it->value->pos)) continue;
         markSymbolResolved(symbol, type);
 
         // TODO: Support unnamed parameters ($0, $1, $2)
@@ -984,7 +984,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     bool isVoid = false;
     ForEach(func.type->TypeFunction.result, Expr *) {
         Type *type = checkExpr(it, &paramCtx, pkg);
-        if (!expectType(pkg, type, &paramCtx, it->start)) continue;
+        if (!expectType(pkg, type, &paramCtx, it->pos)) continue;
         ArrayPush(results, type);
         isVoid |= type == VoidType;
     }
@@ -1001,7 +1001,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     if (isVoid) {
         if (ArrayLen(func.type->TypeFunction.result) > 1) {
-            ReportError(pkg, InvalidUseOfVoidError, expr->LitFunction.type->start,
+            ReportError(pkg, InvalidUseOfVoidError, expr->LitFunction.type->pos,
                         "Void must be a functions only return type");
         } else {
             ArrayFree(results);
@@ -1034,7 +1034,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (expr->LitCompound.type) {
         type = checkExpr(expr->LitCompound.type, ctx, pkg);
         if (ctx->mode == ExprMode_Unresolved) return NULL;
-        expectType(pkg, type, ctx, expr->LitCompound.type->start);
+        expectType(pkg, type, ctx, expr->LitCompound.type->pos);
     }
 
     size_t maxIndex = 0;
@@ -1046,7 +1046,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
                 case TypeKind_Array:
                 case TypeKind_Slice:
                     if (!(it->flags & KeyValueFlag_Index)) {
-                        ReportError(pkg, ArrayCompoundMissingIndexError, it->key->start,
+                        ReportError(pkg, ArrayCompoundMissingIndexError, it->key->pos,
                                     "Array or Slice key should be surrounded in `[]`");
                         goto checkValue;
                     }
@@ -1068,7 +1068,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
                     // Allow 0 length arrays to be indexed freely
                     if (type->kind == TypeKind_Array && type->Array.length && type->Array.length <= currentIndex) {
-                        ReportError(pkg, TODOError, it->value->start,
+                        ReportError(pkg, TODOError, it->value->pos,
                                     "Array index %llu is beyond the max index of %llu for type %s",
                                     currentIndex, type->Array.length - 1, DescribeType(type));
                     }
@@ -1079,12 +1079,12 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
                 case TypeKind_Struct:
                     if (it->flags & KeyValueFlag_Index) {
-                        ReportError(pkg, TODOError, it->key->start, "Cannot initalize struct members using index");
+                        ReportError(pkg, TODOError, it->key->pos, "Cannot initalize struct members using index");
                         goto checkValue;
                     }
 
                     if (it->key->kind != ExprKind_Ident) {
-                        ReportError(pkg, TODOError, it->key->start,
+                        ReportError(pkg, TODOError, it->key->pos,
                                     "Expected identifier for field name for type %s", DescribeType(type));
                         goto checkValue;
                     }
@@ -1093,7 +1093,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
                     StructFieldLookupResult result = StructFieldLookup(type->Struct, fieldName);
                     if (!result.field) {
-                        ReportError(pkg, TODOError, it->key->start,
+                        ReportError(pkg, TODOError, it->key->pos,
                                     "Type %s has no field named %s", DescribeType(type), fieldName);
                     }
 
@@ -1111,7 +1111,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
                 case TypeKind_Array:
                     // Allow 0 length arrays to be indexed freely
                     if (type->Array.length && type->Array.length <= currentIndex) {
-                        ReportError(pkg, TODOError, it->value->start,
+                        ReportError(pkg, TODOError, it->value->pos,
                                     "Array index %llu is beyond the max index of %llu for type %s",
                                     currentIndex, type->Array.length - 1, DescribeType(type));
                     }
@@ -1156,13 +1156,13 @@ Type *checkExprTypePointer(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (ctx->mode == ExprMode_Invalid) goto error;
     if (ctx->mode == ExprMode_Unresolved) return NULL;
 
-    expectType(pkg, type, ctx, expr->TypePointer.type->start);
+    expectType(pkg, type, ctx, expr->TypePointer.type->pos);
     if (ctx->mode != ExprMode_Type) {
-        ReportError(pkg, InvalidPointeeTypeError, expr->start,
+        ReportError(pkg, InvalidPointeeTypeError, expr->pos,
                     "'%s' is not a valid pointee type", DescribeType(type));
         goto error;
     } else if (type == VoidType) {
-        ReportError(pkg, InvalidPointeeTypeError, expr->TypePointer.type->start,
+        ReportError(pkg, InvalidPointeeTypeError, expr->TypePointer.type->pos,
                     "Kai does not use void * for raw pointers instead use rawptr");
     }
 
@@ -1187,11 +1187,11 @@ Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
     u64 length = ctx->val.u64;
 
     Type *type = checkExpr(expr->TypeArray.type, ctx, pkg);
-    expectType(pkg, type, ctx, expr->TypeArray.type->start);
+    expectType(pkg, type, ctx, expr->TypeArray.type->pos);
     if (ctx->mode != ExprMode_Type) {
         goto error;
     } else if (type->Width == 0) {
-        ReportError(pkg, ZeroWidthArrayElementError, expr->TypeArray.type->start,
+        ReportError(pkg, ZeroWidthArrayElementError, expr->TypeArray.type->pos,
                     "Arrays of zero width elements are not permitted");
     }
 
@@ -1205,9 +1205,9 @@ Type *checkExprTypeArray(Expr *expr, CheckerContext *ctx, Package *pkg) {
         length = ctx->val.u64;
 
         if (!(ctx->flags & CheckerContextFlag_Constant)) {
-            ReportError(pkg, NonConstantArrayLengthError, expr->TypeArray.length->start,
+            ReportError(pkg, NonConstantArrayLengthError, expr->TypeArray.length->pos,
                         "An arrays length must be a constant value");
-            ReportNote(pkg, expr->start, "To infer a length for the array type from the context use `..` as the length");
+            ReportNote(pkg, expr->pos, "To infer a length for the array type from the context use `..` as the length");
         }
     } else {
         // NOTE: We need someway to pass down the length from the caller because we cannot create and later on update
@@ -1239,11 +1239,11 @@ error:
 Type *checkExprTypeSlice(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_TypeSlice);
     Type *type = checkExpr(expr->TypeSlice.type, ctx, pkg);
-    expectType(pkg, type, ctx, expr->TypeSlice.type->start);
+    expectType(pkg, type, ctx, expr->TypeSlice.type->pos);
     if (ctx->mode != ExprMode_Type) {
         goto error;
     } if (type->Width == 0) {
-        ReportError(pkg, ZeroWidthSliceElementError, expr->TypeSlice.type->start,
+        ReportError(pkg, ZeroWidthSliceElementError, expr->TypeSlice.type->pos,
                     "Slices of zero width elements are not permitted");
     }
 
@@ -1311,7 +1311,7 @@ Type *checkExprUnary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     switch (expr->Unary.op) {
         case TK_And:
             if (ctx->mode < ExprMode_Addressable) {
-                ReportError(pkg, AddressOfNonAddressableError, expr->start,
+                ReportError(pkg, AddressOfNonAddressableError, expr->pos,
                             "Cannot take address of %s", DescribeExpr(expr->Unary.expr));
                 goto error;
             }
@@ -1320,7 +1320,7 @@ Type *checkExprUnary(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         default:
             if (!unaryPredicates[expr->Unary.op](type)) {
-                ReportError(pkg, InvalidUnaryOperationError, expr->start,
+                ReportError(pkg, InvalidUnaryOperationError, expr->pos,
                             "Operation '%s' undefined for %s",
                             DescribeTokenKind(expr->Unary.op), DescribeExpr(expr->Unary.expr));
                 goto error;
@@ -1358,24 +1358,24 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     // TODO: clean this up
     if (!(coerceTypeSilently(expr->Binary.lhs, &lhsCtx, &lhs, rhs, pkg) ||
           coerceTypeSilently(expr->Binary.rhs, &rhsCtx, &rhs, lhs, pkg))) {
-        ReportError(pkg, TypeMismatchError, expr->start,
+        ReportError(pkg, TypeMismatchError, expr->pos,
                     "No conversion possible to make %s and %s Identical types",
                     DescribeExpr(expr->Binary.lhs), DescribeExpr(expr->Binary.rhs));
-        ReportNote(pkg, expr->start, "An explicit cast may be required");
+        ReportNote(pkg, expr->pos, "An explicit cast may be required");
         goto error;
     }
 
     // Both lhs & rhs have this type.
     Type *type = lhs;
 
-    if (!binaryPredicates[expr->Binary.op](type)) {
-        ReportError(pkg, InvalidBinaryOperationError, expr->Binary.pos,
+    if (!binaryPredicates[expr->Binary.op.kind](type)) {
+        ReportError(pkg, InvalidBinaryOperationError, rangeFromPosition(expr->Binary.op.pos),
                     "Operation '%s' undefined for type %s",
-                    DescribeTokenKind(expr->Binary.op), DescribeType(lhs));
+                    DescribeTokenKind(expr->Binary.op.kind), DescribeType(lhs));
         goto error;
     }
 
-    switch (expr->Binary.op) {
+    switch (expr->Binary.op.kind) {
         case TK_Eql:
         case TK_Neq:
         case TK_Leq:
@@ -1393,13 +1393,13 @@ Type *checkExprBinary(Expr *expr, CheckerContext *ctx, Package *pkg) {
             break;
     }
 
-    if ((expr->Binary.op == TK_Div || expr->Binary.op == TK_Rem) && IsConstant(&rhsCtx) && rhsCtx.val.i64 == 0) {
-        ReportError(pkg, DivisionByZeroError, expr->Binary.rhs->start, "Division by zero");
+    if ((expr->Binary.op.kind == TK_Div || expr->Binary.op.kind == TK_Rem) && IsConstant(&rhsCtx) && rhsCtx.val.i64 == 0) {
+        ReportError(pkg, DivisionByZeroError, expr->Binary.rhs->pos, "Division by zero");
     }
 
     ctx->flags |= lhsCtx.flags & rhsCtx.flags & CheckerContextFlag_Constant;
     b32 isConstantNegative;
-    if (evalBinary(expr->Binary.op, type, lhsCtx.val, rhsCtx.val, ctx, &isConstantNegative)) {
+    if (evalBinary(expr->Binary.op.kind, type, lhsCtx.val, rhsCtx.val, ctx, &isConstantNegative)) {
         changeTypeOrRecordCoercionIfNeeded(&type, expr, ctx, isConstantNegative, pkg);
     }
     storeInfoBasicExpr(pkg, expr, type, ctx);
@@ -1429,7 +1429,7 @@ Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (failCtx.mode == ExprMode_Unresolved)
 
     if (condCtx.mode != ExprMode_Invalid && !isBoolean(cond) && !isNumericOrPointer(cond)) {
-        ReportError(pkg, BadConditionError, expr->start,
+        ReportError(pkg, BadConditionError, expr->pos,
                     "Expected a numeric or pointer type to act as a condition in the ternary expression");
         goto error;
     }
@@ -1444,7 +1444,7 @@ Type *checkExprTernary(Expr *expr, CheckerContext *ctx, Package *pkg) {
     } else {
         // NOTE: If we coerce the type before doing handling constant evaluation, we lose signedness information.
         if (!coerceType(expr->Ternary.fail, &failCtx, &fail, pass, pkg)) {
-            ReportError(pkg, TypeMismatchError, expr->Ternary.fail->start,
+            ReportError(pkg, TypeMismatchError, expr->Ternary.fail->pos,
                         "Expected type %s got type %s", DescribeType(pass ? pass : cond), DescribeType(fail));
             goto error;
         }
@@ -1464,7 +1464,7 @@ Type *checkExprLocationDirective(Expr *expr, CheckerContext *ctx, Package *pkg) 
     ctx->flags |= CheckerContextFlag_Constant;
     if (expr->LocationDirective.name == internLine) {
         type = U32Type;
-        ctx->val.u32 = expr->start.line;
+        ctx->val.u32 = expr->pos.line;
     } else if (expr->LocationDirective.name == internFile) {
         // TODO: @Strings @Builtins
     } else if (expr->LocationDirective.name == internLocation) {
@@ -1482,7 +1482,7 @@ Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     Type *type = checkExpr(expr->Cast.type, &targetCtx, pkg);
 
     if (targetCtx.mode != ExprMode_Type) {
-        ReportError(pkg, NotATypeError, expr->start,
+        ReportError(pkg, NotATypeError, expr->pos,
                     "Cannot cast to non type %s", DescribeExpr(expr->Cast.type));
         goto error;
     }
@@ -1494,7 +1494,7 @@ Type *checkExprCast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (ctx->mode == ExprMode_Invalid) goto error;
 
     if (!cast(exprType, type, ctx)) {
-        ReportError(pkg, InvalidConversionError, expr->start,
+        ReportError(pkg, InvalidConversionError, expr->pos,
                     "Unable to cast type %s to type %s", DescribeType(exprType), DescribeType(type));
         goto error;
     }
@@ -1515,7 +1515,7 @@ error:
 Type *checkExprAutocast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ASSERT(expr->kind == ExprKind_Autocast);
     if (!ctx->desiredType) {
-        ReportError(pkg, AutocastExpectsDesiredTypeError, expr->start,
+        ReportError(pkg, AutocastExpectsDesiredTypeError, expr->pos,
                     "Autocast expression requires a contextual type to convert to");
         goto error;
     }
@@ -1524,7 +1524,7 @@ Type *checkExprAutocast(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (ctx->mode == ExprMode_Invalid) goto error;
 
     if (!cast(type, ctx->desiredType, ctx)) {
-        ReportError(pkg, InvalidConversionError, expr->Autocast.expr->start,
+        ReportError(pkg, InvalidConversionError, expr->Autocast.expr->pos,
                     "Cannot convert expression of type %s to type %s",
                     DescribeType(type), DescribeType(ctx->desiredType));
         goto error;
@@ -1548,7 +1548,7 @@ Type *checkExprSubscript(Expr *expr, CheckerContext *ctx, Package *pkg) {
     if (indexCtx.mode == ExprMode_Invalid) goto error;
 
     if (!IsInteger(index)) {
-        ReportError(pkg, InvalidSubscriptIndexTypeError, expr->Subscript.index->start,
+        ReportError(pkg, InvalidSubscriptIndexTypeError, expr->Subscript.index->pos,
                     "Cannot subscript with non-integer type '%s'",
                     DescribeType(index));
         goto error;
@@ -1563,7 +1563,7 @@ Type *checkExprSubscript(Expr *expr, CheckerContext *ctx, Package *pkg) {
             i64 i = indexCtx.val.i64;
             if (i < 0 || (u64)i >= recv->Array.length) {
                 const char *message = i < 0 ? "before the start" : "after the end of";
-                ReportError(pkg, OutOfBoundsError, expr->Subscript.index->start,
+                ReportError(pkg, OutOfBoundsError, expr->Subscript.index->pos,
                             "Index %d is %s of the array (%lu elements)",
                             i, message, recv->Array.length);
                 goto error;
@@ -1581,7 +1581,7 @@ Type *checkExprSubscript(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     default:
         if (recv != InvalidType) {
-            ReportError(pkg, UnsupportedSubscriptError, expr->Subscript.expr->start,
+            ReportError(pkg, UnsupportedSubscriptError, expr->Subscript.expr->pos,
                         "Unable to subscript type '%s'",
                         DescribeType(recv));
         }
@@ -1613,7 +1613,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
         case TypeKind_Struct: {
             StructFieldLookupResult result = StructFieldLookup(base->Struct, expr->Selector.name);
             if (!result.field) {
-                ReportError(pkg, TODOError, expr->Selector.start, "Struct %s has no member %s",
+                ReportError(pkg, TODOError, expr->Selector.pos, "Struct %s has no member %s",
                             DescribeType(base), expr->Selector.name);
                 goto error;
             }
@@ -1637,7 +1637,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
             Symbol *symbol = Lookup(import->scope, expr->Selector.name);
             if (!symbol) {
-                ReportError(pkg, TODOError, expr->Selector.start, "File %s has no member %s",
+                ReportError(pkg, TODOError, expr->Selector.pos, "File %s has no member %s",
                             DescribeExpr(expr->Selector.expr), expr->Selector.name);
                 goto error;
             }
@@ -1649,7 +1649,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
                 case SymbolState_Resolving:
                     // TODO: For cyclic types we need a ctx->hasIndirection to check and see if
                     // We have a cyclic reference error.
-                    ReportError(pkg, ReferenceToDeclarationError, expr->start,
+                    ReportError(pkg, ReferenceToDeclarationError, expr->pos,
                                 "Declaration initial value refers to itself");
                     break;
                 case SymbolState_Resolved:
@@ -1664,7 +1664,7 @@ Type *checkExprSelector(Expr *expr, CheckerContext *ctx, Package *pkg) {
         }
 
         default: {
-            ReportError(pkg, TODOError, expr->start, "%s has no member '%s'", DescribeExpr(expr->Selector.expr), expr->Selector.name);
+            ReportError(pkg, TODOError, expr->pos, "%s has no member '%s'", DescribeExpr(expr->Selector.expr), expr->Selector.name);
             goto error;
         }
     }
@@ -1691,17 +1691,17 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         // This is a cast not a call
 
         if (ArrayLen(expr->Call.args) < 1) {
-            ReportError(pkg, CastArgumentCountError, expr->start,
+            ReportError(pkg, CastArgumentCountError, expr->pos,
                         "Missing argument in cast to %s", DescribeType(calleeType));
             goto error;
         } else if (ArrayLen(expr->Call.args) > 1) {
-            ReportError(pkg, CastArgumentCountError, expr->start,
+            ReportError(pkg, CastArgumentCountError, expr->pos,
                         "Too many arguments in cast to %s", DescribeType(calleeType));
             goto error;
         }
 
         expr->kind = ExprKind_Cast;
-        Expr_Cast cast = { .start = expr->start, .type = expr->Call.expr, .expr = expr->Call.args[0]->value };
+        Expr_Cast cast = {expr->pos, .type = expr->Call.expr, .expr = expr->Call.args[0]->value };
         expr->Cast = cast;
         return checkExprCast(expr, ctx, pkg);
     }
@@ -1715,7 +1715,7 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         Expr_KeyValue *arg = expr->Call.args[i];
 
         if (i >= nParams && !(calleeType->Function.Flags & TypeFlag_Variadic)) {
-            ReportError(pkg, TODOError, arg->start,
+            ReportError(pkg, TODOError, arg->pos,
                         "Too many arguments in call to '%s'", DescribeExpr(expr->Call.expr));
             break;
         }
@@ -1863,7 +1863,7 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
     Decl_Constant constant = decl->Constant;
 
     if (ArrayLen(constant.names) != 1) {
-        ReportError(pkg, MultipleConstantDeclError, constant.start,
+        ReportError(pkg, MultipleConstantDeclError, constant.pos,
             "Constant declarations must declare at most one item");
 
         ForEach (constant.names, Expr_Ident *) {
@@ -1874,7 +1874,7 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
     }
 
     if (ArrayLen(constant.values) > 1) {
-        ReportError(pkg, ArityMismatchError, constant.start,
+        ReportError(pkg, ArityMismatchError, constant.pos,
                     "Constant declarations only allow for a single value, but got %zu", ArrayLen(constant.values));
         return;
     }
@@ -1885,7 +1885,7 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
         expectedType = checkExpr(constant.type, ctx, pkg);
         if (ctx->mode == ExprMode_Unresolved) return;
 
-        expectType(pkg, expectedType, ctx, constant.type->start);
+        expectType(pkg, expectedType, ctx, constant.type->pos);
     }
 
     Expr_Ident *ident = constant.names[0];
@@ -1907,7 +1907,7 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
             Type *type = checkExprTypeFunction(func.type, ctx, pkg);
             if (ctx->mode == ExprMode_Unresolved) return;
 
-            expectType(pkg, type, ctx, func.type->start);
+            expectType(pkg, type, ctx, func.type->pos);
 
             markSymbolResolved(symbol, type);
             symbol->kind = SymbolKind_Constant;
@@ -1936,14 +1936,14 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
     if (exprCtx.mode < ExprMode_Type || (((exprCtx.flags & CheckerContextFlag_Constant) == 0) && (exprCtx.mode != ExprMode_Type))) {
         // The above checks that the expression is constant
         // TODO: Simplify the above ... possibly by shifting around the ExprMode orders so that Addressable is lesser then Value.
-        ReportError(pkg, NotAValueError, value->start,
+        ReportError(pkg, NotAValueError, value->pos,
                     "Expected a type or constant value but got %s (type %s)", DescribeExpr(value), DescribeType(type));
     }
 
     symbol->val = exprCtx.val;
 
     if (expectedType && !coerceType(value, &exprCtx, &type, expectedType, pkg)) {
-        ReportError(pkg, InvalidConversionError, value->start,
+        ReportError(pkg, InvalidConversionError, value->pos,
                     "Unable to convert type %s to expected type type %s", DescribeType(type), DescribeType(expectedType));
         markSymbolInvalid(symbol);
         return;
@@ -1971,7 +1971,7 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
         expectedType = checkExpr(var.type, ctx, pkg);
         if (ctx->mode == ExprMode_Unresolved) return;
 
-        expectType(pkg, expectedType, ctx, var.type->start);
+        expectType(pkg, expectedType, ctx, var.type->pos);
     }
 
     u32 numLhs = (u32) ArrayLen(var.names);
@@ -2004,9 +2004,9 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
         }
 
         if (expectedType->kind == TypeKind_Function) {
-            ReportError(pkg, UninitFunctionTypeError, var.type->start,
+            ReportError(pkg, UninitFunctionTypeError, var.type->pos,
                 "Variables of a function type must be initialized");
-            ReportNote(pkg, var.type->start,
+            ReportNote(pkg, var.type->pos,
                        "If you want an uninitialized function pointer use *%s instead", DescribeType(expectedType));
         }
     } else {
@@ -2037,10 +2037,10 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
                     }
 
                     if (expectedType && !coerceTypeSilently(expr, &exprCtx, &ty, expectedType, pkg)) {
-                        ReportError(pkg, TypeMismatchError, expr->start,
+                        ReportError(pkg, TypeMismatchError, expr->pos,
                                     "Cannot convert %s to expected type %s",
                                     DescribeType(ty), DescribeType(expectedType));
-                        ReportNote(pkg, expr->start,
+                        ReportNote(pkg, expr->pos,
                                    "Value comes from the %zu indexed result from call to %s",
                                    rhsIndex, DescribeExpr(expr));
                         // TODO: Use the language value comes from the %zu (st|nd|rd|th) result of the call to %s
@@ -2061,7 +2061,7 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
             }
 
             if (exprCtx.mode < ExprMode_Value) {
-                ReportError(pkg, NotAValueError, expr->start,
+                ReportError(pkg, NotAValueError, expr->pos,
                             "Expected a value but got %s (type %s)", DescribeExpr(expr), DescribeType(type));
             } else if (expectedType) {
                 coerceType(expr, &exprCtx, &type, expectedType, pkg);
@@ -2089,7 +2089,7 @@ void checkDeclForeign(Decl *decl, CheckerContext *ctx, Package *pkg) {
     Type *type = checkExpr(decl->Foreign.type, ctx, pkg);
     if (ctx->mode == ExprMode_Unresolved) return;
 
-    expectType(pkg, type, ctx, decl->Foreign.type->start);
+    expectType(pkg, type, ctx, decl->Foreign.type->pos);
 
     Symbol *symbol;
     if (ctx->scope == pkg->scope) {
@@ -2114,7 +2114,7 @@ void checkDeclForeignBlock(Decl *decl, CheckerContext *ctx, Package *pkg) {
         Type *type = checkExpr(it.type, ctx, pkg);
         if (ctx->mode == ExprMode_Unresolved) return;
 
-        expectType(pkg, type, ctx, it.type->start);
+        expectType(pkg, type, ctx, it.type->pos);
 
         Symbol *symbol = it.symbol;
         symbol->externalName = it.linkname;
@@ -2131,7 +2131,7 @@ void checkDeclImport(Decl *decl, CheckerContext *ctx, Package *pkg) {
     if (ctx->mode == ExprMode_Unresolved) return;
 
     if (!TypesIdentical(type, StringType) || !IsConstant(ctx)) {
-        ReportError(pkg, TODOError, decl->start,
+        ReportError(pkg, TODOError, decl->pos,
                     "Could not resolve path %s to string constant", DescribeExpr(decl->Import.path));
         goto error;
     }
@@ -2172,7 +2172,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         } else {
             ArrayPush(lhsTypes, type);
             if (ctx->mode < ExprMode_Addressable && ctx->mode != ExprMode_Invalid) {
-                ReportError(pkg, ValueNotAssignableError, it->start,
+                ReportError(pkg, ValueNotAssignableError, it->pos,
                             "Cannot assign to value %s of type %s", DescribeExpr(it), DescribeType(type));
             }
         }
@@ -2208,9 +2208,9 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
                 CheckerInfoForExpr(pkg, assign.lhs[lhsIndex])->coerce = conversion(ty, target);
 
                 if (!coerceTypeSilently(expr, ctx, &ty, target, pkg)) {
-                    ReportError(pkg, TypeMismatchError, expr->start,
+                    ReportError(pkg, TypeMismatchError, expr->pos,
                                 "Cannot assign %s to value of type %s", DescribeType(ty), DescribeType(lhsTypes[lhsIndex]));
-                    ReportNote(pkg, expr->start,
+                    ReportNote(pkg, expr->pos,
                                "Value comes from the %zu indexed result from call to %s", rhsIndex, DescribeExpr(expr));
                     // TODO: Use the language value comes from the %zu (st|nd|rd|th) result of the call to %s
                     // -vdka September 2018
@@ -2227,7 +2227,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         }
 
         if (ctx->mode < ExprMode_Value) {
-            ReportError(pkg, NotAValueError, expr->start,
+            ReportError(pkg, NotAValueError, expr->pos,
                         "Expected a value but got %s (type %s)", DescribeExpr(expr), DescribeType(type));
         } else {
             coerceType(expr, ctx, &type, lhsTypes[lhsIndex], pkg);
@@ -2240,7 +2240,7 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ctx->desiredType = prevDesiredType;
 
     if (numLhs != values) {
-        ReportError(pkg, AssignmentCountMismatchError, stmt->start,
+        ReportError(pkg, AssignmentCountMismatchError, stmt->pos,
                     "Left side has %zu values while right side has %zu values", ArrayLen(assign.lhs), ArrayLen(assign.rhs));
     }
 
@@ -2260,7 +2260,7 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     // FIXME: What about returns that are tuples? We need a nice splat helper
 
     if (nExprs != nTypes) {
-        ReportError(pkg, WrongNumberOfReturnsError, stmt->start,
+        ReportError(pkg, WrongNumberOfReturnsError, stmt->pos,
                     "Wrong number of return expressions, expected %zu, got %zu",
                     nTypes, ArrayLen(stmt->Return.exprs));
     }
@@ -2288,24 +2288,24 @@ void checkStmtGoto(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(stmt->kind == StmtKind_Goto);
 
     if (stmt->Goto.keyword == Keyword_break && !(ctx->loop || ctx->swtch)) {
-        ReportError(pkg, BreakNotPermittedError, stmt->start,
+        ReportError(pkg, BreakNotPermittedError, stmt->pos,
                     "Break is not permitted outside of a switch or loop body");
         goto error;
     } else if (stmt->Goto.keyword == Keyword_continue && !ctx->loop) {
-        ReportError(pkg, ContinueNotPermittedError, stmt->start,
+        ReportError(pkg, ContinueNotPermittedError, stmt->pos,
                     "Continue is not permitted outside of a loop body");
         goto error;
     } else if (stmt->Goto.keyword == Keyword_fallthrough) {
         if (stmt->Goto.target) {
-            ReportError(pkg, FallthroughWithTargetError, stmt->start,
+            ReportError(pkg, FallthroughWithTargetError, stmt->pos,
                         "Fallthrough statements cannot provide a target to fall through too");
             goto error;
         } else if (!ctx->swtch) {
-            ReportError(pkg, FallthroughNotPermittedError, stmt->start,
+            ReportError(pkg, FallthroughNotPermittedError, stmt->pos,
                         "Fallthrough is not permitted outside of a switch body");
             goto error;
         } else if (!ctx->nextCase) {
-            ReportError(pkg, FallthroughWithoutNextCaseError, stmt->start,
+            ReportError(pkg, FallthroughWithoutNextCaseError, stmt->pos,
                         "Cannot fallthrough from here. There is no next case");
             goto error;
         }
@@ -2366,7 +2366,7 @@ void checkStmtIf(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
     Type *type = checkExpr(stmt->If.cond, &ifCtx, pkg);
     if (!coerceType(stmt->If.cond, &ifCtx, &type, BoolType, pkg)) {
-        ReportError(pkg, TypeMismatchError, stmt->If.cond->start,
+        ReportError(pkg, TypeMismatchError, stmt->If.cond->pos,
                     "Expected type bool got type %s", DescribeType(type));
     }
     ifCtx.desiredType = ctx->desiredType;
@@ -2423,7 +2423,7 @@ void checkStmtForIn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     } else if (isSlice(type)) {
         type = type->Slice.elementType;
     } else {
-        ReportError(pkg, CannotIterateError, stmt->ForIn.aggregate->start,
+        ReportError(pkg, CannotIterateError, stmt->ForIn.aggregate->pos,
                     "Cannot iterate over %s (type %s) ", DescribeExpr(stmt->ForIn.aggregate), DescribeType(type));
         return;
     }
@@ -2453,7 +2453,7 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     if (stmt->Switch.match) {
         switchType = checkExpr(stmt->Switch.match, &switchCtx, pkg);
         if (!isNumericOrPointer(switchType) && !isBoolean(switchType)) {
-            ReportError(pkg, CannotSwitchError, stmt->Switch.match->start,
+            ReportError(pkg, CannotSwitchError, stmt->Switch.match->pos,
                         "Cannot switch on value of type %s", DescribeType(switchType));
         }
     }
@@ -2465,12 +2465,12 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         ForEach(switchCase->SwitchCase.matches, Expr *) {
             Type *type = checkExpr(it, &switchCtx, pkg);
             if (!coerceType(it, &switchCtx, &type, switchType, pkg)) {
-                ReportError(pkg, TypeMismatchError, it->start, "Cannot convert %s to type %s",
+                ReportError(pkg, TypeMismatchError, it->pos, "Cannot convert %s to type %s",
                             DescribeType(type), DescribeType(switchType));
             }
         }
         if (!switchCase->SwitchCase.matches && i + 1 != ArrayLen(stmt->Switch.cases)) {
-            ReportError(pkg, DefaultSwitchCaseNotLastError, switchCase->start,
+            ReportError(pkg, DefaultSwitchCaseNotLastError, switchCase->pos,
                         "The default switch case must be the final case");
         }
 
@@ -2625,7 +2625,7 @@ void test_checkConstantDeclarations() {
     ASSERT(sym->state == SymbolState_Resolved);
     ASSERT(!sym->used);
     ASSERT(sym->kind == SymbolKind_Constant);
-    ASSERT(sym->decl->start.offset == 0);
+    ASSERT(sym->decl->pos.offset == 0);
     ASSERT(sym->val.u64 == 8);
 }
 
@@ -3231,8 +3231,7 @@ void test_checkStmtReturn() {
 #define checkReturn(_CODE) \
 stmt = resetAndParseReturningLastStmt(_CODE); \
 checkStmtReturn(stmt, &ctx, &pkg); \
-RESET_CONTEXT(ctx); \
-ArrayClear(types)
+RESET_CONTEXT(ctx)
 
     Type *types[3] = {I64Type, I64Type, F64Type};
     Type type = {TypeKind_Tuple, .Tuple = {TypeFlag_None, types, 1}};

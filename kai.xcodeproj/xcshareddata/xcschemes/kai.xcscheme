@@ -83,16 +83,20 @@
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
+            argument = "-no-error-colors"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
             argument = "$SRCROOT/test/ack.kai"
             isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
             argument = "$SRCROOT/test/tmp.kai"
-            isEnabled = "NO">
+            isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
             argument = "$SRCROOT/test/wip.kai"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </CommandLineArgument>
       </CommandLineArguments>
       <EnvironmentVariables>

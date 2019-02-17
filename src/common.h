@@ -1,7 +1,12 @@
 
+#ifdef __GLIBC__
+// We need to define this for 'realpath' to be included
+#define _GNU_SOURCE
+#endif
+
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <stddef.h>
@@ -171,6 +176,13 @@ struct Position {
     const char *name;
     u32 offset, line, column;
 };
+
+typedef struct SourceRange {
+    const char *name;
+    u32 offset;    // offset in file
+    u32 endOffset; // offset in file
+    u32 line, column;
+} SourceRange;
 
 /// Allocators
 typedef enum AllocKind {
