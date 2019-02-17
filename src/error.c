@@ -191,13 +191,13 @@ const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
             }
         }
 
+        numberOfLines++;
         cursor--;
+        
         if (*cursor == '\n') {
             // The line is empty, break
             break;
         }
-
-        numberOfLines++;
     }
 
     numberOfBytes += 4 + 1; // 4 for indentation 1 for nul termination.
