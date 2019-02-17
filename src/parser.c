@@ -153,13 +153,13 @@ b32 matchToken(Parser *p, TokenKind kind) {
 
 b32 expectToken(Parser *p, TokenKind kind) {
     if (matchToken(p, kind)) return true;
-    ReportErrorPosition(p->package, SyntaxError, p->tok.pos, "Expected token %s, got %s", DescribeTokenKind(kind), DescribeToken(p->tok));
+    ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Expected token %s, got %s", DescribeTokenKind(kind), DescribeToken(p->tok));
     return false;
 }
 
 b32 expectTerminator(Parser *p) {
     if (matchToken(p, TK_Terminator) || isToken(p, TK_Rbrace) || isToken(p, TK_Eof)) return true;
-    ReportErrorPosition(p->package, SyntaxError, p->tok.pos, "Expected terminator, got %s", DescribeToken(p->tok));
+    ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Expected terminator, got %s", DescribeToken(p->tok));
     return false;
 }
 
@@ -305,7 +305,7 @@ Expr *parseExprAtom(Parser *p) {
             } else if (p->tok.val.ident == internCVargs) {
                 goto caseEllipsis;
             }
-            ReportErrorPosition(p->package, SyntaxError, p->tok.pos, "Unexpected directive '%s'", p->tok.val.ident);
+            ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Unexpected directive '%s'", p->tok.val.ident);
             break;
         }
 
@@ -329,7 +329,7 @@ Expr *parseExprAtom(Parser *p) {
             } else if (ident == Keyword_autocast) {
                 goto caseAutocast;
             }
-            ReportErrorPosition(p->package, SyntaxError, p->tok.pos, "Unexpected keyword '%s'", p->tok.val.ident);
+            ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Unexpected keyword '%s'", p->tok.val.ident);
             break;
         }
 
@@ -443,7 +443,7 @@ Expr *parseExprAtom(Parser *p) {
                 Expr *init = NULL;
 
                 if (matchToken(p, TK_Assign)) {
-                    ReportErrorPosition(p->package, SyntaxError, p->tok.pos, "Enum values are established at compile time and declared using '::'");
+                    ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Enum values are established at compile time and declared using '::'");
 
                     // TODO(Brett): discard remaining stmt
                     continue;
@@ -473,7 +473,7 @@ Expr *parseExprAtom(Parser *p) {
         }
 
         default:
-            ReportErrorPosition(p->package, SyntaxError, p->tok.pos, "Unexpected token '%s'", DescribeToken(p->tok));
+            ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Unexpected token '%s'", DescribeToken(p->tok));
     }
 
     SourceRange range = rangeFromTokens(start, start);
@@ -674,7 +674,7 @@ Expr_KeyValue *parseExprCompoundField(Parser *p) {
         if (matchToken(p, TK_Colon)) {
             field->key = field->value;
             if (field->key->kind != ExprKind_Ident) {
-                ReportErrorPosition(p->package, SyntaxError, p->prevStart, "Named initializer value must be an identifier or surrounded in '[]'");
+                ReportError(p->package, SyntaxError, rangeFromPosition(p->prevStart), "Named initializer value must be an identifier or surrounded in '[]'");
             }
             field->value = parseExpr(p, false);
         }
@@ -702,7 +702,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
             Expr *type = parseType(p);
             For (exprs) {
                 if (exprs[i]->kind != ExprKind_Ident) {
-                    ReportErrorRange(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
+                    ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                     continue;
                 }
                 Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
@@ -714,19 +714,19 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
             if (type->kind == ExprKind_TypeVariadic) {
                 *nVarargs += 1;
                 if (*nVarargs == 2) {
-                    ReportErrorRange(p->package, SyntaxError, type->pos, "Expected at most 1 Variadic as the final parameter");
+                    ReportError(p->package, SyntaxError, type->pos, "Expected at most 1 Variadic as the final parameter");
                 }
             }
         } else if (*nVarargs <= 1) {
             if (*namedParameters) {
-                ReportErrorRange(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
+                ReportError(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
             }
             // The parameters are unnamed and the user may have entered a second variadic
             For (exprs) {
                 if (exprs[i]->kind == ExprKind_TypeVariadic) {
                     *nVarargs += 1;
                     if (*nVarargs == 2) {
-                        ReportErrorRange(p->package, SyntaxError, exprs[i]->pos, "Expected at most 1 Variadic as the final parameter");
+                        ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected at most 1 Variadic as the final parameter");
                     }
                 }
                 Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
@@ -760,20 +760,20 @@ Expr *parseFunctionType(Parser *p) {
                 Expr *type = parseType(p);
                 For (exprs) {
                     if (exprs[i]->kind != ExprKind_Ident) {
-                        ReportErrorRange(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
+                        ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                         continue;
                     }
                     ArrayPush(results, type);
                 }
             } else if (nVarargs <= 1) {
                 if (namedParameters) {
-                    ReportErrorRange(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
+                    ReportError(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
                 }
                 For (exprs) {
                     if (exprs[i]->kind == ExprKind_TypeVariadic) {
                         nVarargs += 1;
                         if (nVarargs == 1) {
-                            ReportErrorRange(p->package, SyntaxError, exprs[i]->pos, "Variadics are only valid in a functions parameters");
+                            ReportError(p->package, SyntaxError, exprs[i]->pos, "Variadics are only valid in a functions parameters");
                         }
                     }
                     ArrayPush(results, exprs[i]);
@@ -842,7 +842,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             nextToken();
             DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
             if (ArrayLen(rhs) > 1) {
-                ReportErrorPosition(p->package, SyntaxError, op.pos, "Only regular assignment may have multiple left or right values");
+                ReportError(p->package, SyntaxError, rangeFromPosition(op.pos), "Only regular assignment may have multiple left or right values");
             }
             SourceRange range = rangeFromNodes(exprs[0], rhs[0]);
             rhs[0] = NewExprBinary(pkg, range, op, exprs[0], rhs[0]);
@@ -862,7 +862,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             ArrayFit(idents, ArrayLen(exprs));
             For (exprs) {
                 if (exprs[i]->kind != ExprKind_Ident) {
-                    ReportErrorRange(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
+                    ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                 }
                 ArrayPush(idents, &exprs[i]->Ident);
             }
@@ -908,14 +908,14 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
         DynamicArray(Expr_Ident *) idents = NULL;
         For (exprs) {
             if (exprs[i]->kind != ExprKind_Ident) {
-                ReportErrorRange(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
+                ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
             }
             ArrayPush(idents, &exprs[i]->Ident);
         }
         ArrayFree(exprs);
         return (Stmt *) idents;
     } else if (ArrayLen(exprs) > 1) {
-        ReportErrorRange(p->package, SyntaxError, exprs[1]->pos, "Expected single expression");
+        ReportError(p->package, SyntaxError, exprs[1]->pos, "Expected single expression");
     }
 
     return (Stmt *) exprs[0];
@@ -945,14 +945,14 @@ Stmt *parseStmtFor(Parser *p, Package *pkg) {
                 if (ArrayLen(idents) > 0) valueName = idents[0];
                 if (ArrayLen(idents) > 1) indexName = idents[1];
                 if (ArrayLen(idents) > 2) {
-                    ReportErrorRange(p->package, SyntaxError, idents[2]->pos, "For in iteration must provide at most 2 names to assign (value, index)");
+                    ReportError(p->package, SyntaxError, idents[2]->pos, "For in iteration must provide at most 2 names to assign (value, index)");
                 }
                 aggregate = parseExpr(p, true);
                 Stmt_Block *body = parseBlock(p);
                 SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
                 return NewStmtForIn(pkg, range, valueName, indexName, aggregate, body);
             } else {
-                ReportErrorPosition(p->package, SyntaxError, p->tok.pos, "Expected single expression or 'in' for iterator");
+                ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Expected single expression or 'in' for iterator");
             }
         }
     }
@@ -968,7 +968,7 @@ Stmt *parseStmtFor(Parser *p, Package *pkg) {
         }
     }
     if (s2 && !isExpr(s2)) {
-        ReportErrorRange(p->package, SyntaxError, s2->pos, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
+        ReportError(p->package, SyntaxError, s2->pos, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
     }
 
     Stmt_Block *body = parseBlock(p);
@@ -1059,7 +1059,7 @@ SuffixDirectives parseSuffixDirectives(Parser *p) {
             const char *name = p->tok.val.s;
             if (val.linkname) {
                 SourceRange range = rangeFromTokens(start, end);
-                ReportErrorRange(p->package, TODOError, range, "Multiple linknames provided for declaration");
+                ReportError(p->package, TODOError, range, "Multiple linknames provided for declaration");
             }
             if (expectToken(p, TK_String)) {
                 val.linkname = name;
@@ -1177,7 +1177,7 @@ Stmt *parseStmt(Parser *p) {
 
             if (!isPrefixOrLoneDirective(p)) {
                 // FIXME: Get the range for the directive
-                ReportErrorPosition(pkg, TODOError, start.pos, "Directive #%s cannot be used lone or as a prefix", p->tok.val.ident);
+                ReportError(pkg, TODOError, rangeFromPosition(start.pos), "Directive #%s cannot be used lone or as a prefix", p->tok.val.ident);
                 nextToken();
                 return NULL;
             }
@@ -1198,7 +1198,7 @@ Stmt *parseStmt(Parser *p) {
                 } else {
                     if (p->linkPrefix) {
                         // FIXME: Position should be the linkPrefix position
-                        ReportErrorPosition(pkg, TODOError, start.pos, "Use of linkprefix directive is only valid on foreign blocks");
+                        ReportError(pkg, TODOError, rangeFromPosition(start.pos), "Use of linkprefix directive is only valid on foreign blocks");
                     }
 
                     decl = parseForeignDecl(p, start, library);
@@ -1415,7 +1415,7 @@ void parsePackageCode(Package *pkg, const char *code) {
 void parsePackage(Package *package) {
     const char *code = ReadEntireFile(package->fullpath);
     if (!code) {
-        ReportErrorPosition(package, FatalError, (Position){ .name = package->path }, "Failed to read source file");
+        ReportError(package, FatalError, (SourceRange){ package->path }, "Failed to read source file");
         return;
     }
     package->fileHandle = code;
