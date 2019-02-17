@@ -27,25 +27,28 @@ static const char *OutputTypeNames[] = {
     "dynamic"
 };
 
+#define FLAG_BOOL(NAME, SHORT_NAME, PTR, HELP) \
+    { CLIFlagKind_Bool, (NAME), (SHORT_NAME), .ptr.b = (&PTR), .help = (HELP) }
+
 CLIFlag CLIFlags[] = {
-    { CLIFlagKind_Bool, "help", "h", .ptr.b = &FlagHelp,  .help = "Prints help information" },
-    { CLIFlagKind_Bool, "version", .ptr.b = &FlagVersion, .help = "Prints version information" },
+    FLAG_BOOL("help",    "h",  FlagHelp,    "Print help information"),
+    FLAG_BOOL("version", NULL, FlagVersion, "Prints compiler version"),
+
+    FLAG_BOOL("verbose", "v",  FlagVerbose, "Enable verbose output"),
+    FLAG_BOOL("dump-ir", NULL, FlagDumpIR,  "Dump LLVM IR"),
+    FLAG_BOOL("emit-ir", NULL, FlagEmitIR,  "Emit LLVM IR file(s)"),
+
+    FLAG_BOOL("emit-header", NULL, FlagEmitHeader, "Emit C header file(s)"),
+
+    FLAG_BOOL("error-codes",  NULL, FlagErrorCodes,  "Show error codes along side error location"),
+    FLAG_BOOL("error-colors", NULL, FlagErrorColors, "Show errors in souce code by highlighting in color"),
+    FLAG_BOOL("error-source", NULL, FlagErrorSource, "Show source code when printing errors"),
+
+    FLAG_BOOL("parse-comments", NULL, FlagParseComments, ""),
+    FLAG_BOOL("debug", "g", FlagDebug, "Include debug symbols"),
+    FLAG_BOOL("link", NULL, FlagLink,  "Link object files"),
 
     { CLIFlagKind_String, "output", "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file (default: out_<input>)" },
-
-    { CLIFlagKind_Bool, "verbose", "v", .ptr.b = &FlagVerbose,   .help = "Enable verbose output" },
-    { CLIFlagKind_Bool, "dump-ir", .ptr.b = &FlagDumpIR,         .help = "Dump LLVM IR" },
-    { CLIFlagKind_Bool, "emit-ir", .ptr.b = &FlagEmitIR,         .help = "Emit LLVM IR file(s)" },
-    { CLIFlagKind_Bool, "emit-header", .ptr.b = &FlagEmitHeader, .help = "Emit C header file(s)" },
-    { CLIFlagKind_Bool, "emit-times", .ptr = NULL,               .help = "Emit times for each stage of compilation" },
-
-    { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,              .help = "Show error codes along side error location" },
-    { CLIFlagKind_Bool, "error-colors", .ptr.b = &FlagErrorColors,            .help = "Show errors in souce code by highlighting in color" },
-    { CLIFlagKind_Bool, "error-source", .ptr.b = &FlagErrorSource,            .help = "Show source code when printing errors" },
-
-    { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },
-    { CLIFlagKind_Bool, "debug", "g",  .ptr.b = &FlagDebug,            .help = "Include debug symbols"},
-    { CLIFlagKind_Bool, "link", .ptr.b = &FlagLink,                    .help = "Link object files (default)"},
 
     { CLIFlagKind_Enum, "os", .ptr.i = &TargetOs, .options = OsNames, .nOptions = sizeof(OsNames) / sizeof(*OsNames), .help = "Target operating system (default: current)" },
     { CLIFlagKind_Enum, "arch", .ptr.i = &TargetArch, .options = ArchNames, .nOptions = sizeof(ArchNames) / sizeof(*ArchNames), .help = "Target architecture (default: current)" },
@@ -181,33 +184,38 @@ void InitUnsetFlagsToDefaults() {
 void PrintUsage() {
     size_t nFlags = sizeof(CLIFlags) / sizeof(*CLIFlags);
     for (size_t i = 0; i < nFlags; i++) {
-
         char invokation[40];
-        int k = 0;
+        char help[100];
+
         CLIFlag flag = CLIFlags[i];
 
-        if (flag.alias) k = snprintf(invokation, sizeof(invokation), "-%s ", flag.alias);
-        k += snprintf(invokation + k, sizeof(invokation) - k, "-%s", flag.name);
+        int iLen = 0;
+        int hLen = snprintf(help, sizeof(help), "%s", flag.help ? flag.help : "");
+
+        if (flag.alias) iLen = snprintf(invokation, sizeof(invokation), "-%s ", flag.alias);
+        iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, "-%s", flag.name);
 
         switch (flag.kind) {
             case CLIFlagKind_String:
-                k += snprintf(invokation + k, sizeof(invokation) - k, " <%s>", flag.argumentName);
+                iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, " <%s>", flag.argumentName);
                 break;
 
             case CLIFlagKind_Enum:
                 ASSERT(flag.nOptions > 0);
-                k += snprintf(invokation + k, sizeof(invokation) - k, " <");
-                k += snprintf(invokation + k, sizeof(invokation) - k, "%s", flag.options[0]);
+                iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, " <");
+                iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, "%s", flag.options[0]);
                 for (int i = 1; i < flag.nOptions; i++) {
-                    k += snprintf(invokation + k, sizeof(invokation) - k, "|%s", flag.options[i]);
+                    iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, "|%s", flag.options[i]);
                 }
-                k += snprintf(invokation + k, sizeof(invokation) - k, ">");
+                iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, ">");
                 break;
 
             case CLIFlagKind_Bool:
+                if (*flag.ptr.b && flag.ptr.b != &FlagHelp)
+                    hLen += snprintf(help + hLen, sizeof(help) - hLen, " (default)");
                 break;
         }
-        printf(" %-40s %s\n", invokation, flag.help ? flag.help : "");
+        printf(" %-40s %s\n", invokation, help);
     }
 }
 
