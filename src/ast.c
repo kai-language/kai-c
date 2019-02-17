@@ -434,7 +434,7 @@ Decl *NewDeclImport(Package *package, SourceRange pos, Expr *path, const char *a
 #if TEST
 void test_isExpr_and_isDecl() {
     Package pkg = {0};
-    Position pos = {0};
+    SourceRange pos = {0};
     Stmt *expr = (Stmt *) NewExprIdent(&pkg, pos, NULL);
     ASSERT(isExpr(expr));
     

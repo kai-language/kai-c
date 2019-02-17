@@ -84,7 +84,30 @@ b32 shouldPrintErrorCode() {
 
 #define HasErrors(p) (p)->diagnostics.errors
 
-void ReportError(Package *p, ErrorCode code, Position pos, const char *msg, ...) {
+void ReportErrorRange(Package *p, ErrorCode code, SourceRange range, const char *msg, ...) {
+    va_list args;
+    char msgBuffer[512];
+    va_start(args, msg);
+    vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
+    char errorBuffer[512];
+
+    int errlen = shouldPrintErrorCode() ?
+        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u, E%04d): %s\n", range.name, range.line, range.column, code, msgBuffer) :
+        snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u): %s\n",        range.name, range.line, range.column,       msgBuffer);
+
+    // NOTE: snprintf returns how long the string would have been instead of its truncated length
+    // We're clamping it here to prevent an overrun.
+    errlen = MIN(errlen, sizeof(errorBuffer));
+
+    char *errorMsg = ArenaAlloc(&p->diagnostics.arena, errlen + 1);
+    memcpy(errorMsg, errorBuffer, errlen + 1);
+    va_end(args);
+
+    DiagnosticError error = { errorMsg };
+    ArrayPush(p->diagnostics.errors, error);
+}
+
+void ReportErrorPosition(Package *p, ErrorCode code, Position pos, const char *msg, ...) {
     va_list args;
     char msgBuffer[512]; // TODO: Static & Thread Local?
     va_start(args, msg);
@@ -105,6 +128,35 @@ void ReportError(Package *p, ErrorCode code, Position pos, const char *msg, ...)
 
     DiagnosticError error = { .msg = errorMsg, .note = NULL };
     ArrayPush(p->diagnostics.errors, error);
+}
+
+void ReportNoteRange(Package *p, SourceRange pos, const char *msg, ...) {
+    ASSERT(p->diagnostics.errors);
+    va_list args;
+    char msgBuffer[512]; // TODO: Static & Thread Local?
+    va_start(args, msg);
+    vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
+    char noteBuffer[512];
+
+    int notelen = snprintf(noteBuffer, sizeof(noteBuffer), "NOTE(%s:%u:%u): %s\n", pos.name, pos.line, pos.column, msgBuffer);
+
+    // NOTE: snprintf returns how long the string would have been instead of its truncated length
+    // We're clamping it here to prevent an overrun.
+    notelen = MIN(notelen, sizeof(noteBuffer));
+
+    char *noteMsg = ArenaAlloc(&p->diagnostics.arena, notelen + 1);
+    noteMsg = memcpy(noteMsg, noteBuffer, notelen + 1);
+    va_end(args);
+
+    DiagnosticNote *note = ArenaAlloc(&p->diagnostics.arena, sizeof(DiagnosticNote));
+    note->msg = noteMsg;
+    note->next = NULL;
+
+    DiagnosticNote **indirect = &p->diagnostics.errors[ArrayLen(p->diagnostics.errors) - 1].note;
+    while ((*indirect) != NULL)
+        indirect = &(*indirect)->next;
+
+    *indirect = note;
 }
 
 void ReportNote(Package *p, Position pos, const char *msg, ...) {
@@ -158,10 +210,10 @@ void OutputReportedErrors(Package *p) {
 #if TEST
 void test_errorReporting() {
 
-    Position builtinPosition = {0};
+    SourceRange builtinPosition = {0};
     Package mainPackage = {0};
-    ReportError(&mainPackage, SyntaxError, builtinPosition, "Error Reporting value of five %d", 5);
-    ReportNote(&mainPackage, builtinPosition, "Note Reporting value of six %d", 6);
+    ReportErrorRange(&mainPackage, SyntaxError, builtinPosition, "Error Reporting value of five %d", 5);
+    ReportNoteRange(&mainPackage, builtinPosition, "Note Reporting value of six %d", 6);
     ASSERT(mainPackage.diagnostics.errors != NULL);
     OutputReportedErrors(&mainPackage);
     ASSERT(mainPackage.diagnostics.errors == NULL);
