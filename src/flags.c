@@ -3,7 +3,6 @@
 
 bool FlagParseComments;
 bool FlagErrorCodes = true;
-bool FlagErrorLineNumbers = true;
 bool FlagErrorColors = true;
 bool FlagErrorSource = true;
 bool FlagVerbose;
@@ -42,7 +41,6 @@ CLIFlag CLIFlags[] = {
 
     { CLIFlagKind_Bool, "error-codes", .ptr.b = &FlagErrorCodes,              .help = "Show error codes along side error location" },
     { CLIFlagKind_Bool, "error-colors", .ptr.b = &FlagErrorColors,            .help = "Show errors in souce code by highlighting in color" },
-    { CLIFlagKind_Bool, "error-line-numbers", .ptr.b = &FlagErrorLineNumbers, .help = "Show line numbers in error source" },
     { CLIFlagKind_Bool, "error-source", .ptr.b = &FlagErrorSource,            .help = "Show source code when printing errors" },
 
     { CLIFlagKind_Bool, "parse-comments", .ptr.b = &FlagParseComments, .help = NULL },

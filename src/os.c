@@ -11,14 +11,6 @@ char *AbsolutePath(const char *filename, char *resolved) {
 #endif
 }
 
-typedef struct FileData {
-    const char *path;
-    const char *code;
-    size_t len;
-} FileData;
-
-FileData *files;
-
 // FIXME: We are mmap()'ing this with no way to munmap it currently
 char *ReadEntireFile(const char *path) {
     char *address = NULL;
@@ -35,8 +27,6 @@ char *ReadEntireFile(const char *path) {
     if (close(fd) == -1) perror("close was interupted"); // intentionally continue despite the failure, just keep the file open
     if (address == MAP_FAILED) return NullWithLoggedReason("Failed to mmap opened file %s", path);
     close(fd);
-    FileData data = {path, address, len};
-    ArrayPush(files, data);
 #else
     FILE *fd = fopen(path, "rb");
     if (!fd) return (char *)NullWithLoggedReason("failed to  open file %s", path);
@@ -52,9 +42,6 @@ char *ReadEntireFile(const char *path) {
     }
 
     fclose(fd);
-
-    FileData data = {path, address, len};
-    ArrayPush(files, data);
 #endif
 
     return address;
