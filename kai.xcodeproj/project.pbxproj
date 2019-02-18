@@ -34,6 +34,7 @@
 		5D41B53820CE393F005E9A8E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		5D5612AD20ABA02E00E2F4E8 /* targets.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = targets.c; path = src/targets.c; sourceTree = "<group>"; };
 		5D5612AE20ABAD5B00E2F4E8 /* os.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = os.c; path = src/os.c; sourceTree = "<group>"; };
+		5D9B9DA6221B70AE0012D81F /* header.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = header.c; path = src/header.c; sourceTree = "<group>"; };
 		5D9C729920A5E7C400755A1B /* flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = flags.c; path = src/flags.c; sourceTree = "<group>"; };
 		5DA32D5920CEACB700090405 /* TestSuite.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TestSuite.m; path = tools/TestSuite.m; sourceTree = "<group>"; };
 		5DA7CA2720A9653F00E4640D /* ast.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ast.c; path = src/ast.c; sourceTree = "<group>"; };
@@ -156,6 +157,7 @@
 				B25AB22D20B987D1002E1440 /* map.h */,
 				B25AB22920B987D1002E1440 /* symbols.h */,
 				B25AB22C20B987D1002E1440 /* types.h */,
+				5D9B9DA6221B70AE0012D81F /* header.c */,
 				5D41B51720CA0591005E9A8E /* constant_eval.c */,
 				5D5612AE20ABAD5B00E2F4E8 /* os.c */,
 				5D5612AD20ABA02E00E2F4E8 /* targets.c */,
