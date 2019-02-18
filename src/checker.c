@@ -903,7 +903,9 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ArrayFit(results, ArrayLen(func.result));
 
     bool isVoid = false;
-    ForEach(func.result, Expr *) {
+    size_t len = ArrayLen(func.result);
+    for (size_t i = 0; i < len; i++) {
+        Expr *it = func.result[i];
         Type *type = checkExpr(it, &paramCtx, pkg);
         if (paramCtx.mode == ExprMode_Invalid) goto error;
         if (paramCtx.mode == ExprMode_Unresolved) goto unresolved;
@@ -959,7 +961,9 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     TypeFlag typeFlags = TypeFlag_None;
 
     // FIXME: We need to extract and pass on desired types parameters & results
-    ForEach(func.type->TypeFunction.params, Expr_KeyValue *) {
+    size_t len = ArrayLen(func.type->TypeFunction.params);
+    for (size_t i = 0; i < len; i++) {
+        Expr_KeyValue *it = func.type->TypeFunction.params[i];
         if (!it->key || it->key->kind != ExprKind_Ident) {
             ReportError(pkg, ParamNameMissingError, it->pos, "Parameters for a function literal must be named");
             continue;
@@ -982,7 +986,9 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     }
 
     bool isVoid = false;
-    ForEach(func.type->TypeFunction.result, Expr *) {
+    len = ArrayLen(func.type->TypeFunction.result);
+    for (size_t i = 0; i < len; i++) {
+        Expr *it = func.type->TypeFunction.result[i];
         Type *type = checkExpr(it, &paramCtx, pkg);
         if (!expectType(pkg, type, &paramCtx, it->pos)) continue;
         ArrayPush(results, type);
@@ -1011,7 +1017,7 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         bodyCtx.desiredType = NewTypeTupleFromFunctionResults(TypeFlag_None, type->Function);
     }
 
-    size_t len = ArrayLen(func.body->stmts);
+    len = ArrayLen(func.body->stmts);
     for (size_t i = 0; i < len; i++) {
         checkStmt(func.body->stmts[i], &bodyCtx, pkg);
         if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;
@@ -1039,7 +1045,9 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
     size_t maxIndex = 0;
     size_t currentIndex = 0;
-    ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
+    size_t len = ArrayLen(expr->LitCompound.elements);
+    for (size_t i = 0; i < len; i++) {
+        Expr_KeyValue *it = expr->LitCompound.elements[i];
         Type *expectedValueType = NULL;
         if (it->key) {
             switch (type->kind) {
@@ -1862,12 +1870,13 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
     ASSERT(decl->owningPackage == pkg);
     Decl_Constant constant = decl->Constant;
 
-    if (ArrayLen(constant.names) != 1) {
+    size_t len = ArrayLen(constant.names);
+    if (len != 1) {
         ReportError(pkg, MultipleConstantDeclError, constant.pos,
             "Constant declarations must declare at most one item");
 
-        ForEach (constant.names, Expr_Ident *) {
-            Symbol *symbol = Lookup(pkg->scope, it->name);
+        for (size_t i = 0; i < len; i++) {
+            Symbol *symbol = Lookup(pkg->scope, constant.names[i]->name);
             markSymbolInvalid(symbol);
         }
         return;
@@ -2162,9 +2171,10 @@ void checkStmtAssign(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
 
     DynamicArray(Type *) lhsTypes = NULL;
 
-    ForEach(assign.lhs, Expr *) {
+    u64 len = ArrayLen(assign.lhs);
+    for (int i = 0; i < len; i++) {
+        Expr *it = assign.lhs[i];
         Type *type = checkExpr(it, ctx, pkg);
-        // FIXME: Check for null
         if (type->kind == TypeKind_Tuple) {
             for (u32 i = 0; i < type->Tuple.numTypes; i++) {
                 ArrayPush(lhsTypes, type->Tuple.types[i]);
@@ -2349,8 +2359,9 @@ void checkStmtBlock(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         .flags = ctx->flags & ~CheckerContextFlag_Constant,
     };
 
-    ForEach(stmt->Block.stmts, Stmt *) {
-        checkStmt(it, &blockCtx, pkg);
+    size_t len = ArrayLen(stmt->Block.stmts);
+    for (size_t i = 0; i < len; i++) {
+        checkStmt(stmt->Block.stmts[i], &blockCtx, pkg);
     }
 }
 
@@ -2399,8 +2410,9 @@ void checkStmtFor(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     forCtx.flags |= CheckerContextFlag_LoopClosest;
 
     forCtx.desiredType = NULL;
-    ForEach(stmt->For.body->stmts, Stmt *) {
-        checkStmt(it, &forCtx, pkg);
+    size_t len = ArrayLen(stmt->For.body->stmts);
+    for (size_t i = 0; i < len; i++) {
+        checkStmt(stmt->For.body->stmts[i], &forCtx, pkg);
     }
 }
 
@@ -2435,8 +2447,9 @@ void checkStmtForIn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     forCtx.flags |= CheckerContextFlag_LoopClosest;
 
     forCtx.desiredType = NULL;
-    ForEach(stmt->For.body->stmts, Stmt *) {
-        checkStmt(it, &forCtx, pkg);
+    size_t len = ArrayLen(stmt->For.body->stmts);
+    for (size_t i = 0; i < len; i++) {
+        checkStmt(stmt->For.body->stmts[i], &forCtx, pkg);
     }
 }
 
@@ -2461,15 +2474,21 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     Symbol *breakTarget = declareLabelSymbol(pkg, switchCtx.scope, "$break");
     storeInfoSwitch(pkg, stmt, breakTarget);
 
-    ForEachWithIndex(stmt->Switch.cases, i, Stmt *, switchCase) {
-        ForEach(switchCase->SwitchCase.matches, Expr *) {
-            Type *type = checkExpr(it, &switchCtx, pkg);
-            if (!coerceType(it, &switchCtx, &type, switchType, pkg)) {
-                ReportError(pkg, TypeMismatchError, it->pos, "Cannot convert %s to type %s",
+    size_t numCases = ArrayLen(stmt->Switch.cases);
+    for (size_t idxCase = 0; idxCase < numCases; idxCase++) {
+        Stmt *switchCase = stmt->Switch.cases[idxCase];
+        size_t numMatches = ArrayLen(switchCase->SwitchCase.matches);
+
+        for (size_t idxMatch = 0; idxMatch < numMatches; idxMatch++) {
+            Expr *match = switchCase->SwitchCase.matches[idxMatch];
+            Type *type = checkExpr(match, &switchCtx, pkg);
+            if (!coerceType(match, &switchCtx, &type, switchType, pkg)) {
+                ReportError(pkg, TypeMismatchError, match->pos, "Cannot convert %s to type %s",
                             DescribeType(type), DescribeType(switchType));
             }
         }
-        if (!switchCase->SwitchCase.matches && i + 1 != ArrayLen(stmt->Switch.cases)) {
+
+        if (!numMatches && idxCase + 1 != numCases) {
             ReportError(pkg, DefaultSwitchCaseNotLastError, switchCase->pos,
                         "The default switch case must be the final case");
         }
@@ -2484,14 +2503,15 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         };
 
         // Create a target for fallthough
-        if (i + 1 < ArrayLen(stmt->Switch.cases)) {
-            CheckerInfo_Case *nextCase = &GetStmtInfo(pkg, stmt->Switch.cases[i + 1])->Case;
+        if (idxCase + 1 < numCases) {
+            CheckerInfo_Case *nextCase = &GetStmtInfo(pkg, stmt->Switch.cases[idxCase + 1])->Case;
             nextCase->fallthroughTarget = declareLabelSymbol(pkg, caseCtx.scope, "$fallthrough");
-            caseCtx.nextCase = stmt->Switch.cases[i + 1];
+            caseCtx.nextCase = stmt->Switch.cases[idxCase + 1];
         }
 
-        ForEach(switchCase->SwitchCase.block->stmts, Stmt *) {
-            checkStmt(it, &caseCtx, pkg);
+        size_t numStmts = ArrayLen(switchCase->SwitchCase.block->stmts);
+        for (size_t i = 0; i < numStmts; i++) {
+            checkStmt(switchCase->SwitchCase.block->stmts[i], &caseCtx, pkg);
         }
     }
 }

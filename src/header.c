@@ -76,7 +76,9 @@ void cgenFuncPrototype(String *buffer, const char *name, Type *type) {
 }
 
 void cgenDecl(HeaderContext *ctx, DynamicArray(Expr_Ident *) names, Type *type, b32 isConst) {
-    ForEach(names, Expr_Ident *) {
+    size_t numNames = ArrayLen(names);
+    for (size_t i = 0; i < numNames; i++) {
+        Expr_Ident *it = names[i];
         switch (type->kind) {
         case TypeKind_Function:
             cgenFuncPrototype(&ctx->functions, it->name, type);

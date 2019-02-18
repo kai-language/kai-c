@@ -21,16 +21,6 @@ typedef struct ArrayHdr {
 #define ArrayAllocator(b) ((b) ? _array_hdr(b)->allocator : &DefaultAllocator)
 #define ArraysEqual(a, b) (a == b || (ArrayLen(a) == ArrayLen(b) && memcmp(a, b, ArrayLen(a)) == 0))
 
-#define ForEachWithIndex(AGG, IDX, TYPE, ITER) \
-size_t IDX = 0; \
-for (TYPE ITER = AGG ? AGG[IDX] : NULL; IDX < ArrayLen(AGG); IDX++, ITER = AGG[IDX])
-
-#define CONCATENATE_DIRECT(x, y) x##y
-#define CONCATENATE(x, y) CONCATENATE_DIRECT(x, y)
-#define ANONYMOUS_VARIABLE(x) CONCATENATE(x, __LINE__)
-
-#define ForEach(AGG, TYPE) ForEachWithIndex(AGG, ANONYMOUS_VARIABLE(_index), TYPE, it)
-
 typedef DynamicArray(u8) String;
 
 #ifdef __cplusplus

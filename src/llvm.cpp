@@ -589,10 +589,12 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
 
             // FIXME: Determine if, like C, all uninitialized Struct members are zero'd or left undefined
             llvm::Value *agg = llvm::UndefValue::get(type);
-            ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
-                TypeField *field = (TypeField *) it->info;
+            size_t numElements = ArrayLen(expr->LitCompound.elements);
+            for (size_t idx = 0; idx < numElements; idx++) {
+                Expr_KeyValue *kv = expr->LitCompound.elements[idx];
+                TypeField *field = (TypeField *) kv->info;
                 u64 index = (field - &info.type->Struct.members[0]);
-                llvm::Value *val = emitExpr(ctx, it->value);
+                llvm::Value *val = emitExpr(ctx, kv->value);
 
                 agg = ctx->b.CreateInsertValue(agg, val, (u32) index);
             }
@@ -611,11 +613,13 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
             } else {
                 // FIXME: Determine if, like C all uninitialized Array members are zero'd or left undefined
                 value = llvm::UndefValue::get(irType);
-                ForEach(expr->LitCompound.elements, Expr_KeyValue *) {
+                size_t numElements = ArrayLen(expr->LitCompound.elements);
+                for (size_t idx = 0; idx < numElements; idx++) {
+                    Expr_KeyValue *kv = expr->LitCompound.elements[idx];
                     // For both Array and Slice type Compound Literals the info on KeyValue is the constant index
-                    u64 index = (u64) it->info;
-                    llvm::Value *el = emitExpr(ctx, it->value, elementType);
-                    value = ctx->b.CreateInsertValue(value, el, (u32) index);
+                    u64 targetIndex = (u64) kv->info;
+                    llvm::Value *el = emitExpr(ctx, kv->value, elementType);
+                    value = ctx->b.CreateInsertValue(value, el, (u32) targetIndex);
                 }
             }
 
@@ -1024,22 +1028,24 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 
     llvm::Function::arg_iterator args = fn->arg_begin();
 
-    ForEachWithIndex(expr->LitFunction.type->TypeFunction.params, i, auto, it) {
+    size_t numParams = ArrayLen(expr->LitFunction.type->TypeFunction.params);
+    for (size_t idx = 0; idx < numParams; idx++) {
+        Expr_KeyValue *param = expr->LitFunction.type->TypeFunction.params[idx];
         // TODO: Support unnamed parameters ($0, $1, $2)
-        CheckerInfo paramInfo = ctx->checkerInfo[it->key->id];
-        auto param = args++;
-        param->setName(paramInfo.Ident.symbol->name);
+        CheckerInfo paramInfo = ctx->checkerInfo[param->key->id];
+        llvm::Argument *arg = args++;
+        arg->setName(paramInfo.Ident.symbol->name);
         auto storage = createEntryBlockAlloca(ctx, paramInfo.Ident.symbol);
         paramInfo.Ident.symbol->backendUserdata = storage;
-        ctx->b.CreateAlignedStore(param, storage, BytesFromBits(paramInfo.Ident.symbol->type->Align));
+        ctx->b.CreateAlignedStore(arg, storage, BytesFromBits(paramInfo.Ident.symbol->type->Align));
 
         if (FlagDebug) {
             auto dbg = ctx->d.builder->createParameterVariable(
                 ctx->d.scope,
                 paramInfo.Ident.symbol->name,
-                (u32) i,
+                (u32) idx,
                 ctx->d.file,
-                it->pos.line,
+                param->pos.line,
                 debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
                 true
             );
@@ -1600,8 +1606,9 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
             ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, fore.body->pos.line, fore.body->pos.column);
         }
 
-        ForEachWithIndex(fore.body->stmts, i, Stmt *, stmt) {
-            emitStmt(ctx, stmt);
+        size_t numStmts = ArrayLen(fore.body->stmts);
+        for (size_t idx = 0; idx < numStmts; idx++) {
+            emitStmt(ctx, fore.body->stmts[idx]);
         }
 
         if (FlagDebug) {
@@ -1644,8 +1651,9 @@ void emitStmtBlock(Context *ctx, Stmt *stmt) {
     ctx->b.CreateBr(block);
     ctx->b.SetInsertPoint(block);
 
-    ForEach(stmt->Block.stmts, Stmt *) {
-        emitStmt(ctx, it);
+    size_t numStmts = ArrayLen(stmt->Block.stmts);
+    for (size_t idx = 0; idx < numStmts; idx++) {
+        emitStmt(ctx, stmt->Block.stmts[idx]);
     }
 }
 
@@ -1666,8 +1674,10 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
     info.breakTarget->backendUserdata = post;
     llvm::BasicBlock *defaultBlock = NULL;
 
+    size_t numCases = ArrayLen(swt.cases);
     std::vector<llvm::BasicBlock *> thenBlocks;
-    ForEachWithIndex(swt.cases, i, Stmt *, c) {
+    for (size_t i = 0; i < numCases; i++) {
+        Stmt *c = swt.cases[i];
         if (ArrayLen(c->SwitchCase.matches)) {
             llvm::BasicBlock *then = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.then.case", currentFunc); // TODO: number cases
             thenBlocks.push_back(then);
@@ -1687,31 +1697,32 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
         value = llvm::ConstantInt::get(canonicalize(ctx, BoolType), 1);
     }
 
-    size_t caseCount = ArrayLen(swt.cases);
     std::vector<std::vector<llvm::Value *>> matches;
-    ForEachWithIndex(swt.cases, j, Stmt *, c) {
-        if (j+1 < caseCount) {
-            CheckerInfo_Case nextCase = ctx->checkerInfo[swt.cases[j+1]->id].Case;
-            nextCase.fallthroughTarget->backendUserdata = thenBlocks[j+1];;
+    for (size_t idxCase = 0; idxCase < numCases; idxCase++) {
+        Stmt_SwitchCase c = swt.cases[idxCase]->SwitchCase;
+        if (idxCase+1 < numCases) {
+            CheckerInfo_Case nextCase = ctx->checkerInfo[swt.cases[idxCase+1]->id].Case;
+            nextCase.fallthroughTarget->backendUserdata = thenBlocks[idxCase+1];;
         }
 
-        Stmt_SwitchCase caseStmt = c->SwitchCase;
-
-        llvm::BasicBlock *thenBlock = thenBlocks[j];
+        llvm::BasicBlock *thenBlock = thenBlocks[idxCase];
         ctx->b.SetInsertPoint(thenBlock);
 
         // TODO: unions and any support
-        if (ArrayLen(caseStmt.matches)) {
+        size_t numMatches = ArrayLen(c.matches);
+        if (numMatches) {
             std::vector<llvm::Value *> vals;
-            For(caseStmt.matches) {
-                vals.push_back(emitExpr(ctx, caseStmt.matches[i]));
+            for (size_t idxMatch = 0; idxMatch < numMatches; idxMatch++) {
+                llvm::Value *val = emitExpr(ctx, c.matches[idxMatch]);
+                vals.push_back(val);
             }
 
             matches.push_back(vals);
         }
 
-        ForEach(caseStmt.block->stmts, Stmt *) {
-            emitStmt(ctx, it);
+        size_t numStmts = ArrayLen(c.block->stmts);
+        for (size_t i = 0; i < numStmts; i++) {
+            emitStmt(ctx, c.block->stmts[i]);
         }
 
         b32 hasTerm = ctx->b.GetInsertBlock()->getTerminator() != NULL;

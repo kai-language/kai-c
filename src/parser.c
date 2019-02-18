@@ -1329,9 +1329,10 @@ void parsePackageCode(Package *pkg, const char *code) {
         switch (decl->kind) {
             case StmtDeclKind_Constant: {
                 decl->owningScope = pkg->scope;
-                ForEach(decl->Constant.names, Expr_Ident *) {
-                    // We iterate over, and declare all names of the constant despite only supporting a single name
-                    declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
+                // Declare all names despite only supporting single declaration for Constants
+                size_t numNames = ArrayLen(decl->Constant.names);
+                for (size_t i = 0; i < numNames; i++) {
+                    declareSymbol(pkg, pkg->scope, decl->Constant.names[i]->name, &symbol, decl);
                     symbol->kind = SymbolKind_Constant;
                     symbol->state = SymbolState_Unresolved;
                     symbol->flags |= SymbolFlag_Global;
@@ -1341,8 +1342,9 @@ void parsePackageCode(Package *pkg, const char *code) {
             }
             case StmtDeclKind_Variable: {
                 decl->owningScope = pkg->scope;
-                ForEach(decl->Variable.names, Expr_Ident *) {
-                    declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
+                size_t numNames = ArrayLen(decl->Variable.names);
+                for (size_t i = 0; i < numNames; i++) {
+                    declareSymbol(pkg, pkg->scope, decl->Variable.names[i]->name, &symbol, decl);
                     symbol->kind = SymbolKind_Variable;
                     symbol->state = SymbolState_Unresolved;
                     symbol->flags |= SymbolFlag_Global;
