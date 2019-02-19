@@ -60,128 +60,6 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @end
 
 //
-// Tests found in file src/checker.c
-@interface checker : XCTestCase
-@end
-
-@implementation checker
-
-- (void) setUp {
-    setSelfForTestCase(self);
-    [self setContinueAfterFailure: false];
-}
-
-- (void)test_canCoerce {
-    test_canCoerce();
-}
-
-- (void)test_checkConstantDeclarations {
-    test_checkConstantDeclarations();
-}
-
-- (void)test_coercionsAreMarked {
-    test_coercionsAreMarked();
-}
-
-- (void)test_checkTypeFunction {
-    test_checkTypeFunction();
-}
-
-- (void)test_checkTypePointer {
-    test_checkTypePointer();
-}
-
-- (void)test_checkTypeArray {
-    test_checkTypeArray();
-}
-
-- (void)test_checkTypeSlice {
-    test_checkTypeSlice();
-}
-
-- (void)test_checkTypeStruct {
-    test_checkTypeStruct();
-}
-
-- (void)test_checkConstantUnaryExpressions {
-    test_checkConstantUnaryExpressions();
-}
-
-- (void)test_checkConstantBinaryExpressions {
-    test_checkConstantBinaryExpressions();
-}
-
-- (void)test_checkConstantTernaryExpression {
-    test_checkConstantTernaryExpression();
-}
-
-- (void)test_checkConstantCastExpression {
-    test_checkConstantCastExpression();
-}
-
-- (void)test_callToCVargs {
-    test_callToCVargs();
-}
-
-- (void)test_checkExprSelector {
-    test_checkExprSelector();
-}
-
-- (void)test_checkExprLitInteger {
-    test_checkExprLitInteger();
-}
-
-- (void)test_checkExprLitFunction {
-    test_checkExprLitFunction();
-}
-
-- (void)test_checkExprLitCompound {
-    test_checkExprLitCompound();
-}
-
-- (void)test_checkStmtAssign {
-    test_checkStmtAssign();
-}
-
-- (void)test_checkStmtBlock {
-    test_checkStmtBlock();
-}
-
-- (void)test_checkStmtDefer {
-    test_checkStmtDefer();
-}
-
-- (void)test_checkStmtFor {
-    test_checkStmtFor();
-}
-
-- (void)test_checkStmtForIn {
-    test_checkStmtForIn();
-}
-
-- (void)test_checkStmtGoto {
-    test_checkStmtGoto();
-}
-
-- (void)test_checkStmtIf {
-    test_checkStmtIf();
-}
-
-- (void)test_checkStmtLabel {
-    test_checkStmtLabel();
-}
-
-- (void)test_checkStmtReturn {
-    test_checkStmtReturn();
-}
-
-- (void)test_checkStmtSwitch {
-    test_checkStmtSwitch();
-}
-
-@end
-
-//
 // Tests found in file src/array.c
 @interface array : XCTestCase
 @end
@@ -338,7 +216,129 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @end
 
 //
-// Tests found in file src/parser.c
+// Tests found in file src/tests/checker.c
+@interface checker : XCTestCase
+@end
+
+@implementation checker
+
+- (void) setUp {
+    setSelfForTestCase(self);
+    [self setContinueAfterFailure: false];
+}
+
+- (void)test_canCoerce {
+    test_canCoerce();
+}
+
+- (void)test_checkConstantDeclarations {
+    test_checkConstantDeclarations();
+}
+
+- (void)test_coercionsAreMarked {
+    test_coercionsAreMarked();
+}
+
+- (void)test_checkTypeFunction {
+    test_checkTypeFunction();
+}
+
+- (void)test_checkTypePointer {
+    test_checkTypePointer();
+}
+
+- (void)test_checkTypeArray {
+    test_checkTypeArray();
+}
+
+- (void)test_checkTypeSlice {
+    test_checkTypeSlice();
+}
+
+- (void)test_checkTypeStruct {
+    test_checkTypeStruct();
+}
+
+- (void)test_checkConstantUnaryExpressions {
+    test_checkConstantUnaryExpressions();
+}
+
+- (void)test_checkConstantBinaryExpressions {
+    test_checkConstantBinaryExpressions();
+}
+
+- (void)test_checkConstantTernaryExpression {
+    test_checkConstantTernaryExpression();
+}
+
+- (void)test_checkConstantCastExpression {
+    test_checkConstantCastExpression();
+}
+
+- (void)test_callToCVargs {
+    test_callToCVargs();
+}
+
+- (void)test_checkExprSelector {
+    test_checkExprSelector();
+}
+
+- (void)test_checkExprLitInteger {
+    test_checkExprLitInteger();
+}
+
+- (void)test_checkExprLitFunction {
+    test_checkExprLitFunction();
+}
+
+- (void)test_checkExprLitCompound {
+    test_checkExprLitCompound();
+}
+
+- (void)test_checkStmtAssign {
+    test_checkStmtAssign();
+}
+
+- (void)test_checkStmtBlock {
+    test_checkStmtBlock();
+}
+
+- (void)test_checkStmtDefer {
+    test_checkStmtDefer();
+}
+
+- (void)test_checkStmtFor {
+    test_checkStmtFor();
+}
+
+- (void)test_checkStmtForIn {
+    test_checkStmtForIn();
+}
+
+- (void)test_checkStmtGoto {
+    test_checkStmtGoto();
+}
+
+- (void)test_checkStmtIf {
+    test_checkStmtIf();
+}
+
+- (void)test_checkStmtLabel {
+    test_checkStmtLabel();
+}
+
+- (void)test_checkStmtReturn {
+    test_checkStmtReturn();
+}
+
+- (void)test_checkStmtSwitch {
+    test_checkStmtSwitch();
+}
+
+@end
+
+//
+// Tests found in file src/tests/parser.c
 @interface parser : XCTestCase
 @end
 

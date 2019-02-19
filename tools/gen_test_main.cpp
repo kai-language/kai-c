@@ -217,10 +217,14 @@ int totalTests = 0;
 void discoverTests(const char *directoryPath) {
 
     char path[MAX];
-    char *scratch = (char*)malloc(MAX);
+    char *scratch = (char*)calloc(MAX, 1);
 
     size_t dirPathLen = strlen(directoryPath);
     strncpy(path, directoryPath, dirPathLen);
+    if (path[dirPathLen - 1] != '/') {
+        path[dirPathLen++] = '/';
+    }
+    path[dirPathLen] = '\0';
 
     DirectoryIter iter = DirectoryIterOpen(directoryPath);
     for (DirectoryEntry *entry; (entry = DirectoryIterNext(&iter));) {
@@ -301,13 +305,14 @@ void discoverTests(const char *directoryPath) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Expected filename or directory as input");
+        fprintf(stderr, "Expected filename(s) or directory(s) as input");
         exit(1);
     }
 
     printf("%s", prelude);
 
-    discoverTests(argv[1]);
+    for (int i = 1; i < argc; i++)
+        discoverTests(argv[i]);
 
     printf("    // All tests finished\n");
     printf("\n");

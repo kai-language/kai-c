@@ -127,6 +127,10 @@ void discoverTests(const char *directoryPath) {
 
     size_t dirPathLen = strlen(directoryPath);
     strncpy(path, directoryPath, dirPathLen);
+    if (path[dirPathLen - 1] != '/') {
+        path[dirPathLen++] = '/';
+    }
+    path[dirPathLen] = '\0';
 
     DirectoryIter iter = DirectoryIterOpen(directoryPath);
     for (DirectoryEntry *entry; (entry = DirectoryIterNext(&iter));) {
@@ -219,7 +223,8 @@ int main(int argc, char **argv) {
 
     printf("%s", prelude);
 
-    discoverTests(argv[1]);
+    for (int i = 1; i < argc; i++)
+        discoverTests(argv[i]);
 
     return 0;
 }

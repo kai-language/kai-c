@@ -40,7 +40,7 @@ tools/genTests:
 	$(CXX) -o tools/genTests tools/gen_test_main.cpp
 
 tests: clean tools/genTests
-	@./tools/genTests src/ > $(TEST_MAIN)
+	@./tools/genTests $(shell find src -maxdepth 1 -type d) > $(TEST_MAIN)
 	@$(CC) $(TEST_MAIN) -c -o core.o  -DTEST $(LFLAGS) $(DISABLED_WARNINGS) $(local_CFLAGS)
 	@$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
@@ -53,4 +53,4 @@ install:
 clean:
 	rm -f $(TARGET) core.o llvm.o $(TEST_TARGET) $(TEST_LOG) $(TEST_MAIN)
 	
-.PHONY: all clean debug release tests
+.PHONY: all clean debug release tests tools/genTests
