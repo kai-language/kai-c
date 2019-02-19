@@ -889,11 +889,11 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     CheckerContext paramCtx = { pushScope(pkg, ctx->scope) };
     size_t numParams = ArrayLen(func.params);
     for (size_t i = 0; i < numParams; i++) {
-        Type *type = checkExpr(func.params[i]->value, &paramCtx, pkg);
+        Type *type = checkExpr(func.params[i].value, &paramCtx, pkg);
         if (paramCtx.mode == ExprMode_Invalid) goto error;
         if (paramCtx.mode == ExprMode_Unresolved) goto unresolved;
 
-        if (!expectType(pkg, type, &paramCtx, func.params[i]->pos)) isInvalid = true;
+        if (!expectType(pkg, type, &paramCtx, func.params[i].value->pos)) isInvalid = true;
 
         flags |= type->Flags & TypeFlag_Variadic;
         flags |= type->Flags & TypeFlag_CVargs;
@@ -964,22 +964,22 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     // FIXME: We need to extract and pass on desired types parameters & results
     size_t len = ArrayLen(func.type->TypeFunction.params);
     for (size_t i = 0; i < len; i++) {
-        Expr_KeyValue *it = func.type->TypeFunction.params[i];
-        if (!it->key || it->key->kind != ExprKind_Ident) {
-            ReportError(pkg, ParamNameMissingError, it->pos, "Parameters for a function literal must be named");
+        KeyValue it = func.type->TypeFunction.params[i];
+        if (!it.key || it.key->kind != ExprKind_Ident) {
+            ReportError(pkg, ParamNameMissingError, it.pos, "Parameters for a function literal must be named");
             continue;
         }
 
         Symbol *symbol;
-        declareSymbol(pkg, parameterScope, it->key->Ident.name, &symbol, (Decl *) it);
+        declareSymbol(pkg, parameterScope, it.key->Ident.name, &symbol, NULL);
         symbol->kind = SymbolKind_Variable;
 
-        Type *type = checkExpr(it->value, &paramCtx, pkg);
-        if (!expectType(pkg, type, &paramCtx, it->value->pos)) continue;
+        Type *type = checkExpr(it.value, &paramCtx, pkg);
+        if (!expectType(pkg, type, &paramCtx, it.value->pos)) continue;
         markSymbolResolved(symbol, type);
 
         // TODO: Support unnamed parameters ($0, $1, $2)
-        storeInfoIdent(pkg, it->key, symbol);
+        storeInfoIdent(pkg, it.key, symbol);
 
         typeFlags |= type->Flags & TypeFlag_Variadic;
         typeFlags |= type->Flags & TypeFlag_CVargs;
@@ -1048,7 +1048,7 @@ Type *checkExprLitCompound(Expr *expr, CheckerContext *ctx, Package *pkg) {
     size_t currentIndex = 0;
     size_t len = ArrayLen(expr->LitCompound.elements);
     for (size_t i = 0; i < len; i++) {
-        Expr_KeyValue *it = expr->LitCompound.elements[i];
+        KeyValue *it = &expr->LitCompound.elements[i];
         Type *expectedValueType = NULL;
         if (it->key) {
             switch (type->kind) {
@@ -1710,7 +1710,7 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
         }
 
         expr->kind = ExprKind_Cast;
-        Expr_Cast cast = {expr->pos, .type = expr->Call.expr, .expr = expr->Call.args[0]->value };
+        Expr_Cast cast = {expr->pos, .type = expr->Call.expr, .expr = expr->Call.args[0].value };
         expr->Cast = cast;
         return checkExprCast(expr, ctx, pkg);
     }
@@ -1721,10 +1721,10 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
     for (size_t i = 0; i < numArgs; i++) {
         // TODO: check args keys match
         // -vdka September 2018
-        Expr_KeyValue *arg = expr->Call.args[i];
+        KeyValue arg = expr->Call.args[i];
 
         if (i >= nParams && !(calleeType->Function.Flags & TypeFlag_Variadic)) {
-            ReportError(pkg, TODOError, arg->pos,
+            ReportError(pkg, TODOError, arg.pos,
                         "Too many arguments in call to '%s'", DescribeExpr(expr->Call.expr));
             break;
         }
@@ -1737,11 +1737,11 @@ Type *checkExprCall(Expr *expr, CheckerContext *ctx, Package *pkg) {
 
         argCtx.desiredType = expectedType;
 
-        Type *type = checkExpr(arg->value, &argCtx, pkg);
+        Type *type = checkExpr(arg.value, &argCtx, pkg);
         if (argCtx.mode == ExprMode_Unresolved) goto unresolved;
         if (argCtx.mode == ExprMode_Invalid) goto error;
 
-        coerceType(arg->value, &argCtx, &type, expectedType, pkg);
+        coerceType(arg.value, &argCtx, &type, expectedType, pkg);
     }
     // TODO: Implement checking for calls
     Type *type = NewTypeTupleFromFunctionResults(TypeFlag_None, calleeType->Function);

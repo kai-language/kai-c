@@ -15,7 +15,6 @@
     FOR_EACH(Binary, "binary", true)                         \
     FOR_EACH(Ternary, "ternary", true)                       \
     FOR_EACH(Autocast, "autocast", false)                    \
-    FOR_EACH(KeyValue, "key value", false)                   \
     FOR_EACH(LocationDirective, "location directive", true)  \
     FOR_EACH(LitNil, "nil literal", true)                    \
     FOR_EACH(LitInt, "integer literal", true)                \
@@ -123,6 +122,38 @@ STMT_KINDS
 DECL_KINDS
 #undef FOR_EACH
 
+typedef u8 KeyValueFlag;
+enum Enum_KeyValueFlag {
+    KeyValueFlag_Index = 1,
+};
+typedef struct KeyValue {
+    SourceRange pos;
+    Expr *key;
+    Expr *value;
+    KeyValueFlag flags;
+
+    // info is set by the checker. This is the only node to have checker info
+    // inlined onto the node instead of using an Expr id. The reason for this
+    // is that KeyValues are inlined directly for both composite literals and
+    // function literals. This will actually save space because the id is 64
+    // bits and there is also a union tag that this doesn't have.
+    void *info;
+    // if LitCompound is Array -> u64
+    // if LitCompound is Struct -> TypeField*
+} KeyValue;
+
+typedef struct AggregateItem {
+    SourceRange pos;
+    DynamicArray(const char *) names;
+    Expr *type;
+} AggregateItem;
+
+typedef struct EnumItem {
+    SourceRange pos;
+    const char *name;
+    Expr *init;
+} EnumItem;
+
 typedef struct AstInvalid AstInvalid;
 struct AstInvalid {
     SourceRange pos;
@@ -141,7 +172,7 @@ struct Expr_Paren {
 struct Expr_Call {
     SourceRange pos;
     Expr *expr;
-    DynamicArray(Expr_KeyValue *) args;
+    DynamicArray(KeyValue) args;
 };
 
 struct Expr_Selector {
@@ -194,26 +225,6 @@ struct Expr_Autocast {
     Expr *expr;
 };
 
-typedef u8 KeyValueFlag;
-enum Enum_KeyValueFlag {
-    KeyValueFlag_Index = 1,
-};
-struct Expr_KeyValue {
-    SourceRange pos;
-    Expr *key;
-    Expr *value;
-    KeyValueFlag flags;
-
-    // info is set by the checker. This is the only node to have checker info
-    // inlined onto the node instead of using an Expr id. The reason for this
-    // is that KeyValues are inlined directly for both composite literals and
-    // function literals. This will actually save space because the id is 64
-    // bits and there is also a union tag that this doesn't have.
-    void *info;
-    // if LitCompound is Array -> u64
-    // if LitCompound is Struct -> TypeField*
-};
-
 struct Expr_LocationDirective {
     SourceRange pos;
     const char *name;
@@ -241,7 +252,7 @@ struct Expr_LitString {
 struct Expr_LitCompound {
     SourceRange pos;
     Expr *type;
-    DynamicArray(Expr_KeyValue *) elements;
+    DynamicArray(KeyValue) elements;
 };
 
 struct Expr_LitFunction {
@@ -267,13 +278,6 @@ struct Expr_TypeSlice {
     Expr *type;
 };
 
-typedef struct AggregateItem AggregateItem;
-struct AggregateItem {
-    SourceRange pos;
-    DynamicArray(const char *) names;
-    Expr *type;
-};
-
 struct Expr_TypeStruct {
     SourceRange pos;
     DynamicArray(AggregateItem) items;
@@ -282,13 +286,6 @@ struct Expr_TypeStruct {
 struct Expr_TypeUnion {
     SourceRange pos;
     DynamicArray(AggregateItem) items;
-};
-
-typedef struct EnumItem EnumItem;
-struct EnumItem {
-    SourceRange pos;
-    const char *name;
-    Expr *init;
 };
 
 struct Expr_TypeEnum {
@@ -315,7 +312,7 @@ struct Expr_TypeVariadic {
 struct Expr_TypeFunction {
     SourceRange pos;
     DynamicArray(Expr *) result;
-    DynamicArray(Expr_KeyValue *) params;
+    DynamicArray(KeyValue) params;
 };
 
 struct Stmt_Empty {
@@ -546,7 +543,7 @@ Stmt *NewStmtInvalid(Package *package, SourceRange pos);
 Decl *NewDeclInvalid(Package *package, SourceRange pos);
 Expr *NewExprIdent(Package *package, SourceRange pos, const char *name);
 Expr *NewExprParen(Package *package, SourceRange pos, Expr *expr);
-Expr *NewExprCall(Package *package, SourceRange pos, Expr *expr, DynamicArray(Expr_KeyValue *) args);
+Expr *NewExprCall(Package *package, SourceRange pos, Expr *expr, DynamicArray(KeyValue) args);
 Expr *NewExprSelector(Package *package, SourceRange pos, Expr *expr, const char *name);
 Expr *NewExprSubscript(Package *package, SourceRange pos, Expr *expr, Expr *index);
 Expr *NewExprSlice(Package *package, SourceRange pos, Expr *expr, Expr *lo, Expr *hi);
@@ -555,13 +552,12 @@ Expr *NewExprBinary(Package *package, SourceRange pos, Token op, Expr *lhs, Expr
 Expr *NewExprTernary(Package *package, SourceRange pos, Expr *cond, Expr *pass, Expr *fail);
 Expr *NewExprCast(Package *package, SourceRange pos, Expr *type, Expr *expr);
 Expr *NewExprAutocast(Package *package, SourceRange pos, Expr *expr);
-Expr *NewExprKeyValue(Package *package, Expr *key, Expr *value);
 Expr *NewExprLocationDirective(Package *package, SourceRange pos, const char *name);
 Expr *NewExprLitNil(Package *package, SourceRange pos);
 Expr *NewExprLitInt(Package *package, SourceRange pos, u64 val);
 Expr *NewExprLitFloat(Package *package, SourceRange pos, f64 val);
 Expr *NewExprLitString(Package *package, SourceRange pos, const char *val);
-Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(Expr_KeyValue *) elements);
+Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(KeyValue) elements);
 Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt *body, u8 flags);
 Expr *NewExprTypePointer(Package *package, SourceRange pos, Expr *type);
 Expr *NewExprTypeArray(Package *package, SourceRange pos, Expr *length, Expr *type);
@@ -571,7 +567,7 @@ Expr *NewExprTypeEnum(Package *package, SourceRange pos, Expr *explicitType, Dyn
 Expr *NewExprTypeUnion(Package *package, SourceRange pos, DynamicArray(AggregateItem) items);
 Expr *NewExprTypePolymorphic(Package *package, SourceRange pos, const char *name);
 Expr *NewExprTypeVariadic(Package *package, SourceRange pos, Expr *type, u8 flags);
-Expr *NewExprTypeFunction(Package *package, SourceRange pos, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result);
+Expr *NewExprTypeFunction(Package *package, SourceRange pos, DynamicArray(KeyValue) params, DynamicArray(Expr *)result);
 
 // - MARK: Stmts
 Stmt *NewStmtEmpty(Package *package, SourceRange pos);

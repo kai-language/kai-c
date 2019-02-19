@@ -127,7 +127,7 @@ Expr *NewExprParen(Package *package, SourceRange pos, Expr *expr) {
     return e;
 }
 
-Expr *NewExprCall(Package *package, SourceRange pos, Expr *expr, DynamicArray(Expr_KeyValue *) args) {
+Expr *NewExprCall(Package *package, SourceRange pos, Expr *expr, DynamicArray(KeyValue) args) {
     Expr *e = NewExpr(package, ExprKind_Call, pos);
     e->Call.expr = expr;
     e->Call.args = args;
@@ -192,13 +192,6 @@ Expr *NewExprAutocast(Package *package, SourceRange pos, Expr *expr) {
     return e;
 }
 
-Expr *NewExprKeyValue(Package *package, Expr *key, Expr *value) {
-    Expr *e = NewExpr(package, ExprKind_KeyValue, key->pos);
-    e->KeyValue.key = key;
-    e->KeyValue.value = value;
-    return e;
-}
-
 Expr *NewExprLocationDirective(Package *package, SourceRange pos, const char *name) {
     Expr *e = NewExpr(package, ExprKind_LocationDirective, pos);
     e->LocationDirective.name = name;
@@ -228,7 +221,7 @@ Expr *NewExprLitString(Package *package, SourceRange pos, const char *val) {
     return e;
 }
 
-Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(Expr_KeyValue *) elements) {
+Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(KeyValue) elements) {
     Expr *e = NewExpr(package, ExprKind_LitCompound, pos);
     e->LitCompound.type = type;
     e->LitCompound.elements = elements;
@@ -295,7 +288,7 @@ Expr *NewExprTypeVariadic(Package *package, SourceRange pos, Expr *type, u8 flag
     return e;
 }
 
-Expr *NewExprTypeFunction(Package *package, SourceRange pos, DynamicArray(Expr_KeyValue *) params, DynamicArray(Expr *)result) {
+Expr *NewExprTypeFunction(Package *package, SourceRange pos, DynamicArray(KeyValue) params, DynamicArray(Expr *)result) {
     Expr *e = NewExpr(package, ExprKind_TypeFunction, pos);
     e->TypeFunction.params = params;
     e->TypeFunction.result = result;

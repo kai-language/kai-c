@@ -550,14 +550,14 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
 
     size_t numArgs = ArrayLen(expr->Call.args);
     for (size_t i = 0; i < numArgs; i++) {
-        Expr_KeyValue *arg = expr->Call.args[i];
+        KeyValue arg = expr->Call.args[i];
 
-        Type *argType = TypeFromCheckerInfo(ctx->checkerInfo[arg->value->id]);
+        Type *argType = TypeFromCheckerInfo(ctx->checkerInfo[arg.value->id]);
         llvm::Type *irArgType = canonicalize(ctx, argType);
         if (fnType->Flags & TypeFlag_CVargs) {
             irArgType = nullptr;
         }
-        llvm::Value *irArg = emitExpr(ctx, expr->Call.args[i]->value, irArgType);
+        llvm::Value *irArg = emitExpr(ctx, expr->Call.args[i].value, irArgType);
 
         if (fnType->Flags == TypeFlag_CVargs && (i - 1 >= fnType->Function.numParams)) {
             // Apply C ABI rules at least for C style variadic parameters
@@ -592,10 +592,10 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
             llvm::Value *agg = llvm::UndefValue::get(type);
             size_t numElements = ArrayLen(expr->LitCompound.elements);
             for (size_t idx = 0; idx < numElements; idx++) {
-                Expr_KeyValue *kv = expr->LitCompound.elements[idx];
-                TypeField *field = (TypeField *) kv->info;
+                KeyValue kv = expr->LitCompound.elements[idx];
+                TypeField *field = (TypeField *) kv.info;
                 u64 index = (field - &info.type->Struct.members[0]);
-                llvm::Value *val = emitExpr(ctx, kv->value);
+                llvm::Value *val = emitExpr(ctx, kv.value);
 
                 agg = ctx->b.CreateInsertValue(agg, val, (u32) index);
             }
@@ -616,10 +616,10 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
                 value = llvm::UndefValue::get(irType);
                 size_t numElements = ArrayLen(expr->LitCompound.elements);
                 for (size_t idx = 0; idx < numElements; idx++) {
-                    Expr_KeyValue *kv = expr->LitCompound.elements[idx];
+                    KeyValue kv = expr->LitCompound.elements[idx];
                     // For both Array and Slice type Compound Literals the info on KeyValue is the constant index
-                    u64 targetIndex = (u64) kv->info;
-                    llvm::Value *el = emitExpr(ctx, kv->value, elementType);
+                    u64 targetIndex = (u64) kv.info;
+                    llvm::Value *el = emitExpr(ctx, kv.value, elementType);
                     value = ctx->b.CreateInsertValue(value, el, (u32) targetIndex);
                 }
             }
@@ -1031,9 +1031,9 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 
     size_t numParams = ArrayLen(expr->LitFunction.type->TypeFunction.params);
     for (size_t idx = 0; idx < numParams; idx++) {
-        Expr_KeyValue *param = expr->LitFunction.type->TypeFunction.params[idx];
+        KeyValue param = expr->LitFunction.type->TypeFunction.params[idx];
         // TODO: Support unnamed parameters ($0, $1, $2)
-        CheckerInfo paramInfo = ctx->checkerInfo[param->key->id];
+        CheckerInfo paramInfo = ctx->checkerInfo[param.key->id];
         llvm::Argument *arg = args++;
         arg->setName(paramInfo.Ident.symbol->name);
         auto storage = createEntryBlockAlloca(ctx, paramInfo.Ident.symbol);
@@ -1046,16 +1046,15 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
                 paramInfo.Ident.symbol->name,
                 (u32) idx,
                 ctx->d.file,
-                param->pos.line,
+                param.pos.line,
                 debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
                 true
             );
-            auto pos = ((Expr_KeyValue *) paramInfo.Ident.symbol->decl)->pos;
             ctx->d.builder->insertDeclare(
                 storage,
                 dbg,
                 ctx->d.builder->createExpression(),
-                llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope),
+                llvm::DebugLoc::get(param.pos.line, param.pos.column, ctx->d.scope),
                 ctx->b.GetInsertBlock()
             );
         }

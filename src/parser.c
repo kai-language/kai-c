@@ -182,7 +182,7 @@ DynamicArray(const char *) parseIdentList(Parser *p) {
 Expr *parseType(Parser *p);
 Expr *parseExpr(Parser *p, b32 noCompoundLiteral);
 Expr *parseFunctionType(Parser *p);
-Expr_KeyValue *parseExprCompoundField(Parser *p);
+KeyValue parseExprCompoundField(Parser *p);
 DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral);
 Stmt *parseBlock(Parser *p);
 Stmt *parseStmt(Parser *p);
@@ -256,7 +256,7 @@ Expr *parseExprAtom(Parser *p) {
         case TK_Lbrace: {
             nextToken();
 
-            DynamicArray(Expr_KeyValue *) elements = NULL;
+            DynamicArray(KeyValue) elements = NULL;
 
             if (!isToken(p, TK_Rbrace)) {
                 ArrayPush(elements, parseExprCompoundField(p));
@@ -534,29 +534,29 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
 
             case TK_Lparen: { // Call Expr
                 nextToken();
-                DynamicArray(Expr_KeyValue *) args = NULL;
+                DynamicArray(KeyValue) args = NULL;
                 if (!isToken(p, TK_Rparen)) {
                     Token start = p->tok;
 
-                    Expr_KeyValue *arg = AllocAst(pkg, sizeof(Expr_KeyValue));
-                    arg->value = parseExpr(p, noCompoundLiteral);
-                    if (isToken(p, TK_Colon) && arg->value->kind == ExprKind_Ident) {
-                        arg->key = arg->value;
-                        arg->value = parseExpr(p, noCompoundLiteral);
+                    KeyValue arg = {};
+                    arg.value = parseExpr(p, noCompoundLiteral);
+                    if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
+                        arg.key = arg.value;
+                        arg.value = parseExpr(p, noCompoundLiteral);
                     }
-                    arg->pos = rangeFromTokenToEndOfNode(start, arg->value);
+                    arg.pos = rangeFromTokenToEndOfNode(start, arg.value);
                     ArrayPush(args, arg);
                     while (matchToken(p, TK_Comma)) {
                         if (isToken(p, TK_Rparen)) break; // Allow trailing comma in argument list
                         start = p->tok;
 
-                        arg = AllocAst(pkg, sizeof(Expr_KeyValue));
-                        arg->value = parseExpr(p, noCompoundLiteral);
-                        if (isToken(p, TK_Colon) && arg->value->kind == ExprKind_Ident) {
-                            arg->key = arg->value;
-                            arg->value = parseExpr(p, noCompoundLiteral);
+                        KeyValue arg = {};
+                        arg.value = parseExpr(p, noCompoundLiteral);
+                        if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
+                            arg.key = arg.value;
+                            arg.value = parseExpr(p, noCompoundLiteral);
                         }
-                        arg->pos = rangeFromTokenToEndOfNode(start, arg->value);
+                        arg.pos = rangeFromTokenToEndOfNode(start, arg.value);
                         ArrayPush(args, arg);
                     }
                 }
@@ -587,7 +587,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
 
                 matchToken(p, TK_Terminator);
 
-                DynamicArray(Expr_KeyValue *) elements = NULL;
+                DynamicArray(KeyValue) elements = NULL;
                 if (!isToken(p, TK_Rbrace)) {
                     ArrayPush(elements, parseExprCompoundField(p));
                     while (matchToken(p, TK_Comma)) {
@@ -656,27 +656,27 @@ Expr *parseExpr(Parser *p, b32 noCompoundLiteral) {
     return parseExprBinary(p, 1, noCompoundLiteral);
 }
 
-Expr_KeyValue *parseExprCompoundField(Parser *p) {
+KeyValue parseExprCompoundField(Parser *p) {
     Token start = p->tok;
-    Expr_KeyValue *field = AllocAst(p->package, sizeof(Expr_KeyValue));
+    KeyValue field = {};
     if (matchToken(p, TK_Lbrack)) {
-        field->flags = KeyValueFlag_Index;
-        field->key = parseExpr(p, false);
+        field.flags = KeyValueFlag_Index;
+        field.key = parseExpr(p, false);
         expectToken(p, TK_Rbrack);
         expectToken(p, TK_Colon);
-        field->value = parseExpr(p, false);
-        field->pos = rangeFromTokenToEndOfNode(start, field->value);
+        field.value = parseExpr(p, false);
+        field.pos = rangeFromTokenToEndOfNode(start, field.value);
         return field;
     } else {
-        field->value = parseExpr(p, false);
+        field.value = parseExpr(p, false);
         if (matchToken(p, TK_Colon)) {
-            field->key = field->value;
-            if (field->key->kind != ExprKind_Ident) {
+            field.key = field.value;
+            if (field.key->kind != ExprKind_Ident) {
                 ReportError(p->package, SyntaxError, rangeFromPosition(p->prevStart), "Named initializer value must be an identifier or surrounded in '[]'");
             }
-            field->value = parseExpr(p, false);
+            field.value = parseExpr(p, false);
         }
-        field->pos = rangeFromTokenToEndOfNode(start, field->value);
+        field.pos = rangeFromTokenToEndOfNode(start, field.value);
         return field;
     }
 }
@@ -688,7 +688,7 @@ Expr *parseType(Parser *p) {
     return parseExprAtom(p);
 }
 
-void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, DynamicArray(Expr_KeyValue *) *params) {
+void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, DynamicArray(KeyValue) *params) {
     expectToken(p, TK_Lparen);
     *nVarargs = 0;
     *namedParameters = false;
@@ -704,10 +704,10 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                     ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                     continue;
                 }
-                Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
-                kv->pos = exprs[i]->pos;
-                kv->key = exprs[i];
-                kv->value = type;
+                KeyValue kv = {};
+                kv.pos = exprs[i]->pos;
+                kv.key = exprs[i];
+                kv.value = type;
                 ArrayPush(*params, kv);
             }
             if (type->kind == ExprKind_TypeVariadic) {
@@ -729,8 +729,9 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                         ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected at most 1 Variadic as the final parameter");
                     }
                 }
-                Expr_KeyValue *kv = AllocAst(p->package, sizeof(Expr_KeyValue));
-                kv->value = exprs[i];
+                KeyValue kv = {};
+                kv.value = exprs[i];
+                kv.pos = exprs[i]->pos;
                 ArrayPush(*params, kv);
             }
         }
@@ -741,7 +742,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
 Expr *parseFunctionType(Parser *p) {
     Token start = p->tok;
     nextToken();
-    DynamicArray(Expr_KeyValue *) params = NULL;
+    DynamicArray(KeyValue) params = NULL;
     u32 nVarargs;
     b32 namedParameters;
     parseFunctionParameters(&nVarargs, &namedParameters, p, &params);
@@ -1520,7 +1521,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
     ASSERT(ArrayLen(expr->LitCompound.elements) == 3);
     ASSERT_EXPR_KIND(ExprKind_LitCompound);
     ASSERT(ArrayLen(expr->LitCompound.elements) == 3);
-    ASSERT(expr->LitCompound.elements[0]->flags & KeyValueFlag_Index);
+    ASSERT(expr->LitCompound.elements[0].flags & KeyValueFlag_Index);
 
 #undef ASSERT_EXPR_KIND
 }
