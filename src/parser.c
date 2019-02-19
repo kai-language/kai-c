@@ -1667,7 +1667,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 
     p = newTestParser("for { break }");
     ASSERT_STMT_KIND(StmtKind_For);
-    ASSERT(ArrayLen(stmt->For.body->stmts) == 1);
+    ASSERT(ArrayLen(stmt->For.body->Block.stmts) == 1);
 
     p = newTestParser("if true {}");
     ASSERT_STMT_KIND(StmtKind_If);
