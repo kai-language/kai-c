@@ -184,7 +184,7 @@ Expr *parseExpr(Parser *p, b32 noCompoundLiteral);
 Expr *parseFunctionType(Parser *p);
 Expr_KeyValue *parseExprCompoundField(Parser *p);
 DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral);
-Stmt_Block *parseBlock(Parser *p);
+Stmt *parseBlock(Parser *p);
 Stmt *parseStmt(Parser *p);
 
 Expr *parseExprAtom(Parser *p) {
@@ -578,10 +578,8 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                     SourceRange blockRange = rangeFromTokens(startOfBlock, p->tok);
                     SourceRange functionRange = rangeFromTokens(start, p->tok);
                     expectToken(p, TK_Rbrace);
-                    Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
-                    block->pos = blockRange;
-                    block->stmts = stmts;
-                    x = NewExprLitFunction(pkg, functionRange, x, block, 0);
+                    Stmt *body = NewStmtBlock(p->package, blockRange, stmts);
+                    x = NewExprLitFunction(pkg, functionRange, x, body, 0);
                     continue;
                 }
                 if (noCompoundLiteral) return x;
@@ -806,7 +804,7 @@ DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral) {
     return exprs;
 }
 
-Stmt_Block *parseBlock(Parser *p) {
+Stmt *parseBlock(Parser *p) {
     Token start = p->tok;
     expectToken(p, TK_Lbrace);
     DynamicArray(Stmt *) stmts = NULL;
@@ -817,10 +815,7 @@ Stmt_Block *parseBlock(Parser *p) {
     SourceRange range = rangeFromTokens(start, p->tok);
     expectToken(p, TK_Rbrace);
     matchToken(p, TK_Terminator); // consume terminator if needed `if a {} else {}
-    Stmt_Block *block = AllocAst(p->package, sizeof(Stmt_Block));
-    block->pos = range;
-    block->stmts = stmts;
-    return block;
+    return NewStmtBlock(p->package, range, stmts);
 }
 
 // isIdentList being non NULL indicates that an ident list is permitted (for ... in)
@@ -862,46 +857,43 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             }
 
             Expr *start = exprs[0];
-            DynamicArray(Expr_Ident *) idents = NULL;
-            ArrayFit(idents, ArrayLen(exprs));
+
             size_t numExprs = ArrayLen(exprs);
             for (size_t i = 0; i < numExprs; i++) {
                 if (exprs[i]->kind != ExprKind_Ident) {
                     ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                 }
-                ArrayPush(idents, &exprs[i]->Ident);
             }
-            ArrayFree(exprs);
 
             DynamicArray(Expr *) rhs = NULL;
 
             if (matchToken(p, TK_Assign)) {
                 rhs = parseExprList(p, noCompoundLiteral);
                 SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclVariable(pkg, range, idents, NULL, rhs);
+                return (Stmt *) NewDeclVariable(pkg, range, exprs, NULL, rhs);
             } 
             
             if (matchToken(p, TK_Colon)) {
                 rhs = parseExprList(p, noCompoundLiteral);
                 SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclConstant(pkg, range, idents, NULL, rhs);
+                return (Stmt *) NewDeclConstant(pkg, range, exprs, NULL, rhs);
             }
 
             Expr *type = parseExpr(p, noCompoundLiteral);
             if (matchToken(p, TK_Assign)) {
                 rhs = parseExprList(p, noCompoundLiteral);
                 SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclVariable(pkg, range, idents, type, rhs);
+                return (Stmt *) NewDeclVariable(pkg, range, exprs, type, rhs);
             } 
             
             if (matchToken(p, TK_Colon)) {
                 rhs = parseExprList(p, noCompoundLiteral);
                 SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclConstant(pkg, range, idents, type, rhs);
+                return (Stmt *) NewDeclConstant(pkg, range, exprs, type, rhs);
             }
 
             SourceRange range = rangeFromNodes(start, type);
-            return (Stmt *) NewDeclVariable(pkg, range, idents, type, NULL);
+            return (Stmt *) NewDeclVariable(pkg, range, exprs, type, NULL);
         }
 
         default:
@@ -910,20 +902,21 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
 
     if (ArrayLen(exprs) > 1 && isIdentList) {
         *isIdentList = true;
-        DynamicArray(Expr_Ident *) idents = NULL;
+
+        // Check that all the expresions are identifiers.
         size_t numExprs = ArrayLen(exprs);
         for (size_t i = 0; i < numExprs; i++) {
             if (exprs[i]->kind != ExprKind_Ident) {
                 ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
             }
-            ArrayPush(idents, &exprs[i]->Ident);
         }
-        ArrayFree(exprs);
-        return (Stmt *) idents;
+        // FIXME: Make a Stmt_IdentList
+        return (Stmt *) exprs;
     } else if (ArrayLen(exprs) > 1) {
         ReportError(p->package, SyntaxError, exprs[1]->pos, "Expected single expression");
     }
 
+    // FIXME: What is going on here?
     return (Stmt *) exprs[0];
 }
 
@@ -932,7 +925,7 @@ Stmt *parseStmtFor(Parser *p, Package *pkg) {
     Token start = p->tok;
     nextToken();
     if (isToken(p, TK_Lbrace)) {
-        Stmt_Block *body = parseBlock(p);
+        Stmt *body = parseBlock(p);
         SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
         return NewStmtFor(pkg, range, NULL, NULL, NULL, body);
     }
@@ -942,19 +935,19 @@ Stmt *parseStmtFor(Parser *p, Package *pkg) {
         b32 isIdentList = false;
         s2 = parseSimpleStmt(p, true, &isIdentList);
         if (isIdentList) {
-            DynamicArray(Expr_Ident *) idents = (DynamicArray(Expr_Ident *)) s2;
+            DynamicArray(Expr *) idents = (DynamicArray(Expr *)) s2;
             Expr *aggregate = NULL;
             if (isTokenIdent(p, internIn)) {
                 nextToken();
-                Expr_Ident *valueName = NULL;
-                Expr_Ident *indexName = NULL;
+                Expr *valueName = NULL;
+                Expr *indexName = NULL;
                 if (ArrayLen(idents) > 0) valueName = idents[0];
                 if (ArrayLen(idents) > 1) indexName = idents[1];
                 if (ArrayLen(idents) > 2) {
                     ReportError(p->package, SyntaxError, idents[2]->pos, "For in iteration must provide at most 2 names to assign (value, index)");
                 }
                 aggregate = parseExpr(p, true);
-                Stmt_Block *body = parseBlock(p);
+                Stmt *body = parseBlock(p);
                 SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
                 return NewStmtForIn(pkg, range, valueName, indexName, aggregate, body);
             } else {
@@ -977,7 +970,7 @@ Stmt *parseStmtFor(Parser *p, Package *pkg) {
         ReportError(p->package, SyntaxError, s2->pos, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
     }
 
-    Stmt_Block *body = parseBlock(p);
+    Stmt *body = parseBlock(p);
     SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
     return NewStmtFor(pkg, range, s1, (Expr *) s2, s3, body);
 }
@@ -1008,15 +1001,16 @@ Stmt *parseStmtSwitch(Parser *p, Package *pkg) {
             Stmt *stmt = parseStmt(p);
             ArrayPush(stmts, stmt);
         }
-        Stmt_Block *block = AllocAst(pkg, sizeof(Stmt_Block));
+
+        SourceRange range;
         if (stmts) {
-            block->pos = rangeFromTokenToEndOfNode(bodyStart, stmts[ArrayLen(stmts) - 1]);
+            range = rangeFromTokenToEndOfNode(bodyStart, stmts[ArrayLen(stmts) - 1]);
         } else {
-            block->pos = rangeFromTokenToEndOffset(bodyStart, p->tok.pos.offset); // from the ':' to w/e is next
+            range = rangeFromTokenToEndOffset(bodyStart, p->tok.pos.offset); // from the ':' to w/e is next
         }
-        block->stmts = stmts;
-        SourceRange range = rangeFromTokenToEndOffset(caseStart, block->pos.endOffset);
-        Stmt *scase = NewStmtSwitchCase(pkg, range, exprs, block);
+        Stmt *body = NewStmtBlock(p->package, range, stmts);
+        range = rangeFromTokenToEndOfNode(caseStart, body);
+        Stmt *scase = NewStmtSwitchCase(pkg, range, exprs, body);
         ArrayPush(cases, scase);
     }
 
@@ -1172,8 +1166,7 @@ Stmt *parseStmt(Parser *p) {
         }
 
         case TK_Lbrace: {
-            Stmt_Block *block = parseBlock(p); // FIXME: @extra_alloc
-            return NewStmtBlock(pkg, block->pos, block->stmts);
+            return parseBlock(p);
         }
 
         case TK_Directive: {
@@ -1338,7 +1331,7 @@ void parsePackageCode(Package *pkg, const char *code) {
                 // Declare all names despite only supporting single declaration for Constants
                 size_t numNames = ArrayLen(decl->Constant.names);
                 for (size_t i = 0; i < numNames; i++) {
-                    declareSymbol(pkg, pkg->scope, decl->Constant.names[i]->name, &symbol, decl);
+                    declareSymbol(pkg, pkg->scope, decl->Constant.names[i]->Ident.name, &symbol, decl);
                     symbol->kind = SymbolKind_Constant;
                     symbol->state = SymbolState_Unresolved;
                     symbol->flags |= SymbolFlag_Global;
@@ -1350,7 +1343,7 @@ void parsePackageCode(Package *pkg, const char *code) {
                 decl->owningScope = pkg->scope;
                 size_t numNames = ArrayLen(decl->Variable.names);
                 for (size_t i = 0; i < numNames; i++) {
-                    declareSymbol(pkg, pkg->scope, decl->Variable.names[i]->name, &symbol, decl);
+                    declareSymbol(pkg, pkg->scope, decl->Variable.names[i]->Ident.name, &symbol, decl);
                     symbol->kind = SymbolKind_Variable;
                     symbol->state = SymbolState_Unresolved;
                     symbol->flags |= SymbolFlag_Global;

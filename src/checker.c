@@ -1018,9 +1018,9 @@ Type *checkExprLitFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
         bodyCtx.desiredType = NewTypeTupleFromFunctionResults(TypeFlag_None, type->Function);
     }
 
-    len = ArrayLen(func.body->stmts);
+    len = ArrayLen(func.body->Block.stmts);
     for (size_t i = 0; i < len; i++) {
-        checkStmt(func.body->stmts[i], &bodyCtx, pkg);
+        checkStmt(func.body->Block.stmts[i], &bodyCtx, pkg);
         if (bodyCtx.mode == ExprMode_Unresolved) goto unresolved;
     }
 
@@ -1877,7 +1877,7 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
             "Constant declarations must declare at most one item");
 
         for (size_t i = 0; i < len; i++) {
-            Symbol *symbol = Lookup(pkg->scope, constant.names[i]->name);
+            Symbol *symbol = Lookup(pkg->scope, constant.names[i]->Ident.name);
             markSymbolInvalid(symbol);
         }
         return;
@@ -1898,15 +1898,15 @@ void checkDeclConstant(Decl *decl, CheckerContext *ctx, Package *pkg) {
         expectType(pkg, expectedType, ctx, constant.type->pos);
     }
 
-    Expr_Ident *ident = constant.names[0];
     Expr *value = constant.values[0];
 
+    const char *name = constant.names[0]->Ident.name;
     Symbol *symbol;
     if (ctx->scope == pkg->scope) {
-        symbol = MapGet(&ctx->scope->members, ident->name);
+        symbol = MapGet(&ctx->scope->members, name);
         ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
     } else {
-        declareSymbol(pkg, ctx->scope, ident->name, &symbol, decl);
+        declareSymbol(pkg, ctx->scope, name, &symbol, decl);
     }
 
     symbol->state = SymbolState_Resolving;
@@ -1991,7 +1991,7 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
 
     if (ctx->scope == pkg->scope) {
         for (size_t i = 0; i < numLhs; i++) {
-            Symbol *symbol = MapGet(&pkg->scope->members, var.names[i]->name);
+            Symbol *symbol = MapGet(&pkg->scope->members, var.names[i]->Ident.name);
             ASSERT_MSG(symbol, "Symbols in the file scope should be declared in the Parser");
             symbols[i] = symbol;
         }
@@ -2000,7 +2000,7 @@ void checkDeclVariable(Decl *decl, CheckerContext *ctx, Package *pkg) {
             Symbol *symbol;
             // FIXME: figure out how to recover from a duplicate
             // -vdka September 2018
-            declareSymbol(pkg, ctx->scope, var.names[i]->name, &symbol, decl);
+            declareSymbol(pkg, ctx->scope, var.names[i]->Ident.name, &symbol, decl);
             symbols[i] = symbol;
         }
     }
@@ -2266,6 +2266,8 @@ void checkStmtReturn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     ASSERT(stmt->kind == StmtKind_Return);
     ASSERT(ctx->desiredType && ctx->desiredType->kind == TypeKind_Tuple);
 
+    // FIXME: Because we use desiredType, we can't return from things like loop bodies? ...
+
     u32 nTypes = ctx->desiredType->Tuple.numTypes;
     size_t nExprs = ArrayLen(stmt->Return.exprs);
     // FIXME: What about returns that are tuples? We need a nice splat helper
@@ -2410,11 +2412,8 @@ void checkStmtFor(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
     forCtx.loop = stmt;
     forCtx.flags |= CheckerContextFlag_LoopClosest;
 
-    forCtx.desiredType = NULL;
-    size_t len = ArrayLen(stmt->For.body->stmts);
-    for (size_t i = 0; i < len; i++) {
-        checkStmt(stmt->For.body->stmts[i], &forCtx, pkg);
-    }
+    forCtx.desiredType = NULL; // FIXME: Why are we doing this, won't it mean we can't infer type of returns in loop bodies?
+    checkStmtBlock(stmt->For.body, &forCtx, pkg);
 }
 
 void checkStmtForIn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
@@ -2441,17 +2440,14 @@ void checkStmtForIn(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
         return;
     }
 
-    if (stmt->ForIn.valueName) declareResolvedSymbol(pkg, forCtx.scope, type, stmt->ForIn.valueName->name, NULL);
-    if (stmt->ForIn.valueName) declareResolvedSymbol(pkg, forCtx.scope, type, stmt->ForIn.indexName->name, NULL);
+    if (stmt->ForIn.valueName) declareResolvedSymbol(pkg, forCtx.scope, type, stmt->ForIn.valueName->Ident.name, NULL);
+    if (stmt->ForIn.valueName) declareResolvedSymbol(pkg, forCtx.scope, type, stmt->ForIn.indexName->Ident.name, NULL);
 
     forCtx.loop = stmt;
     forCtx.flags |= CheckerContextFlag_LoopClosest;
 
-    forCtx.desiredType = NULL;
-    size_t len = ArrayLen(stmt->For.body->stmts);
-    for (size_t i = 0; i < len; i++) {
-        checkStmt(stmt->For.body->stmts[i], &forCtx, pkg);
-    }
+    forCtx.desiredType = NULL; // FIXME: Why are we doing this, won't it mean we can't infer type of returns in loop bodies?
+    checkStmtBlock(stmt, &forCtx, pkg);
 }
 
 void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
@@ -2510,10 +2506,7 @@ void checkStmtSwitch(Stmt *stmt, CheckerContext *ctx, Package *pkg) {
             caseCtx.nextCase = stmt->Switch.cases[idxCase + 1];
         }
 
-        size_t numStmts = ArrayLen(switchCase->SwitchCase.block->stmts);
-        for (size_t i = 0; i < numStmts; i++) {
-            checkStmt(switchCase->SwitchCase.block->stmts[i], &caseCtx, pkg);
-        }
+        checkStmtBlock(switchCase->SwitchCase.body, &caseCtx, pkg);
     }
 }
 

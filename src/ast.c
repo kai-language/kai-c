@@ -235,7 +235,8 @@ Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicA
     return e;
 }
 
-Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt_Block *body, u8 flags) {
+Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt *body, u8 flags) {
+    ASSERT(body->kind == StmtKind_Block);
     Expr *e = NewExpr(package, ExprKind_LitFunction, pos);
     e->LitFunction.type = type;
     e->LitFunction.body = body;
@@ -357,7 +358,8 @@ Stmt *NewStmtIf(Package *package, SourceRange pos, Expr *cond, Stmt *pass, Stmt 
     return s;
 }
 
-Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body) {
+Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt *step, Stmt *body) {
+    ASSERT(body->kind == StmtKind_Block);
     Stmt *s = NewStmt(package, StmtKind_For, pos);
     s->For.init = init;
     s->For.cond = cond;
@@ -366,7 +368,10 @@ Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt
     return s;
 }
 
-Stmt *NewStmtForIn(Package *package, SourceRange pos, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body) {
+Stmt *NewStmtForIn(Package *package, SourceRange pos, Expr *valueName, Expr *indexName, Expr *aggregate, Stmt *body) {
+    ASSERT(valueName->kind == ExprKind_Ident);
+    ASSERT(indexName->kind == ExprKind_Ident);
+    ASSERT(body->kind == StmtKind_Block);
     Stmt *s = NewStmt(package, StmtKind_ForIn, pos);
     s->ForIn.valueName = valueName;
     s->ForIn.indexName = indexName;
@@ -382,14 +387,15 @@ Stmt *NewStmtSwitch(Package *package, SourceRange pos, Expr *match, DynamicArray
     return s;
 }
 
-Stmt *NewStmtSwitchCase(Package *package, SourceRange pos, DynamicArray(Expr *) matches, Stmt_Block *block) {
+Stmt *NewStmtSwitchCase(Package *package, SourceRange pos, DynamicArray(Expr *) matches, Stmt *body) {
+    ASSERT(body->kind == StmtKind_Block);
     Stmt *s = NewStmt(package, StmtKind_SwitchCase, pos);
     s->SwitchCase.matches = matches;
-    s->SwitchCase.block = block;
+    s->SwitchCase.body = body;
     return s;
 }
 
-Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values) {
+Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr *) names, Expr *type, DynamicArray(Expr *) values) {
     Decl *d = NewDecl(package, DeclKind_Variable, pos);
     d->Variable.names = names;
     d->Variable.type = type;
@@ -397,7 +403,7 @@ Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr_Ident
     return d;
 }
 
-Decl *NewDeclConstant(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values) {
+Decl *NewDeclConstant(Package *package, SourceRange pos, DynamicArray(Expr *) names, Expr *type, DynamicArray(Expr *) values) {
     Decl *d = NewDecl(package, DeclKind_Constant, pos);
     d->Constant.names = names;
     d->Constant.type = type;

@@ -75,24 +75,24 @@ void cgenFuncPrototype(String *buffer, const char *name, Type *type) {
     ArrayFree(returnType);
 }
 
-void cgenDecl(HeaderContext *ctx, DynamicArray(Expr_Ident *) names, Type *type, b32 isConst) {
+void cgenDecl(HeaderContext *ctx, DynamicArray(Expr *) names, Type *type, b32 isConst) {
     size_t numNames = ArrayLen(names);
     for (size_t i = 0; i < numNames; i++) {
-        Expr_Ident *it = names[i];
+        Expr_Ident it = names[i]->Ident;
         switch (type->kind) {
         case TypeKind_Function:
-            cgenFuncPrototype(&ctx->functions, it->name, type);
+            cgenFuncPrototype(&ctx->functions, it.name, type);
             break;
 
         case TypeKind_Struct: {
             if (type->Symbol->backendUserdata != HEAD_GENERATED) {
                 ArrayPrintf(ctx->primitiveDecls, "typedef ");
-                cgenType(&ctx->primitiveDecls, it->name, type);
-                ArrayPrintf(ctx->primitiveDecls, " %s;\n", it->name);
+                cgenType(&ctx->primitiveDecls, it.name, type);
+                ArrayPrintf(ctx->primitiveDecls, " %s;\n", it.name);
                 type->Symbol->backendUserdata = HEAD_GENERATED;
             }
 
-            ArrayPrintf(ctx->complexDecls, "struct %s {\n", it->name);
+            ArrayPrintf(ctx->complexDecls, "struct %s {\n", it.name);
             for (u32 i = 0; i < type->Struct.numMembers; i++) {
                 TypeField it = type->Struct.members[i];
                 ArrayPrintf(ctx->complexDecls, "    ");
@@ -104,7 +104,7 @@ void cgenDecl(HeaderContext *ctx, DynamicArray(Expr_Ident *) names, Type *type, 
 
         default: {
             String typeStr = NULL;
-            cgenType(&typeStr, it->name, type);
+            cgenType(&typeStr, it.name, type);
             const char *qualifiers = isConst ? "extern const" : "extern";
             ArrayPrintf(ctx->primitiveDecls, "%s %s;\n", qualifiers, typeStr);
         }

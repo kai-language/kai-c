@@ -210,8 +210,8 @@ struct Expr_KeyValue {
     // function literals. This will actually save space because the id is 64
     // bits and there is also a union tag that this doesn't have.
     void *info;
-    // LitCompound is Array -> u64
-    // LitCompound is Struct -> TypeField*
+    // if LitCompound is Array -> u64
+    // if LitCompound is Struct -> TypeField*
 };
 
 struct Expr_LocationDirective {
@@ -247,7 +247,7 @@ struct Expr_LitCompound {
 struct Expr_LitFunction {
     SourceRange pos;
     Expr *type;
-    Stmt_Block *body;
+    Stmt *body; // Stmt_Block
     u8 flags;
 };
 
@@ -371,15 +371,15 @@ struct Stmt_For {
     Stmt *init;
     Expr *cond;
     Stmt *step;
-    Stmt_Block *body;
+    Stmt *body; // Stmt_Block
 };
 
 struct Stmt_ForIn {
     SourceRange pos;
-    Expr_Ident *valueName;
-    Expr_Ident *indexName;
+    Expr *valueName; // Expr_Ident
+    Expr *indexName; // Expr_Ident
     Expr *aggregate;
-    Stmt_Block *body;
+    Stmt *body; // Stmt_Block
 };
 
 struct Stmt_Switch {
@@ -391,19 +391,19 @@ struct Stmt_Switch {
 struct Stmt_SwitchCase {
     SourceRange pos;
     DynamicArray(Expr *) matches;
-    Stmt_Block *block;
+    Stmt *body; // Stmt_Block
 };
 
 struct Decl_Variable {
     SourceRange pos;
-    DynamicArray(Expr_Ident *) names;
+    DynamicArray(Expr *) names; // DynamicArray(Expr_Ident *)
     Expr *type;
     DynamicArray(Expr *) values;
 };
 
 struct Decl_Constant {
     SourceRange pos;
-    DynamicArray(Expr_Ident *) names;
+    DynamicArray(Expr *) names; // DynamicArray(Expr_Ident *)
     Expr *type;
     DynamicArray(Expr *) values;
 };
@@ -562,7 +562,7 @@ Expr *NewExprLitInt(Package *package, SourceRange pos, u64 val);
 Expr *NewExprLitFloat(Package *package, SourceRange pos, f64 val);
 Expr *NewExprLitString(Package *package, SourceRange pos, const char *val);
 Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(Expr_KeyValue *) elements);
-Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt_Block *body, u8 flags);
+Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt *body, u8 flags);
 Expr *NewExprTypePointer(Package *package, SourceRange pos, Expr *type);
 Expr *NewExprTypeArray(Package *package, SourceRange pos, Expr *length, Expr *type);
 Expr *NewExprTypeSlice(Package *package, SourceRange pos, Expr *type);
@@ -583,14 +583,14 @@ Stmt *NewStmtUsing(Package *package, SourceRange pos, Expr *expr);
 Stmt *NewStmtGoto(Package *package, SourceRange pos, const char *keyword, Expr *target);
 Stmt *NewStmtBlock(Package *package, SourceRange pos, DynamicArray(Stmt *) stmts);
 Stmt *NewStmtIf(Package *package, SourceRange pos, Expr *cond, Stmt *pass, Stmt *fail);
-Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt *step, Stmt_Block *body);
-Stmt *NewStmtForIn(Package *package, SourceRange pos, Expr_Ident *valueName, Expr_Ident *indexName, Expr *aggregate, Stmt_Block *body);
+Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt *step, Stmt *body);
+Stmt *NewStmtForIn(Package *package, SourceRange pos, Expr *valueName, Expr *indexName, Expr *aggregate, Stmt *body);
 Stmt *NewStmtSwitch(Package *package, SourceRange pos, Expr *match, DynamicArray(Stmt *) cases);
-Stmt *NewStmtSwitchCase(Package *package, SourceRange pos, DynamicArray(Expr *) matches, Stmt_Block *block);
+Stmt *NewStmtSwitchCase(Package *package, SourceRange pos, DynamicArray(Expr *) matches, Stmt *block);
 
 // - MARK: Decls
-Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
-Decl *NewDeclConstant(Package *package, SourceRange pos, DynamicArray(Expr_Ident *) names, Expr *type, DynamicArray(Expr *) values);
+Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr *) names, Expr *type, DynamicArray(Expr *) values);
+Decl *NewDeclConstant(Package *package, SourceRange pos, DynamicArray(Expr *) names, Expr *type, DynamicArray(Expr *) values);
 Decl *NewDeclForeign(Package *package, SourceRange pos, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
 Decl *NewDeclForeignBlock(Package *package, SourceRange pos, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
 Decl *NewDeclImport(Package *package, SourceRange pos, Expr *path, const char *alias);

@@ -112,6 +112,7 @@ llvm::Value *emitExprBinary(Context *ctx, Expr *expr);
 llvm::Value *emitExprUnary(Context *ctx, Expr *expr);
 llvm::Value *emitExprSubscript(Context *ctx, Expr *expr);
 void emitStmt(Context *ctx, Stmt *stmt);
+void emitStmtBlock(Context *ctx, Stmt *stmt);
 
 llvm::Type *canonicalize(Context *ctx, Type *type) {
     switch (type->kind) {
@@ -1076,10 +1077,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         ctx->retValue = alloca;
     }
 
-    size_t len = ArrayLen(expr->LitFunction.body->stmts);
-    for (size_t i = 0; i < len; i++) {
-        emitStmt(ctx, expr->LitFunction.body->stmts[i]);
-    }
+    emitStmtBlock(ctx, expr->LitFunction.body);
 
     if (!ctx->b.GetInsertBlock()->getTerminator()) {
         ctx->b.CreateBr(ctx->retBlock);
@@ -1606,10 +1604,7 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
             ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, fore.body->pos.line, fore.body->pos.column);
         }
 
-        size_t numStmts = ArrayLen(fore.body->stmts);
-        for (size_t idx = 0; idx < numStmts; idx++) {
-            emitStmt(ctx, fore.body->stmts[idx]);
-        }
+        emitStmtBlock(ctx, fore.body);
 
         if (FlagDebug) {
             ctx->d.scope = oldScope;
@@ -1646,10 +1641,6 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
 
 void emitStmtBlock(Context *ctx, Stmt *stmt) {
     ASSERT(stmt->kind == StmtKind_Block);
-
-    llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
-    ctx->b.CreateBr(block);
-    ctx->b.SetInsertPoint(block);
 
     size_t numStmts = ArrayLen(stmt->Block.stmts);
     for (size_t idx = 0; idx < numStmts; idx++) {
@@ -1720,10 +1711,7 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
             matches.push_back(vals);
         }
 
-        size_t numStmts = ArrayLen(c.block->stmts);
-        for (size_t i = 0; i < numStmts; i++) {
-            emitStmt(ctx, c.block->stmts[i]);
-        }
+        emitStmtBlock(ctx, c.body);
 
         b32 hasTerm = ctx->b.GetInsertBlock()->getTerminator() != NULL;
         if (!hasTerm) {
@@ -1797,12 +1785,21 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             emitStmtDefer(ctx, stmt);
             break;
         
-        case StmtKind_Block:
+        case StmtKind_Block: {
+            ASSERT_MSG(ctx->fn, "We should be in a function if we are emitting a lone block");
+            llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
+            ctx->b.CreateBr(block);
+            ctx->b.SetInsertPoint(block);
             emitStmtBlock(ctx, stmt);
             break;
+        }
 
         case StmtKind_For:
             emitStmtFor(ctx, stmt);
+            break;
+
+        case StmtKind_ForIn:
+            UNIMPLEMENTED();
             break;
         
         case StmtKind_Switch:
