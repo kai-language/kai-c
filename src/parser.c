@@ -538,7 +538,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                 if (!isToken(p, TK_Rparen)) {
                     Token start = p->tok;
 
-                    KeyValue arg = {};
+                    KeyValue arg = {0};
                     arg.value = parseExpr(p, noCompoundLiteral);
                     if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
                         arg.key = arg.value;
@@ -550,7 +550,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
                         if (isToken(p, TK_Rparen)) break; // Allow trailing comma in argument list
                         start = p->tok;
 
-                        KeyValue arg = {};
+                        KeyValue arg = {0};
                         arg.value = parseExpr(p, noCompoundLiteral);
                         if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
                             arg.key = arg.value;
@@ -658,7 +658,7 @@ Expr *parseExpr(Parser *p, b32 noCompoundLiteral) {
 
 KeyValue parseExprCompoundField(Parser *p) {
     Token start = p->tok;
-    KeyValue field = {};
+    KeyValue field = {0};
     if (matchToken(p, TK_Lbrack)) {
         field.flags = KeyValueFlag_Index;
         field.key = parseExpr(p, false);
@@ -704,7 +704,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                     ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                     continue;
                 }
-                KeyValue kv = {};
+                KeyValue kv = {0};
                 kv.pos = exprs[i]->pos;
                 kv.key = exprs[i];
                 kv.value = type;
@@ -729,7 +729,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                         ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected at most 1 Variadic as the final parameter");
                     }
                 }
-                KeyValue kv = {};
+                KeyValue kv = {0};
                 kv.value = exprs[i];
                 kv.pos = exprs[i]->pos;
                 ArrayPush(*params, kv);
