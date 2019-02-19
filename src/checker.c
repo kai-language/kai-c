@@ -887,7 +887,8 @@ Type *checkExprTypeFunction(Expr *expr, CheckerContext *ctx, Package *pkg) {
     ArrayFit(params, ArrayLen(func.params));
 
     CheckerContext paramCtx = { pushScope(pkg, ctx->scope) };
-    For (func.params) {
+    size_t numParams = ArrayLen(func.params);
+    for (size_t i = 0; i < numParams; i++) {
         Type *type = checkExpr(func.params[i]->value, &paramCtx, pkg);
         if (paramCtx.mode == ExprMode_Invalid) goto error;
         if (paramCtx.mode == ExprMode_Unresolved) goto unresolved;

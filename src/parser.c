@@ -700,7 +700,8 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
         if (matchToken(p, TK_Colon)) {
             *namedParameters = true;
             Expr *type = parseType(p);
-            For (exprs) {
+            size_t numExprs = ArrayLen(exprs);
+            for (size_t i = 0; i < numExprs; i++) {
                 if (exprs[i]->kind != ExprKind_Ident) {
                     ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                     continue;
@@ -722,7 +723,8 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                 ReportError(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
             }
             // The parameters are unnamed and the user may have entered a second variadic
-            For (exprs) {
+            size_t numExprs = ArrayLen(exprs);
+            for (size_t i = 0; i < numExprs; i++) {
                 if (exprs[i]->kind == ExprKind_TypeVariadic) {
                     *nVarargs += 1;
                     if (*nVarargs == 2) {
@@ -758,7 +760,8 @@ Expr *parseFunctionType(Parser *p) {
             if (matchToken(p, TK_Colon)) {
                 namedParameters = true;
                 Expr *type = parseType(p);
-                For (exprs) {
+                size_t numExprs = ArrayLen(exprs);
+                for (size_t i = 0; i < numExprs; i++) {
                     if (exprs[i]->kind != ExprKind_Ident) {
                         ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                         continue;
@@ -769,7 +772,8 @@ Expr *parseFunctionType(Parser *p) {
                 if (namedParameters) {
                     ReportError(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
                 }
-                For (exprs) {
+                size_t numExprs = ArrayLen(exprs);
+                for (size_t i = 0; i < numExprs; i++) {
                     if (exprs[i]->kind == ExprKind_TypeVariadic) {
                         nVarargs += 1;
                         if (nVarargs == 1) {
@@ -860,7 +864,8 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
             Expr *start = exprs[0];
             DynamicArray(Expr_Ident *) idents = NULL;
             ArrayFit(idents, ArrayLen(exprs));
-            For (exprs) {
+            size_t numExprs = ArrayLen(exprs);
+            for (size_t i = 0; i < numExprs; i++) {
                 if (exprs[i]->kind != ExprKind_Ident) {
                     ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                 }
@@ -906,7 +911,8 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
     if (ArrayLen(exprs) > 1 && isIdentList) {
         *isIdentList = true;
         DynamicArray(Expr_Ident *) idents = NULL;
-        For (exprs) {
+        size_t numExprs = ArrayLen(exprs);
+        for (size_t i = 0; i < numExprs; i++) {
             if (exprs[i]->kind != ExprKind_Ident) {
                 ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
             }

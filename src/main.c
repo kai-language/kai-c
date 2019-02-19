@@ -75,7 +75,8 @@ int main(int argc, const char **argv) {
     }
 
     b32 sawErrors = false;
-    For (packages) {
+    size_t numPackages = ArrayLen(packages);
+    for (size_t i = 0; i < numPackages; i++) {
         if (HasErrors(packages[i])) {
             OutputReportedErrors(packages[i]);
             sawErrors = true;

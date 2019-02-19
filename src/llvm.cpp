@@ -1927,7 +1927,8 @@ b32 CodegenLLVM(Package *p) {
     SourceRange pos = {.line = 1};
     debugPos(&ctx, pos);
 
-    For (p->stmts) {
+    size_t numStmts = ArrayLen(p->stmts);
+    for (size_t i = 0; i < numStmts; i++) {
         emitStmt(&ctx, p->stmts[i]);
     }
 

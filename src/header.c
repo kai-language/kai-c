@@ -143,7 +143,8 @@ void CodegenCHeader(Package *pkg) {
         NULL, NULL, NULL
     };
 
-    For(pkg->stmts) {
+    size_t numStmts = ArrayLen(pkg->stmts);
+    for (size_t i = 0; i < numStmts; i++) {
         cgenStmt(&ctx, pkg->checkerInfo, pkg->stmts[i]);
     }
 

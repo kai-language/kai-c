@@ -281,7 +281,8 @@ char outputErrorBuffer[8096];
 #endif
 
 void OutputReportedErrors(Package *p) {
-    For (p->diagnostics.errors) {
+    size_t numErrors = ArrayLen(p->diagnostics.errors);
+    for (size_t i = 0; i < numErrors; i++) {
         outputDiagnostic("%s", p->diagnostics.errors[i].msg);
         if (p->diagnostics.errors[i].sourceDescription) {
             fprintf(stderr, "\n%s\n", p->diagnostics.errors[i].sourceDescription);

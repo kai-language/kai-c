@@ -100,8 +100,6 @@ extern "C" {
     ((__TYPE__) (-((__ONE_COUNT__) != 0))) \
     & (((__TYPE__) -1) >> ((sizeof(__TYPE__) * CHAR_BIT) - (__ONE_COUNT__)))
 
-#define For(agg) for (size_t i = 0; i < ArrayLen(agg); i++)
-
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
