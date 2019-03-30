@@ -141,12 +141,20 @@ char *highlightLine(
 }
 
 const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
-    if (!p->fileHandle) return NULL;
+
+    // Find the file in the package matching range.name
+    const char * fileStart = NULL;
+    for (size_t i = 0; i < p->numFiles; i++) {
+        if (strcmp(p->files[i].path, range.name) == 0) {
+            fileStart = p->files[i].code;
+            break;
+        }
+    }
+
+    if (!fileStart) return NULL;
 
 #define MAX_LINES 3
 #define MAX_LINE_LENGTH 512
-
-    const char *fileStart = p->fileHandle;
 
     // We add 1 so we have a buffer incase we have color turned off and need to add ^^^^^^ pointers.
     char lines[MAX_LINES + 1][MAX_LINE_LENGTH];

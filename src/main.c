@@ -46,8 +46,18 @@ int main(int argc, const char **argv) {
         PrintUsage();
         exit(!FlagHelp);
     }
-        
-    InitCompiler();
+
+    InitUnsetFlagsToDefaults();
+    InitKeywords();
+    InitBuiltins();
+    InitGlobalSearchPaths();
+
+    Package *builtinPackage = ImportPackage("builtin", NULL);
+    if (!builtinPackage) {
+        printf("error: Failed to compile builtin package\n");
+        exit(1);
+    }
+
     Package *mainPackage = ImportPackage(InputName, NULL);
     if (!mainPackage) {
         printf("error: Failed to compile '%s'\n", InputName);
@@ -55,14 +65,15 @@ int main(int argc, const char **argv) {
     }
     
     while (true) {
-        Package *package = QueuePopFront(&parsingQueue);
-        if (package) {
-            parsePackage(package);
+        SourceFile *file = QueuePopFront(&parsingQueue);
+        if (file) {
+            parseFile(file);
             continue;
         }
         
         CheckerWork *work = QueuePopFront(&checkingQueue);
         if (work) {
+            if (FlagVerbose) printf("Checking package %s\n", work->package->path);
             CheckerContext ctx = { .scope = work->package->scope };
             checkStmt(work->stmt, &ctx, work->package);
             if (ctx.mode == ExprMode_Unresolved) {

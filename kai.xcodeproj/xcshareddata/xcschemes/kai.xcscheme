@@ -62,7 +62,8 @@
       enableUBSanitizer = "YES"
       disableMainThreadChecker = "YES"
       launchStyle = "0"
-      useCustomWorkingDirectory = "NO"
+      useCustomWorkingDirectory = "YES"
+      customWorkingDirectory = "$(SRCROOT)"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       stopOnEveryUBSanitizerIssue = "YES"
@@ -88,15 +89,19 @@
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "$SRCROOT/test/ack.kai"
-            isEnabled = "NO">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "$SRCROOT/test/tmp.kai"
+            argument = "-test"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "$SRCROOT/test/wip.kai"
+            argument = "test/ack.kai"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "test/tmp.kai"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "test/wip.kai"
             isEnabled = "NO">
          </CommandLineArgument>
       </CommandLineArguments>
@@ -104,6 +109,11 @@
          <EnvironmentVariable
             key = "PATH"
             value = "&quot;/usr/local/opt/llvm/bin:$PATH&quot;"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "KAIPATH"
+            value = "$SRCROOT"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

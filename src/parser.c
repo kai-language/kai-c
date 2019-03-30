@@ -154,6 +154,7 @@ b32 matchToken(Parser *p, TokenKind kind) {
 b32 expectToken(Parser *p, TokenKind kind) {
     if (matchToken(p, kind)) return true;
     ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Expected token %s, got %s", DescribeTokenKind(kind), DescribeToken(p->tok));
+    nextToken();
     return false;
 }
 
@@ -1305,25 +1306,40 @@ DynamicArray(Stmt *) parseStmts(Parser *p) {
 }
 
 DynamicArray(Stmt *) parseStmtsUntilEof(Parser *p) {
-    DynamicArray(Stmt *) stmts = NULL;
+    DynamicArray(Stmt *) stmts = p->package->stmts;
+
     while (!isTokenEof(p)) {
         ArrayPush(stmts, parseStmt(p));
     }
     return stmts;
 }
 
-void parsePackageCode(Package *pkg, const char *code) {
+Stmt **parseAllStmts(Package *pkg, const char *code, u64 *numStmts) {
     Lexer lexer = MakeLexer(code, pkg);
     Token tok = NextToken(&lexer);
     Parser parser = {lexer, .tok = tok, pkg};
-    pkg->stmts = parseStmtsUntilEof(&parser);
+
+    size_t numExistingStmts = ArrayLen(pkg->stmts);
+
+    while (!isTokenEof(&parser)) {
+        Stmt *stmt = parseStmt(&parser);
+        ArrayPush(pkg->stmts, stmt);
+    }
+
+    *numStmts = ArrayLen(pkg->stmts) - numExistingStmts;
+    return &pkg->stmts[numExistingStmts];
+}
+
+void parseSourceCode(Package *pkg, const char *code) {
+    u64 numStmts;
+    Stmt **stmts = parseAllStmts(pkg, code, &numStmts);
 
     if (HasErrors(pkg)) {
         return;
     }
 
-    for(size_t i = 0; i < ArrayLen(pkg->stmts); i++) {
-        Decl *decl = (Decl *) pkg->stmts[i];
+    for(size_t i = 0; i < numStmts; i++) {
+        Decl *decl = (Decl *) stmts[i];
         Symbol *symbol;
 
         switch (decl->kind) {
@@ -1392,6 +1408,8 @@ void parsePackageCode(Package *pkg, const char *code) {
                 symbol->flags |= SymbolFlag_Global;
                 symbol->decl = decl;
                 decl->Import.symbol = symbol;
+
+                decl->Import.symbol->backendUserdata = ImportPackage(decl->Import.path->LitString.val, pkg);
                 break;
             }
 
@@ -1399,29 +1417,40 @@ void parsePackageCode(Package *pkg, const char *code) {
                 break;
         }
     }
-
-    DynamicArray(CheckerInfo) checkerInfo = NULL;
-    ArrayFit(checkerInfo, pkg->astIdCount+1);
-    memset(checkerInfo, 0, sizeof(CheckerInfo) * (pkg->astIdCount + 1));
-    pkg->checkerInfo = checkerInfo;
-
-    size_t len = ArrayLen(pkg->stmts);
-    for (int i = 0; i < len; i++) {
-        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
-        work->package = pkg;
-        work->stmt = pkg->stmts[i];
-        QueuePushBack(&checkingQueue, work);
-    }
 }
 
-void parsePackage(Package *package) {
-    const char *code = ReadEntireFile(package->fullpath);
-    if (!code) {
-        ReportError(package, FatalError, (SourceRange){ package->path }, "Failed to read source file");
+void parseFile(SourceFile *file) {
+    if (file->parsed) return;
+    file->code = ReadEntireFile(file->fullpath);
+    if (!file->code) {
+        ReportError(file->package, FatalError, (SourceRange){ file->path }, "Failed to read source file");
         return;
     }
-    package->fileHandle = code;
-    parsePackageCode(package, code);
+
+    if (FlagVerbose) printf("Parsing file %s\n", file->path);
+    parseSourceCode(file->package, file->code);
+    file->parsed = true;
+
+    for (size_t i = 0; i < file->package->numFiles; i++) {
+        if (!file->package->files[i].parsed) return;
+    }
+
+    // All of the files in the package have been parsed. We are now ready for checking.
+
+    Package *package = file->package;
+
+    DynamicArray(CheckerInfo) checkerInfo = NULL;
+    ArrayFit(checkerInfo, package->astIdCount + 1);
+    memset(checkerInfo, 0, sizeof(CheckerInfo) * (package->astIdCount + 1));
+    package->checkerInfo = checkerInfo;
+
+    size_t len = ArrayLen(package->stmts);
+    for (int i = 0; i < len; i++) {
+        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
+        work->package = package;
+        work->stmt = package->stmts[i];
+        QueuePushBack(&checkingQueue, work);
+    }
 }
 
 #undef NextToken

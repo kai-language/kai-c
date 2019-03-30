@@ -236,11 +236,20 @@ struct Scope {
     Map members;
 };
 
-typedef struct Package Package;
-struct Package {
+typedef struct SourceFile {
     const char *path;
     const char *fullpath;
-    const char *fileHandle;
+    const char *code;
+    struct Package *package;
+    bool parsed;
+} SourceFile;
+
+typedef struct Package {
+    const char *path;
+    const char *fullpath;
+    const char *searchPath; // This path is the first path to search for imported by this package
+    SourceFile *files;
+    u64 numFiles;
     DiagnosticEngine diagnostics;
     Arena arena;
     DynamicArray(Stmt *) stmts;
@@ -253,7 +262,7 @@ struct Package {
     void *backendUserdata;
 
     Scope *scope;
-};
+} Package;
 
 typedef union Val {
     b32 b32;
@@ -296,11 +305,12 @@ extern Arena internArena;
 extern Map interns;
 extern const char **Keywords;
 
-void InitCompiler(void);
-
 #define INIT_COMPILER() \
 InputName = "test_source"; \
-InitCompiler();
+InitUnsetFlagsToDefaults(); \
+InitKeywords(); \
+InitBuiltins(); \
+InitGlobalSearchPaths()
 
 #define DEINIT_COMPILER() \
 HaveInitializedBuiltins = false; \

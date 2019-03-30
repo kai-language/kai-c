@@ -105,6 +105,7 @@ i64 SignExtendTo64Bits(Type *source, Val val) {
 
 b32 isAlias(Type *type);
 b32 TypesIdentical(Type *type, Type *target) {
+    if (target == NULL) return false;
     while (isAlias(type)) {
         type = type->Symbol->type;
     }

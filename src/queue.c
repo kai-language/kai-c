@@ -25,7 +25,7 @@ void QueuePushFront(Queue *q, void *val) {
 }
 
 void QueuePushBack(Queue *q, void *val) {
-    QueueNode *node = ArenaAlloc(&q->arena, sizeof(QueueNode));
+    QueueNode *node = ArenaAlloc(&q->arena, sizeof *node);
     *node = (QueueNode) {val, NULL, q->tail};
     if (q->tail) q->tail->next = node;
 

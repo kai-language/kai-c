@@ -1,4 +1,83 @@
 
+void path_normalize(char *path) {
+    char *ptr;
+    for (ptr = path; *ptr; ptr++) {
+        if (*ptr == '\\') {
+            *ptr = '/';
+        }
+    }
+    if (ptr != path && ptr[-1] == '/') {
+        ptr[-1] = 0;
+    }
+}
+
+void path_copy(char path[MAX_PATH], const char *src) {
+    strncpy(path, src, MAX_PATH);
+    path[MAX_PATH - 1] = 0;
+    path_normalize(path);
+}
+
+void path_join(char path[MAX_PATH], const char *src) {
+    if (*path == '\0') { // If the lhs is an empty string don't prepend the '/'
+        path_copy(path, src);
+        return;
+    }
+    char *ptr = path + strlen(path);
+    if (ptr != path && ptr[-1] == '/') {
+        ptr--;
+    }
+    if (*src == '/') {
+        src++;
+    }
+    snprintf(ptr, path + MAX_PATH - ptr, "/%s", src);
+}
+
+char *path_file(char path[MAX_PATH]) {
+    path_normalize(path);
+    for (char *ptr = path + strlen(path); ptr != path; ptr--) {
+        if (ptr[-1] == '/') {
+            return ptr;
+        }
+    }
+    return path;
+}
+
+char *path_ext(char path[MAX_PATH]) {
+    for (char *ptr = path + strlen(path); ptr != path; ptr--) {
+        if (ptr[-1] == '.') {
+            return ptr;
+        }
+    }
+    return path;
+}
+
+typedef struct DirectoryIter {
+    int valid;
+    int error;
+
+    char base[MAX_PATH];
+    char name[MAX_PATH];
+    bool isDirectory;
+
+    void *handle;
+} DirectoryIter;
+
+void DirectoryIterClose(DirectoryIter *it);
+void DirectoryIterNext(DirectoryIter *it);
+void DirectoryIterOpen(DirectoryIter *it, const char *path);
+
+bool DirectoryIterSkip(DirectoryIter *it) {
+    return strcmp(it->name, ".") == 0 || strcmp(it->name, "..") == 0;
+}
+
+#if SYSTEM_POSIX
+#include "os_unix.c"
+#elif SYSTEM_WINDOWS
+#warning "Unsupported platform" // allow CI to continue
+#else
+#error "Unsupported platform"
+#endif
+
 char *AbsolutePath(const char *filename, char *resolved) {
 #ifdef SYSTEM_POSIX
     return realpath(filename, resolved);

@@ -86,6 +86,8 @@
 		5D9B9E0F221BCA7F0012D81F /* parser.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = parser.c; sourceTree = "<group>"; };
 		5D9B9E10221BCA7F0012D81F /* string.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = string.h; sourceTree = "<group>"; };
 		5D9B9E13221BD4060012D81F /* parser.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = parser.c; sourceTree = "<group>"; };
+		5D9B9E15221C25980012D81F /* os_unix.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = os_unix.c; sourceTree = "<group>"; };
+		5D9B9E17221C25B30012D81F /* os_win32.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = os_win32.c; sourceTree = "<group>"; };
 		5DA32D5920CEACB700090405 /* TestSuite.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TestSuite.m; path = tools/TestSuite.m; sourceTree = "<group>"; };
 		5DBC259C20BC133A0086904A /* gen_llvm_xcconfig.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = gen_llvm_xcconfig.sh; sourceTree = "<group>"; };
 		5DFD2D8D213F69C500180703 /* kai-xctests-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "kai-xctests-Release.xcconfig"; sourceTree = "<group>"; };
@@ -183,6 +185,8 @@
 				5D9B9E0C221BCA7F0012D81F /* utf.c */,
 				5D9B9E0D221BCA7F0012D81F /* flags.c */,
 				5D9B9E0E221BCA7F0012D81F /* os.c */,
+				5D9B9E15221C25980012D81F /* os_unix.c */,
+				5D9B9E17221C25B30012D81F /* os_win32.c */,
 				5D9B9E0F221BCA7F0012D81F /* parser.c */,
 				5D9B9E10221BCA7F0012D81F /* string.h */,
 				5D9B9DF9221BCA7F0012D81F /* tests */,
