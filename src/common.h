@@ -1,8 +1,6 @@
 
-#ifdef __GLIBC__
 // We need to define this for 'realpath' to be included
 #define _GNU_SOURCE
-#endif
 
 #include <stdlib.h>
 #include <stdio.h>
