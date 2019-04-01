@@ -1,51 +1,35 @@
-extern bool FlagParseComments;
-extern bool FlagErrorCodes;
-extern bool FlagVerbose;
-extern bool FlagVersion;
-extern bool FlagHelp;
-extern bool FlagEmitIR;
-extern bool FlagEmitHeader;
-extern bool FlagDumpIR;
-extern bool FlagDebug;
-extern bool FlagLink;
 
-extern const char *InputName;
-extern const char *OutputName;
+#ifndef flags_h
+#define flags_h
 
-extern int TargetOs;
-extern int TargetArch;
-extern int OutputType;
+typedef struct Compiler Compiler;
+typedef struct CompilerFlags CompilerFlags;
 
-typedef enum OutputTypes {
+extern CompilerFlags default_flags;
+
+typedef enum Output {
     OutputType_Exec = 0,
     OutputType_Static,
     OutputType_Dynamic
-} OutputTypes;
+} Output;
 
-typedef enum CLIFlagKind {
-    CLIFlagKind_Bool,
-    CLIFlagKind_String,
-    CLIFlagKind_Enum,
-} CLIFlagKind;
-
-typedef struct CLIFlag CLIFlag;
-struct CLIFlag {
-    CLIFlagKind kind;
-    const char *name;
-    const char *alias;
-    const char **options;
-    const char *argumentName;
-    const char *help;
-    int nOptions;
-    union {
-        int *i;
-        bool *b;
-        const char **s;
-    } ptr;
+struct CompilerFlags {
+    bool parseComments;
+    bool errorCodes;
+    bool errorColors;
+    bool errorSource;
+    bool verbose;
+    bool version;
+    bool help;
+    bool emitIR;
+    bool emitHeader;
+    bool dumpIR;
+    bool debug;
+    bool link;
 };
 
-CLIFlag *FlagForName(const char *name);
-void ParseFlags(int *pargc, const char ***pargv);
+void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv);
 void InitUnsetFlagsToDefaults(void);
 void PrintUsage(void);
 
+#endif

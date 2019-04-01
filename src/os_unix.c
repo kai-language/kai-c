@@ -61,3 +61,14 @@ void DirectoryIterOpen(DirectoryIter *it, const char *path) {
     path_copy(it->base, path);
     DirectoryIterNext(it);
 }
+
+SysInfo get_current_sysinfo() {
+    struct utsname *uts = malloc(sizeof(struct utsname));
+    int res = uname(uts);
+    if (res != 0) {
+        perror("uname");
+        exit(1);
+    }
+    SysInfo sysinfo = {uts->sysname, uts->machine};
+    return sysinfo;
+}

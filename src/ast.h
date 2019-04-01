@@ -522,8 +522,6 @@ struct Decl {
 #endif
 };
 
-extern i8 stmtDeclaresSymbol[_StmtDeclKind_End];
-
 b32 isExpr(Stmt *stmt);
 
 b32 isDecl(Stmt *stmt);

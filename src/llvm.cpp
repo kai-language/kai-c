@@ -1,4 +1,5 @@
 #include "common.h"
+#include "targets.h"
 #include "symbols.h"
 #include "compiler.h"
 #include "flags.h"
@@ -324,7 +325,7 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
 }
 
 llvm::DIFile *setDebugInfoForPackage(llvm::DIBuilder *b, Package *import) {
-    if (FlagDebug && !import->backendUserdata) {
+    if (compiler.flags.debug && !import->backendUserdata) {
         char directory[MAX_PATH];
         strcpy(directory, import->fullpath);
         char *filename = strrchr(directory, '/');
@@ -379,7 +380,7 @@ llvm::Value *createVariable(Symbol *symbol, SourceRange pos, Context *ctx) {
         global->setAlignment(BytesFromBits(symbol->type->Align));
         symbol->backendUserdata = global;
 
-        if (FlagDebug) {
+        if (compiler.flags.debug) {
             ctx->d.builder->createGlobalVariableExpression(
                 ctx->d.scope,
                 symbol->name, // Name
@@ -398,7 +399,7 @@ llvm::Value *createVariable(Symbol *symbol, SourceRange pos, Context *ctx) {
         llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
         symbol->backendUserdata = alloca;
 
-        if (FlagDebug) {
+        if (compiler.flags.debug) {
             auto d = ctx->d.builder->createAutoVariable(
                 ctx->d.scope,
                 symbol->name,
@@ -998,7 +999,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 
     llvm::Function *prevFunction = ctx->fn;
     ctx->fn = fn;
-    if (FlagDebug) {
+    if (compiler.flags.debug) {
 
         auto dbgType = (llvm::DISubroutineType *)debugCanonicalize(ctx, info.BasicExpr.type);
 
@@ -1040,7 +1041,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
         paramInfo.Ident.symbol->backendUserdata = storage;
         ctx->b.CreateAlignedStore(arg, storage, BytesFromBits(paramInfo.Ident.symbol->type->Align));
 
-        if (FlagDebug) {
+        if (compiler.flags.debug) {
             auto dbg = ctx->d.builder->createParameterVariable(
                 ctx->d.scope,
                 paramInfo.Ident.symbol->name,
@@ -1123,7 +1124,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
     // Move the return block to the end, just for readability
     ctx->retBlock->moveAfter(ctx->b.GetInsertBlock());
 
-    if (FlagDebug) {
+    if (compiler.flags.debug) {
         ctx->d.builder->finalizeSubprogram(fn->getSubprogram());
     }
     ctx->fn = prevFunction;
@@ -1143,7 +1144,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 
     Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
 
-    if (type->Symbol->backendUserdata && !FlagDebug) {
+    if (type->Symbol->backendUserdata && !compiler.flags.debug) {
         BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
         return userdata->type;
     }
@@ -1159,7 +1160,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         llvm::Type *ty = canonicalize(ctx, fieldType);
         llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
         for (size_t j = 0; j < ArrayLen(item.names); j++) {
-            if (FlagDebug) {
+            if (compiler.flags.debug) {
             llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
                 ctx->d.scope,
                 item.names[j],
@@ -1187,7 +1188,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
         ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
     }
     llvm::DICompositeType *debugType;
-    if (FlagDebug) {
+    if (compiler.flags.debug) {
         debugType = ctx->d.builder->createStructType(
         ctx->d.scope,
         type->Symbol->name,
@@ -1213,7 +1214,7 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
             userdata->type = ty;
             type->Symbol->backendUserdata = userdata;
         }
-        if (FlagDebug) {
+        if (compiler.flags.debug) {
             userdata->debugType = debugType;
         }
     }
@@ -1558,7 +1559,7 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
     body = post = cond = step = NULL;
 
     llvm::DIScope *oldScope = NULL;
-    if (FlagDebug) {
+    if (compiler.flags.debug) {
         oldScope = ctx->d.scope;
         ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, stmt->pos.line, stmt->pos.column);
     }
@@ -1598,14 +1599,14 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
         ctx->b.SetInsertPoint(body);
 
         llvm::DIScope *oldScope = NULL;
-        if (FlagDebug) {
+        if (compiler.flags.debug) {
             oldScope = ctx->d.scope;
             ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, fore.body->pos.line, fore.body->pos.column);
         }
 
         emitStmtBlock(ctx, fore.body);
 
-        if (FlagDebug) {
+        if (compiler.flags.debug) {
             ctx->d.scope = oldScope;
         }
     }
@@ -1633,7 +1634,7 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
 
     ctx->b.SetInsertPoint(post);
 
-    if (FlagDebug) {
+    if (compiler.flags.debug) {
         ctx->d.scope = oldScope;
     }
 }
@@ -1852,7 +1853,7 @@ b32 CodegenLLVM(Package *p) {
         return 1;
     }
 
-    if (FlagVerbose) printf("Target: %s\n", triple.str().c_str());
+    if (compiler.flags.verbose) printf("Target: %s\n", triple.str().c_str());
 
     const char *cpu = "generic";
     const char *features = "";
@@ -1880,7 +1881,7 @@ b32 CodegenLLVM(Package *p) {
      */
 
     Debug debug;
-    if (FlagDebug) {
+    if (compiler.flags.debug) {
         llvm::DIBuilder *builder = new llvm::DIBuilder(*module);
 
         llvm::DIFile *file = setDebugInfoForPackage(builder, p);
@@ -1928,7 +1929,7 @@ b32 CodegenLLVM(Package *p) {
         emitStmt(&ctx, p->stmts[i]);
     }
 
-    if (FlagDebug) ctx.d.builder->finalize();
+    if (compiler.flags.debug) ctx.d.builder->finalize();
 
 #if DEBUG
     if (llvm::verifyModule(*module, &llvm::errs())) {
@@ -1937,7 +1938,7 @@ b32 CodegenLLVM(Package *p) {
     }
 #endif
 
-    if (FlagDumpIR) {
+    if (compiler.flags.dumpIR) {
         module->print(llvm::outs(), nullptr);
         return 0;
     } else {
@@ -1971,31 +1972,31 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
     pass.run(*ctx->m);
     dest.flush();
 
-    if (!FlagLink)
+    if (!compiler.flags.link)
         return 0;
 
     // Linking and debug symbols
 #ifdef SYSTEM_OSX
-    bool isStatic = OutputType == OutputType_Static;
+    bool isStatic = compiler.target_output == OutputType_Static;
 
     DynamicArray(u8) linkerFlags = NULL;
     if (isStatic) {
-        ArrayPrintf(linkerFlags, "libtool -static -o %s %s", OutputName, objectName);
+        ArrayPrintf(linkerFlags, "libtool -static -o %s %s", compiler.output_name, objectName);
     } else {
-        const char *outputType = OutputType == OutputType_Exec ? "execute" : "dynamic -dylib";
-        ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -%s -macosx_version_min 10.13", objectName, OutputName, outputType);
+        const char *outputType = compiler.target_output == OutputType_Exec ? "execute" : "dynamic -dylib";
+        ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -%s -macosx_version_min 10.13", objectName, compiler.output_name, outputType);
     }
 
-    if (FlagVerbose) {
+    if (compiler.flags.verbose) {
         printf("%s\n", linkerFlags);
     }
     system((char *)linkerFlags);
 
-    if (FlagDebug && !isStatic) {
+    if (compiler.flags.debug && !isStatic) {
         DynamicArray(u8) symutilFlags = NULL;
-        ArrayPrintf(symutilFlags, "dsymutil %s", OutputName);
+        ArrayPrintf(symutilFlags, "dsymutil %s", compiler.output_name);
 
-        if (FlagVerbose) {
+        if (compiler.flags.verbose) {
             printf("%s\n", symutilFlags);
         }
         system((char *)symutilFlags);
@@ -2009,12 +2010,12 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
 }
 
 void clearDebugPos(Context *ctx) {
-    if (!FlagDebug) return;
+    if (!compiler.flags.debug) return;
     ctx->b.SetCurrentDebugLocation(llvm::DebugLoc());
 }
 
 void debugPos(Context *ctx, SourceRange pos) {
-    if (!FlagDebug) return;
+    if (!compiler.flags.debug) return;
     ctx->b.SetCurrentDebugLocation(llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope));
 }
 

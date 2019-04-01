@@ -1,56 +1,29 @@
-#include "common.c"
-
-#include "error.c"
-#include "lexer.c"
-#include "compiler.c"
-#include "ast.c"
-#include "symbols.h"
-#include "types.c"
-
-#include "checker.h"
-#include "parser.c"
-#include "checker.c"
-#include "header.c"
-
-#include "llvm.h"
 
 #define VERSION "0.0.0 (prerelease)"
 
+#include "common.c"
+#include "targets.c"
+#include "os.c"
+#include "flags.c"
+#include "symbols.h"
+#include "types.c"
 
-void outputVersionAndBuildInfo() {
-    printf("%s\n\n", VERSION);
+#include "error.c"
+#include "lexer.c"
+#include "ast.c"
+#include "checker.h"
+#include "header.c"
+#include "parser.c"
+#include "checker.c"
 
-    bool debug = false;
+#include "compiler.c"
 
-#if DEBUG
-    debug = true;
-#endif
-
-    const char *y = "✔";
-    const char *n = "✘";
-
-    printf("-DDEBUG %s\n", debug ? y : n);
-}
+#include "llvm.h"
 
 #ifndef TEST
 int main(int argc, const char **argv) {
-    const char *programName = argv[0];
-
-    ParseFlags(&argc, &argv);
-    if (FlagVersion) {
-        outputVersionAndBuildInfo();
-        exit(0);
-    }
-    if (argc != 1 || FlagHelp) {
-        printf("Usage: %s [flags] <input>\n", programName);
-        PrintUsage();
-        exit(!FlagHelp);
-    }
-
-    InitUnsetFlagsToDefaults();
+    InitCompiler(&compiler, argc, argv);
     InitKeywords();
-    InitBuiltins();
-    InitGlobalSearchPaths();
 
     Package *builtinPackage = ImportPackage("builtin", NULL);
     if (!builtinPackage) {
@@ -58,26 +31,26 @@ int main(int argc, const char **argv) {
         exit(1);
     }
 
-    Package *mainPackage = ImportPackage(InputName, NULL);
+    Package *mainPackage = ImportPackage(compiler.input_name, NULL);
     if (!mainPackage) {
-        printf("error: Failed to compile '%s'\n", InputName);
+        printf("error: Failed to compile '%s'\n", compiler.input_name);
         exit(1);
     }
     
     while (true) {
-        SourceFile *file = QueuePopFront(&parsingQueue);
+        Source *file = QueuePopFront(&compiler.parsing_queue);
         if (file) {
-            parseFile(file);
+            parseSource(file);
             continue;
         }
         
-        CheckerWork *work = QueuePopFront(&checkingQueue);
+        CheckerWork *work = QueuePopFront(&compiler.checking_queue);
         if (work) {
-            if (FlagVerbose) printf("Checking package %s\n", work->package->path);
+            if (compiler.flags.verbose) printf("Checking package %s\n", work->package->path);
             CheckerContext ctx = { .scope = work->package->scope };
             checkStmt(work->stmt, &ctx, work->package);
             if (ctx.mode == ExprMode_Unresolved) {
-                QueuePushBack(&checkingQueue, work);
+                QueuePushBack(&compiler.checking_queue, work);
             }
             continue;
         }
@@ -97,15 +70,12 @@ int main(int argc, const char **argv) {
     if (!sawErrors) {
         CodegenLLVM(mainPackage);
 
-        if (OutputType != OutputType_Exec || FlagEmitHeader)
+        if (compiler.target_output != OutputType_Exec || compiler.flags.emitHeader)
             CodegenCHeader(mainPackage);
     } else {
         return 1;
     }
 
-    ArenaFree(&parsingQueue.arena);
-    ArenaFree(&checkingQueue.arena);
-    
     return 0;
 }
 #endif

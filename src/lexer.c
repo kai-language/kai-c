@@ -47,10 +47,10 @@ const char *internCallConv_C;
 
 #define KEYWORD(name) Keyword_##name = StrIntern(#name); ArrayPush(Keywords, Keyword_##name)
 
-bool HaveInitializedKeywords = false;
+bool initialized_keywords = false;
 void InitKeywords() {
-    if (HaveInitializedKeywords) return;
-    HaveInitializedKeywords = true;
+    if (initialized_keywords) return;
+    initialized_keywords = true;
 
     KEYWORD(if);
     void *arena_end = internArena.end;
@@ -507,7 +507,7 @@ repeat: ;
                 while (*l->stream && *l->stream != '\n') {
                     l->stream++;
                 }
-                if (FlagParseComments) goto returnComment;
+                if (compiler.flags.parseComments) goto returnComment;
                 goto repeat;
             } else if (*l->stream == '*') {
                 l->stream++;
@@ -526,7 +526,7 @@ repeat: ;
                         l->stream++;
                     }
                 }
-                if (FlagParseComments) goto returnComment;
+                if (compiler.flags.parseComments) goto returnComment;
                 goto repeat;
             }
             break;
@@ -632,7 +632,7 @@ repeat: ;
 
 #if TEST
 void test_keywords() {
-    INIT_COMPILER();
+    InitKeywords();
 
     ASSERT(isStringKeyword(Keyword_first));
     ASSERT(isStringKeyword(Keyword_last));

@@ -1,25 +1,47 @@
 
 #include "flags.h"
+#include "compiler.h"
 
-bool FlagParseComments;
-bool FlagErrorCodes = true;
-bool FlagErrorColors = true;
-bool FlagErrorSource = true;
-bool FlagVerbose;
-bool FlagVersion;
-bool FlagHelp;
-bool FlagEmitIR;
-bool FlagEmitHeader;
-bool FlagDumpIR;
-bool FlagDebug = true;
-bool FlagLink = true;
+typedef enum CLIFlagKind {
+    CLIFlagKind_Bool,
+    CLIFlagKind_String,
+    CLIFlagKind_Enum,
+} CLIFlagKind;
 
-const char *InputName;
-const char *OutputName;
+typedef struct CLIFlag {
+    CLIFlagKind kind;
+    const char *name;
+    const char *alias;
+    const char **options;
+    const char *argumentName;
+    const char *help;
+    int nOptions;
+    union {
+        void *raw;
+        char *path;
+        int *i;
+        bool *b;
+        const char **s;
+    } ptr;
+} CLIFlag;
 
-int TargetOs;
-int TargetArch;
-int OutputType;
+CompilerFlags default_flags = {
+    .parseComments = false,
+    .errorCodes    = true,
+    .errorColors   = true,
+    .errorSource   = true,
+    .verbose       = false,
+    .version       = false,
+    .help          = false,
+    .emitIR        = false,
+    .emitHeader    = false,
+    .dumpIR        = false,
+    .debug         = true,
+    .link          = true,
+};
+
+Compiler parsed_compiler;
+CompilerFlags parsed_flags;
 
 static const char *OutputTypeNames[] = {
     "exec",
@@ -28,31 +50,40 @@ static const char *OutputTypeNames[] = {
 };
 
 #define FLAG_BOOL(NAME, SHORT_NAME, PTR, HELP) \
-    { CLIFlagKind_Bool, (NAME), (SHORT_NAME), .ptr.b = (&PTR), .help = (HELP) }
+{ CLIFlagKind_Bool, (NAME), (SHORT_NAME), .ptr.b = &parsed_compiler.PTR, .help = (HELP) }
+
+#define FLAG_STRING(NAME, SHORT_NAME, PTR, ARG_NAME, HELP) \
+{ CLIFlagKind_String, (NAME), (SHORT_NAME), .ptr.s = &parsed_compiler.PTR, .argumentName = (ARG_NAME), .help = (HELP) }
+
+#define FLAG_PATH(NAME, SHORT_NAME, PTR, ARG_NAME, HELP) \
+{ CLIFlagKind_String, (NAME), (SHORT_NAME), .ptr.path = parsed_compiler.PTR, .argumentName = (ARG_NAME), .help = (HELP) }
+
+#define FLAG_ENUM(NAME, PTR, OPTIONS, HELP) \
+{ CLIFlagKind_Enum, (NAME), .ptr = &parsed_compiler.PTR, .options = (OPTIONS), .nOptions = sizeof(OPTIONS) / sizeof(*OPTIONS), .help = (HELP) }
 
 CLIFlag CLIFlags[] = {
-    FLAG_BOOL("help",    "h",  FlagHelp,    "Print help information"),
-    FLAG_BOOL("version", NULL, FlagVersion, "Prints compiler version"),
+    FLAG_BOOL("help",    "h",  flags.help,    "Print help information"),
+    FLAG_BOOL("version", NULL, flags.version, "Prints compiler version"),
 
-    FLAG_BOOL("verbose", "v",  FlagVerbose, "Enable verbose output"),
-    FLAG_BOOL("dump-ir", NULL, FlagDumpIR,  "Dump LLVM IR"),
-    FLAG_BOOL("emit-ir", NULL, FlagEmitIR,  "Emit LLVM IR file(s)"),
+    FLAG_BOOL("verbose", "v",  flags.verbose, "Enable verbose output"),
+    FLAG_BOOL("dump-ir", NULL, flags.dumpIR,  "Dump LLVM IR"),
+    FLAG_BOOL("emit-ir", NULL, flags.emitIR,  "Emit LLVM IR file(s)"),
 
-    FLAG_BOOL("emit-header", NULL, FlagEmitHeader, "Emit C header file(s)"),
+    FLAG_BOOL("emit-header", NULL, flags.emitHeader, "Emit C header file(s)"),
 
-    FLAG_BOOL("error-codes",  NULL, FlagErrorCodes,  "Show error codes along side error location"),
-    FLAG_BOOL("error-colors", NULL, FlagErrorColors, "Show errors in souce code by highlighting in color"),
-    FLAG_BOOL("error-source", NULL, FlagErrorSource, "Show source code when printing errors"),
+    FLAG_BOOL("error-codes",  NULL, flags.errorCodes,  "Show error codes along side error location"),
+    FLAG_BOOL("error-colors", NULL, flags.errorColors, "Show errors in souce code by highlighting in color"),
+    FLAG_BOOL("error-source", NULL, flags.errorSource, "Show source code when printing errors"),
 
-    FLAG_BOOL("parse-comments", NULL, FlagParseComments, ""),
-    FLAG_BOOL("debug", "g", FlagDebug, "Include debug symbols"),
-    FLAG_BOOL("link", NULL, FlagLink,  "Link object files"),
+    FLAG_BOOL("parse-comments", NULL, flags.parseComments, ""),
+    FLAG_BOOL("debug", "g", flags.debug, "Include debug symbols"),
+    FLAG_BOOL("link", NULL, flags.link,  "Link object files"),
 
-    { CLIFlagKind_String, "output", "o", .ptr.s = &OutputName, .argumentName = "file", .help = "Output file (default: out_<input>)" },
+    FLAG_PATH("output", "o", output_name, "file", "Output file (default: <input>)"),
 
-    { CLIFlagKind_Enum, "os", .ptr.i = &TargetOs, .options = OsNames, .nOptions = sizeof(OsNames) / sizeof(*OsNames), .help = "Target operating system (default: current)" },
-    { CLIFlagKind_Enum, "arch", .ptr.i = &TargetArch, .options = ArchNames, .nOptions = sizeof(ArchNames) / sizeof(*ArchNames), .help = "Target architecture (default: current)" },
-    { CLIFlagKind_Enum, "type", .ptr.i = &OutputType, .options = OutputTypeNames, .nOptions = sizeof(OutputTypeNames) / sizeof(*OutputTypeNames), .help = "Final output type (default: exec)" },
+    FLAG_ENUM("os", target_os, OsNames, "Target operating system (default: current)"),
+    FLAG_ENUM("arch", target_arch, ArchNames, "Target architecture (default: current)"),
+    FLAG_ENUM("type", target_output, OutputTypeNames, "Final output type (default: exec)"),
 };
 
 CLIFlag *FlagForName(const char *name) {
@@ -64,7 +95,8 @@ CLIFlag *FlagForName(const char *name) {
     return NULL;
 }
 
-void ParseFlags(int *pargc, const char ***pargv) {
+void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv) {
+    parsed_flags = default_flags;
     int argc = *pargc;
     const char **argv = *pargv;
     int i;
@@ -135,49 +167,11 @@ void ParseFlags(int *pargc, const char ***pargv) {
             break;
         }
     }
+    compiler->flags = parsed_flags;
     *pargc = argc - i;
     *pargv = argv + i;
-
     if (argc - i == 1) {
-        InputName = argv[i];
-    }
-}
-
-bool HaveInitializedUnsetFlagsToDefaults = false;
-void InitUnsetFlagsToDefaults() {
-    if (HaveInitializedUnsetFlagsToDefaults) return;
-    HaveInitializedUnsetFlagsToDefaults = true;
-
-    if (OutputName == NULL) {
-        // TODO: should we use the basename of InputName?
-        size_t prefixLen = sizeof("out_") - 1;
-
-        static char outputPathBuff[MAX_PATH];
-        OutputName = GetFileName(InputName, outputPathBuff, NULL);
-
-        size_t len = prefixLen + strlen(OutputName) + 1;
-        char *mem = Alloc(DefaultAllocator, len);
-        memcpy(mem, "out_", prefixLen);
-
-        char *filename = mem + prefixLen;
-
-        memcpy(filename, OutputName, len - prefixLen);
-        RemoveKaiExtension(filename);
-
-        OutputName = mem;
-    }
-
-    InitDetailsForCurrentSystem();
-    if (TargetOs == Os_Current) {
-        TargetOs = OsForName(CurrentSystem.name);
-    }
-    if (TargetArch == Arch_Current) {
-        TargetArch = ArchForName(CurrentSystem.machine);
-    }
-
-    if (TargetOs == -1 || TargetArch == -1) {
-        printf("Unsupported Os or Arch: %s %s\n", OsNames[TargetOs], ArchNames[TargetArch]);
-        exit(1);
+        path_copy(compiler->input_name, argv[i]);
     }
 }
 
@@ -211,7 +205,7 @@ void PrintUsage() {
                 break;
 
             case CLIFlagKind_Bool:
-                if (*flag.ptr.b && flag.ptr.b != &FlagHelp)
+                if (*flag.ptr.b && flag.ptr.b != &compiler.flags.help)
                     hLen += snprintf(help + hLen, sizeof(help) - hLen, " (default)");
                 break;
         }
@@ -221,28 +215,14 @@ void PrintUsage() {
 
 #if TEST
 void test_flagParsingAndDefaults() {
-    const char *args[] = {"kai", "-o", "outputName", "-v", "-os", "Darwin", "main.kai"};
-    int argc = sizeof(args) / sizeof(*args);
-    const char **argv = args;
-    ParseFlags(&argc, &(argv));
-    ASSERT(FlagVerbose);
-    ASSERT(strcmp(OutputName, "outputName") == 0);
-    ASSERT(TargetOs == Os_Darwin);
-    ASSERT(argc == 1);
+    InitTestCompiler(&compiler, "-o outputName -v -os Darwin");
+    ASSERT(compiler.flags.verbose);
+    ASSERT(strcmp(compiler.output_name, "outputName") == 0);
+    ASSERT(compiler.target_os == Os_Darwin);
 
-    REINIT_COMPILER();
-    ASSERT(TargetArch != Arch_Current);
-    ASSERT(TargetOs != Arch_Current);
-    OutputName = NULL;
-
-    REINIT_COMPILER();
-    InputName = "src/main.kai";
-    HaveInitializedUnsetFlagsToDefaults = false;
-    OutputName = NULL;
-    InitUnsetFlagsToDefaults();
-    printf("%s\n", OutputName);
-    ASSERT(strcmp(OutputName, "out_main") == 0);
-
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, "");
+    InitCompiler(&compiler, 0, NULL);
+    ASSERT(compiler.target_arch != Arch_Unknown);
+    ASSERT(compiler.target_os != Arch_Unknown);
 }
 #endif

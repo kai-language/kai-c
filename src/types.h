@@ -175,6 +175,7 @@ i64 SignExtendTo64Bits(Type *source, Val val);
 b32 TypesIdentical(Type *type, Type *target);
 u64 MaxValueForIntOrPointerType(Type *type);
 StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name);
+void InitBuiltinTypes(Compiler *compiler);
 #ifdef __cplusplus
 }
 #endif

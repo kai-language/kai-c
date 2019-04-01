@@ -1419,25 +1419,25 @@ void parseSourceCode(Package *pkg, const char *code) {
     }
 }
 
-void parseFile(SourceFile *file) {
-    if (file->parsed) return;
-    file->code = ReadEntireFile(file->fullpath);
-    if (!file->code) {
-        ReportError(file->package, FatalError, (SourceRange){ file->path }, "Failed to read source file");
+void parseSource(Source *source) {
+    if (source->parsed) return;
+    source->code = ReadEntireFile(source->fullpath);
+    if (!source->code) {
+        ReportError(source->package, FatalError, (SourceRange){ source->path }, "Failed to read source file");
         return;
     }
 
-    if (FlagVerbose) printf("Parsing file %s\n", file->path);
-    parseSourceCode(file->package, file->code);
-    file->parsed = true;
+    if (compiler.flags.verbose) printf("Parsing file %s\n", source->path);
+    parseSourceCode(source->package, source->code);
+    source->parsed = true;
 
-    for (size_t i = 0; i < file->package->numFiles; i++) {
-        if (!file->package->files[i].parsed) return;
+    for (size_t i = 0; i < source->package->numSources; i++) {
+        if (!source->package->sources[i].parsed) return;
     }
 
     // All of the files in the package have been parsed. We are now ready for checking.
 
-    Package *package = file->package;
+    Package *package = source->package;
 
     DynamicArray(CheckerInfo) checkerInfo = NULL;
     ArrayFit(checkerInfo, package->astIdCount + 1);
@@ -1446,10 +1446,10 @@ void parseFile(SourceFile *file) {
 
     size_t len = ArrayLen(package->stmts);
     for (int i = 0; i < len; i++) {
-        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
+        CheckerWork *work = ArenaAlloc(&compiler.checking_queue.arena, sizeof(CheckerWork));
         work->package = package;
         work->stmt = package->stmts[i];
-        QueuePushBack(&checkingQueue, work);
+        QueuePushBack(&compiler.checking_queue, work);
     }
 }
 

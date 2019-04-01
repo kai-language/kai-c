@@ -79,10 +79,6 @@ struct DiagnosticError {
     DiagnosticNote *note;
 };
 
-b32 shouldPrintErrorCode() {
-    return FlagErrorCodes;
-}
-
 SourceRange rangeFromPosition(Position pos) {
     SourceRange range = {pos.name, pos.offset, pos.offset, pos.line, pos.column};
     return range;
@@ -106,7 +102,7 @@ char *highlightLine(
     buf += lengthRequired;
     line += lengthRequired;
 
-    if (FlagErrorColors) {
+    if (compiler.flags.errorColors) {
         // Print highlight codes
         lengthRequired = snprintf(buf, bufend - buf, "\x1B[31m");
         if (lengthRequired > bufend - buf) return NULL;
@@ -121,7 +117,7 @@ char *highlightLine(
     buf += lengthRequired;
     line += lengthRequired;
 
-    if (FlagErrorColors) {
+    if (compiler.flags.errorColors) {
         // Print reset code
         lengthRequired = snprintf(buf, bufend - buf, "\x1B[0m");
         if (lengthRequired > bufend - buf) return NULL;
@@ -143,15 +139,15 @@ char *highlightLine(
 const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
 
     // Find the file in the package matching range.name
-    const char * fileStart = NULL;
-    for (size_t i = 0; i < p->numFiles; i++) {
-        if (strcmp(p->files[i].path, range.name) == 0) {
-            fileStart = p->files[i].code;
+    const char * sourceStart = NULL;
+    for (size_t i = 0; i < p->numSources; i++) {
+        if (strcmp(p->sources[i].path, range.name) == 0) {
+            sourceStart = p->sources[i].code;
             break;
         }
     }
 
-    if (!fileStart) return NULL;
+    if (!sourceStart) return NULL;
 
 #define MAX_LINES 3
 #define MAX_LINE_LENGTH 512
@@ -160,7 +156,7 @@ const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
     char lines[MAX_LINES + 1][MAX_LINE_LENGTH];
     char noColorHighlight[MAX_LINE_LENGTH];
 
-    const char *cursor = &fileStart[range.offset];
+    const char *cursor = &sourceStart[range.offset];
 
     int numberOfBytes = 0;
     int numberOfLines = 0;
@@ -180,7 +176,7 @@ const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
 
             char *buf = &lines[line][0];
 
-            u32 lineStartOffset = (u32) (lineStart - fileStart);
+            u32 lineStartOffset = (u32) (lineStart - sourceStart);
             u32 errorStartOffsetInLine = range.offset - lineStartOffset;
             u32 errorEndOffsetInLine = errorStartOffsetInLine + range.endOffset - range.offset;
 
@@ -192,7 +188,7 @@ const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
             if (!result) return NULL;
             numberOfBytes += strlen(buf);
 
-            if (!FlagErrorColors) {
+            if (!compiler.flags.errorColors) {
                 memset(noColorHighlight, ' ', lineEnd - lineStart + 1);
                 memset(noColorHighlight + errorStartOffsetInLine, '^', range.endOffset - range.offset);
                 noColorHighlight[lineEnd - lineStart] = '\n';
@@ -209,14 +205,14 @@ const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
     }
 
     numberOfBytes += 4 + 1; // 4 for indentation 1 for nul termination.
-    if (!FlagErrorColors) numberOfBytes += strlen(lines[numberOfLines - 1]) + 1;
+    if (!compiler.flags.errorColors) numberOfBytes += strlen(lines[numberOfLines - 1]) + 1;
     char *results = ArenaAlloc(&p->diagnostics.arena, numberOfBytes + 1 + 40);
 
     char *resultsCursor = results;
     for (int line = numberOfLines - 1; line >= 0; line--) {
         resultsCursor += sprintf(resultsCursor, "\t%s", lines[line]);
     }
-    if (!FlagErrorColors)
+    if (!compiler.flags.errorColors)
         resultsCursor += sprintf(resultsCursor, "\t%s", noColorHighlight);
     *resultsCursor = '\0';
     return results;
@@ -230,7 +226,7 @@ void ReportError(Package *p, ErrorCode code, SourceRange range, const char *msg,
     vsnprintf(msgBuffer, sizeof(msgBuffer), msg, args);
     char errorBuffer[512];
 
-    int errlen = shouldPrintErrorCode() ?
+    int errlen = compiler.flags.errorCodes ?
         snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u, E%04d): %s\n", range.name, range.line, range.column, code, msgBuffer) :
         snprintf(errorBuffer, sizeof(errorBuffer), "ERROR(%s:%u:%u): %s\n",        range.name, range.line, range.column,       msgBuffer);
 
@@ -243,7 +239,7 @@ void ReportError(Package *p, ErrorCode code, SourceRange range, const char *msg,
     va_end(args);
 
     const char *codeBlock = NULL;
-    if (FlagErrorSource) {
+    if (compiler.flags.errorSource) {
         codeBlock = findCodeBlockAndHighlightError(p, range);
     }
 

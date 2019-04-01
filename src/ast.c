@@ -1,12 +1,5 @@
 #include "ast.h"
 
-i8 stmtDeclaresSymbol[_StmtDeclKind_End] = {
-    [StmtDeclKind_Constant] = 1,
-    [StmtDeclKind_Variable] = 1,
-    [StmtDeclKind_Foreign] = 1,
-    [StmtDeclKind_ForeignBlock] = 1,
-};
-
 const char *AstDescriptions[] = {
 #define FOR_EACH(kindName, s, ...) "" s "",
     [EXPR_KIND_START] = "invalid",

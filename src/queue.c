@@ -1,18 +1,5 @@
 
-typedef struct QueueNode QueueNode;
-struct QueueNode {
-    void *val;
-    QueueNode *next;
-    QueueNode *prev;
-};
-
-typedef struct Queue Queue;
-struct Queue {
-    QueueNode *head;
-    QueueNode *tail;
-    size_t size;
-    Arena arena;
-};
+#include "queue.h"
 
 void QueuePushFront(Queue *q, void *val) {
     QueueNode *node = ArenaAlloc(&q->arena, sizeof(QueueNode));

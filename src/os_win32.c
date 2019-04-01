@@ -44,3 +44,17 @@ DirectoryIter DirectoryOpen(const char *path) {
         DirectoryIterNext(&it);
     }
 }
+
+SysInfo get_current_sysinfo() {
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    SysInfo i = {"Windows"};
+    switch (sysinfo.wProcessorArchitecture) {
+        case PROCESSOR_ARCHITECTURE_INTEL: i.machine = ArchNames[Arch_x86];
+        case PROCESSOR_ARCHITECTURE_AMD64: i.machine = ArchNames[Arch_x86_64];
+        case PROCESSOR_ARCHITECTURE_ARM:   i.machine = ArchNames[Arch_arm];
+        case 12:                           i.machine = ArchNames[Arch_arm64]; // MSDN has 12 as PROCESSOR_ARCHITECTURE_ARM64 but it isn't in our headers
+        default:                           i.machine = ArchNames[Arch_Unknown]; // should we have an Arch_Unknown?
+    }
+    return i;
+}

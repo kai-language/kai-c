@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5D243F1C22519DF60062A588 /* os_unknown.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D243F1B22519DF60062A588 /* os_unknown.c */; };
 		5D9B9DBA221BC50F0012D81F /* gen_test_main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D41B52A20CAD23A005E9A8E /* gen_test_main.cpp */; };
 		5D9B9DC6221BC58C0012D81F /* gen_xcode_tests.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D41B52C20CE32E8005E9A8E /* gen_xcode_tests.cpp */; };
 		5D9B9E11221BCA9B0012D81F /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D9B9E04221BCA7F0012D81F /* main.c */; };
@@ -45,6 +46,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5D243F1A225182740062A588 /* queue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = queue.h; sourceTree = "<group>"; };
+		5D243F1B22519DF60062A588 /* os_unknown.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = os_unknown.c; sourceTree = "<group>"; };
+		5D243F1E2251A8190062A588 /* targets.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = targets.h; sourceTree = "<group>"; };
 		5D41B52820CAD07D005E9A8E /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
 		5D41B52A20CAD23A005E9A8E /* gen_test_main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = gen_test_main.cpp; sourceTree = "<group>"; };
 		5D41B52C20CE32E8005E9A8E /* gen_xcode_tests.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = gen_xcode_tests.cpp; sourceTree = "<group>"; };
@@ -156,6 +160,7 @@
 			isa = PBXGroup;
 			children = (
 				5D9B9E04221BCA7F0012D81F /* main.c */,
+				5D243F1A225182740062A588 /* queue.h */,
 				5D9B9E01221BCA7F0012D81F /* llvm.cpp */,
 				5D9B9DEF221BCA7F0012D81F /* ast.c */,
 				5D9B9DF0221BCA7F0012D81F /* common.c */,
@@ -169,6 +174,7 @@
 				5D9B9DF8221BCA7F0012D81F /* lexer.c */,
 				5D9B9DFB221BCA7F0012D81F /* string.c */,
 				5D9B9DFC221BCA7F0012D81F /* queue.c */,
+				5D243F1E2251A8190062A588 /* targets.h */,
 				5D9B9DFD221BCA7F0012D81F /* targets.c */,
 				5D9B9DFE221BCA7F0012D81F /* llvm.h */,
 				5D9B9DFF221BCA7F0012D81F /* checker.h */,
@@ -187,6 +193,7 @@
 				5D9B9E0E221BCA7F0012D81F /* os.c */,
 				5D9B9E15221C25980012D81F /* os_unix.c */,
 				5D9B9E17221C25B30012D81F /* os_win32.c */,
+				5D243F1B22519DF60062A588 /* os_unknown.c */,
 				5D9B9E0F221BCA7F0012D81F /* parser.c */,
 				5D9B9E10221BCA7F0012D81F /* string.h */,
 				5D9B9DF9221BCA7F0012D81F /* tests */,
@@ -445,6 +452,7 @@
 			files = (
 				5D9B9E12221BCA9B0012D81F /* llvm.cpp in Sources */,
 				5D9B9E11221BCA9B0012D81F /* main.c in Sources */,
+				5D243F1C22519DF60062A588 /* os_unknown.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

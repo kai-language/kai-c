@@ -132,7 +132,7 @@ StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name) {
 
 #if TEST
 void test_SmallestIntTypeForValue() {
-    INIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
     ASSERT(SmallestIntTypeForPositiveValue(0) == U8Type);
     ASSERT(SmallestIntTypeForPositiveValue(UINT8_MAX) == U8Type);
@@ -252,8 +252,8 @@ Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(
         }
     }
     Type *type = AllocType(TypeKind_Function);
-    type->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-    type->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
+    type->Width = compiler.target_metrics.Width;
+    type->Align = compiler.target_metrics.Align;
     type->Flags = flags;
 
     Type **p = Alloc(DefaultAllocator, numParams * sizeof *p);
@@ -336,30 +336,7 @@ void declareBuiltinTypeAlias(const char *name, Type *type, Type *alias) {
     alias->Symbol = symbol;
 }
 
-bool HaveInitializedBuiltins = false;
-void InitBuiltins() {
-    if (HaveInitializedBuiltins) return;
-    HaveInitializedBuiltins = true;
-
-    switch (TargetOs) {
-        case Os_Linux:
-            TargetTypeMetrics = Os_Linux_ArchSupport[TargetArch];
-            break;
-        case Os_Darwin:
-            TargetTypeMetrics = Os_Darwin_ArchSupport[TargetArch];
-            break;
-        case Os_Windows:
-            TargetTypeMetrics = Os_Windows_ArchSupport[TargetArch];
-            break;
-
-        default:
-            break;
-    }
-    if (!TargetTypeMetrics) {
-        printf("Unsupported os & arch combination: %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
-        exit(1);
-    }
-
+void InitBuiltinTypes(Compiler *compiler) {
     builtinPackage.scope = pushScope(&builtinPackage, NULL);
 
 #define TYPE(_global, _name, _kind, _width, _flags) \
@@ -397,7 +374,6 @@ void InitBuiltins() {
     TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
     TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
     TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
-    // TODO: Do we need an UntypedUintType? ... UntypedIntType cannot represent values over INT64_MAX;
 
     TYPE(RawptrType, "rawptr", Pointer, 64, TypeFlag_None);
 
@@ -407,7 +383,7 @@ void InitBuiltins() {
 
     TYPE(StringType, "string", Struct, 128, TypeFlag_None);
 
-    switch (TargetTypeMetrics[TargetMetrics_Pointer].Width) {
+    switch (compiler->target_metrics.Width) {
         case 32:
             TYPEALIAS(IntptrType,   "intptr", I32Type);
             TYPEALIAS(UintptrType, "uintptr", U32Type);
@@ -417,7 +393,8 @@ void InitBuiltins() {
             TYPEALIAS(UintptrType, "uintptr", U64Type);
             break;
         default:
-            printf("Unsupported pointer width on os & arch %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
+            printf("Unsupported pointer width on os & arch %s/%s\n",
+                   OsNames[compiler->target_os], ArchNames[compiler->target_arch]);
             exit(1);
     }
 
@@ -426,10 +403,10 @@ void InitBuiltins() {
 
     RawptrType->Pointer.pointeeType = U8Type;
 
-    AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
-    AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;
+    AnyType->Align = compiler->target_metrics.Align;
+    AnyType->Width = compiler->target_metrics.Width * 2;
 
-    RawptrType->Align = RawptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
+    RawptrType->Align = RawptrType->Width = compiler->target_metrics.Width;
 
 #undef TYPE
 }
@@ -447,8 +424,7 @@ const char *DescribeType(Type *type) {
 
 #if TEST
 void test_TypeIntern() {
-    TargetArch = Arch_x86_64;
-    INIT_COMPILER();
+    compiler.target_arch = Arch_x86_64;
 
     ASSERT(InvalidType);
     ASSERT(AnyType);

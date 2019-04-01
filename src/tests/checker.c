@@ -1,7 +1,7 @@
 
 #if TEST
 void test_canCoerce() {
-    INIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
     CheckerContext ctx = {0}; // No need for scope
 
@@ -54,15 +54,10 @@ Queue resetAndParse(const char *code) {
     ArenaFree(&pkg.diagnostics.arena);
     memset(&pkg, 0, sizeof(Package));
 
-    ArenaFree(&parsingQueue.arena);
-    memset(&checkingQueue, 0, sizeof(Queue));
-    ArenaFree(&checkingQueue.arena);
-    memset(&checkingQueue, 0, sizeof(Queue));
-
     pkg.scope = pushScope(&pkg, builtinPackage.scope);
 
-    parsePackageCode(&pkg, code);
-    return checkingQueue;
+    parseSourceCode(&pkg, code);
+    return compiler.checking_queue;
 }
 
 Stmt *resetAndParseReturningLastStmt(const char *code) {
@@ -81,7 +76,7 @@ Stmt *resetAndParseReturningLastStmt(const char *code) {
 }
 
 void test_checkConstantDeclarations() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Queue queue = resetAndParse("x :: 8");
 
     CheckerWork *work = QueuePopFront(&queue);
@@ -109,7 +104,7 @@ memcpy((u8*) &ctx.scope, &pkg.scope, sizeof(pkg.scope));
 
 
 void test_coercionsAreMarked() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerInfo* info;
     CheckerContext ctx = { pkg.scope };
@@ -130,7 +125,7 @@ info = CheckerInfoForStmt(&pkg, stmt)
 }
 
 void test_checkTypeFunction() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -155,7 +150,7 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 }
 
 void test_checkTypePointer() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -172,7 +167,7 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 }
 
 void test_checkTypeArray() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -198,7 +193,7 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 }
 
 void test_checkTypeSlice() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -220,7 +215,7 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 }
 
 void test_checkTypeStruct() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -274,7 +269,7 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 }
 
 void test_checkConstantUnaryExpressions() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -307,7 +302,7 @@ type = checkExprUnary((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_checkConstantBinaryExpressions() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -347,7 +342,7 @@ type = checkExprBinary((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_checkConstantTernaryExpression() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -387,7 +382,7 @@ type = checkExprTernary((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_checkConstantCastExpression() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -423,7 +418,7 @@ type = checkExprCast((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_callToCVargs() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -440,7 +435,7 @@ type = checkExprCall((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_checkExprSelector() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -468,7 +463,7 @@ Type *typeFromParsing(const char *code) {
 }
 
 void test_checkExprLitInteger() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Expr *expr;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -486,7 +481,7 @@ info = GetExprInfo(&pkg, expr)->BasicExpr
 }
 
 void test_checkExprLitFunction() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Expr *expr;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -507,7 +502,7 @@ type = checkExprLitFunction(expr, &ctx, &pkg);
 }
 
 void test_checkExprLitCompound() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Expr *expr;
     CheckerContext ctx = { pkg.scope };
     Type *type;
@@ -552,7 +547,7 @@ info = CheckerInfoForExpr(&pkg, expr);
 }
 
 void test_checkStmtAssign() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
 
@@ -569,7 +564,7 @@ checkStmtAssign(stmt, &ctx, &pkg)
 }
 
 void test_checkStmtBlock() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
 
@@ -584,7 +579,7 @@ checkStmtBlock(stmt, &ctx, &pkg)
 }
 
 void test_checkStmtDefer() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
 
@@ -598,7 +593,7 @@ checkStmtDefer(stmt, &ctx, &pkg)
 }
 
 void test_checkStmtFor() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     CheckerInfo_For info;
@@ -622,7 +617,7 @@ info = GetStmtInfo(&pkg, stmt)->For
 }
 
 void test_checkStmtForIn() {
-    //    REINIT_COMPILER();
+    //    InitTestCompiler(&compiler, NULL);
     //    Stmt *stmt;
     //    CheckerContext ctx = { pkg.scope };
     //    CheckerInfo_For info;
@@ -642,7 +637,7 @@ info = GetStmtInfo(&pkg, stmt)->For
 }
 
 void test_checkStmtGoto() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     CheckerInfo_For info;
@@ -663,7 +658,7 @@ info = GetStmtInfo(&pkg, stmt)->For
 }
 
 void test_checkStmtIf() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
 
@@ -680,7 +675,7 @@ checkStmtIf(stmt, &ctx, &pkg)
 }
 
 void test_checkStmtLabel() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     CheckerInfo_Label info;
@@ -698,7 +693,7 @@ info = GetStmtInfo(&pkg, stmt)->Label
 }
 
 void test_checkStmtReturn() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
 
@@ -721,7 +716,7 @@ RESET_CONTEXT(ctx)
 }
 
 void test_checkStmtSwitch() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
     Stmt *stmt;
     CheckerContext ctx = { pkg.scope };
     CheckerInfo_Switch info;

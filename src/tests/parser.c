@@ -13,17 +13,12 @@ Parser newTestParser(const char *stream) {
     ArenaFree(&parserTestPackage.arena);
     ArenaFree(&parserTestPackage.diagnostics.arena);
 
-    ArenaFree(&parsingQueue.arena);
-    memset(&checkingQueue, 0, sizeof(Queue));
-    ArenaFree(&checkingQueue.arena);
-    memset(&checkingQueue, 0, sizeof(Queue));
-
     Parser p = {lex, .tok = tok, &parserTestPackage};
     return p;
 }
 
 void test_parseExprAtom() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprAtom(&p); \
@@ -60,7 +55,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseExprPrimary() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprPrimary(&p, false); \
@@ -101,7 +96,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseExprUnary() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprUnary(&p, false); \
@@ -124,7 +119,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseExprBinary() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
@@ -145,7 +140,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseExprTernary() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprBinary(&p, 1, false); \
@@ -164,7 +159,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseSimpleStmt() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseSimpleStmt(&p, false, NULL); \
@@ -180,7 +175,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseStmt() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_STMT_KIND(expected) \
 stmt = parseStmt(&p); \
@@ -284,7 +279,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_automaticTerminatorAfterFunction() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
     Parser p = newTestParser("a :: fn() -> void {}" "\n"
                              "b :: fn() -> void {}" "\n");
@@ -293,7 +288,7 @@ void test_automaticTerminatorAfterFunction() {
 }
 
 void test_parseStruct() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprAtom(&p); \
@@ -308,7 +303,7 @@ ASSERT(!parserTestPackage.diagnostics.errors)
 }
 
 void test_parseUnion() {
-    REINIT_COMPILER();
+    InitTestCompiler(&compiler, NULL);
 
 #define ASSERT_EXPR_KIND(expected) \
 expr = parseExprAtom(&p); \

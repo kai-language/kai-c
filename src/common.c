@@ -101,12 +101,9 @@ void *Realloc(Allocator al, void *ptr, size_t size, size_t oldsize) {
     return al.func(al.payload, AT_Realloc, size, oldsize, ptr);
 }
 
-#include "targets.c"
-#include "os.c"
 #include "map.c"
 #include "array.c"
 #include "queue.c"
-#include "flags.c"
 #include "utf.c"
 #include "string.c"
 

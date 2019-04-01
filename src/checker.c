@@ -167,7 +167,7 @@ CheckerInfo *CheckerInfoForDecl(Package *pkg, Decl *decl) {
 }
 
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl) {
-    if (FlagVerbose && pkg->scope == scope) {
+    if (compiler.flags.verbose && pkg->scope == scope) {
         printf("Declaring package scope variable '%s'\n", name);
     }
     Symbol *old = Lookup(scope, name);

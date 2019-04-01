@@ -70,14 +70,6 @@ bool DirectoryIterSkip(DirectoryIter *it) {
     return strcmp(it->name, ".") == 0 || strcmp(it->name, "..") == 0;
 }
 
-#if SYSTEM_POSIX
-#include "os_unix.c"
-#elif SYSTEM_WINDOWS
-#warning "Unsupported platform" // allow CI to continue
-#else
-#error "Unsupported platform"
-#endif
-
 char *AbsolutePath(const char *filename, char *resolved) {
 #ifdef SYSTEM_POSIX
     return realpath(filename, resolved);
@@ -96,27 +88,27 @@ char *ReadEntireFile(const char *path) {
 
 #ifdef SYSTEM_POSIX
     i32 fd = open(path, O_RDONLY); // FIXME: No matching close
-    if (fd == -1) return NullWithLoggedReason("failed to open file %s", path);
+    if (fd == -1) return NULL;
 
     struct stat st;
-    if (stat(path, &st) == -1) return NullWithLoggedReason("Failed to stat already opened file %s with file descriptor %d", path, fd);
+    if (stat(path, &st) == -1) return NULL;
     size_t len = st.st_size;
 
     address = (char *) mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
     if (close(fd) == -1) perror("close was interupted"); // intentionally continue despite the failure, just keep the file open
-    if (address == MAP_FAILED) return NullWithLoggedReason("Failed to mmap opened file %s", path);
+    if (address == MAP_FAILED) return NULL;
     close(fd);
 #else
     FILE *fd = fopen(path, "rb");
-    if (!fd) return (char *)NullWithLoggedReason("failed to  open file %s", path);
+    if (!fd) NULL;
 
     if (fseek(fd, 0, SEEK_END) == 0) {
         long size = ftell(fd);
-        if (size == -1) return (char *)NullWithLoggedReason("Failed to get file size");
+        if (size == -1) NULL;
         address = (char *)malloc(size+1);
-        if (fseek(fd, 0, SEEK_SET) != 0) return (char *)NullWithLoggedReason("Failed to reset file cursor");
+        if (fseek(fd, 0, SEEK_SET) != 0) NULL;
         size_t read = fread(address, 1, size, fd);
-        if (read == 0) return (char *)NullWithLoggedReason("Failed to read file");
+        if (read == 0) NULL;
         address[read] = '\0';
     }
 
@@ -129,39 +121,22 @@ char *ReadEntireFile(const char *path) {
 typedef struct SysInfo SysInfo;
 struct SysInfo {
     const char *name;
-    const char *machine;
+    const char *arch;
 };
 
 SysInfo CurrentSystem = {0};
 
+SysInfo get_current_sysinfo(void);
+
 bool HaveInitializedDetailsForCurrentSystem = false;
 void InitDetailsForCurrentSystem() {
-    if (HaveInitializedDetailsForCurrentSystem) return;
-#if SYSTEM_POSIX
-    struct utsname *sysinfo = malloc(sizeof(struct utsname));
-    int res = uname(sysinfo);
-    if (res != 0) {
-        perror("uname");
-        exit(1);
-    }
-    CurrentSystem.name = sysinfo->sysname;
-    CurrentSystem.machine = sysinfo->machine;
-#elif SYSTEM_WINDOWS
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-    CurrentSystem.name = OsNames[Os_Windows];
-	switch (sysinfo.wProcessorArchitecture) {
-        case PROCESSOR_ARCHITECTURE_INTEL: CurrentSystem.machine = ArchNames[Arch_x86];
-        case PROCESSOR_ARCHITECTURE_AMD64: CurrentSystem.machine = ArchNames[Arch_x86_64];
-        case PROCESSOR_ARCHITECTURE_ARM:   CurrentSystem.machine = ArchNames[Arch_arm];
-        case 12:						   CurrentSystem.machine = ArchNames[Arch_arm64]; // MSDN has 12 as PROCESSOR_ARCHITECTURE_ARM64 but it isn't in our headers
-        default:                           CurrentSystem.machine = ArchNames[Arch_Current]; // should we have an Arch_Unknown?
-	}
-#else
-    CurrentSystem.name = "unknown";
-    CurrentSystem.machine = "unknown";
-#endif
 
-    HaveInitializedDetailsForCurrentSystem = true;
 }
 
+#if SYSTEM_POSIX
+#include "os_unix.c"
+#elif SYSTEM_WINDOWS
+#include "os_win32.c"
+#else
+#include "os_unknown.c"
+#endif
