@@ -31,31 +31,36 @@ extern Type *RawptrType;
 extern Symbol *FalseSymbol;
 extern Symbol *TrueSymbol;
 
-#define TYPE_KINDS                  \
-    FOR_EACH(Invalid, "invalid")    \
-    FOR_EACH(Int, "int")            \
-    FOR_EACH(Float, "float")        \
-    FOR_EACH(Pointer, "pointer")    \
-    FOR_EACH(Array, "array")        \
-    FOR_EACH(Slice, "slice")        \
-    FOR_EACH(Any, "any")            \
-    FOR_EACH(Struct, "struct")      \
-    FOR_EACH(Union, "union")        \
-    FOR_EACH(Enum, "enum")          \
-    FOR_EACH(Function, "function")  \
-    FOR_EACH(Tuple, "tuple")        \
 
 typedef u8 TypeKind;
 enum Enum_TypeKind {
-#define FOR_EACH(kind, ...) TypeKind_##kind,
-    TYPE_KINDS
-#undef FOR_EACH
+    TypeKind_Invalid,
+    TypeKind_Int,
+    TypeKind_Float,
+    TypeKind_Pointer,
+    TypeKind_Array,
+    TypeKind_Slice,
+    TypeKind_Any,
+    TypeKind_Struct,
+    TypeKind_Union,
+    TypeKind_Enum,
+    TypeKind_Function,
+    TypeKind_Tuple,
     NUM_TYPE_KINDS,
 };
 
-#define FOR_EACH(kind, ...) typedef struct Type_##kind Type_##kind;
-    TYPE_KINDS
-#undef FOR_EACH
+typedef struct Type_Invalid Type_Invalid;
+typedef struct Type_Int Type_Int;
+typedef struct Type_Float Type_Float;
+typedef struct Type_Pointer Type_Pointer;
+typedef struct Type_Array Type_Array;
+typedef struct Type_Slice Type_Slice;
+typedef struct Type_Any Type_Any;
+typedef struct Type_Struct Type_Struct;
+typedef struct Type_Union Type_Union;
+typedef struct Type_Enum Type_Enum;
+typedef struct Type_Function Type_Function;
+typedef struct Type_Tuple Type_Tuple;
 
 typedef u8 TypeFlag;
 #define TypeFlag_None 0

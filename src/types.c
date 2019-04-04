@@ -44,9 +44,18 @@ Symbol *FalseSymbol;
 Symbol *TrueSymbol;
 
 const char *TypeKindDescriptions[] = {
-#define FOR_EACH(kind, text) [TypeKind_##kind] = "" #text "",
-    TYPE_KINDS
-#undef FOR_EACH
+    [TypeKind_Invalid] = "invalid",
+    [TypeKind_Int] = "int",
+    [TypeKind_Float] = "float",
+    [TypeKind_Pointer] = "pointer",
+    [TypeKind_Array] = "array",
+    [TypeKind_Slice] = "slice",
+    [TypeKind_Any] = "any",
+    [TypeKind_Struct] = "struct",
+    [TypeKind_Union] = "union",
+    [TypeKind_Enum] = "enum",
+    [TypeKind_Function] = "function",
+    [TypeKind_Tuple] = "tuple",
 };
 
 const char *DescribeTypeKind(TypeKind kind) {
