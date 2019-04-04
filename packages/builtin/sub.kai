@@ -1,0 +1,6 @@
+
+sub :: fn(x: i32, y: i32) -> i32 {
+    z := x - y
+    return z
+}
+

@@ -1314,143 +1314,200 @@ DynamicArray(Stmt *) parseStmtsUntilEof(Parser *p) {
     return stmts;
 }
 
-Stmt **parseAllStmts(Package *pkg, const char *code, u64 *numStmts) {
+void parseAllStmts(Package *pkg, const char *code) {
     Lexer lexer = MakeLexer(code, pkg);
     Token tok = NextToken(&lexer);
     Parser parser = {lexer, .tok = tok, pkg};
-
-    size_t numExistingStmts = ArrayLen(pkg->stmts);
 
     while (!isTokenEof(&parser)) {
         Stmt *stmt = parseStmt(&parser);
         ArrayPush(pkg->stmts, stmt);
     }
-
-    *numStmts = ArrayLen(pkg->stmts) - numExistingStmts;
-    return &pkg->stmts[numExistingStmts];
 }
 
-void parseSourceCode(Package *pkg, const char *code) {
-    u64 numStmts;
-    Stmt **stmts = parseAllStmts(pkg, code, &numStmts);
-
-    if (HasErrors(pkg)) {
-        return;
-    }
-
-    for(size_t i = 0; i < numStmts; i++) {
-        Decl *decl = (Decl *) stmts[i];
-        Symbol *symbol;
-
-        switch (decl->kind) {
-            case StmtDeclKind_Constant: {
-                decl->owningScope = pkg->scope;
-                // Declare all names despite only supporting single declaration for Constants
-                size_t numNames = ArrayLen(decl->Constant.names);
-                for (size_t i = 0; i < numNames; i++) {
-                    declareSymbol(pkg, pkg->scope, decl->Constant.names[i]->Ident.name, &symbol, decl);
-                    symbol->kind = SymbolKind_Constant;
-                    symbol->state = SymbolState_Unresolved;
-                    symbol->flags |= SymbolFlag_Global;
-                    symbol->decl = decl;
-                }
-                break;
-            }
-            case StmtDeclKind_Variable: {
-                decl->owningScope = pkg->scope;
-                size_t numNames = ArrayLen(decl->Variable.names);
-                for (size_t i = 0; i < numNames; i++) {
-                    declareSymbol(pkg, pkg->scope, decl->Variable.names[i]->Ident.name, &symbol, decl);
-                    symbol->kind = SymbolKind_Variable;
-                    symbol->state = SymbolState_Unresolved;
-                    symbol->flags |= SymbolFlag_Global;
-                    symbol->decl = decl;
-                }
-                break;
-            }
-            case StmtDeclKind_Foreign: {
-                decl->owningScope = pkg->scope;
-                declareSymbol(pkg, pkg->scope, decl->Foreign.name, &symbol, decl);
-                symbol->kind = decl->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+void declareDecl(Package *pkg, Decl *decl) {
+    Symbol *symbol;
+    switch (decl->kind) {
+        case StmtDeclKind_Constant: {
+            decl->owningScope = pkg->scope;
+            // Declare all names despite only supporting single declaration for Constants
+            size_t numNames = ArrayLen(decl->Constant.names);
+            for (size_t i = 0; i < numNames; i++) {
+                declareSymbol(pkg, pkg->scope, decl->Constant.names[i]->Ident.name, &symbol, decl);
+                symbol->kind = SymbolKind_Constant;
                 symbol->state = SymbolState_Unresolved;
                 symbol->flags |= SymbolFlag_Global;
                 symbol->decl = decl;
-                break;
             }
-            case StmtDeclKind_ForeignBlock: {
-                decl->owningScope = pkg->scope;
-                Decl_ForeignBlock block = decl->ForeignBlock;
-                size_t len = ArrayLen(block.members);
-                for (size_t i = 0; i < len; i++) {
-                    Decl_ForeignBlockMember *it = &block.members[i];
-                    declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
-                    symbol->kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
-                    symbol->state = SymbolState_Unresolved;
-                    symbol->flags |= SymbolFlag_Global;
-                    symbol->decl = decl;
-                    it->symbol = symbol;
-                    symbol = NULL;
-                }
-                break;
-            }
-
-            case StmtDeclKind_Import: {
-                decl->owningScope = pkg->scope;
-                // TODO: To properly support out of order declarations things we will need to re-evaluate how we
-                //  evaluate imports. Because the code will potentially have to run through the entire compiler pipeline
-                //  before a constant string may be generated. Only then can we 'infer' the name from the import.
-                // For now we will just use the alias
-                //  -vdka August 2018
-                declareSymbol(pkg, pkg->scope, decl->Import.alias, &symbol, decl);
-                symbol->type = FileType;
-                symbol->kind = SymbolKind_Import;
-                symbol->state = SymbolState_Resolved;
+            break;
+        }
+        case StmtDeclKind_Variable: {
+            decl->owningScope = pkg->scope;
+            size_t numNames = ArrayLen(decl->Variable.names);
+            for (size_t i = 0; i < numNames; i++) {
+                declareSymbol(pkg, pkg->scope, decl->Variable.names[i]->Ident.name, &symbol, decl);
+                symbol->kind = SymbolKind_Variable;
+                symbol->state = SymbolState_Unresolved;
                 symbol->flags |= SymbolFlag_Global;
                 symbol->decl = decl;
-                decl->Import.symbol = symbol;
-
-                decl->Import.symbol->backendUserdata = ImportPackage(decl->Import.path->LitString.val, pkg);
-                break;
             }
+            break;
+        }
+        case StmtDeclKind_Foreign: {
+            decl->owningScope = pkg->scope;
+            declareSymbol(pkg, pkg->scope, decl->Foreign.name, &symbol, decl);
+            symbol->kind = decl->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+            symbol->state = SymbolState_Unresolved;
+            symbol->flags |= SymbolFlag_Global;
+            symbol->decl = decl;
+            break;
+        }
+        case StmtDeclKind_ForeignBlock: {
+            decl->owningScope = pkg->scope;
+            Decl_ForeignBlock block = decl->ForeignBlock;
+            size_t len = ArrayLen(block.members);
+            for (size_t i = 0; i < len; i++) {
+                Decl_ForeignBlockMember *it = &block.members[i];
+                declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
+                symbol->kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+                symbol->state = SymbolState_Unresolved;
+                symbol->flags |= SymbolFlag_Global;
+                symbol->decl = decl;
+                it->symbol = symbol;
+                symbol = NULL;
+            }
+            break;
+        }
+        case StmtDeclKind_Import: {
+            decl->owningScope = pkg->scope;
+            // TODO: To properly support out of order declarations things we will need to re-evaluate how we
+            //  evaluate imports. Because the code will potentially have to run through the entire compiler pipeline
+            //  before a constant string may be generated. Only then can we 'infer' the name from the import.
+            // For now we will just use the alias
+            //  -vdka August 2018
+            declareSymbol(pkg, pkg->scope, decl->Import.alias, &symbol, decl);
+            symbol->type = FileType;
+            symbol->kind = SymbolKind_Import;
+            symbol->state = SymbolState_Resolved;
+            symbol->flags |= SymbolFlag_Global;
+            symbol->decl = decl;
+            decl->Import.symbol = symbol;
+            decl->Import.symbol->backendUserdata = ImportPackage(decl->Import.path->LitString.val, pkg);
+            break;
+        }
+        default:
+            break;
+    }
+}
 
-            default:
-                break;
+Symbol *declare_package_symbol(Package *pkg, const char *name, SymbolKind kind, SymbolState state,
+                               Decl *decl)
+{
+    Symbol *symbol;
+    decl->owningScope = pkg->scope;
+    declareSymbol(pkg, pkg->scope, name, &symbol, decl);
+    symbol->kind = kind;
+    symbol->state = state;
+    symbol->flags = SymbolFlag_Global;
+    symbol->decl = decl;
+    return symbol;
+}
+
+void declare_package_decls(Package *pkg) {
+    u64 num_stmts = ArrayLen(pkg->stmts);
+    for (u64 i = 0; i < num_stmts; i++) {
+        Decl *decl = (Decl *) pkg->stmts[i];
+        decl->owningScope = pkg->scope;
+        switch (decl->kind) {
+        case DeclKind_Constant: {
+            size_t numNames = ArrayLen(decl->Constant.names);
+            for (size_t i = 0; i < numNames; i++) {
+                const char *name = decl->Constant.names[i]->Ident.name;
+                declare_package_symbol(pkg, name, SymbolKind_Constant, SymbolState_Unresolved,
+                                       decl);
+            }
+            break;
+        }
+        case DeclKind_Variable: {
+            size_t numNames = ArrayLen(decl->Constant.names);
+            for (size_t i = 0; i < numNames; i++) {
+                const char *name = decl->Variable.names[i]->Ident.name;
+                declare_package_symbol(pkg, name, SymbolKind_Variable, SymbolState_Unresolved,
+                                       decl);
+            }
+            break;
+        }
+        case DeclKind_Foreign: {
+            SymbolKind kind = decl->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+            declare_package_symbol(pkg, decl->Foreign.name, kind, SymbolState_Unresolved, decl);
+            break;
+        }
+        case DeclKind_ForeignBlock: {
+            Decl_ForeignBlock block = decl->ForeignBlock;
+            size_t len = ArrayLen(block.members);
+            for (size_t i = 0; i < len; i++) {
+                Decl_ForeignBlockMember *it = &block.members[i];
+                SymbolKind kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+                it->symbol = declare_package_symbol(pkg, it->name, kind, SymbolState_Unresolved, decl);
+            }
+            break;
+        }
+        case DeclKind_Import: {
+            Symbol *symbol = declare_package_symbol(pkg, decl->Import.alias,
+                                                    SymbolKind_Import, SymbolState_Resolved, decl);
+            symbol->type = FileType;
+            decl->Import.symbol = symbol;
+            const char *path = decl->Import.path->LitString.val;
+            decl->Import.symbol->backendUserdata = ImportPackage(path, pkg);
+            break;
+        }
         }
     }
 }
 
-void parseSource(Source *source) {
-    if (source->parsed) return;
-    source->code = ReadEntireFile(source->fullpath);
-    if (!source->code) {
-        ReportError(source->package, FatalError, (SourceRange){ source->path }, "Failed to read source file");
-        return;
-    }
-
-    if (compiler.flags.verbose) printf("Parsing file %s\n", source->path);
-    parseSourceCode(source->package, source->code);
-    source->parsed = true;
-
-    for (size_t i = 0; i < source->package->numSources; i++) {
-        if (!source->package->sources[i].parsed) return;
-    }
-
+void queue_checking(Package *pkg) {
     // All of the files in the package have been parsed. We are now ready for checking.
-
-    Package *package = source->package;
-
     DynamicArray(CheckerInfo) checkerInfo = NULL;
-    ArrayFit(checkerInfo, package->astIdCount + 1);
-    memset(checkerInfo, 0, sizeof(CheckerInfo) * (package->astIdCount + 1));
-    package->checkerInfo = checkerInfo;
+    ArrayFit(checkerInfo, pkg->astIdCount + 1);
+    memset(checkerInfo, 0, sizeof(CheckerInfo) * (pkg->astIdCount + 1));
+    pkg->checkerInfo = checkerInfo;
 
-    size_t len = ArrayLen(package->stmts);
+    size_t len = ArrayLen(pkg->stmts);
     for (int i = 0; i < len; i++) {
         CheckerWork *work = ArenaAlloc(&compiler.checking_queue.arena, sizeof(CheckerWork));
-        work->package = package;
-        work->stmt = package->stmts[i];
+        work->package = pkg;
+        work->stmt = pkg->stmts[i];
         QueuePushBack(&compiler.checking_queue, work);
     }
+}
+
+u64 source_memory_usage = 0;
+
+bool parse_package(Package *pkg) {
+    DirectoryIter iter;
+    for (DirectoryIterOpen(&iter, pkg->fullpath); iter.valid; DirectoryIterNext(&iter)) {
+        if (iter.isDirectory || iter.name[0] == '.') continue;
+        char name[MAX_PATH];
+        path_copy(name, iter.name);
+        char *ext = path_ext(name);
+        if (ext == name || strcmp(ext, "kai") != 0) continue;
+        ext[-1] = '\0';
+        char path[MAX_PATH];
+        path_copy(path, iter.base);
+        path_join(path, iter.name);
+        path_absolute(path);
+        const char *code = ReadEntireFile(path);
+        if (!code) {
+            ReportError(pkg, FatalError, (SourceRange){ path }, "Failed to read source file");
+            return false;
+        }
+        source_memory_usage += strlen(code);
+        parseAllStmts(pkg, code);
+    }
+    if (HasErrors(pkg)) return false;
+    declare_package_decls(pkg);
+    queue_checking(pkg);
+    return !HasErrors(pkg);
 }
 
 #undef NextToken

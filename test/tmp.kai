@@ -1,12 +1,14 @@
 
+#import "builtin" b
+#import "libc" libc
+
 add :: fn(x: i32, y: i32) -> i32 {
     z := x + y
-    z = z + 5
     return z
 }
 
-
 main :: fn() -> i32 {
-    return add(5, 8)
+	libc.printf("%d\n", 234)
+    return b.mul(5, 8)
 }
 

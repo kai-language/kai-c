@@ -30,6 +30,6 @@ struct CompilerFlags {
 
 void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv);
 void InitUnsetFlagsToDefaults(void);
-void PrintUsage(void);
+void PrintUsage(const char *prog_name);
 
 #endif

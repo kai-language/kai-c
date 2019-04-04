@@ -167,7 +167,7 @@ void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv) {
             break;
         }
     }
-    compiler->flags = parsed_flags;
+    *compiler = parsed_compiler;
     *pargc = argc - i;
     *pargv = argv + i;
     if (argc - i == 1) {
@@ -175,7 +175,8 @@ void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv) {
     }
 }
 
-void PrintUsage() {
+void PrintUsage(const char *prog_name) {
+    printf("Usage: %s [flags] <input>\n", prog_name);
     size_t nFlags = sizeof(CLIFlags) / sizeof(*CLIFlags);
     for (size_t i = 0; i < nFlags; i++) {
         char invokation[40];

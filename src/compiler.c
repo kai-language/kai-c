@@ -151,11 +151,7 @@ Package *ImportPackage(const char *path, Package *importer) {
         memcpy(package->sources, files, sizeof *files * package->numSources);
 
         ArrayFree(files);
-
-        // Queue all files
-        for (u64 i = 0; i < package->numSources; i++) {
-            QueuePushBack(&compiler.parsing_queue, &package->sources[i]);
-        }
+        QueuePushBack(&compiler.parsing_queue, package);
     }
     return package;
 }
@@ -224,7 +220,7 @@ void InitCompiler(Compiler *compiler, int argc, const char **argv) {
     }
     if (argc != 1 || compiler->flags.help) {
         printf("Usage: %s [flags] <input>\n", prog_name);
-        PrintUsage();
+        PrintUsage(argv[0]);
         exit(1);
     }
 
@@ -244,9 +240,9 @@ bool Compile(Compiler *compiler) {
     }
 
     for (;;) {
-        Source *source = QueuePopFront(&compiler->parsing_queue);
-        if (source) {
-            parseSource(source);
+        Package *pkg = QueuePopFront(&compiler->parsing_queue);
+        if (pkg) {
+            parse_package(pkg);
             continue;
         }
 
@@ -254,6 +250,7 @@ bool Compile(Compiler *compiler) {
         if (work) {
             if (compiler->flags.verbose) printf("Checking package %s\n", work->package->path);
             CheckerContext ctx = { .scope = work->package->scope };
+            checkStmt(work->stmt, &ctx, work->package);
             if (ctx.mode == ExprMode_Unresolved) {
                 QueuePushBack(&compiler->checking_queue, work);
             }
@@ -273,7 +270,9 @@ bool Compile(Compiler *compiler) {
     }
     if (sawErrors) return false;
 
+#if !TEST
     CodegenLLVM(mainPackage);
+#endif
 
     if (compiler->target_output != OutputType_Exec || compiler->flags.emitHeader)
         CodegenCHeader(mainPackage);
