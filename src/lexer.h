@@ -1,63 +1,59 @@
-#define TOKEN_KINDS \
-    FOR_EACH(Eof, "EOF") \
-    FOR_EACH(Comment, "comment") \
-    FOR_EACH(Ident, "identifier") \
-    FOR_EACH(Directive, "directive") \
-    FOR_EACH(Int, "int") \
-    FOR_EACH(Float, "float") \
-    FOR_EACH(String, "string") \
-    FOR_EACH(Add, "+") \
-    FOR_EACH(Sub, "-") \
-    FOR_EACH(Mul, "*") \
-    FOR_EACH(Div, "/") \
-    FOR_EACH(Rem, "%") \
-    FOR_EACH(And, "&") \
-    FOR_EACH(Or, "|") \
-    FOR_EACH(Xor, "^") \
-    FOR_EACH(Shl, "<<") \
-    FOR_EACH(Shr, ">>") \
-    FOR_EACH(AddAssign, "+=") \
-    FOR_EACH(SubAssign, "-=") \
-    FOR_EACH(MulAssign, "*=") \
-    FOR_EACH(DivAssign, "/=") \
-    FOR_EACH(RemAssign, "%=") \
-    FOR_EACH(AndAssign, "&=") \
-    FOR_EACH(OrAssign, "|=") \
-    FOR_EACH(XorAssign, "^=") \
-    FOR_EACH(ShlAssign, "<<=") \
-    FOR_EACH(ShrAssign, ">>=") \
-    FOR_EACH(Land, "&&") \
-    FOR_EACH(Lor, "||") \
-    FOR_EACH(Lss, "<") \
-    FOR_EACH(Gtr, ">") \
-    FOR_EACH(Not, "!") \
-    FOR_EACH(BNot, "~") \
-    FOR_EACH(Eql, "==") \
-    FOR_EACH(Neq, "!=") \
-    FOR_EACH(Leq, "<=") \
-    FOR_EACH(Geq, ">=") \
-    FOR_EACH(Assign, "=") \
-    FOR_EACH(Ellipsis, "..") \
-    FOR_EACH(Dollar, "$") \
-    FOR_EACH(Question, "?") \
-    FOR_EACH(RetArrow, "->") \
-    FOR_EACH(Lparen, "(") \
-    FOR_EACH(Lbrack, "[") \
-    FOR_EACH(Lbrace, "{") \
-    FOR_EACH(Rparen, ")") \
-    FOR_EACH(Rbrack, "]") \
-    FOR_EACH(Rbrace, "}") \
-    FOR_EACH(Comma, ",") \
-    FOR_EACH(Dot, ".") \
-    FOR_EACH(Colon, ":") \
-    FOR_EACH(Terminator, ";") \
-    FOR_EACH(Keyword, "")
 
 typedef u8 TokenKind;
 enum Enum_TokenKind {
-#define FOR_EACH(e, s) TK_##e,
-    TOKEN_KINDS
-#undef FOR_EACH
+    TK_Eof,
+    TK_Comment,
+    TK_Ident,
+    TK_Directive,
+    TK_Int,
+    TK_Float,
+    TK_String,
+    TK_Add,
+    TK_Sub,
+    TK_Mul,
+    TK_Div,
+    TK_Rem,
+    TK_And,
+    TK_Or,
+    TK_Xor,
+    TK_Shl,
+    TK_Shr,
+    TK_AddAssign,
+    TK_SubAssign,
+    TK_MulAssign,
+    TK_DivAssign,
+    TK_RemAssign,
+    TK_AndAssign,
+    TK_OrAssign,
+    TK_XorAssign,
+    TK_ShlAssign,
+    TK_ShrAssign,
+    TK_Land,
+    TK_Lor,
+    TK_Lss,
+    TK_Gtr,
+    TK_Not,
+    TK_BNot,
+    TK_Eql,
+    TK_Neq,
+    TK_Leq,
+    TK_Geq,
+    TK_Assign,
+    TK_Ellipsis,
+    TK_Dollar,
+    TK_Question,
+    TK_RetArrow,
+    TK_Lparen,
+    TK_Lbrack,
+    TK_Lbrace,
+    TK_Rparen,
+    TK_Rbrack,
+    TK_Rbrace,
+    TK_Comma,
+    TK_Dot,
+    TK_Colon,
+    TK_Terminator,
+    TK_Keyword,
     NUM_TOKEN_KINDS,
 };
 
