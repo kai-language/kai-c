@@ -335,6 +335,10 @@ void setSelfForTestCase(XCTestCase *testCase) {
     test_checkStmtSwitch();
 }
 
+- (void)test_checkImportOfBuiltin {
+    test_checkImportOfBuiltin();
+}
+
 @end
 
 //

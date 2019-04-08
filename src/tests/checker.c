@@ -42,13 +42,14 @@ void test_canCoerce() {
     ASSERT(canCoerce(U64Type, I8Type, &ctx));
 }
 
-void reset_package(Package *package);
+void reset_init_package(Package *package);
 Stmt *reset_parse_check_upto_last(Package *package, const char *code) {
+    reset_init_package(package);
     ArenaFree(&compiler.parsing_queue.arena);
     ArenaFree(&compiler.checking_queue.arena);
 
     InitTestCompiler(&compiler, NULL);
-    reset_package(package);
+    reset_init_package(package);
 
     Source source = {":test:", ":test:", code};
     package->current_source = &source;
@@ -68,14 +69,25 @@ Stmt *reset_parse_check_upto_last(Package *package, const char *code) {
     return stmt;
 }
 
-void reset_package(Package *package) {
-    ArrayFree(package->diagnostics.errors);
-    ArrayFree(package->stmts);
-    ArrayFree(package->symbols);
-    ArenaFree(&package->arena);
-    ArenaFree(&package->diagnostics.arena);
+void reset_parse_check_all(Package *package, const char *code) {
+    Stmt *stmt = reset_parse_check_upto_last(package, code);
+    CheckerContext ctx = { package->scope };
+    checkStmt(stmt, &ctx, package);
+}
+
+void reset_init_package(Package *package) {
+    if (package) {
+        ArrayFree(package->diagnostics.errors);
+        ArrayFree(package->stmts);
+        ArrayFree(package->symbols);
+        ArenaFree(&package->arena);
+        ArenaFree(&package->diagnostics.arena);
+    }
     memset(package, 0, sizeof *package);
     package->scope = pushScope(package, compiler.builtin_package.scope);
+    package->path = "test";
+    package->fullpath = "test";
+    package->searchPath = "test";
 }
 
 void test_checkConstantDeclarations() {
@@ -115,7 +127,7 @@ void test_coercionsAreMarked() {
     ASSERT(coerce & ConversionKindSame);
     ASSERT(coerce & ConversionFlag_Extend);
 
-    reset_package(&package);
+    reset_init_package(&package);
 }
 
 void test_checkTypeFunction() {
@@ -476,7 +488,7 @@ info = GetExprInfo(&package, expr)->BasicExpr
 }
 
 Type *typeFromParsing(Package *package, const char *code) {
-    reset_package(package);
+    reset_init_package(package);
     Source source = {":test:", ":test:", code};
     package->current_source = &source;
     parse_test_package(package);
@@ -747,5 +759,9 @@ info = GetStmtInfo(&package, stmt)->Switch
     ASSERT(info.breakTarget->kind == SymbolKindLabel);
 }
 
-#undef pkg
+void test_checkImportOfBuiltin() {
+    Package package = {0};
+    reset_parse_check_all(&package, "#import \"builtin\" b;");
+    ASSERT(!package.diagnostics.errors);
+}
 #endif
