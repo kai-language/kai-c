@@ -4,16 +4,7 @@
 
 Compiler compiler;
 
-Package builtinPackage;
-
-Map packageMap;
-DynamicArray(Package*) packages;
-
 Scope *pushScope(Package *pkg, Scope *parent);
-
-const char *static_global_search_paths[MAX_GLOBAL_SEARCH_PATHS];
-const char **global_search_paths = static_global_search_paths;
-int num_global_search_paths;
 
 bool is_package_path(const char *package_path, const char *search_path) {
     char path[MAX_PATH];
@@ -27,6 +18,7 @@ bool is_package_path(const char *package_path, const char *search_path) {
             return true;
         }
     }
+    DirectoryIterClose(&it);
     return false;
 }
 
@@ -40,9 +32,9 @@ bool resolve_package_path(char dest[MAX_PATH], const char *path, Package *import
     }
 
     // Check the global package search path
-    for (int i = 0; i < num_global_search_paths; i++) {
-        if (is_package_path(path, global_search_paths[i])) {
-            path_copy(dest, global_search_paths[i]);
+    for (int i = 0; i < compiler.num_global_search_paths; i++) {
+        if (is_package_path(path, compiler.global_search_paths[i])) {
+            path_copy(dest, compiler.global_search_paths[i]);
             path_join(dest, path);
             return true;
         }
@@ -63,14 +55,12 @@ void package_search_path(char dest[MAX_PATH], const char *path) {
 void add_global_search_path(Compiler *compiler, const char *path) {
     if (compiler->flags.verbose) printf("Adding global search path %s\n", path);
     compiler->global_search_paths[compiler->num_global_search_paths++] = StrIntern(path);
-    global_search_paths[num_global_search_paths++] = StrIntern(path);
 }
 
 void InitGlobalSearchPaths(Compiler *compiler) {
     add_global_search_path(compiler, ".");
     add_global_search_path(compiler, "vendor");
     add_global_search_path(compiler, "packages");
-
     const char *kaipath_env = getenv("KAIPATH");
     if (kaipath_env) {
         char path[MAX_PATH];
@@ -82,75 +72,60 @@ void InitGlobalSearchPaths(Compiler *compiler) {
     }
 }
 
-Package *ImportPackage(const char *path, Package *importer) {
+void read_package_source_files(Package *pkg) {
+    DirectoryIter iter;
+    for (DirectoryIterOpen(&iter, pkg->fullpath); iter.valid; DirectoryIterNext(&iter)) {
+        if (iter.isDirectory || iter.name[0] == '.') continue;
+        char name[MAX_PATH];
+        path_copy(name, iter.name);
+        char *ext = path_ext(name);
+        if (ext == name || strcmp(ext, "kai") != 0) continue;
+        ext[-1] = '\0';
+        Source *source = ArenaAlloc(&pkg->arena, sizeof *source);
+        path_copy(source->name, name);
 
-    char package_path[MAX_PATH];
-    if (!resolve_package_path(package_path, path, importer)) {
-        if (compiler.flags.verbose) {
-            printf("Failed to resolve package path for %s\n", path);
+        path_copy(source->path, iter.base);
+        path_join(source->path, iter.name);
+        path_absolute(source->path);
+
+        source->code = ReadEntireFile(source->path);
+        if (!source->code) {
+            ReportError(pkg, FatalError, (SourceRange){ source->path }, "Failed to read source file");
+            return;
         }
+        source_memory_usage += strlen(source->code);
+        parseAllStmts(pkg, source->code);
+    }
+    DirectoryIterClose(&iter);
+}
+
+Package *import_package(const char *path, Package *importer) {
+    char package_path[MAX_PATH];
+    path_copy(package_path, path);
+    if (!resolve_package_path(package_path, path, importer)) {
+        if (compiler.flags.verbose) printf("Failed to resolve package path for %s\n", path);
         return NULL;
     }
-
-    char absolutePath[MAX_PATH];
-    char *result = AbsolutePath(package_path, absolutePath);
-    if (!result) {
+    if (!path_absolute(package_path)) {
         if (compiler.flags.verbose) printf("Failed to resolve absolute path for %s\n", path);
         return NULL;
     }
-
-    const char *fullpath = StrIntern(absolutePath);
-    Package *package = MapGet(&packageMap, fullpath);
-    if (!package) { // First time we have seen this package
-        package = Calloc(DefaultAllocator, 1, sizeof(Package));
-        package->path = StrIntern(package_path);
+    const char *fullpath = StrIntern(package_path);
+    Package *package = MapGet(&compiler.package_map, fullpath);
+    if (!package) { // first time seeing this package
+        package = Calloc(DefaultAllocator, 1, sizeof *package);
+        package->path = path;
         package->fullpath = fullpath;
-        package->scope = pushScope(package, builtinPackage.scope);
+        package->scope = pushScope(package, compiler.builtin_package.scope);
 
-        package->searchPath = StrIntern(package_path);
-        char searchPath[MAX_PATH];
-        package_search_path(searchPath, package_path);
-        package->searchPath = StrIntern(searchPath);
-        if (compiler.flags.verbose) {
-            printf("Importing %s\n", package->path);
-            printf("  Search Path for package is %s\n", package->searchPath);
-        }
+        char search_path[MAX_PATH];
+        package_search_path(search_path, fullpath);
+        package->searchPath = StrIntern(search_path);
+        if (compiler.flags.verbose) printf("Importing %s\n", package->path);
 
-        // Add the package to the package map.
-        MapSet(&packageMap, package->fullpath, package);
-        ArrayPush(packages, package);
+        MapSet(&compiler.package_map, fullpath, package);
+        ArrayPush(compiler.packages, package);
 
-        DynamicArray(Source) files = NULL;
-
-        // Discover all files
-        DirectoryIter it;
-        for (DirectoryIterOpen(&it, fullpath); it.valid; DirectoryIterNext(&it)) {
-            Source file = {0};
-            char name[MAX_PATH];
-            path_copy(name, it.name);
-            char *ext = path_ext(name);
-            if (ext == name || strcmp(ext, "kai") != 0) {
-                continue;
-            }
-
-            char path[MAX_PATH];
-            path_copy(path, it.base);
-            path_join(path, it.name);
-            file.path = StrIntern(path);
-
-            path_absolute(path);
-            file.fullpath = StrIntern(path);
-
-            file.package = package;
-            file.parsed = false;
-            ArrayPush(files, file);
-        }
-
-        package->numSources = ArrayLen(files);
-        package->sources = ArenaAlloc(&package->arena, sizeof *files * package->numSources);
-        memcpy(package->sources, files, sizeof *files * package->numSources);
-
-        ArrayFree(files);
         QueuePushBack(&compiler.parsing_queue, package);
     }
     return package;
@@ -212,7 +187,6 @@ void outputVersionAndBuildInfo() {
 
 void InitCompiler(Compiler *compiler, int argc, const char **argv) {
     const char *prog_name = argv[0];
-
     ParseFlags(compiler, &argc, &argv);
     if (compiler->flags.version) {
         outputVersionAndBuildInfo();
@@ -223,17 +197,17 @@ void InitCompiler(Compiler *compiler, int argc, const char **argv) {
         PrintUsage(argv[0]);
         exit(1);
     }
-
     ConfigureDefaults(compiler);
     InitBuiltinTypes(compiler);
     InitGlobalSearchPaths(compiler);
+    InitKeywords();
 }
 
 bool Compile(Compiler *compiler) {
-    Package *builtins = ImportPackage("builtin", NULL);
+    Package *builtins = import_package("builtin", NULL);
     if (!builtins) printf("warning: Failed to compile builtin package\n");
 
-    Package *mainPackage = ImportPackage(compiler->input_name, NULL);
+    Package *mainPackage = import_package(compiler->input_name, NULL);
     if (!mainPackage) {
         printf("error: Failed to compile '%s'\n", compiler->input_name);
         exit(1);
@@ -261,10 +235,10 @@ bool Compile(Compiler *compiler) {
     }
 
     b32 sawErrors = false;
-    size_t numPackages = ArrayLen(packages);
+    size_t numPackages = ArrayLen(compiler->packages);
     for (size_t i = 0; i < numPackages; i++) {
-        if (HasErrors(packages[i])) {
-            OutputReportedErrors(packages[i]);
+        if (HasErrors(compiler->packages[i])) {
+            OutputReportedErrors(compiler->packages[i]);
             sawErrors = true;
         }
     }
@@ -273,6 +247,9 @@ bool Compile(Compiler *compiler) {
 #if !TEST
     CodegenLLVM(mainPackage);
 #endif
+
+    if (compiler->flags.verbose)
+        printf("Source memory usage = %.2f kB\n", (float) source_memory_usage / 1024.f);
 
     if (compiler->target_output != OutputType_Exec || compiler->flags.emitHeader)
         CodegenCHeader(mainPackage);

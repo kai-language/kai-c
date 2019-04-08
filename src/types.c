@@ -44,18 +44,18 @@ Symbol *FalseSymbol;
 Symbol *TrueSymbol;
 
 const char *TypeKindDescriptions[] = {
-    [TypeKind_Invalid] = "invalid",
-    [TypeKind_Int] = "int",
-    [TypeKind_Float] = "float",
-    [TypeKind_Pointer] = "pointer",
-    [TypeKind_Array] = "array",
-    [TypeKind_Slice] = "slice",
-    [TypeKind_Any] = "any",
-    [TypeKind_Struct] = "struct",
-    [TypeKind_Union] = "union",
-    [TypeKind_Enum] = "enum",
-    [TypeKind_Function] = "function",
-    [TypeKind_Tuple] = "tuple",
+    [TypeKindInvalid] = "invalid",
+    [TypeKindInt] = "int",
+    [TypeKindFloat] = "float",
+    [TypeKindPointer] = "pointer",
+    [TypeKindArray] = "array",
+    [TypeKindSlice] = "slice",
+    [TypeKindAny] = "any",
+    [TypeKindStruct] = "struct",
+    [TypeKindUnion] = "union",
+    [TypeKindEnum] = "enum",
+    [TypeKindFunction] = "function",
+    [TypeKindTuple] = "tuple",
 };
 
 const char *DescribeTypeKind(TypeKind kind) {
@@ -167,7 +167,7 @@ Map internPointerTypes;
 Type *NewTypePointer(TypeFlag flags, Type *pointeeType) {
     Type *type = MapGet(&internPointerTypes, pointeeType);
     if (!type) {
-        type = AllocType(TypeKind_Pointer);
+        type = AllocType(TypeKindPointer);
         type->Width = RawptrType->Width;
         type->Align = RawptrType->Align;
         type->Flags = flags;
@@ -182,7 +182,7 @@ Map internSliceTypes;
 Type *NewTypeSlice(TypeFlag flags, Type *elementType)  {
     Type *type = MapGet(&internSliceTypes, elementType);
     if (!type) {
-        type = AllocType(TypeKind_Slice);
+        type = AllocType(TypeKindSlice);
         type->Width = RawptrType->Width;
         type->Flags = flags;
         type->Slice.elementType = elementType;
@@ -210,7 +210,7 @@ Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
         }
     }
     completeType(elementType);
-    Type *type = AllocType(TypeKind_Array);
+    Type *type = AllocType(TypeKindArray);
     ASSERT(length * elementType->Width < UINT32_MAX); // FIXME: Error for oversized arrays
     type->Width = (u32) length * elementType->Width;
     type->Align = elementType->Align;
@@ -260,7 +260,7 @@ Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(
             return type;
         }
     }
-    Type *type = AllocType(TypeKind_Function);
+    Type *type = AllocType(TypeKindFunction);
     type->Width = compiler.target_metrics.Width;
     type->Align = compiler.target_metrics.Align;
     type->Flags = flags;
@@ -282,7 +282,7 @@ Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(
 }
 
 Type *NewTypeTupleFromFunctionResults(TypeFlag flags, Type_Function function) {
-    Type *type = AllocType(TypeKind_Tuple);
+    Type *type = AllocType(TypeKindTuple);
     type->Flags = flags;
 
     type->Tuple.numTypes = function.numResults;
@@ -295,7 +295,7 @@ Type *NewTypeStruct(u32 Align, u32 Width, TypeFlag flags, DynamicArray(TypeField
 
     u32 numMembers = (u32) ArrayLen(members);
 
-    Type *type = AllocType(TypeKind_Struct);
+    Type *type = AllocType(TypeKindStruct);
     type->Align = Align;
     type->Width = Width;
     type->Flags = flags;
@@ -316,7 +316,7 @@ Scope *pushScope(Package *pkg, Scope *parent);
 b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl);
 
 void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Type *type, Val val) {
-    b32 dup = declareSymbol(&builtinPackage, builtinPackage.scope, StrIntern(name), symbol, NULL);
+    b32 dup = declareSymbol(&compiler.builtin_package, compiler.builtin_package.scope, StrIntern(name), symbol, NULL);
     ASSERT(!dup);
     (*symbol)->type = type;
     (*symbol)->val = val;
@@ -328,28 +328,28 @@ void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Ty
 void declareBuiltinType(const char *name, Type *type) {
     name = StrIntern(name);
     Symbol *symbol;
-    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, NULL);
+    declareSymbol(&compiler.builtin_package, compiler.builtin_package.scope, name, &symbol, NULL);
     symbol->state = SymbolState_Resolved;
     symbol->type = type;
-    symbol->kind = SymbolKind_Type;
+    symbol->kind = SymbolKindType;
     type->Symbol = symbol;
 }
 
 void declareBuiltinTypeAlias(const char *name, Type *type, Type *alias) {
     name = StrIntern(name);
     Symbol *symbol;
-    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, NULL);
+    declareSymbol(&compiler.builtin_package, compiler.builtin_package.scope, name, &symbol, NULL);
     symbol->state = SymbolState_Resolved;
     symbol->type = type;
-    symbol->kind = SymbolKind_Type;
+    symbol->kind = SymbolKindType;
     alias->Symbol = symbol;
 }
 
 void InitBuiltinTypes(Compiler *compiler) {
-    builtinPackage.scope = pushScope(&builtinPackage, NULL);
+    compiler->builtin_package.scope = pushScope(&compiler->builtin_package, NULL);
 
 #define TYPE(_global, _name, _kind, _width, _flags) \
-    _global = AllocType(TypeKind_##_kind); \
+    _global = AllocType(TypeKind##_kind); \
     _global->Width = _width; \
     _global->Align = _width; \
     _global->Flags = _flags; \
@@ -407,8 +407,8 @@ void InitBuiltinTypes(Compiler *compiler) {
             exit(1);
     }
 
-    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
-    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
+    declareBuiltinSymbol("false", &FalseSymbol, SymbolKindConstant, BoolType, (Val){.i64 = 0});
+    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKindConstant, BoolType, (Val){.i64 = 1});
 
     RawptrType->Pointer.pointeeType = U8Type;
 
@@ -421,7 +421,7 @@ void InitBuiltinTypes(Compiler *compiler) {
 }
 
 const char *DescribeType(Type *type) {
-    if (!type) return DescribeTypeKind(TypeKind_Invalid);
+    if (!type) return DescribeTypeKind(TypeKindInvalid);
 
     // TODO: Something about aliased type names ie. 'rawptr' aka '*u8'
     if (type->Symbol) {
@@ -433,7 +433,7 @@ const char *DescribeType(Type *type) {
 
 #if TEST
 void test_TypeIntern() {
-    compiler.target_arch = Arch_x86_64;
+    InitTestCompiler(&compiler, "-arch x86_64");
 
     ASSERT(InvalidType);
     ASSERT(AnyType);

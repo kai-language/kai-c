@@ -10,28 +10,28 @@ void cgenType(String *buffer, const char * name, Type *type) {
     b32 appendName = name != NULL;
 
     switch (type->kind) {
-    case TypeKind_Int:
+    case TypeKindInt:
         ArrayPrintf(*buffer, "Kai%s%d", type->Flags & TypeFlag_Signed ? "I" : "U", type->Width);
         break;
 
-    case TypeKind_Float:
+    case TypeKindFloat:
         ArrayPrintf(*buffer, "KaiF%d", type->Width);
         break;
 
-    case TypeKind_Pointer: {
+    case TypeKindPointer: {
         String pointee = NULL;
         cgenType(&pointee, NULL, type->Pointer.pointeeType);
         ArrayPrintf(*buffer, "%s*", pointee);
         ArrayFree(pointee);
     } break;
 
-    case TypeKind_Struct: {
+    case TypeKindStruct: {
         appendName = false;
         ArrayPrintf(*buffer, "struct %s", name ? name : type->Symbol->name);
     } break;
 
 
-    case TypeKind_Array: {
+    case TypeKindArray: {
         appendName = false;
 
         String elementType = NULL;
@@ -80,11 +80,11 @@ void cgenDecl(HeaderContext *ctx, DynamicArray(Expr *) names, Type *type, b32 is
     for (size_t i = 0; i < numNames; i++) {
         Expr_Ident it = names[i]->Ident;
         switch (type->kind) {
-        case TypeKind_Function:
+        case TypeKindFunction:
             cgenFuncPrototype(&ctx->functions, it.name, type);
             break;
 
-        case TypeKind_Struct: {
+        case TypeKindStruct: {
             if (type->Symbol->backendUserdata != HEAD_GENERATED) {
                 ArrayPrintf(ctx->primitiveDecls, "typedef ");
                 cgenType(&ctx->primitiveDecls, it.name, type);
@@ -114,12 +114,12 @@ void cgenDecl(HeaderContext *ctx, DynamicArray(Expr *) names, Type *type, b32 is
 
 void cgenStmt(HeaderContext *ctx, CheckerInfo *info, Stmt *stmt) {
     switch (stmt->kind) {
-        case StmtDeclKind_Constant: {
+        case DeclKindConstant: {
             Decl_Constant decl = stmt->Constant;
             cgenDecl(ctx, decl.names, info[stmt->id].Constant.symbol->type, true);
         } break;
 
-        case StmtDeclKind_Variable: {
+        case DeclKindVariable: {
             Decl_Variable decl = stmt->Variable;
             cgenDecl(ctx, decl.names, info[stmt->id].Variable.symbols[0]->type, false);
         } break;

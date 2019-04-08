@@ -14,18 +14,18 @@ typedef enum Output {
 } Output;
 
 struct CompilerFlags {
-    bool parseComments;
-    bool errorCodes;
-    bool errorColors;
-    bool errorSource;
-    bool verbose;
-    bool version;
-    bool help;
-    bool emitIR;
-    bool emitHeader;
-    bool dumpIR;
-    bool debug;
-    bool link;
+    b32 parseComments;
+    b32 errorCodes;
+    b32 errorColors;
+    b32 errorSource;
+    b32 verbose;
+    b32 version;
+    b32 help;
+    b32 emitIR;
+    b32 emitHeader;
+    b32 dumpIR;
+    b32 debug;
+    b32 link;
 };
 
 void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv);

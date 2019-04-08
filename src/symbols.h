@@ -1,17 +1,17 @@
 
 typedef u8 SymbolKind;
 enum Enum_SymbolKind {
-    SymbolKind_Invalid = 0x0,
+    SymbolKindInvalid = 0x0,
 
-    SymbolKind_Import  = 0x1,
-    SymbolKind_Library = 0x2,
+    SymbolKindImport  = 0x1,
+    SymbolKindLibrary = 0x2,
 
-    SymbolKind_Label   = 0x3,
+    SymbolKindLabel   = 0x3,
 
-    SymbolKind_Type    = 0x4,
+    SymbolKindType    = 0x4,
 
-    SymbolKind_Constant = 0x5,
-    SymbolKind_Variable = 0x6,
+    SymbolKindConstant = 0x5,
+    SymbolKindVariable = 0x6,
 
     SYMBOL_KIND_COUNT,
 };

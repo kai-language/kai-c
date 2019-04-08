@@ -1,10 +1,10 @@
 
 #include <dirent.h>
 
-void path_absolute(char path[MAX_PATH]) {
+char *path_absolute(char path[MAX_PATH]) {
     char rel_path[MAX_PATH];
     path_copy(rel_path, path);
-    realpath(rel_path, path);
+    return realpath(rel_path, path);
 }
 
 void DirectoryIterClose(DirectoryIter *it) {

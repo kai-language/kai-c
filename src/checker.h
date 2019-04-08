@@ -2,34 +2,34 @@
 typedef u8 CheckerInfoKind;
 enum Enum_CheckerInfoKind {
     // None is the zero value and so the default for zero initialized checker info.
-    CheckerInfoKind_None,
-    CheckerInfoKind_Constant,
-    CheckerInfoKind_Variable,
-    CheckerInfoKind_Foreign,
-    CheckerInfoKind_Ident,
-    CheckerInfoKind_Selector,
-    CheckerInfoKind_BasicExpr,
-    CheckerInfoKind_Label,
-    CheckerInfoKind_Goto,
-    CheckerInfoKind_For,
-    CheckerInfoKind_Switch,
-    CheckerinfoKind_Case,
+    CheckerInfoKindNone,
+    CheckerInfoKindConstant,
+    CheckerInfoKindVariable,
+    CheckerInfoKindForeign,
+    CheckerInfoKindIdent,
+    CheckerInfoKindSelector,
+    CheckerInfoKindBasicExpr,
+    CheckerInfoKindLabel,
+    CheckerInfoKindGoto,
+    CheckerInfoKindFor,
+    CheckerInfoKindSwitch,
+    CheckerinfoKindCase,
     NUM_CHECKER_INFO_KINDS,
 };
 
-STATIC_ASSERT(_StmtKind_End <= UINT8_MAX, "enum values overflow storage type");
+STATIC_ASSERT(STMT_KIND_END <= UINT8_MAX, "enum values overflow storage type");
 
 typedef u8 Conversion;
-#define ConversionKind_Mask 0x0F // Lower 3 bits denote the class
-#define ConversionKind_None    0
-#define ConversionKind_Same    1
-#define ConversionKind_FtoI    2
-#define ConversionKind_ItoF    3
-#define ConversionKind_PtoI    4
-#define ConversionKind_ItoP    5
-#define ConversionKind_Bool    6
-#define ConversionKind_Tuple   7 // Information on the conversion can be found on their receiver.
-#define ConversionKind_Any    15
+#define ConversionKindMask 0x0F // Lower 3 bits denote the class
+#define ConversionKindNone    0
+#define ConversionKindSame    1
+#define ConversionKindFtoI    2
+#define ConversionKindItoF    3
+#define ConversionKindPtoI    4
+#define ConversionKindItoP    5
+#define ConversionKindBool    6
+#define ConversionKindTuple   7 // Information on the conversion can be found on their receiver.
+#define ConversionKindAny    15
 
 #define ConversionFlag_Extend 0x10 // 0001
 #define ConversionFlag_Signed 0x20 // 0010
@@ -58,9 +58,9 @@ struct CheckerInfo_Ident {
 };
 
 typedef u8 SelectorKind;
-#define SelectorKind_None   0x0
-#define SelectorKind_Struct 0x1
-#define SelectorKind_Import 0x2
+#define SelectorKindNone   0x0
+#define SelectorKindStruct 0x1
+#define SelectorKindImport 0x2
 
 typedef struct Selector_Struct Selector_Struct;
 struct Selector_Struct {

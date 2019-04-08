@@ -229,20 +229,25 @@ DEBUG_TRAP(); \
         Map members;
     };
 
-    typedef struct Source {
-        const char *path;
-        const char *fullpath;
-        const char *code;
-        struct Package *package;
-        bool parsed;
-    } Source;
+    typedef struct Package Package;
+    typedef struct Source Source;
 
-    typedef struct Package {
+    struct Source {
+        char name[MAX_PATH];
+        char path[MAX_PATH];
+        const char *code;
+    };
+
+    struct Package {
         const char *path;
         const char *fullpath;
         const char *searchPath; // This path is the first path to search for imported by this package
         Source *sources;
         u64 numSources;
+
+        // The source we are currently working on for parsing or lexing
+        Source *current_source;
+
         DiagnosticEngine diagnostics;
         Arena arena;
         DynamicArray(Stmt *) stmts;
@@ -255,7 +260,7 @@ DEBUG_TRAP(); \
         void *backendUserdata;
 
         Scope *scope;
-    } Package;
+    };
 
     typedef union Val {
         b32 b32;

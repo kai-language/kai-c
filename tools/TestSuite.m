@@ -27,8 +27,8 @@ void setSelfForTestCase(XCTestCase *testCase) {
     [self setContinueAfterFailure: false];
 }
 
-- (void)test_isExpr_and_isDecl {
-    test_isExpr_and_isDecl();
+- (void)test_isExpr {
+    test_isExpr();
 }
 
 - (void)test_doesExprAllocate {

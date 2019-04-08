@@ -3,9 +3,10 @@
 #include "compiler.h"
 
 typedef enum CLIFlagKind {
-    CLIFlagKind_Bool,
-    CLIFlagKind_String,
-    CLIFlagKind_Enum,
+    CLIFlagKindBool,
+    CLIFlagKindEnum,
+    CLIFlagKindPath,
+    CLIFlagKindString,
 } CLIFlagKind;
 
 typedef struct CLIFlag {
@@ -20,7 +21,7 @@ typedef struct CLIFlag {
         void *raw;
         char *path;
         int *i;
-        bool *b;
+        b32 *b;
         const char **s;
     } ptr;
 } CLIFlag;
@@ -41,7 +42,6 @@ CompilerFlags default_flags = {
 };
 
 Compiler parsed_compiler;
-CompilerFlags parsed_flags;
 
 static const char *OutputTypeNames[] = {
     "exec",
@@ -50,16 +50,16 @@ static const char *OutputTypeNames[] = {
 };
 
 #define FLAG_BOOL(NAME, SHORT_NAME, PTR, HELP) \
-{ CLIFlagKind_Bool, (NAME), (SHORT_NAME), .ptr.b = &parsed_compiler.PTR, .help = (HELP) }
-
-#define FLAG_STRING(NAME, SHORT_NAME, PTR, ARG_NAME, HELP) \
-{ CLIFlagKind_String, (NAME), (SHORT_NAME), .ptr.s = &parsed_compiler.PTR, .argumentName = (ARG_NAME), .help = (HELP) }
-
-#define FLAG_PATH(NAME, SHORT_NAME, PTR, ARG_NAME, HELP) \
-{ CLIFlagKind_String, (NAME), (SHORT_NAME), .ptr.path = parsed_compiler.PTR, .argumentName = (ARG_NAME), .help = (HELP) }
+{ CLIFlagKindBool, (NAME), (SHORT_NAME), .ptr.b = &parsed_compiler.PTR, .help = (HELP) }
 
 #define FLAG_ENUM(NAME, PTR, OPTIONS, HELP) \
-{ CLIFlagKind_Enum, (NAME), .ptr = &parsed_compiler.PTR, .options = (OPTIONS), .nOptions = sizeof(OPTIONS) / sizeof(*OPTIONS), .help = (HELP) }
+{ CLIFlagKindEnum, (NAME), .ptr = &parsed_compiler.PTR, .options = (OPTIONS), .nOptions = sizeof(OPTIONS) / sizeof(*OPTIONS), .help = (HELP) }
+
+#define FLAG_PATH(NAME, SHORT_NAME, PTR, ARG_NAME, HELP) \
+{ CLIFlagKindPath, (NAME), (SHORT_NAME), .ptr.path = parsed_compiler.PTR, .argumentName = (ARG_NAME), .help = (HELP) }
+
+#define FLAG_STRING(NAME, SHORT_NAME, PTR, ARG_NAME, HELP) \
+{ CLIFlagKindString, (NAME), (SHORT_NAME), .ptr.s = &parsed_compiler.PTR, .argumentName = (ARG_NAME), .help = (HELP) }
 
 CLIFlag CLIFlags[] = {
     FLAG_BOOL("help",    "h",  flags.help,    "Print help information"),
@@ -96,7 +96,7 @@ CLIFlag *FlagForName(const char *name) {
 }
 
 void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv) {
-    parsed_flags = default_flags;
+    compiler->flags = default_flags;
     int argc = *pargc;
     const char **argv = *pargv;
     int i;
@@ -113,25 +113,16 @@ void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv) {
                 name += 3;
             }
             CLIFlag *flag = FlagForName(name);
-            if (!flag || (inverse && flag->kind != CLIFlagKind_Bool)) {
+            if (!flag || (inverse && flag->kind != CLIFlagKindBool)) {
                 printf("Unknown flag %s\n", arg);
                 continue;
             }
             switch (flag->kind) {
-                case CLIFlagKind_Bool:
+                case CLIFlagKindBool:
                     *flag->ptr.b = inverse ? false : true;
                     break;
 
-                case CLIFlagKind_String:
-                    if (i + 1 < argc) {
-                        i++;
-                        *flag->ptr.s = argv[i];
-                    } else {
-                        printf("No value argument after -%s\n", arg);
-                    }
-                    break;
-
-                case CLIFlagKind_Enum: {
+                case CLIFlagKindEnum: {
                     const char *option;
                     if (i + 1 < argc) {
                         i++;
@@ -159,6 +150,24 @@ void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv) {
                     }
                     break;
                 }
+
+                case CLIFlagKindPath:
+                    if (i + 1 < argc) {
+                        i++;
+                        path_copy(flag->ptr.path, argv[i]);
+                    } else {
+                        printf("No value argument after -%s\n", arg);
+                    }
+                    break;
+
+                case CLIFlagKindString:
+                    if (i + 1 < argc) {
+                        i++;
+                        *flag->ptr.s = argv[i];
+                    } else {
+                        printf("No value argument after -%s\n", arg);
+                    }
+                    break;
 
                 default:
                     ASSERT(false);
@@ -191,11 +200,7 @@ void PrintUsage(const char *prog_name) {
         iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, "-%s", flag.name);
 
         switch (flag.kind) {
-            case CLIFlagKind_String:
-                iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, " <%s>", flag.argumentName);
-                break;
-
-            case CLIFlagKind_Enum:
+            case CLIFlagKindEnum:
                 ASSERT(flag.nOptions > 0);
                 iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, " <");
                 iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, "%s", flag.options[0]);
@@ -205,9 +210,17 @@ void PrintUsage(const char *prog_name) {
                 iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, ">");
                 break;
 
-            case CLIFlagKind_Bool:
+            case CLIFlagKindBool:
                 if (*flag.ptr.b && flag.ptr.b != &compiler.flags.help)
                     hLen += snprintf(help + hLen, sizeof(help) - hLen, " (default)");
+                break;
+
+            case CLIFlagKindPath:
+                iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, " <%s>", flag.argumentName);
+                break;
+
+            case CLIFlagKindString:
+                iLen += snprintf(invokation + iLen, sizeof(invokation) - iLen, " <%s>", flag.argumentName);
                 break;
         }
         printf(" %-40s %s\n", invokation, help);
@@ -221,8 +234,8 @@ void test_flagParsingAndDefaults() {
     ASSERT(strcmp(compiler.output_name, "outputName") == 0);
     ASSERT(compiler.target_os == Os_Darwin);
 
-    InitTestCompiler(&compiler, "");
-    InitCompiler(&compiler, 0, NULL);
+    InitTestCompiler(&compiler, NULL);
+//    InitCompiler(&compiler, 0, NULL);
     ASSERT(compiler.target_arch != Arch_Unknown);
     ASSERT(compiler.target_os != Arch_Unknown);
 }

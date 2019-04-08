@@ -302,7 +302,6 @@ void OutputReportedErrors(Package *p) {
 
 #if TEST
 void test_errorReporting() {
-
     SourceRange builtinPosition = {0};
     Package mainPackage = {0};
     ReportError(&mainPackage, SyntaxError, builtinPosition, "Error Reporting value of five %d", 5);

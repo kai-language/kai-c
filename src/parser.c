@@ -298,7 +298,8 @@ Expr *parseExprAtom(Parser *p) {
         }
 
         case TK_Directive: {
-            if (p->tok.val.ident == internLocation || p->tok.val.ident == internFile || p->tok.val.ident == internLine || p->tok.val.ident == internFunction) {
+            if (p->tok.val.ident == internLocation || p->tok.val.ident == internFile ||
+                p->tok.val.ident == internLine || p->tok.val.ident == internFunction) {
                 SourceRange range = rangeFromTokens(start, start);
                 Expr *expr = NewExprLocationDirective(pkg, range, p->tok.val.ident);
                 nextToken();
@@ -541,7 +542,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
 
                     KeyValue arg = {0};
                     arg.value = parseExpr(p, noCompoundLiteral);
-                    if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
+                    if (isToken(p, TK_Colon) && arg.value->kind == ExprKindIdent) {
                         arg.key = arg.value;
                         arg.value = parseExpr(p, noCompoundLiteral);
                     }
@@ -553,7 +554,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
 
                         KeyValue arg = {0};
                         arg.value = parseExpr(p, noCompoundLiteral);
-                        if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
+                        if (isToken(p, TK_Colon) && arg.value->kind == ExprKindIdent) {
                             arg.key = arg.value;
                             arg.value = parseExpr(p, noCompoundLiteral);
                         }
@@ -568,7 +569,7 @@ Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
             }
 
             case TK_Lbrace: {
-                if (x->kind == ExprKind_TypeFunction) {
+                if (x->kind == ExprKindTypeFunction) {
                     Token startOfBlock = p->tok;
                     nextToken();
                     DynamicArray(Stmt *) stmts = NULL;
@@ -672,7 +673,7 @@ KeyValue parseExprCompoundField(Parser *p) {
         field.value = parseExpr(p, false);
         if (matchToken(p, TK_Colon)) {
             field.key = field.value;
-            if (field.key->kind != ExprKind_Ident) {
+            if (field.key->kind != ExprKindIdent) {
                 ReportError(p->package, SyntaxError, rangeFromPosition(p->prevStart), "Named initializer value must be an identifier or surrounded in '[]'");
             }
             field.value = parseExpr(p, false);
@@ -701,7 +702,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
             Expr *type = parseType(p);
             size_t numExprs = ArrayLen(exprs);
             for (size_t i = 0; i < numExprs; i++) {
-                if (exprs[i]->kind != ExprKind_Ident) {
+                if (exprs[i]->kind != ExprKindIdent) {
                     ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                     continue;
                 }
@@ -711,7 +712,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
                 kv.value = type;
                 ArrayPush(*params, kv);
             }
-            if (type->kind == ExprKind_TypeVariadic) {
+            if (type->kind == ExprKindTypeVariadic) {
                 *nVarargs += 1;
                 if (*nVarargs == 2) {
                     ReportError(p->package, SyntaxError, type->pos, "Expected at most 1 Variadic as the final parameter");
@@ -724,7 +725,7 @@ void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, Dyn
             // The parameters are unnamed and the user may have entered a second variadic
             size_t numExprs = ArrayLen(exprs);
             for (size_t i = 0; i < numExprs; i++) {
-                if (exprs[i]->kind == ExprKind_TypeVariadic) {
+                if (exprs[i]->kind == ExprKindTypeVariadic) {
                     *nVarargs += 1;
                     if (*nVarargs == 2) {
                         ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected at most 1 Variadic as the final parameter");
@@ -762,7 +763,7 @@ Expr *parseFunctionType(Parser *p) {
                 Expr *type = parseType(p);
                 size_t numExprs = ArrayLen(exprs);
                 for (size_t i = 0; i < numExprs; i++) {
-                    if (exprs[i]->kind != ExprKind_Ident) {
+                    if (exprs[i]->kind != ExprKindIdent) {
                         ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                         continue;
                     }
@@ -774,7 +775,7 @@ Expr *parseFunctionType(Parser *p) {
                 }
                 size_t numExprs = ArrayLen(exprs);
                 for (size_t i = 0; i < numExprs; i++) {
-                    if (exprs[i]->kind == ExprKind_TypeVariadic) {
+                    if (exprs[i]->kind == ExprKindTypeVariadic) {
                         nVarargs += 1;
                         if (nVarargs == 1) {
                             ReportError(p->package, SyntaxError, exprs[i]->pos, "Variadics are only valid in a functions parameters");
@@ -853,7 +854,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
         case TK_Colon: {
             Token colon = p->tok;
             nextToken();
-            if (ArrayLen(exprs) == 1 && exprs[0]->kind == ExprKind_Ident && (matchToken(p, TK_Terminator) || isTokenEof(p))) {
+            if (ArrayLen(exprs) == 1 && exprs[0]->kind == ExprKindIdent && (matchToken(p, TK_Terminator) || isTokenEof(p))) {
                 SourceRange range = rangeFromTokens(start, colon);
                 return NewStmtLabel(pkg, range, exprs[0]->Ident.name);
             }
@@ -862,7 +863,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
 
             size_t numExprs = ArrayLen(exprs);
             for (size_t i = 0; i < numExprs; i++) {
-                if (exprs[i]->kind != ExprKind_Ident) {
+                if (exprs[i]->kind != ExprKindIdent) {
                     ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
                 }
             }
@@ -908,7 +909,7 @@ Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
         // Check that all the expresions are identifiers.
         size_t numExprs = ArrayLen(exprs);
         for (size_t i = 0; i < numExprs; i++) {
-            if (exprs[i]->kind != ExprKind_Ident) {
+            if (exprs[i]->kind != ExprKindIdent) {
                 ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
             }
         }
@@ -1328,48 +1329,48 @@ void parseAllStmts(Package *pkg, const char *code) {
 void declareDecl(Package *pkg, Decl *decl) {
     Symbol *symbol;
     switch (decl->kind) {
-        case StmtDeclKind_Constant: {
+        case DeclKindConstant: {
             decl->owningScope = pkg->scope;
             // Declare all names despite only supporting single declaration for Constants
             size_t numNames = ArrayLen(decl->Constant.names);
             for (size_t i = 0; i < numNames; i++) {
                 declareSymbol(pkg, pkg->scope, decl->Constant.names[i]->Ident.name, &symbol, decl);
-                symbol->kind = SymbolKind_Constant;
+                symbol->kind = SymbolKindConstant;
                 symbol->state = SymbolState_Unresolved;
                 symbol->flags |= SymbolFlag_Global;
                 symbol->decl = decl;
             }
             break;
         }
-        case StmtDeclKind_Variable: {
+        case DeclKindVariable: {
             decl->owningScope = pkg->scope;
             size_t numNames = ArrayLen(decl->Variable.names);
             for (size_t i = 0; i < numNames; i++) {
                 declareSymbol(pkg, pkg->scope, decl->Variable.names[i]->Ident.name, &symbol, decl);
-                symbol->kind = SymbolKind_Variable;
+                symbol->kind = SymbolKindVariable;
                 symbol->state = SymbolState_Unresolved;
                 symbol->flags |= SymbolFlag_Global;
                 symbol->decl = decl;
             }
             break;
         }
-        case StmtDeclKind_Foreign: {
+        case DeclKindForeign: {
             decl->owningScope = pkg->scope;
             declareSymbol(pkg, pkg->scope, decl->Foreign.name, &symbol, decl);
-            symbol->kind = decl->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+            symbol->kind = decl->Foreign.isConstant ? SymbolKindConstant : SymbolKindVariable;
             symbol->state = SymbolState_Unresolved;
             symbol->flags |= SymbolFlag_Global;
             symbol->decl = decl;
             break;
         }
-        case StmtDeclKind_ForeignBlock: {
+        case DeclKindForeignBlock: {
             decl->owningScope = pkg->scope;
             Decl_ForeignBlock block = decl->ForeignBlock;
             size_t len = ArrayLen(block.members);
             for (size_t i = 0; i < len; i++) {
                 Decl_ForeignBlockMember *it = &block.members[i];
                 declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
-                symbol->kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+                symbol->kind = it->isConstant ? SymbolKindConstant : SymbolKindVariable;
                 symbol->state = SymbolState_Unresolved;
                 symbol->flags |= SymbolFlag_Global;
                 symbol->decl = decl;
@@ -1378,7 +1379,7 @@ void declareDecl(Package *pkg, Decl *decl) {
             }
             break;
         }
-        case StmtDeclKind_Import: {
+        case DeclKindImport: {
             decl->owningScope = pkg->scope;
             // TODO: To properly support out of order declarations things we will need to re-evaluate how we
             //  evaluate imports. Because the code will potentially have to run through the entire compiler pipeline
@@ -1387,12 +1388,12 @@ void declareDecl(Package *pkg, Decl *decl) {
             //  -vdka August 2018
             declareSymbol(pkg, pkg->scope, decl->Import.alias, &symbol, decl);
             symbol->type = FileType;
-            symbol->kind = SymbolKind_Import;
+            symbol->kind = SymbolKindImport;
             symbol->state = SymbolState_Resolved;
             symbol->flags |= SymbolFlag_Global;
             symbol->decl = decl;
             decl->Import.symbol = symbol;
-            decl->Import.symbol->backendUserdata = ImportPackage(decl->Import.path->LitString.val, pkg);
+            decl->Import.symbol->backendUserdata = import_package(decl->Import.path->LitString.val, pkg);
             break;
         }
         default:
@@ -1419,46 +1420,46 @@ void declare_package_decls(Package *pkg) {
         Decl *decl = (Decl *) pkg->stmts[i];
         decl->owningScope = pkg->scope;
         switch (decl->kind) {
-        case DeclKind_Constant: {
+        case DeclKindConstant: {
             size_t numNames = ArrayLen(decl->Constant.names);
             for (size_t i = 0; i < numNames; i++) {
                 const char *name = decl->Constant.names[i]->Ident.name;
-                declare_package_symbol(pkg, name, SymbolKind_Constant, SymbolState_Unresolved,
+                declare_package_symbol(pkg, name, SymbolKindConstant, SymbolState_Unresolved,
                                        decl);
             }
             break;
         }
-        case DeclKind_Variable: {
+        case DeclKindVariable: {
             size_t numNames = ArrayLen(decl->Constant.names);
             for (size_t i = 0; i < numNames; i++) {
                 const char *name = decl->Variable.names[i]->Ident.name;
-                declare_package_symbol(pkg, name, SymbolKind_Variable, SymbolState_Unresolved,
+                declare_package_symbol(pkg, name, SymbolKindVariable, SymbolState_Unresolved,
                                        decl);
             }
             break;
         }
-        case DeclKind_Foreign: {
-            SymbolKind kind = decl->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+        case DeclKindForeign: {
+            SymbolKind kind = decl->Foreign.isConstant ? SymbolKindConstant : SymbolKindVariable;
             declare_package_symbol(pkg, decl->Foreign.name, kind, SymbolState_Unresolved, decl);
             break;
         }
-        case DeclKind_ForeignBlock: {
+        case DeclKindForeignBlock: {
             Decl_ForeignBlock block = decl->ForeignBlock;
             size_t len = ArrayLen(block.members);
             for (size_t i = 0; i < len; i++) {
                 Decl_ForeignBlockMember *it = &block.members[i];
-                SymbolKind kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
+                SymbolKind kind = it->isConstant ? SymbolKindConstant : SymbolKindVariable;
                 it->symbol = declare_package_symbol(pkg, it->name, kind, SymbolState_Unresolved, decl);
             }
             break;
         }
-        case DeclKind_Import: {
+        case DeclKindImport: {
             Symbol *symbol = declare_package_symbol(pkg, decl->Import.alias,
-                                                    SymbolKind_Import, SymbolState_Resolved, decl);
+                                                    SymbolKindImport, SymbolState_Resolved, decl);
             symbol->type = FileType;
             decl->Import.symbol = symbol;
             const char *path = decl->Import.path->LitString.val;
-            decl->Import.symbol->backendUserdata = ImportPackage(path, pkg);
+            decl->Import.symbol->backendUserdata = import_package(path, pkg);
             break;
         }
         }
@@ -1484,31 +1485,27 @@ void queue_checking(Package *pkg) {
 u64 source_memory_usage = 0;
 
 bool parse_package(Package *pkg) {
-    DirectoryIter iter;
-    for (DirectoryIterOpen(&iter, pkg->fullpath); iter.valid; DirectoryIterNext(&iter)) {
-        if (iter.isDirectory || iter.name[0] == '.') continue;
-        char name[MAX_PATH];
-        path_copy(name, iter.name);
-        char *ext = path_ext(name);
-        if (ext == name || strcmp(ext, "kai") != 0) continue;
-        ext[-1] = '\0';
-        char path[MAX_PATH];
-        path_copy(path, iter.base);
-        path_join(path, iter.name);
-        path_absolute(path);
-        const char *code = ReadEntireFile(path);
-        if (!code) {
-            ReportError(pkg, FatalError, (SourceRange){ path }, "Failed to read source file");
-            return false;
-        }
-        source_memory_usage += strlen(code);
-        parseAllStmts(pkg, code);
+    read_package_source_files(pkg);
+    for (u64 i = 0; i < pkg->numSources; i++) {
+        pkg->current_source = &pkg->sources[i];
+        parseAllStmts(pkg, pkg->current_source->code);
     }
     if (HasErrors(pkg)) return false;
     declare_package_decls(pkg);
     queue_checking(pkg);
     return !HasErrors(pkg);
 }
+
+#if TEST
+bool parse_test_package(Package *pkg) {
+    ASSERT(pkg->current_source);
+    parseAllStmts(pkg, pkg->current_source->code);
+    if (HasErrors(pkg)) return false;
+    declare_package_decls(pkg);
+    queue_checking(pkg);
+    return !HasErrors(pkg);
+}
+#endif
 
 #undef NextToken
 

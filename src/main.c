@@ -22,8 +22,6 @@
 #ifndef TEST
 int main(int argc, const char **argv) {
     InitCompiler(&compiler, argc, argv);
-    InitKeywords();
-
     return !Compile(&compiler);
 }
 #endif

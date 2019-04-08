@@ -34,18 +34,18 @@ extern Symbol *TrueSymbol;
 
 typedef u8 TypeKind;
 enum Enum_TypeKind {
-    TypeKind_Invalid,
-    TypeKind_Int,
-    TypeKind_Float,
-    TypeKind_Pointer,
-    TypeKind_Array,
-    TypeKind_Slice,
-    TypeKind_Any,
-    TypeKind_Struct,
-    TypeKind_Union,
-    TypeKind_Enum,
-    TypeKind_Function,
-    TypeKind_Tuple,
+    TypeKindInvalid,
+    TypeKindInt,
+    TypeKindFloat,
+    TypeKindPointer,
+    TypeKindArray,
+    TypeKindSlice,
+    TypeKindAny,
+    TypeKindStruct,
+    TypeKindUnion,
+    TypeKindEnum,
+    TypeKindFunction,
+    TypeKindTuple,
     NUM_TYPE_KINDS,
 };
 

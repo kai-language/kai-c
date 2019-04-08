@@ -42,144 +42,141 @@ void test_canCoerce() {
     ASSERT(canCoerce(U64Type, I8Type, &ctx));
 }
 
-//#define pkg checkerTestPackage
-Package pkg = {0};
-Queue resetAndParse(const char *code) {
-    // reset package
-    ArrayFree(pkg.diagnostics.errors);
-    ArrayFree(pkg.stmts);
-    ArrayFree(pkg.symbols);
+void reset_package(Package *package);
+Stmt *reset_parse_check_upto_last(Package *package, const char *code) {
+    ArenaFree(&compiler.parsing_queue.arena);
+    ArenaFree(&compiler.checking_queue.arena);
 
-    ArenaFree(&pkg.arena);
-    ArenaFree(&pkg.diagnostics.arena);
-    memset(&pkg, 0, sizeof(Package));
+    InitTestCompiler(&compiler, NULL);
+    reset_package(package);
 
-    pkg.scope = pushScope(&pkg, builtinPackage.scope);
+    Source source = {":test:", ":test:", code};
+    package->current_source = &source;
+    parse_test_package(package);
 
-    parseSourceCode(&pkg, code);
-    return compiler.checking_queue;
-}
+    ASSERT_MSG(!HasErrors(package), "Parsing resulted in errors");
 
-Stmt *resetAndParseReturningLastStmt(const char *code) {
-    Queue queue = resetAndParse(code);
-    ASSERT(queue.size > 0);
-    while (queue.size > 1) {
-        CheckerWork *work = QueuePopFront(&queue);
+    while (compiler.checking_queue.size > 1) {
+        CheckerWork *work = QueuePopFront(&compiler.checking_queue);
         CheckerContext ctx = { work->package->scope };
         checkStmt(work->stmt, &ctx, work->package);
     }
-    CheckerWork *work = QueuePopFront(&queue);
+
+    CheckerWork *work = QueuePopFront(&compiler.checking_queue);
     ASSERT(work);
     Stmt *stmt = work->stmt;
-    ArenaFree(&queue.arena);
     return stmt;
 }
 
+void reset_package(Package *package) {
+    ArrayFree(package->diagnostics.errors);
+    ArrayFree(package->stmts);
+    ArrayFree(package->symbols);
+    ArenaFree(&package->arena);
+    ArenaFree(&package->diagnostics.arena);
+    memset(package, 0, sizeof *package);
+    package->scope = pushScope(package, compiler.builtin_package.scope);
+}
+
 void test_checkConstantDeclarations() {
-    InitTestCompiler(&compiler, NULL);
-    Queue queue = resetAndParse("x :: 8");
+	Package package = {0};
+    Stmt *stmt = reset_parse_check_upto_last(&package, "x :: 8");
 
-    CheckerWork *work = QueuePopFront(&queue);
-
-    ASSERT(queue.size == 0);
-
-    Stmt *stmt = work->stmt;
-    CheckerContext ctx = { pkg.scope };
-    checkStmt(stmt, &ctx, &pkg);
+    CheckerContext ctx = { package.scope };
+    checkStmt(stmt, &ctx, &package);
     ASSERT(ctx.mode != ExprMode_Unresolved);
 
-    Symbol *sym = Lookup(pkg.scope, StrIntern("x"));
+    Symbol *sym = Lookup(package.scope, StrIntern("x"));
     ASSERT(sym);
     ASSERT(IsInteger(sym->type));
     ASSERT(sym->state == SymbolState_Resolved);
     ASSERT(!sym->used);
-    ASSERT(sym->kind == SymbolKind_Constant);
+    ASSERT(sym->kind == SymbolKindConstant);
     ASSERT(sym->decl->pos.offset == 0);
     ASSERT(sym->val.u64 == 8);
 }
 
 #define RESET_CONTEXT(_CTX) \
 memset(((u8*) &_CTX) + sizeof(_CTX.scope), 0, sizeof(_CTX) - sizeof(_CTX.scope)); \
-memcpy((u8*) &ctx.scope, &pkg.scope, sizeof(pkg.scope));
-
+memcpy((u8*) &ctx.scope, &package.scope, sizeof(package.scope));
 
 void test_coercionsAreMarked() {
-    InitTestCompiler(&compiler, NULL);
-    Stmt *stmt;
-    CheckerInfo* info;
-    CheckerContext ctx = { pkg.scope };
-#define checkBasicExpr(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
-RESET_CONTEXT(ctx); \
-checkStmt(stmt, &ctx, &pkg); \
-info = CheckerInfoForStmt(&pkg, stmt)
+    Package package = {0};
 
-    //              1   2     3 5 4
-    checkBasicExpr("x : u64 : 1 + 2");
+    //                                                  1   2     3 5 4
+    Stmt *stmt = reset_parse_check_upto_last(&package, "x : u64 : 1 + 2");
+    CheckerContext ctx = {package.scope};
+    checkStmt(stmt, &ctx, &package);
+    CheckerInfo *info = CheckerInfoForStmt(&package, stmt);
 
     ASSERT(info->Constant.symbol->name == StrIntern("x"));
-    ASSERT_MSG(pkg.astIdCount == 6, "Package was not fully reset as expected");
-    Conversion coerce = pkg.checkerInfo[5].BasicExpr.coerce;
-    ASSERT(coerce & ConversionKind_Same);
+    ASSERT(package.astIdCount == 6);
+    Conversion coerce = package.checkerInfo[5].BasicExpr.coerce;
+    ASSERT(coerce & ConversionKindSame);
     ASSERT(coerce & ConversionFlag_Extend);
+
+    reset_package(&package);
 }
 
 void test_checkTypeFunction() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo_BasicExpr info;
 #define checkTypeFunction(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprTypeFunction((Expr *) stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->BasicExpr
+type = checkExprTypeFunction((Expr *) stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->BasicExpr
 
     checkTypeFunction("fn () -> void");
-    ASSERT(type->kind == TypeKind_Function);
+    ASSERT(type->kind == TypeKindFunction);
     ASSERT(info.type == type);
     ASSERT(type->Function.numParams == 0);
     ASSERT(type->Function.numResults == 0);
 
     checkTypeFunction("fn (u8, u8, u8, u8) -> (u8, u8, u8, u8)");
-    ASSERT(type->kind == TypeKind_Function);
+    ASSERT(type->kind == TypeKindFunction);
     ASSERT(info.type == type);
     ASSERT(type->Function.numParams == 4);
     ASSERT(type->Function.numResults == 4);
 }
 
 void test_checkTypePointer() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo_BasicExpr info;
 #define checkTypePointer(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprTypePointer((Expr *) stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->BasicExpr
+type = checkExprTypePointer((Expr *) stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->BasicExpr
 
     checkTypePointer("*u8");
-    ASSERT(type->kind == TypeKind_Pointer);
+    ASSERT(type->kind == TypeKindPointer);
     ASSERT(info.type == type);
 }
 
 void test_checkTypeArray() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo_BasicExpr info;
 #define checkTypeArray(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprTypeArray((Expr *) stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->BasicExpr
+type = checkExprTypeArray((Expr *) stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->BasicExpr
 
     checkTypeArray("[30]u8");
-    ASSERT(type->kind == TypeKind_Array);
+    ASSERT(type->kind == TypeKindArray);
     ASSERT(type->Width == 30 * 8);
     ASSERT(type->Array.length == 30);
     ASSERT(type->Array.elementType == U8Type);
@@ -187,52 +184,54 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
     ASSERT(info.type == type);
 
     checkTypeArray("[1]void");
-    ASSERT(pkg.diagnostics.errors);
+    ASSERT(package.diagnostics.errors);
 
     // TODO: Implicitly sized array's should error without context.
 }
 
 void test_checkTypeSlice() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo_BasicExpr info;
 #define checkTypeSlice(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprTypeSlice((Expr *) stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->BasicExpr
+type = checkExprTypeSlice((Expr *) stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->BasicExpr
 
     checkTypeSlice("[]u8");
-    ASSERT(type->kind == TypeKind_Slice);
+    ASSERT(type->kind == TypeKindSlice);
     ASSERT(type->Slice.elementType == U8Type);
     ASSERT(type->Slice.Flags == TypeFlag_None);
     ASSERT(info.type == type);
 
     checkTypeSlice("[]void");
-    ASSERT(pkg.diagnostics.errors);
+    ASSERT(package.diagnostics.errors);
 }
 
 void test_checkTypeStruct() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo_BasicExpr info;
 #define checkTypeStruct(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprTypeStruct((Expr *) stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->BasicExpr
+type = checkExprTypeStruct((Expr *) stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->BasicExpr
 
     checkTypeStruct("struct {}");
-    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->kind == TypeKindStruct);
     ASSERT(type->Struct.numMembers == 0);
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 
     checkTypeStruct("struct {a: u8}");
-    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->kind == TypeKindStruct);
     ASSERT(type->Struct.members[0].type == U8Type);
     ASSERT(type->Struct.Flags == TypeFlag_None);
     ASSERT(type->Align == 8);
@@ -240,7 +239,7 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
     ASSERT(info.type == type);
 
     checkTypeStruct("struct {a: u8; b: u16}");
-    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->kind == TypeKindStruct);
     ASSERT(type->Struct.members[0].type == U8Type);
     ASSERT(type->Struct.members[1].type == U16Type);
     ASSERT_MSG(type->Struct.members[1].offset == 16, "Fields should be aligned to at least their size");
@@ -250,7 +249,7 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
     ASSERT(info.type == type);
 
     checkTypeStruct("struct {a: u8; b: u8; b: u16; c: u32; d: u32}");
-    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->kind == TypeKindStruct);
     ASSERT(type->Struct.members[0].type == U8Type);
     ASSERT(type->Struct.members[1].type == U8Type);
     ASSERT(type->Struct.members[2].type == U16Type);
@@ -269,14 +268,15 @@ info = GetStmtInfo(&pkg, stmt)->BasicExpr
 }
 
 void test_checkConstantUnaryExpressions() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
 #define checkUnary(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprUnary((Expr *) stmt, &ctx, &pkg)
+type = checkExprUnary((Expr *) stmt, &ctx, &package)
 
     checkUnary("-100");
     ASSERT(type == I8Type);
@@ -302,14 +302,15 @@ type = checkExprUnary((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_checkConstantBinaryExpressions() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
 #define checkBinary(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprBinary((Expr *) stmt, &ctx, &pkg)
+type = checkExprBinary((Expr *) stmt, &ctx, &package)
 
     checkBinary("1 + 2");
     ASSERT(type == U8Type);
@@ -327,8 +328,8 @@ type = checkExprBinary((Expr *) stmt, &ctx, &pkg)
     ASSERT(ctx.val.f64 == 0.f);
 
     checkBinary("1 / 0");
-    ASSERT(ArrayLen(pkg.diagnostics.errors) == 1);
-    ArrayFree(pkg.diagnostics.errors);
+    ASSERT(ArrayLen(package.diagnostics.errors) == 1);
+    ArrayFree(package.diagnostics.errors);
 
     checkBinary("-1 + -8");
     ASSERT(type == I8Type);
@@ -342,14 +343,15 @@ type = checkExprBinary((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_checkConstantTernaryExpression() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
 #define checkTernary(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprTernary((Expr *) stmt, &ctx, &pkg)
+type = checkExprTernary((Expr *) stmt, &ctx, &package)
 
     checkTernary("true ? 1 : 2");
     ASSERT(type == U8Type);
@@ -382,14 +384,15 @@ type = checkExprTernary((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_checkConstantCastExpression() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
+
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
 #define checkCastUsingCallSyntax(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprCall((Expr *) stmt, &ctx, &pkg)
+type = checkExprCall((Expr *) stmt, &ctx, &package)
 
     checkCastUsingCallSyntax("i64(8)");
     ASSERT(type == I64Type);
@@ -402,9 +405,9 @@ type = checkExprCall((Expr *) stmt, &ctx, &pkg)
     ASSERT(ctx.val.u64 == 42);
 
 #define checkCast(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprCast((Expr *) stmt, &ctx, &pkg)
+type = checkExprCast((Expr *) stmt, &ctx, &package)
 
     checkCast("cast(i64) 8");
     ASSERT(type == I64Type);
@@ -418,34 +421,34 @@ type = checkExprCast((Expr *) stmt, &ctx, &pkg)
 }
 
 void test_callToCVargs() {
-    InitTestCompiler(&compiler, NULL);
+    Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
 
 #define checkCall(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprCall((Expr *) stmt, &ctx, &pkg)
+type = checkExprCall((Expr *) stmt, &ctx, &package)
 
     checkCall("#foreign libc\n"
               "printf :: fn(rawptr, #cvargs ..any) -> void;"
               "printf(\"%d %d %d\", 1, 2, 3);");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 }
 
 void test_checkExprSelector() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo_Selector info;
 
 #define checkSelector(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprSelector((Expr *) stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->Selector
+type = checkExprSelector((Expr *) stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->Selector
 
     checkSelector("Foo :: struct {a: u8; b: u16};"
                   "foo := Foo{};"
@@ -454,80 +457,82 @@ info = GetStmtInfo(&pkg, stmt)->Selector
     ASSERT(type == info.type);
 }
 
-Type *typeFromParsing(const char *code) {
-    pkg.scope = pushScope(&pkg, builtinPackage.scope);
-
-    Stmt *stmt = resetAndParseReturningLastStmt(code);
-    CheckerContext ctx = { pkg.scope };
-    return checkExpr((Expr *) stmt, &ctx, &pkg);
-}
-
 void test_checkExprLitInteger() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Expr *expr;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo_BasicExpr info;
 
 #define checkInteger(_CODE) \
-expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
+expr = (Expr *) reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprLitInt(expr, &ctx, &pkg); \
-info = GetExprInfo(&pkg, expr)->BasicExpr
+type = checkExprLitInt(expr, &ctx, &package); \
+info = GetExprInfo(&package, expr)->BasicExpr
 
     checkInteger("5");
     ASSERT(type == U8Type);
     ASSERT(info.val.u64 == 5);
 }
 
+Type *typeFromParsing(Package *package, const char *code) {
+    reset_package(package);
+    Source source = {":test:", ":test:", code};
+    package->current_source = &source;
+    parse_test_package(package);
+    ASSERT(compiler.checking_queue.size == 1);
+    CheckerContext ctx = { package->scope };
+    return checkExpr((Expr *) package->stmts[0], &ctx, package);
+}
+
 void test_checkExprLitFunction() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Expr *expr;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
 
 #define checkFunction(_CODE) \
-expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
+expr = (Expr *) reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprLitFunction(expr, &ctx, &pkg);
+type = checkExprLitFunction(expr, &ctx, &package);
 
     checkFunction("fn (a: u64) -> u64 { return a }");
-    ASSERT(type == typeFromParsing("fn(u64) -> u64"));
+    ASSERT(type == typeFromParsing(&package, "fn(u64) -> u64"));
 
     checkFunction("fn (a, b: u64) -> u64, bool { return a }");
-    ASSERT(type == typeFromParsing("fn(u64, u64) -> u64, bool"));
+    ASSERT(type == typeFromParsing(&package, "fn(u64, u64) -> u64, bool"));
 
     checkFunction("fn (fmt: *u8, args: ..any) -> i32 { return 0 }");
-    ASSERT(type == typeFromParsing("fn (fmt: *u8, args: ..any) -> i32"));
+    ASSERT(type == typeFromParsing(&package, "fn (fmt: *u8, args: ..any) -> i32"));
 }
 
 void test_checkExprLitCompound() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Expr *expr;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     Type *type;
     CheckerInfo *info;
 
 #define checkCompound(_CODE) \
-expr = (Expr *) resetAndParseReturningLastStmt(_CODE); \
+expr = (Expr *) reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-type = checkExprLitCompound(expr, &ctx, &pkg); \
-info = CheckerInfoForExpr(&pkg, expr);
+type = checkExprLitCompound(expr, &ctx, &package); \
+info = CheckerInfoForExpr(&package, expr);
 
     checkCompound("[5]i8{1, 2, 3, 4, 5}");
     ASSERT(info->BasicExpr.type == type);
-    ASSERT(type == typeFromParsing("[5]i8"));
+    ASSERT(type == typeFromParsing(&package, "[5]i8"));
 
     checkCompound("Foo :: struct {a: u8; b: u16};"
                   "Foo{};");
     ASSERT(info->BasicExpr.type == type);
-    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->kind == TypeKindStruct);
     ASSERT(type->Symbol->name == StrIntern("Foo"));
 
     checkCompound("Foo :: struct {a: u8; b: u16};"
                   "Foo{a: 4, b: 89};");
     ASSERT(info->BasicExpr.type == type);
-    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->kind == TypeKindStruct);
     ASSERT(type->Symbol->name == StrIntern("Foo"));
 
     // TODO: Implicitely sized array's should be the size of their maxIndex (not just the number of elements)
@@ -535,26 +540,26 @@ info = CheckerInfoForExpr(&pkg, expr);
     //    ASSERT(info->BasicExpr.type == type);
     //    ASSERT(type == typeFromParsing("[10]u8"));
 
-    Stmt *stmt = resetAndParseReturningLastStmt("Foo :: struct {a: u8; b: u16};"
-                                                "foo : Foo = {};");
+    Stmt *stmt = reset_parse_check_upto_last(&package, "Foo :: struct {a: u8; b: u16};"
+                                                       "foo : Foo = {};");
     RESET_CONTEXT(ctx);
-    checkStmt(stmt, &ctx, &pkg);
+    checkStmt(stmt, &ctx, &package);
     expr = stmt->Variable.values[0];
-    info = CheckerInfoForExpr(&pkg, expr);
+    info = CheckerInfoForExpr(&package, expr);
     type = TypeFromCheckerInfo(*info);
-    ASSERT(type->kind == TypeKind_Struct);
+    ASSERT(type->kind == TypeKindStruct);
     ASSERT(type->Symbol->name == StrIntern("Foo"));
 }
 
 void test_checkStmtAssign() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
 
 #define checkAssign(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtAssign(stmt, &ctx, &pkg)
+checkStmtAssign(stmt, &ctx, &package)
 
     checkAssign("x := 1;"
                 "x  = 2;");
@@ -564,182 +569,182 @@ checkStmtAssign(stmt, &ctx, &pkg)
 }
 
 void test_checkStmtBlock() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
 
 #define checkBlock(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtBlock(stmt, &ctx, &pkg)
+checkStmtBlock(stmt, &ctx, &package)
 
     checkBlock("{" "\n"
                "}" "\n");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 }
 
 void test_checkStmtDefer() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
 
 #define checkDefer(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtDefer(stmt, &ctx, &pkg)
+checkStmtDefer(stmt, &ctx, &package)
 
     checkDefer("defer { }");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 }
 
 void test_checkStmtFor() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     CheckerInfo_For info;
 
 #define checkFor(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtFor(stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->For
+checkStmtFor(stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->For
 
     checkFor("for { }");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
     ASSERT(info.breakTarget);
     ASSERT(info.continueTarget);
 
     checkFor("for 1 < 2 { }");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 
     checkFor("for x := 0; x < 10; x += 1 { }");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 }
 
 void test_checkStmtForIn() {
-    //    InitTestCompiler(&compiler, NULL);
-    //    Stmt *stmt;
-    //    CheckerContext ctx = { pkg.scope };
-    //    CheckerInfo_For info;
+//    Package package = {0};
+//    Stmt *stmt;
+//    CheckerContext ctx = { package.scope };
+//    CheckerInfo_For info;
 
 #define checkForIn(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtForIn(stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->For
+checkStmtForIn(stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->For
 
     // TODO: Need to implement array types
-    //    checkForIn("arr: []u8" "\n"
-    //             "for el in arr { }");
-    //    ASSERT(!pkg.diagnostics.errors);
-    //    ASSERT(info.breakTarget);
-    //    ASSERT(info.continueTarget);
+//    checkForIn("arr: []u8;"
+//               "for el in arr { };");
+//    ASSERT(!package.diagnostics.errors);
+//    ASSERT(info.breakTarget);
+//    ASSERT(info.continueTarget);
 }
 
 void test_checkStmtGoto() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     CheckerInfo_For info;
 
 #define checkFor(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtFor(stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->For
+checkStmtFor(stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->For
 
     checkFor("for { continue }");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 
     checkFor("for { break }");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 
     // TODO: Goto & fallthrough
 }
 
 void test_checkStmtIf() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
 
 #define checkIf(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtIf(stmt, &ctx, &pkg)
+checkStmtIf(stmt, &ctx, &package)
 
     checkIf("if true {}");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 
     checkIf("if true { } else { }");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 }
 
 void test_checkStmtLabel() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     CheckerInfo_Label info;
 
 #define checkLabel(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtLabel(stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->Label
+checkStmtLabel(stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->Label
 
     checkLabel("error:");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
     ASSERT(info.symbol);
-    ASSERT(info.symbol->kind == SymbolKind_Label);
+    ASSERT(info.symbol->kind == SymbolKindLabel);
 }
 
 void test_checkStmtReturn() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
 
 #define checkReturn(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
-checkStmtReturn(stmt, &ctx, &pkg); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
+checkStmtReturn(stmt, &ctx, &package); \
 RESET_CONTEXT(ctx)
 
     Type *types[3] = {I64Type, I64Type, F64Type};
-    Type type = {TypeKind_Tuple, .Tuple = {TypeFlag_None, types, 1}};
+    Type type = {TypeKindTuple, .Tuple = {TypeFlag_None, types, 1}};
 
     ctx.desiredType = &type;
     checkReturn("return 42");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 
     type.Tuple.numTypes = 3;
     ctx.desiredType = &type;
     checkReturn("return 1, 2, 6.28");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
 }
 
 void test_checkStmtSwitch() {
-    InitTestCompiler(&compiler, NULL);
+	Package package = {0};
     Stmt *stmt;
-    CheckerContext ctx = { pkg.scope };
+    CheckerContext ctx = { package.scope };
     CheckerInfo_Switch info;
 
 #define checkSwitch(_CODE) \
-stmt = resetAndParseReturningLastStmt(_CODE); \
+stmt = reset_parse_check_upto_last(&package, _CODE); \
 RESET_CONTEXT(ctx); \
-checkStmtSwitch(stmt, &ctx, &pkg); \
-info = GetStmtInfo(&pkg, stmt)->Switch
+checkStmtSwitch(stmt, &ctx, &package); \
+info = GetStmtInfo(&package, stmt)->Switch
 
     checkSwitch("switch {}");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
     ASSERT(info.breakTarget);
-    ASSERT(info.breakTarget->kind == SymbolKind_Label);
+    ASSERT(info.breakTarget->kind == SymbolKindLabel);
 
     checkSwitch("switch 8 {"            "\n"
                 "case 1:"               "\n"
                 "case 2: fallthrough"   "\n"
                 "case: break"           "\n"
                 "}");
-    ASSERT(!pkg.diagnostics.errors);
+    ASSERT(!package.diagnostics.errors);
     ASSERT(info.breakTarget);
-    ASSERT(info.breakTarget->kind == SymbolKind_Label);
+    ASSERT(info.breakTarget->kind == SymbolKindLabel);
 }
 
 #undef pkg

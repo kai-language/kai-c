@@ -1,7 +1,8 @@
 
-#define EXPR_KIND_START       0x20
-#define STMT_KIND_START       0x40
-#define DECL_KIND_START       0x80
+#define AST_KIND_MASK          0xC0
+#define EXPR_KIND_PREFIX       0x40
+#define STMT_KIND_PREFIX       0x80
+#define DECL_KIND_PREFIX       0xC0
 
 #define EXPR_KINDS                                           \
     FOR_EACH(Ident, "identifier", true)                      \
@@ -57,52 +58,90 @@
 
 typedef u8 ExprKind;
 enum Enum_ExprKind {
-    ExprKind_Invalid = 0,
-    
-    _ExprKind_Start = EXPR_KIND_START,
-#define FOR_EACH(kindName, ...) ExprKind_##kindName,
-    EXPR_KINDS
-#undef FOR_EACH
-    _ExprKind_End,
+    ExprKindInvalid = 0,
+   
+    EXPR_KIND_START = EXPR_KIND_PREFIX,
+    ExprKindIdent,
+    ExprKindParen,
+    ExprKindCall,
+    ExprKindCast,
+    ExprKindSelector,
+    ExprKindSubscript,
+    ExprKindSlice,
+    ExprKindUnary,
+    ExprKindBinary,
+    ExprKindTernary,
+    ExprKindAutocast,
+    ExprKindLocationDirective,
+    ExprKindLitNil,
+    ExprKindLitInt,
+    ExprKindLitFloat,
+    ExprKindLitString,
+    ExprKindLitCompound,
+    ExprKindLitFunction,
+    ExprKindTypePointer,
+    ExprKindTypeArray,
+    ExprKindTypeSlice,
+    ExprKindTypeStruct,
+    ExprKindTypeEnum,
+    ExprKindTypeUnion,
+    ExprKindTypePolymorphic,
+    ExprKindTypeVariadic,
+    ExprKindTypeFunction,
+    EXPR_KIND_END,
 };
 
 typedef u8 StmtKind;
 enum Enum_StmtKind {
-    StmtKind_Invalid = 0,
+    StmtKindInvalid = 0,
     
-    _StmtKind_Start = STMT_KIND_START,
-#define FOR_EACH(kindName, ...) StmtKind_##kindName,
-    STMT_KINDS
-#undef FOR_EACH
-    _StmtKind_End,
-    
-    _StmtExprKind_Start = EXPR_KIND_START,
-#define FOR_EACH(kindName, ...) StmtExprKind_##kindName,
+    STMT_KIND_START = STMT_KIND_PREFIX,
+    StmtKindEmpty,
+    StmtKindLabel,
+    StmtKindAssign,
+    StmtKindReturn,
+    StmtKindDefer,
+    StmtKindUsing,
+    StmtKindGoto,
+    StmtKindBlock,
+    StmtKindIf,
+    StmtKindFor,
+    StmtKindForIn,
+    StmtKindSwitch,
+    StmtKindSwitchCase,
+    STMT_KIND_END,
+
+    /*
+    _StmtExprKindStart = EXPR_KIND_START,
+#define FOR_EACH(kindName, ...) StmtExprKind##kindName,
     EXPR_KINDS
 #undef FOR_EACH
-    _StmtExprKind_End,
+    _StmtExprKindEnd,
     
-    _StmtDeclKind_Start = DECL_KIND_START,
-#define FOR_EACH(kindName, ...) StmtDeclKind_##kindName,
+    _StmtDeclKindStart = DECL_KIND_START,
+#define FOR_EACH(kindName, ...) StmtDeclKind##kindName,
     DECL_KINDS
 #undef FOR_EACH
-    _StmtDeclKind_End
+    _StmtDeclKindEnd
+    */
 };
 
 typedef u8 DeclKind;
 enum Enum_DeclKind {
-    DeclKind_Invalid = 0,
-    
-    _DeclKind_Start = DECL_KIND_START,
-#define FOR_EACH(kindName, ...) DeclKind_##kindName,
-    DECL_KINDS
-#undef FOR_EACH
-    _DeclKind_End,
+    DeclKindInvalid = 0,
+
+    DECL_KIND_START = DECL_KIND_PREFIX,
+    DeclKindVariable,
+    DeclKindConstant,
+    DeclKindForeign,
+    DeclKindForeignBlock,
+    DeclKindImport,
+    DECL_KIND_END,
 };
 
-STATIC_ASSERT(_ExprKind_End <= UINT8_MAX, "enum values overflow storage type");
-STATIC_ASSERT(_StmtKind_End <= UINT8_MAX, "enum values overflow storage type");
-STATIC_ASSERT(_DeclKind_End <= UINT8_MAX, "enum values overflow storage type");
+STATIC_ASSERT(EXPR_KIND_END <= UINT8_MAX, "enum values overflow storage type");
+STATIC_ASSERT(STMT_KIND_END <= UINT8_MAX, "enum values overflow storage type");
+STATIC_ASSERT(DECL_KIND_END <= UINT8_MAX, "enum values overflow storage type");
 
 typedef void * AstNode;
 typedef struct Expr Expr;
@@ -523,8 +562,6 @@ struct Decl {
 };
 
 b32 isExpr(Stmt *stmt);
-
-b32 isDecl(Stmt *stmt);
 
 const char *DescribeStmt(Stmt *stmt);
 const char *DescribeExpr(Expr *expr);

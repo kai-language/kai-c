@@ -10,9 +10,9 @@ typedef struct Compiler Compiler;
 typedef struct CheckerWork CheckerWork;
 
 extern Compiler compiler;
-extern Package builtinPackage;
 
-Package *ImportPackage(const char *path, Package *importer);
+Package *import_package(const char *path, Package *importer);
+void read_package_source_files(Package *pkg);
 
 struct CheckerWork {
     Package *package;
@@ -34,7 +34,7 @@ struct Compiler {
     const char *global_search_paths[MAX_GLOBAL_SEARCH_PATHS];
     int num_global_search_paths;
 
-    Package *builtin_package;
+    Package builtin_package;
     Map package_map;
     DynamicArray(Package *) packages;
 

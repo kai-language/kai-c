@@ -117,17 +117,17 @@ void emitStmtBlock(Context *ctx, Stmt *stmt);
 
 llvm::Type *canonicalize(Context *ctx, Type *type) {
     switch (type->kind) {
-        case TypeKind_Tuple:
+        case TypeKindTuple:
             // TODO: Should they?
             PANIC("Tuples are a checker thing, they should not make their way into the backend, unless they do?");
             if (!type->Tuple.numTypes) {
                 return llvm::Type::getVoidTy(ctx->m->getContext());
             }
             UNIMPLEMENTED(); // Multiple returns
-        case TypeKind_Int:
+        case TypeKindInt:
             return llvm::IntegerType::get(ctx->m->getContext(), type->Width);
 
-        case TypeKind_Float: {
+        case TypeKindFloat: {
             if (type->Width == 32) {
                 return llvm::Type::getFloatTy(ctx->m->getContext());
             } else if (type->Width == 64) {
@@ -137,15 +137,15 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
             }
         } break;
 
-        case TypeKind_Array: {
+        case TypeKindArray: {
             return llvm::ArrayType::get(canonicalize(ctx, type->Array.elementType), type->Array.length);
         } break;
 
-        case TypeKind_Pointer: {
+        case TypeKindPointer: {
             return llvm::PointerType::get(canonicalize(ctx, type->Pointer.pointeeType), 0);
         } break;
 
-        case TypeKind_Function: {
+        case TypeKindFunction: {
             std::vector<llvm::Type *> params;
             for (u32 i = 0; i < type->Function.numParams; i++) {
                 Type *paramType = type->Function.params[i];
@@ -173,7 +173,7 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
             return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
         } break;
 
-        case TypeKind_Struct: {
+        case TypeKindStruct: {
             if (type->Symbol && type->Symbol->backendUserdata) {
                 BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
                 return userdata->type;
@@ -214,7 +214,7 @@ llvm::Type *canonicalize(Context *ctx, Type *type) {
 llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
     DebugTypes types = ctx->d.types;
 
-    if (type->kind == TypeKind_Int) {
+    if (type->kind == TypeKindInt) {
         switch (type->Width) {
         case 8:  return type->Flags & TypeFlag_Signed ? types.i8  : types.u8;
         case 16: return type->Flags & TypeFlag_Signed ? types.i16 : types.u16;
@@ -223,25 +223,25 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         }
     }
 
-    if (type->kind == TypeKind_Float) {
+    if (type->kind == TypeKindFloat) {
         return type->Width == 32 ? types.f32 : types.f64;
     }
 
-    if (type->kind == TypeKind_Tuple && !type->Tuple.numTypes) {
+    if (type->kind == TypeKindTuple && !type->Tuple.numTypes) {
         return NULL;
     }
 
-    if (type->kind == TypeKind_Pointer) {
+    if (type->kind == TypeKindPointer) {
         return ctx->d.builder->createPointerType(
             debugCanonicalize(ctx, type->Pointer.pointeeType),
             ctx->m->getDataLayout().getPointerSize()
         );
     }
 
-    if (type->kind == TypeKind_Array) {
+    if (type->kind == TypeKindArray) {
         std::vector<llvm::Metadata *> subscripts;
         Type *elementType = type;
-        while (elementType->kind == TypeKind_Array) {
+        while (elementType->kind == TypeKindArray) {
             subscripts.push_back(ctx->d.builder->getOrCreateSubrange(0, type->Array.length));
             elementType = elementType->Array.elementType;
         }
@@ -250,7 +250,7 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         return ctx->d.builder->createArrayType(type->Width, type->Align, debugCanonicalize(ctx, elementType), subscriptsArray);
     }
 
-    if (type->kind == TypeKind_Function) {
+    if (type->kind == TypeKindFunction) {
         // NOTE: Clang just uses a derived type that is a pointer
         // !44 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !9, size: 64)
         std::vector<llvm::Metadata *> parameterTypes;
@@ -263,7 +263,7 @@ llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
         return ctx->d.builder->createSubroutineType(pTypes);
     }
 
-    if (type->kind == TypeKind_Struct) {
+    if (type->kind == TypeKindStruct) {
         if (type->Symbol && type->Symbol->backendUserdata) {
             BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
             if (userdata->debugType) return userdata->debugType;
@@ -366,7 +366,7 @@ llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, llvm::Type *type, const c
 }
 
 llvm::Value *createVariable(Symbol *symbol, SourceRange pos, Context *ctx) {
-    ASSERT(symbol->kind == SymbolKind_Variable);
+    ASSERT(symbol->kind == SymbolKindVariable);
 
     if (symbol->flags & SymbolFlag_Global) {
         llvm::GlobalVariable *global = new llvm::GlobalVariable(
@@ -462,11 +462,11 @@ void setVariableInitializer(Symbol *symbol, Context *ctx, llvm::Value *value) {
 llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
     ASSERT(target);
     ASSERT(value);
-    switch (conversion & ConversionKind_Mask) {
-        case ConversionKind_None:
+    switch (conversion & ConversionKindMask) {
+        case ConversionKindNone:
             return value;
 
-        case ConversionKind_Same: {
+        case ConversionKindSame: {
             bool extend = conversion & ConversionFlag_Extend;
             if (conversion & ConversionFlag_Float) {
                 return extend ? ctx->b.CreateFPExt(value, target) : ctx->b.CreateFPTrunc(value, target);
@@ -479,14 +479,14 @@ llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value
             }
         }
 
-        case ConversionKind_FtoI:
+        case ConversionKindFtoI:
             if (conversion & ConversionFlag_Extend) {
                 return ctx->b.CreateFPExt(value, target);
             } else {
                 return ctx->b.CreateFPTrunc(value, target);
             }
 
-        case ConversionKind_ItoF:
+        case ConversionKindItoF:
             if (conversion & ConversionFlag_Extend) {
                 bool isSigned = conversion & ConversionFlag_Signed;
                 return isSigned ? ctx->b.CreateSExt(value, target) : ctx->b.CreateZExt(value, target);
@@ -494,13 +494,13 @@ llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value
                 return ctx->b.CreateTrunc(value, target);
             }
 
-        case ConversionKind_PtoI:
+        case ConversionKindPtoI:
             return ctx->b.CreatePtrToInt(value, target);
 
-        case ConversionKind_ItoP:
+        case ConversionKindItoP:
             return ctx->b.CreateIntToPtr(value, target);
 
-        case ConversionKind_Bool:
+        case ConversionKindBool:
             if (conversion & ConversionFlag_Float) {
                 return ctx->b.CreateFCmpONE(value, llvm::ConstantFP::get(value->getType(), 0));
             } else if (value->getType()->isPointerTy()) {
@@ -512,12 +512,12 @@ llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value
                 return ctx->b.CreateICmpNE(value, llvm::ConstantInt::get(value->getType(), 0));
             }
 
-        case ConversionKind_Any:
+        case ConversionKindAny:
             // TODO: Implement conversion to Any type
             UNIMPLEMENTED();
             return NULL;
 
-        case ConversionKind_Tuple:
+        case ConversionKindTuple:
             return value;
 
         default:
@@ -537,14 +537,14 @@ llvm::Value *emitExprIdent(Context *ctx, Expr *expr) {
     }
 
     llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
-    if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
+    if (symbol->kind == SymbolKindVariable && !ctx->returnAddress) {
         value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
     }
     return value;
 }
 
 llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_Call);
+    ASSERT(expr->kind == ExprKindCall);
     auto fnType = TypeFromCheckerInfo(ctx->checkerInfo[expr->Call.expr->id]);
 
     std::vector<llvm::Value *> args;
@@ -567,10 +567,10 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
             // -vdka September 2018
             if (IsInteger(argType) && argType->Width < 32) {
                 // C ABI requires promoting integers to at least 32 bits
-                irArg = coerceValue(ctx, ConversionKind_Same, irArg, llvm::Type::getInt32Ty(ctx->m->getContext()));
+                irArg = coerceValue(ctx, ConversionKindSame, irArg, llvm::Type::getInt32Ty(ctx->m->getContext()));
             } else if (IsFloat(argType) && argType->Width < 64) {
                 // C ABI requires promoting floats to doubles
-                irArg = coerceValue(ctx, ConversionKind_Same, irArg, llvm::Type::getDoubleTy(ctx->m->getContext()));
+                irArg = coerceValue(ctx, ConversionKindSame, irArg, llvm::Type::getDoubleTy(ctx->m->getContext()));
             }
         }
 
@@ -582,11 +582,11 @@ llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
 }
 
 llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_LitCompound);
+    ASSERT(expr->kind == ExprKindLitCompound);
     CheckerInfo_BasicExpr info = ctx->checkerInfo[expr->id].BasicExpr;
 
     switch (info.type->kind) {
-        case TypeKind_Struct: {
+        case TypeKindStruct: {
             llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
 
             // FIXME: Determine if, like C, all uninitialized Struct members are zero'd or left undefined
@@ -605,7 +605,7 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
             return agg;
         };
 
-        case TypeKind_Array: {
+        case TypeKindArray: {
             llvm::Type *elementType = canonicalize(ctx, info.type->Array.elementType);
             llvm::Type *irType = canonicalize(ctx, info.type);
 
@@ -629,7 +629,7 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
             return value;
         }
 
-        case TypeKind_Union: case TypeKind_Enum: case TypeKind_Slice:
+        case TypeKindUnion: case TypeKindEnum: case TypeKindSlice:
             UNIMPLEMENTED();
             break;
     }
@@ -639,16 +639,16 @@ llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
 }
 
 llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_Selector);
+    ASSERT(expr->kind == ExprKindSelector);
     CheckerInfo_Selector info = ctx->checkerInfo[expr->id].Selector;
 
     switch (info.kind) {
-        case SelectorKind_None: {
+        case SelectorKindNone: {
             UNIMPLEMENTED();
             break;
         }
 
-        case SelectorKind_Struct: {
+        case SelectorKindStruct: {
             bool previousReturnAddress = ctx->returnAddress;
             ctx->returnAddress = true;
             llvm::Value *value = emitExpr(ctx, expr->Selector.expr);
@@ -667,7 +667,7 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
             return ctx->b.CreateAlignedLoad(addr, BytesFromBits(info.value.Struct.index));
         }
 
-        case SelectorKind_Import: {
+        case SelectorKindImport: {
             Symbol *symbol = info.value.Import.symbol;
             if (!symbol->backendUserdata) {
                 CheckerInfo *prevCheckerInfo = ctx->checkerInfo;
@@ -694,7 +694,7 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
             }
 
             llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
-            if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
+            if (symbol->kind == SymbolKindVariable && !ctx->returnAddress) {
                 value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
             }
             return value;
@@ -710,11 +710,11 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
 
     llvm::Value *value = NULL;
     switch (expr->kind) {
-        case ExprKind_LitInt: {
+        case ExprKindLitInt: {
             Expr_LitInt lit = expr->LitInt;
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
-            if (type->kind == TypeKind_Float) {
+            if (type->kind == TypeKindFloat) {
                 value = llvm::ConstantFP::get(canonicalize(ctx, type), lit.val);
             } else {
                 value = llvm::ConstantInt::get(canonicalize(ctx, type), lit.val, type->Flags & TypeFlag_Signed);
@@ -722,7 +722,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             break;
         }
 
-        case ExprKind_LitFloat: {
+        case ExprKindLitFloat: {
             Expr_LitFloat lit = expr->LitFloat;
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
@@ -730,51 +730,51 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
             break;
         }
 
-        case ExprKind_LitNil: {
+        case ExprKindLitNil: {
             CheckerInfo info = ctx->checkerInfo[expr->id];
             Type *type = info.BasicExpr.type;
             value = llvm::ConstantPointerNull::get((llvm::PointerType *) canonicalize(ctx, type));
             break;
         }
 
-        case ExprKind_LitString:{
+        case ExprKindLitString:{
             value = ctx->b.CreateGlobalStringPtr(expr->LitString.val);
             // TODO: @Strings
             break;
         }
 
-        case ExprKind_Ident: {
+        case ExprKindIdent: {
             value = emitExprIdent(ctx, expr);
             break;
         }
 
-        case ExprKind_LitCompound: {
+        case ExprKindLitCompound: {
             value = emitExprLitCompound(ctx, expr);
             break;
         }
 
-        case ExprKind_Selector:
+        case ExprKindSelector:
             value = emitExprSelector(ctx, expr);
             break;
 
-        case ExprKind_Unary:
+        case ExprKindUnary:
             value = emitExprUnary(ctx, expr);
             break;
 
-        case ExprKind_Binary:
+        case ExprKindBinary:
             value = emitExprBinary(ctx, expr);
             break;
 
-        case ExprKind_Subscript:
+        case ExprKindSubscript:
             value = emitExprSubscript(ctx, expr);
             break;
 
-        case ExprKind_Call:
+        case ExprKindCall:
             value = emitExprCall(ctx, expr);
             break;
     }
 
-    if (ctx->checkerInfo[expr->id].coerce != ConversionKind_None && desiredType) {
+    if (ctx->checkerInfo[expr->id].coerce != ConversionKindNone && desiredType) {
         // If desired type is NULL and coerce is not then it maybe because we are emitting the lhs of a expr
         value = coerceValue(ctx, ctx->checkerInfo[expr->id].coerce, value, desiredType);
     }
@@ -783,7 +783,7 @@ llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
 }
 
 llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_Unary);
+    ASSERT(expr->kind == ExprKindUnary);
     Expr_Unary unary = expr->Unary;
     
     llvm::Value *val;
@@ -944,7 +944,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
     Type *recvType = TypeFromCheckerInfo(recvInfo);
     Type *resultType;
     switch (recvType->kind) {
-    case TypeKind_Array: {
+    case TypeKindArray: {
         bool previousReturnAddress = ctx->returnAddress;
         ctx->returnAddress = true;
         aggregate = emitExpr(ctx, expr->Subscript.expr);
@@ -954,7 +954,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
         resultType = TypeFromCheckerInfo(recvInfo)->Array.elementType;
     } break;
 
-    case TypeKind_Slice: {
+    case TypeKindSlice: {
         bool previousReturnAddress = ctx->returnAddress;
         ctx->returnAddress = true;
         llvm::Value *structPtr = emitExpr(ctx, expr->Subscript.expr);
@@ -965,7 +965,7 @@ llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
         resultType = TypeFromCheckerInfo(recvInfo)->Slice.elementType;
     } break;
 
-    case TypeKind_Pointer: {
+    case TypeKindPointer: {
         aggregate = emitExpr(ctx, expr->Subscript.expr);
         indicies.push_back(index);
         resultType = TypeFromCheckerInfo(recvInfo)->Pointer.pointeeType;
@@ -1140,7 +1140,7 @@ llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn
 }
 
 llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_TypeStruct);
+    ASSERT(expr->kind == ExprKindTypeStruct);
 
     Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
 
@@ -1233,14 +1233,14 @@ llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
 }
 
 void emitDeclConstant(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_Constant);
+    ASSERT(decl->kind == DeclKindConstant);
     CheckerInfo info = ctx->checkerInfo[decl->id];
     Symbol *symbol = info.Constant.symbol;
 
     // TODO: CreateLifetimeStart for this symbol (if applicable)
 
     debugPos(ctx, decl->pos);
-    if (symbol->type->kind == TypeKind_Function && decl->Constant.values[0]->kind == ExprKind_LitFunction) {
+    if (symbol->type->kind == TypeKindFunction && decl->Constant.values[0]->kind == ExprKindLitFunction) {
 
         CheckerInfo info = ctx->checkerInfo[decl->Constant.values[0]->id];
 
@@ -1261,7 +1261,7 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
     }
 
     switch (decl->Constant.values[0]->kind) {
-        case ExprKind_TypeStruct: {
+        case ExprKindTypeStruct: {
             emitExprTypeStruct(ctx, decl->Constant.values[0]);
             break;
         }
@@ -1288,7 +1288,7 @@ void emitDeclConstant(Context *ctx, Decl *decl) {
 }
 
 void emitDeclVariable(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_Variable);
+    ASSERT(decl->kind == DeclKindVariable);
 
     // TODO: CreateLifetimeStart for this symbol
     CheckerInfo info = ctx->checkerInfo[decl->id];
@@ -1305,7 +1305,7 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
         llvm::Value *rhs = emitExpr(ctx, expr);
 
         Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
-        if (expr->kind == ExprKind_Call) {
+        if (expr->kind == ExprKindCall) {
             Conversion *conversions = ctx->checkerInfo[decl->id].Variable.conversions;
 
             size_t numValues = exprType->Tuple.numTypes;
@@ -1316,7 +1316,7 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
                 llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->pos, ctx);
 
                 // Conversions of tuples like this are stored on the lhs
-                if (conversions[lhsIndex] != ConversionKind_None) {
+                if (conversions[lhsIndex] != ConversionKindNone) {
                     ASSERT(lhs->getType()->isPointerTy());
                     rhs = coerceValue(ctx, conversions[lhsIndex], rhs, lhs->getType()->getPointerElementType());
                 }
@@ -1338,7 +1338,7 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
                     llvm::Value *val = ctx->b.CreateLoad(addr);
 
                     // Conversions of tuples like this are stored on the lhs
-                    if (conversions[lhsIndex] != ConversionKind_None) {
+                    if (conversions[lhsIndex] != ConversionKindNone) {
                         ASSERT(lhs->getType()->isPointerTy());
                         val = coerceValue(ctx, conversions[lhsIndex], val, lhs->getType()->getPointerElementType());
                     }
@@ -1359,14 +1359,14 @@ void emitDeclVariable(Context *ctx, Decl *decl) {
 }
 
 void emitDeclForeign(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_Foreign);
+    ASSERT(decl->kind == DeclKindForeign);
     CheckerInfo info = ctx->checkerInfo[decl->id];
 
     debugPos(ctx, decl->pos);
     llvm::Type *type = canonicalize(ctx, info.Foreign.symbol->type);
 
     switch (info.Foreign.symbol->type->kind) {
-        case TypeKind_Function: {
+        case TypeKindFunction: {
             llvm::Function *fn = llvm::Function::Create(
                 (llvm::FunctionType *) type,
                 llvm::Function::LinkageTypes::ExternalLinkage,
@@ -1389,7 +1389,7 @@ void emitDeclForeign(Context *ctx, Decl *decl) {
 }
 
 void emitDeclForeignBlock(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_ForeignBlock);
+    ASSERT(decl->kind == DeclKindForeignBlock);
 
     size_t len = ArrayLen(decl->ForeignBlock.members);
     for (size_t i = 0; i < len; i++) {
@@ -1398,7 +1398,7 @@ void emitDeclForeignBlock(Context *ctx, Decl *decl) {
         llvm::Type *type = canonicalize(ctx, it.symbol->type);
 
         switch (it.symbol->type->kind) {
-            case TypeKind_Function: {
+            case TypeKindFunction: {
                 llvm::Function *fn = llvm::Function::Create(
                     (llvm::FunctionType *) type,
                     llvm::Function::LinkageTypes::ExternalLinkage,
@@ -1421,7 +1421,7 @@ void emitDeclForeignBlock(Context *ctx, Decl *decl) {
 }
 
 void emitStmtLabel(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Label);
+    ASSERT(stmt->kind == StmtKindLabel);
     CheckerInfo_Label info = ctx->checkerInfo[stmt->id].Label;
     auto block = llvm::BasicBlock::Create(ctx->m->getContext(), info.symbol->name, ctx->fn);
     ctx->b.SetInsertPoint(block);
@@ -1429,7 +1429,7 @@ void emitStmtLabel(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmtAssign(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Assign);
+    ASSERT(stmt->kind == StmtKindAssign);
     Stmt_Assign assign = stmt->Assign;
 
     size_t numLhs = ArrayLen(assign.lhs);
@@ -1439,7 +1439,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
         llvm::Value *rhs = emitExpr(ctx, expr);
 
         Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
-        if (expr->kind == ExprKind_Call) {
+        if (expr->kind == ExprKindCall) {
             size_t numValues = exprType->Tuple.numTypes;
             if (numValues == 1) {
                 ctx->returnAddress = true;
@@ -1464,7 +1464,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
 
                     CheckerInfo lhsInfo = ctx->checkerInfo[lhsExpr->id];
                     // Conversions of tuples like this are stored on the lhs
-                    if (lhsInfo.coerce != ConversionKind_None) {
+                    if (lhsInfo.coerce != ConversionKindNone) {
                         ASSERT(lhs->getType()->isPointerTy());
                         val = coerceValue(ctx, lhsInfo.coerce, val, lhs->getType()->getPointerElementType());
                     }
@@ -1485,7 +1485,7 @@ void emitStmtAssign(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmtIf(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_If);
+    ASSERT(stmt->kind == StmtKindIf);
     auto pass = llvm::BasicBlock::Create(ctx->m->getContext(), "if.pass", ctx->fn);
     auto fail = stmt->If.fail ? llvm::BasicBlock::Create(ctx->m->getContext(), "if.fail", ctx->fn) : nullptr;
     auto post = llvm::BasicBlock::Create(ctx->m->getContext(), "if.post", ctx->fn);
@@ -1507,7 +1507,7 @@ void emitStmtIf(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmtReturn(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Return);
+    ASSERT(stmt->kind == StmtKindReturn);
 
     size_t numReturns = ArrayLen(stmt->Return.exprs);
 
@@ -1537,7 +1537,7 @@ void emitStmtReturn(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmtDefer(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Defer);
+    ASSERT(stmt->kind == StmtKindDefer);
 
     llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "defer", ctx->fn);
     ctx->deferStack.push_back(block);
@@ -1550,7 +1550,7 @@ void emitStmtDefer(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmtFor(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_For);
+    ASSERT(stmt->kind == StmtKindFor);
 
     Stmt_For fore = stmt->For;
 
@@ -1640,7 +1640,7 @@ void emitStmtFor(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmtBlock(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Block);
+    ASSERT(stmt->kind == StmtKindBlock);
 
     size_t numStmts = ArrayLen(stmt->Block.stmts);
     for (size_t idx = 0; idx < numStmts; idx++) {
@@ -1649,7 +1649,7 @@ void emitStmtBlock(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmtSwitch(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Switch);
+    ASSERT(stmt->kind == StmtKindSwitch);
     Stmt_Switch swt = stmt->Switch;
 
     CheckerInfo_Switch info = ctx->checkerInfo[stmt->id].Switch;
@@ -1739,53 +1739,53 @@ void emitStmtSwitch(Context *ctx, Stmt *stmt) {
 }
 
 void emitStmt(Context *ctx, Stmt *stmt) {
-    if (stmt->kind > _StmtExprKind_Start && stmt->kind < _StmtExprKind_End) {
+    if (stmt->kind > EXPR_KIND_START && stmt->kind < EXPR_KIND_END) {
         emitExpr(ctx, (Expr *) stmt);
         return;
     }
 
     switch (stmt->kind) {
-        case StmtDeclKind_Constant:
+        case DeclKindConstant:
             emitDeclConstant(ctx, (Decl *) stmt);
             break;
 
-        case StmtDeclKind_Variable:
+        case DeclKindVariable:
             emitDeclVariable(ctx, (Decl *) stmt);
             break;
 
-        case StmtDeclKind_Foreign:
+        case DeclKindForeign:
             emitDeclForeign(ctx, (Decl *) stmt);
             break;
 
-        case StmtDeclKind_ForeignBlock:
+        case DeclKindForeignBlock:
             emitDeclForeignBlock(ctx, (Decl *) stmt);
             break;
 
-        case StmtDeclKind_Import:
+        case DeclKindImport:
             setDebugInfoForPackage(ctx->d.builder, (Package *) stmt->Import.symbol->backendUserdata);
             break;
 
-        case StmtKind_Label:
+        case StmtKindLabel:
             emitStmtLabel(ctx, stmt);
             break;
 
-        case StmtKind_Assign:
+        case StmtKindAssign:
             emitStmtAssign(ctx, stmt);
             break;
 
-        case StmtKind_If:
+        case StmtKindIf:
             emitStmtIf(ctx, stmt);
             break;
 
-        case StmtKind_Return:
+        case StmtKindReturn:
             emitStmtReturn(ctx, stmt);
             break;
 
-        case StmtKind_Defer:
+        case StmtKindDefer:
             emitStmtDefer(ctx, stmt);
             break;
         
-        case StmtKind_Block: {
+        case StmtKindBlock: {
             ASSERT_MSG(ctx->fn, "We should be in a function if we are emitting a lone block");
             llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
             ctx->b.CreateBr(block);
@@ -1794,19 +1794,19 @@ void emitStmt(Context *ctx, Stmt *stmt) {
             break;
         }
 
-        case StmtKind_For:
+        case StmtKindFor:
             emitStmtFor(ctx, stmt);
             break;
 
-        case StmtKind_ForIn:
+        case StmtKindForIn:
             UNIMPLEMENTED();
             break;
         
-        case StmtKind_Switch:
+        case StmtKindSwitch:
             emitStmtSwitch(ctx, stmt);
             break;
 
-        case StmtKind_Goto: {
+        case StmtKindGoto: {
             CheckerInfo_Goto info = ctx->checkerInfo[stmt->id].Goto;
             if (!info.target) {
                 UNIMPLEMENTED();
