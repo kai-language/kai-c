@@ -140,9 +140,9 @@ const char *findCodeBlockAndHighlightError(Package *p, SourceRange range) {
 
     // Find the file in the package matching range.name
     const char * sourceStart = NULL;
-    for (size_t i = 0; i < p->numSources; i++) {
-        if (strcmp(p->sources[i].path, range.name) == 0) {
-            sourceStart = p->sources[i].code;
+    for (size_t i = 0; i < p->sources.count; i++) {
+        if (strcmp(p->sources.list[i].path, range.name) == 0) {
+            sourceStart = p->sources.list[i].code;
             break;
         }
     }

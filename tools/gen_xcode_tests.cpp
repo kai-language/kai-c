@@ -13,15 +13,11 @@ R"(
 #import <XCTest/XCTest.h>
 
 // NOTE: The XCTest Assertions expect to have `self` defined, so we do that for them and set self for each test case
-XCTestCase *self;
+XCTestCase *current_test_case;
 
-void setSelfForTestCase(XCTestCase *testCase) {
-    self = testCase;
-}
-
-#define ASSERT_MSG_VA(cond, ...) XCTAssert(cond, __VA_ARGS__)
-#define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, "(" #cond ") " msg)
-#define ASSERT(cond) ASSERT_MSG_VA(cond)
+#define ASSERT_MSG_VA(cond, ...) _XCTPrimitiveAssertTrue(current_test_case, cond, @#cond, __VA_ARGS__)
+#define ASSERT_MSG(cond, msg) ASSERT_MSG_VA((cond), "(" #cond ") " msg)
+#define ASSERT(cond) ASSERT_MSG_VA((cond))
 #define PANIC(msg) ASSERT_MSG_VA(0, msg)
 #define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented");
 #include "../src/main.c"
@@ -200,7 +196,7 @@ void discoverTests(const char *directoryPath) {
         printf("@interface %s : XCTestCase\n@end\n\n", RemoveFileExtension(GetFileName(path, name, NULL)));
         printf("@implementation %s\n\n", RemoveFileExtension(GetFileName(path, name, NULL)));
         printf("- (void) setUp {\n");
-        printf("    setSelfForTestCase(self);\n");
+        printf("    current_test_case = self;\n");
         printf("    [self setContinueAfterFailure: false];\n");
         printf("}\n");
         printf("\n");

@@ -2,15 +2,11 @@
 #import <XCTest/XCTest.h>
 
 // NOTE: The XCTest Assertions expect to have `self` defined, so we do that for them and set self for each test case
-XCTestCase *self;
+XCTestCase *current_test_case;
 
-void setSelfForTestCase(XCTestCase *testCase) {
-    self = testCase;
-}
-
-#define ASSERT_MSG_VA(cond, ...) XCTAssert(cond, __VA_ARGS__)
-#define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, "(" #cond ") " msg)
-#define ASSERT(cond) ASSERT_MSG_VA(cond)
+#define ASSERT_MSG_VA(cond, ...) _XCTPrimitiveAssertTrue(current_test_case, cond, @#cond, __VA_ARGS__)
+#define ASSERT_MSG(cond, msg) ASSERT_MSG_VA((cond), "(" #cond ") " msg)
+#define ASSERT(cond) ASSERT_MSG_VA((cond))
 #define PANIC(msg) ASSERT_MSG_VA(0, msg)
 #define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented");
 #include "../src/main.c"
@@ -23,7 +19,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation ast
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -45,7 +41,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation common
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -67,7 +63,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation array
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -85,7 +81,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation lexer
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -107,7 +103,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation string
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -125,7 +121,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation queue
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -143,7 +139,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation error
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -161,7 +157,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation types
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -183,7 +179,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation map
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -205,7 +201,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation flags
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -223,7 +219,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation checker
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 
@@ -349,7 +345,7 @@ void setSelfForTestCase(XCTestCase *testCase) {
 @implementation parser
 
 - (void) setUp {
-    setSelfForTestCase(self);
+    current_test_case = self;
     [self setContinueAfterFailure: false];
 }
 

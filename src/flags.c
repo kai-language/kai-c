@@ -96,7 +96,7 @@ CLIFlag *FlagForName(const char *name) {
 }
 
 void ParseFlags(Compiler *compiler, int *pargc, const char ***pargv) {
-    compiler->flags = default_flags;
+    parsed_compiler.flags = default_flags;
     int argc = *pargc;
     const char **argv = *pargv;
     int i;

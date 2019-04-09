@@ -10,9 +10,9 @@
 		5D243F1C22519DF60062A588 /* os_unknown.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D243F1B22519DF60062A588 /* os_unknown.c */; };
 		5D9B9DBA221BC50F0012D81F /* gen_test_main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D41B52A20CAD23A005E9A8E /* gen_test_main.cpp */; };
 		5D9B9DC6221BC58C0012D81F /* gen_xcode_tests.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D41B52C20CE32E8005E9A8E /* gen_xcode_tests.cpp */; };
-		5D9B9E11221BCA9B0012D81F /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D9B9E04221BCA7F0012D81F /* main.c */; };
 		5D9B9E12221BCA9B0012D81F /* llvm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5D9B9E01221BCA7F0012D81F /* llvm.cpp */; settings = {COMPILER_FLAGS = "$(LLVM_CXXFLAGS)"; }; };
 		5DA32D5A20CEACB700090405 /* TestSuite.m in Sources */ = {isa = PBXBuildFile; fileRef = 5DA32D5920CEACB700090405 /* TestSuite.m */; };
+		5DC95A50225B684200CE3828 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D9B9E04221BCA7F0012D81F /* main.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -94,6 +94,7 @@
 		5D9B9E17221C25B30012D81F /* os_win32.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = os_win32.c; sourceTree = "<group>"; };
 		5DA32D5920CEACB700090405 /* TestSuite.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TestSuite.m; path = tools/TestSuite.m; sourceTree = "<group>"; };
 		5DBC259C20BC133A0086904A /* gen_llvm_xcconfig.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = gen_llvm_xcconfig.sh; sourceTree = "<group>"; };
+		5DC95A4E225B626D00CE3828 /* keywords.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = keywords.c; sourceTree = "<group>"; };
 		5DFD2D8D213F69C500180703 /* kai-xctests-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "kai-xctests-Release.xcconfig"; sourceTree = "<group>"; };
 		5DFD2D8E213F69C500180703 /* kai-xctests-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "kai-xctests-Debug.xcconfig"; sourceTree = "<group>"; };
 		5DFD2D8F213F69C500180703 /* LLVM.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LLVM.xcconfig; sourceTree = "<group>"; };
@@ -197,6 +198,7 @@
 				5D9B9E0F221BCA7F0012D81F /* parser.c */,
 				5D9B9E10221BCA7F0012D81F /* string.h */,
 				5D9B9DF9221BCA7F0012D81F /* tests */,
+				5DC95A4E225B626D00CE3828 /* keywords.c */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -267,7 +269,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 5D41B53920CE393F005E9A8E /* Build configuration list for PBXNativeTarget "kai-xctests" */;
 			buildPhases = (
-				5DA32D5820CEA86800090405 /* ShellScript */,
+				5DA32D5820CEA86800090405 /* gen tests */,
 				5D41B53020CE393F005E9A8E /* Sources */,
 				5D41B53120CE393F005E9A8E /* Frameworks */,
 				5D41B53220CE393F005E9A8E /* Resources */,
@@ -387,13 +389,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		5DA32D5820CEA86800090405 /* ShellScript */ = {
+		5DA32D5820CEA86800090405 /* gen tests */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputPaths = (
 			);
+			name = "gen tests";
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -451,8 +454,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5DC95A50225B684200CE3828 /* main.c in Sources */,
 				5D9B9E12221BCA9B0012D81F /* llvm.cpp in Sources */,
-				5D9B9E11221BCA9B0012D81F /* main.c in Sources */,
 				5D243F1C22519DF60062A588 /* os_unknown.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

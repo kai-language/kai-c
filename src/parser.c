@@ -66,18 +66,63 @@ SourceRange rangeFromTokenToEndOfNode(Token token, AstNode node) {
 typedef struct Parser Parser;
 struct Parser {
     Lexer lexer;
-    Position prevStart;
-    Position prevEnd;
     Token tok;
     Package *package;
 
     const char *callingConvention;
     const char *linkPrefix;
+
+    Source *source;
+    Lex2 lexer2;
+    Tok2 tok2;
 };
 
+Tok2 next_token(Parser *self) {
+    self->tok2 = lexer_next_token(&self->lexer2);
+    self->tok2.range.start += self->source->start;
+    self->tok2.range.end   += self->source->start;
+    return self->tok2;
+}
+
+bool is_token(Parser *self, TokenKind kind) {
+    return self->tok2.kind == kind;
+}
+
+bool is_token_eof(Parser *self) {
+    return self->tok2.kind == TK_Eof;
+}
+
+bool is_token_name(Parser *self, const char *name) {
+    return self->tok2.kind == TK_Ident && self->tok2.tname == name;
+}
+
+bool is_keyword(Parser *self, const char *name) {
+    return is_token(self, TK_Keyword) && self->tok2.tname == name;
+}
+
+bool match_keyword(Parser *self, const char *name) {
+    if (!is_keyword(self, name)) return false;
+    next_token(self);
+    return true;
+}
+
+bool match_token(Parser *self, TokenKind kind) {
+    if (!is_token(self, kind)) return false;
+    next_token(self);
+    return true;
+}
+
+bool expect_token(Parser *self, TokenKind kind) {
+    if (!is_token(self, kind)) {
+//        fatal_error_here("Expected token %s, got %s", token_kind_name(kind), token_info());
+        return false;
+    }
+    next_token(self);
+    return true;
+}
+
+
 #define nextToken() \
-    p->prevStart = p->tok.pos; \
-    p->prevEnd = p->lexer.pos; \
     p->tok = NextToken(&p->lexer)
 
 b32 isToken(Parser *p, TokenKind kind) {
@@ -674,7 +719,7 @@ KeyValue parseExprCompoundField(Parser *p) {
         if (matchToken(p, TK_Colon)) {
             field.key = field.value;
             if (field.key->kind != ExprKindIdent) {
-                ReportError(p->package, SyntaxError, rangeFromPosition(p->prevStart), "Named initializer value must be an identifier or surrounded in '[]'");
+                ReportError(p->package, SyntaxError, field.key->pos, "Named initializer value must be an identifier or surrounded in '[]'");
             }
             field.value = parseExpr(p, false);
         }
@@ -1315,11 +1360,39 @@ DynamicArray(Stmt *) parseStmtsUntilEof(Parser *p) {
     return stmts;
 }
 
+const char *parser_onname(Parser *parser, Tok2 *tok, const char *str, u32 len) {
+    return StrInternRange(str, str + len);
+}
+
+const char *parser_onstr(Parser *parser, Tok2 *tok, const char *str, u32 len, bool is_temp) {
+    if (!is_temp) return str;
+    Arena *arena = &parser->package->arena;
+    char *new = ArenaAlloc(arena, len + 1);
+    strncpy(new, str, len);
+    new[len] = '\0';
+    return new;
+}
+
+void parser_online(void *userdata, Pos pos) {
+    printf("New line at offset %u\n", pos);
+}
+
+void parser_onmsg(void *userdata, Pos pos, const char *msg, u32 len) {
+    printf("%.*s\n", len, msg);
+}
+
+void parser_oncomment(void *userdata, Pos pos, const char *msg, u32 len) {
+    printf("%.*s\n", len, msg);
+}
+
 void parseAllStmts(Package *pkg, const char *code) {
+    Lex2 lexer2;
+    lexer_init(&lexer2, code);
+    Tok2 tok2 = lexer_next_token(&lexer2);
+
     Lexer lexer = MakeLexer(code, pkg);
     Token tok = NextToken(&lexer);
-    Parser parser = {lexer, .tok = tok, pkg};
-
+    Parser parser = {lexer, .tok = tok, pkg, .lexer2 = lexer2, .tok2 = tok2};
     while (!isTokenEof(&parser)) {
         Stmt *stmt = parseStmt(&parser);
         ArrayPush(pkg->stmts, stmt);
@@ -1486,8 +1559,8 @@ u64 source_memory_usage = 0;
 
 bool parse_package(Package *pkg) {
     read_package_source_files(pkg);
-    for (u64 i = 0; i < pkg->numSources; i++) {
-        pkg->current_source = &pkg->sources[i];
+    for (u64 i = 0; i < pkg->sources.count; i++) {
+        pkg->current_source = &pkg->sources.list[i];
         parseAllStmts(pkg, pkg->current_source->code);
     }
     if (HasErrors(pkg)) return false;

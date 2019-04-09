@@ -98,23 +98,23 @@ extern "C" {
 ((__TYPE__) (-((__ONE_COUNT__) != 0))) \
 & (((__TYPE__) -1) >> ((sizeof(__TYPE__) * CHAR_BIT) - (__ONE_COUNT__)))
 
-    typedef uint8_t  u8;
-    typedef uint16_t u16;
-    typedef uint32_t u32;
-    typedef uint64_t u64;
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
 
-    typedef int8_t   i8;
-    typedef int16_t  i16;
-    typedef int32_t  i32;
-    typedef int64_t  i64;
-    
-    typedef float    f32;
-    typedef double   f64;
+typedef int8_t   i8;
+typedef int16_t  i16;
+typedef int32_t  i32;
+typedef int64_t  i64;
 
-    typedef i8       b8;
-    typedef i32      b32;
+typedef float    f32;
+typedef double   f64;
 
-    void assertHandler(char const *file, i32 line, char const *msg, ...);
+typedef i8       b8;
+typedef i32      b32;
+
+void assertHandler(char const *file, i32 line, char const *msg, ...);
 
 #if defined(_MSC_VER)
 #if _MSC_VER < 1300
@@ -161,127 +161,150 @@ DEBUG_TRAP(); \
 #endif
 #endif
 
-    typedef struct Position Position;
-    struct Position {
-        const char *name;
-        u32 offset, line, column;
-    };
-
-    typedef struct SourceRange {
-        const char *name;
-        u32 offset;    // offset in file
-        u32 endOffset; // offset in file
-        u32 line, column;
-    } SourceRange;
-
-    /// Allocators
-    typedef enum AllocKind {
-        AT_Alloc,
-        AT_Calloc,
-        AT_Realloc,
-        AT_Free,
-        AT_FreeAll,
-    } AllocKind;
+/// Allocators
+typedef enum AllocKind {
+    AT_Alloc,
+    AT_Calloc,
+    AT_Realloc,
+    AT_Free,
+    AT_FreeAll,
+} AllocKind;
 
 
-    // NOTE: count is the target bytes always, size is either the size in bytes of each entry (for calloc) or the old size for realloc.
+// NOTE: count is the target bytes always, size is either the size in bytes of each entry (for calloc) or the old size for realloc.
 #define ALLOC_FUNC(name) void *name(void *payload, enum AllocType alType, size_t count, size_t size, void *old)
-    typedef void *allocFunc(void *payload, enum AllocKind alType, size_t count, size_t size, void *old);
-    //typedef ALLOC_FUNC(allocFunc);
+typedef void *allocFunc(void *payload, enum AllocKind alType, size_t count, size_t size, void *old);
+//typedef ALLOC_FUNC(allocFunc);
 
-    typedef struct Allocator Allocator;
-    struct Allocator {
-        allocFunc *func;
-        void *payload;
-    };
+typedef struct Allocator Allocator;
+struct Allocator {
+    allocFunc *func;
+    void *payload;
+};
 
-    // Arena Allocator
+// Arena Allocator
 
-    typedef struct Arena Arena;
-    struct Arena {
-        u8 *ptr;
-        u8 *end;
-        u8 **blocks;
-    };
+typedef struct Arena Arena;
+struct Arena {
+    u8 *ptr;
+    u8 *end;
+    u8 **blocks;
+};
 
-    void *ArenaAlloc(Arena *arena, size_t size);
-    void *ArenaCalloc(Arena *arena, size_t size);
-    void ArenaFree(Arena *arena);
+void *ArenaAlloc(Arena *arena, size_t size);
+void *ArenaCalloc(Arena *arena, size_t size);
+void ArenaFree(Arena *arena);
 
 #include "array.h"
 #include "queue.h"
 #include "map.h"
 
-    typedef struct DiagnosticError DiagnosticError;
-    typedef struct DiagnosticEngine DiagnosticEngine;
-    struct DiagnosticEngine {
-        Arena arena;
-        DynamicArray(DiagnosticError) errors;
-    };
+typedef struct DiagnosticError DiagnosticError;
+typedef struct DiagnosticEngine DiagnosticEngine;
+struct DiagnosticEngine {
+    Arena arena;
+    DynamicArray(DiagnosticError) errors;
+};
 
-    typedef struct Symbol Symbol;
-    typedef struct Stmt Stmt;
-    typedef struct CheckerInfo CheckerInfo;
+typedef struct Symbol Symbol;
+typedef struct Stmt Stmt;
+typedef struct CheckerInfo CheckerInfo;
 
-    typedef struct Scope Scope;
-    struct Scope {
-        Scope *parent;
-        Map members;
-    };
+typedef struct Scope Scope;
+struct Scope {
+    Scope *parent;
+    Map members;
+};
 
-    typedef struct Package Package;
-    typedef struct Source Source;
+typedef struct Package Package;
+typedef struct Source Source;
+typedef struct Sources Sources;
 
-    struct Source {
-        char name[MAX_PATH];
-        char path[MAX_PATH];
-        const char *code;
-    };
+typedef u32 Pos;
 
-    struct Package {
-        const char *path;
-        const char *fullpath;
-        const char *searchPath; // This path is the first path to search for imported by this package
-        Source *sources;
-        u64 numSources;
+struct Source {
+    char name[MAX_PATH];
+    char path[MAX_PATH];
+    const char *code;
+    Pos start;
+};
 
-        // The source we are currently working on for parsing or lexing
-        Source *current_source;
+struct Sources {
+    Source *list;
+    u32 count;
+    Pos end;
+};
 
-        DiagnosticEngine diagnostics;
-        Arena arena;
-        DynamicArray(Stmt *) stmts;
-        DynamicArray(Symbol *) symbols;
+typedef struct PosInfo PosInfo;
+struct PosInfo {
+    struct Source *source;
+    u32 offset;
+    u32 line;
+    u32 column;
+};
 
-        u64 astIdCount;
-        DynamicArray(CheckerInfo) checkerInfo;
+typedef struct Range Range;
+struct Range {
+    Pos start;
+    Pos end;
+};
 
-        // This pointer can be used by any backend to store symbol-related info for quick lookup
-        void *backendUserdata;
+typedef struct Position Position;
+struct Position {
+    const char *name;
+    u32 offset, line, column;
+};
 
-        Scope *scope;
-    };
+typedef struct SourceRange {
+    const char *name;
+    u32 offset;    // offset in file
+    u32 endOffset; // offset in file
+    u32 line, column;
+} SourceRange;
 
-    typedef union Val {
-        b32 b32;
-        i8 i8;
-        u8 u8;
-        i16 i16;
-        u16 u16;
-        i32 i32;
-        u32 u32;
-        i64 i64;
-        u64 u64;
-        f32 f32;
-        f64 f64;
-        uintptr_t ptr;
-    } Val;
+struct Package {
+    const char *path;
+    const char *fullpath;
+    const char *searchPath; // This path is the first path to search for imported by this package
+    Sources sources;
 
-    char *RemoveKaiExtension(char *filename);
-    char *KaiToObjectExtension(char *filename);
-    char *GetFileName(const char *path, char *res, char **dir);
-    char *AbsolutePath(const char *filename, char *resolved);
-    u32 BytesFromBits(u32 bits);
+    // The source we are currently working on for parsing or lexing
+    Source *current_source;
+
+    DiagnosticEngine diagnostics;
+    Arena arena;
+    DynamicArray(Stmt *) stmts;
+    DynamicArray(Symbol *) symbols;
+
+    u64 astIdCount;
+    DynamicArray(CheckerInfo) checkerInfo;
+
+    // This pointer can be used by any backend to store symbol-related info for quick lookup
+    void *backendUserdata;
+
+    Scope *scope;
+};
+
+typedef union Val {
+    b32 b32;
+    i8 i8;
+    u8 u8;
+    i16 i16;
+    u16 u16;
+    i32 i32;
+    u32 u32;
+    i64 i64;
+    u64 u64;
+    f32 f32;
+    f64 f64;
+    uintptr_t ptr;
+} Val;
+
+char *RemoveKaiExtension(char *filename);
+char *KaiToObjectExtension(char *filename);
+char *GetFileName(const char *path, char *res, char **dir);
+char *AbsolutePath(const char *filename, char *resolved);
+u32 BytesFromBits(u32 bits);
 
 #ifdef __cplusplus
 }

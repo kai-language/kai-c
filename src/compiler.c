@@ -81,20 +81,19 @@ void read_package_source_files(Package *pkg) {
         char *ext = path_ext(name);
         if (ext == name || strcmp(ext, "kai") != 0) continue;
         ext[-1] = '\0';
-        Source *source = ArenaAlloc(&pkg->arena, sizeof *source);
-        path_copy(source->name, name);
-
-        path_copy(source->path, iter.base);
-        path_join(source->path, iter.name);
-        path_absolute(source->path);
-
-        source->code = ReadEntireFile(source->path);
-        if (!source->code) {
-            ReportError(pkg, FatalError, (SourceRange){ source->path }, "Failed to read source file");
+        Source source = {0};
+        path_copy(source.name, name);
+        path_copy(source.path, iter.base);
+        path_join(source.path, iter.name);
+        path_absolute(source.path);
+        source.code = ReadEntireFile(source.path);
+        if (!source.code) {
+            ReportError(pkg, FatalError, (SourceRange){ source.path }, "Failed to read source file");
             return;
         }
-        source_memory_usage += strlen(source->code);
-        parseAllStmts(pkg, source->code);
+        pkg->sources.count++;
+        ArrayPush(pkg->sources.list, source);
+        source_memory_usage += strlen(source.code);
     }
     DirectoryIterClose(&iter);
 }

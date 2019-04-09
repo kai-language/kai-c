@@ -9,6 +9,7 @@
 #include "types.c"
 
 #include "error.c"
+#include "keywords.c"
 #include "lexer.c"
 #include "ast.c"
 #include "checker.h"
