@@ -11,10 +11,12 @@
 #include "error.c"
 #include "keywords.c"
 #include "lexer.c"
+#include "lexer2.c"
 #include "ast.c"
 #include "checker.h"
 #include "header.c"
 #include "parser.c"
+#include "parser2.c"
 #include "checker.c"
 #include "llvm.h"
 

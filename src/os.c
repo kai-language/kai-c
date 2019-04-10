@@ -1,4 +1,18 @@
 
+typedef struct DirectoryIter DirectoryIter;
+typedef struct SysInfo SysInfo;
+struct SysInfo {
+    const char *name;
+    const char *arch;
+};
+
+char *path_absolute(char path[MAX_PATH]);
+void DirectoryIterClose(DirectoryIter *it);
+void DirectoryIterNext(DirectoryIter *it);
+mode_t file_mode(const char *path);
+void DirectoryIterOpen(DirectoryIter *it,const char *path);
+SysInfo get_current_sysinfo(void);
+
 void path_normalize(char *path) {
     char *ptr;
     for (ptr = path; *ptr; ptr++) {
@@ -83,33 +97,50 @@ char *AbsolutePath(const char *filename, char *resolved) {
 }
 
 // FIXME: We are mmap()'ing this with no way to munmap it currently
-char *ReadEntireFile(const char *path) {
+char *ReadEntireFile(const char *path, u64 *len) {
     char *address = NULL;
 
 #ifdef SYSTEM_POSIX
     i32 fd = open(path, O_RDONLY); // FIXME: No matching close
     if (fd == -1) return NULL;
 
-    struct stat st;
-    if (stat(path, &st) == -1) return NULL;
-    size_t len = st.st_size;
+    // MMAP with nul term
+    // https://gist.github.com/pervognsen/1179630
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    off_t size = lseek(fd, 0, SEEK_END);
+    lseek(fd, pos, SEEK_SET);
+    if (size < 0) PANIC("Fseek returned -1");
+    if (len) *len = size;
 
-    address = (char *) mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
+    char *ptr;
+    int pagesize = getpagesize();
+    if (size % pagesize != 0) {
+        // Load npages + 1 so we get the os to null terminate the last page
+        ptr = mmap(NULL, size + 1, PROT_READ, 0, fd, 0);
+    } else {
+        //
+        size_t fullsize = size + pagesize;
+        ptr = mmap(NULL, fullsize, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        ptr = mmap(ptr, fullsize, PROT_READ, MAP_FIXED, fd, 0);
+    }
+    ASSERT(ptr[size] == 0);
+
     if (close(fd) == -1) perror("close was interupted"); // intentionally continue despite the failure, just keep the file open
     if (address == MAP_FAILED) return NULL;
     close(fd);
 #else
     FILE *fd = fopen(path, "rb");
-    if (!fd) NULL;
+    if (!fd) return NULL;
 
     if (fseek(fd, 0, SEEK_END) == 0) {
         long size = ftell(fd);
-        if (size == -1) NULL;
+        if (size == -1) return NULL;
         address = (char *)malloc(size+1);
         if (fseek(fd, 0, SEEK_SET) != 0) NULL;
         size_t read = fread(address, 1, size, fd);
-        if (read == 0) NULL;
+        if (read == 0) return NULL;
         address[read] = '\0';
+        if (len) *len = read;
     }
 
     fclose(fd);
@@ -118,15 +149,7 @@ char *ReadEntireFile(const char *path) {
     return address;
 }
 
-typedef struct SysInfo SysInfo;
-struct SysInfo {
-    const char *name;
-    const char *arch;
-};
-
 SysInfo CurrentSystem = {0};
-
-SysInfo get_current_sysinfo(void);
 
 bool HaveInitializedDetailsForCurrentSystem = false;
 void InitDetailsForCurrentSystem() {

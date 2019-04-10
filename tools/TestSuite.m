@@ -9,6 +9,9 @@ XCTestCase *current_test_case;
 #define ASSERT(cond) ASSERT_MSG_VA((cond))
 #define PANIC(msg) ASSERT_MSG_VA(0, msg)
 #define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented");
+
+#pragma clang diagnostic ignored "-Wmacro-redefined" // Allow redefinition of helper macros
+
 #include "../src/main.c"
 
 //
@@ -69,6 +72,24 @@ XCTestCase *current_test_case;
 
 - (void)test_array {
     test_array();
+}
+
+@end
+
+//
+// Tests found in file src/lexer2.c
+@interface lexer2 : XCTestCase
+@end
+
+@implementation lexer2
+
+- (void) setUp {
+    current_test_case = self;
+    [self setContinueAfterFailure: false];
+}
+
+- (void)test_lexer2 {
+    test_lexer2();
 }
 
 @end

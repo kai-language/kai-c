@@ -87,7 +87,7 @@ void reset_init_package(Package *package) {
     package->scope = pushScope(package, compiler.builtin_package.scope);
     package->path = "test";
     package->fullpath = "test";
-    package->searchPath = "test";
+    package->search_path = "test";
 }
 
 void test_checkConstantDeclarations() {

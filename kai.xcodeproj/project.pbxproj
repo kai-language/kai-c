@@ -46,6 +46,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5D1783CE225D566000C448D8 /* parser2.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = parser2.c; sourceTree = "<group>"; };
+		5D1783D0225D66B700C448D8 /* lexer2.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lexer2.c; sourceTree = "<group>"; };
 		5D243F1A225182740062A588 /* queue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = queue.h; sourceTree = "<group>"; };
 		5D243F1B22519DF60062A588 /* os_unknown.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = os_unknown.c; sourceTree = "<group>"; };
 		5D243F1E2251A8190062A588 /* targets.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = targets.h; sourceTree = "<group>"; };
@@ -173,6 +175,8 @@
 				5D9B9DF6221BCA7F0012D81F /* types.h */,
 				5D9B9DF7221BCA7F0012D81F /* flags.h */,
 				5D9B9DF8221BCA7F0012D81F /* lexer.c */,
+				5D1783CE225D566000C448D8 /* parser2.c */,
+				5D1783D0225D66B700C448D8 /* lexer2.c */,
 				5D9B9DFB221BCA7F0012D81F /* string.c */,
 				5D9B9DFC221BCA7F0012D81F /* queue.c */,
 				5D243F1E2251A8190062A588 /* targets.h */,

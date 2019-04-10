@@ -20,6 +20,9 @@ XCTestCase *current_test_case;
 #define ASSERT(cond) ASSERT_MSG_VA((cond))
 #define PANIC(msg) ASSERT_MSG_VA(0, msg)
 #define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented");
+
+#pragma clang diagnostic ignored "-Wmacro-redefined" // Allow redefinition of helper macros
+
 #include "../src/main.c"
 )";
 

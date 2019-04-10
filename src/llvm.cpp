@@ -325,14 +325,14 @@ void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
 }
 
 llvm::DIFile *setDebugInfoForPackage(llvm::DIBuilder *b, Package *import) {
-    if (compiler.flags.debug && !import->backendUserdata) {
+    if (compiler.flags.debug && !import->userdata) {
         char directory[MAX_PATH];
         strcpy(directory, import->fullpath);
         char *filename = strrchr(directory, '/');
         *(filename++) = '\0';
 
         llvm::DIFile *file = b->createFile(filename, directory);
-        import->backendUserdata = file;
+        import->userdata = file;
         return file;
     }
     return NULL;
@@ -673,7 +673,7 @@ llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
                 CheckerInfo *prevCheckerInfo = ctx->checkerInfo;
                 ctx->checkerInfo = info.value.Import.package->checkerInfo;
 
-                llvm::DIFile *file = (llvm::DIFile *) info.value.Import.package->backendUserdata;
+                llvm::DIFile *file = (llvm::DIFile *) info.value.Import.package->userdata;
                 Debug debug = {ctx->d.builder, ctx->d.unit, file, ctx->d.types, file};
 
                 llvm::IRBuilder<> b(ctx->m->getContext());

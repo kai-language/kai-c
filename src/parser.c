@@ -1,6 +1,5 @@
 
 i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
-    0,
     [TK_Question] = 1,
     [TK_Lor] = 1,
     [TK_Land] = 2,
@@ -76,51 +75,6 @@ struct Parser {
     Lex2 lexer2;
     Tok2 tok2;
 };
-
-Tok2 next_token(Parser *self) {
-    self->tok2 = lexer_next_token(&self->lexer2);
-    self->tok2.range.start += self->source->start;
-    self->tok2.range.end   += self->source->start;
-    return self->tok2;
-}
-
-bool is_token(Parser *self, TokenKind kind) {
-    return self->tok2.kind == kind;
-}
-
-bool is_token_eof(Parser *self) {
-    return self->tok2.kind == TK_Eof;
-}
-
-bool is_token_name(Parser *self, const char *name) {
-    return self->tok2.kind == TK_Ident && self->tok2.tname == name;
-}
-
-bool is_keyword(Parser *self, const char *name) {
-    return is_token(self, TK_Keyword) && self->tok2.tname == name;
-}
-
-bool match_keyword(Parser *self, const char *name) {
-    if (!is_keyword(self, name)) return false;
-    next_token(self);
-    return true;
-}
-
-bool match_token(Parser *self, TokenKind kind) {
-    if (!is_token(self, kind)) return false;
-    next_token(self);
-    return true;
-}
-
-bool expect_token(Parser *self, TokenKind kind) {
-    if (!is_token(self, kind)) {
-//        fatal_error_here("Expected token %s, got %s", token_kind_name(kind), token_info());
-        return false;
-    }
-    next_token(self);
-    return true;
-}
-
 
 #define nextToken() \
     p->tok = NextToken(&p->lexer)

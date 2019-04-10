@@ -94,47 +94,6 @@ struct Lexer {
     b8 insertSemiBeforeLBrace;
 };
 
-typedef struct Tok2 Tok2;
-typedef struct Lex2 Lex2;
-typedef struct LexerClient LexerClient;
-
-typedef const char *(*OnStrFunc)  (void *userdata, Tok2 *tok, const char *str, u32 len, bool is_temp);
-typedef const char *(*OnNameFunc) (void *userdata, Tok2 *tok, const char *str, u32 len);
-typedef void  (*OnLineFunc)    (void *userdata, Pos pos);
-typedef void  (*OnMsgFunc)     (void *userdata, Pos pos, const char *str, u32 len);
-typedef void  (*OnCommentFunc) (void *userdata, Pos pos, const char *str, u32 len);
-
-struct Tok2 {
-    TokenKind kind;
-//    TokenFlags flags;
-    Range range;
-    union {
-        const char *tname;
-        const char *tstr;
-        u64 tint;
-        f64 tfloat;
-    };
-};
-
-struct LexerClient {
-    void *data;
-    OnLineFunc    online;
-    OnStrFunc     onstr;
-    OnNameFunc    onname;
-    OnMsgFunc     onmsg;
-    OnCommentFunc oncomment;
-};
-
-struct Lex2 {
-    const char *str;
-    const char *start;
-
-    Tok2 tok;
-    DynamicArray(char) string_temp_buffer;
-
-    LexerClient client;
-};
-
 const char *DescribeTokenKind(TokenKind tk);
 const char *DescribeToken(Token tok);
 

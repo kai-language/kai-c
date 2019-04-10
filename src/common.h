@@ -227,6 +227,10 @@ struct Source {
     char path[MAX_PATH];
     const char *code;
     Pos start;
+    u32 len;
+
+    u32 *line_offsets;
+    u32 num_line_offsets;
 };
 
 struct Sources {
@@ -265,7 +269,7 @@ typedef struct SourceRange {
 struct Package {
     const char *path;
     const char *fullpath;
-    const char *searchPath; // This path is the first path to search for imported by this package
+    const char *search_path; // This path is the first path to search for imported by this package
     Sources sources;
 
     // The source we are currently working on for parsing or lexing
@@ -280,7 +284,7 @@ struct Package {
     DynamicArray(CheckerInfo) checkerInfo;
 
     // This pointer can be used by any backend to store symbol-related info for quick lookup
-    void *backendUserdata;
+    void *userdata;
 
     Scope *scope;
 };

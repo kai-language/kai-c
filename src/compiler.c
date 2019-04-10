@@ -24,8 +24,8 @@ bool is_package_path(const char *package_path, const char *search_path) {
 
 bool resolve_package_path(char dest[MAX_PATH], const char *path, Package *importer) {
     if (importer) {
-        if (is_package_path(path, importer->searchPath)) {
-            path_copy(dest, importer->searchPath);
+        if (is_package_path(path, importer->search_path)) {
+            path_copy(dest, importer->search_path);
             path_join(dest, path);
             return true;
         }
@@ -86,11 +86,14 @@ void read_package_source_files(Package *pkg) {
         path_copy(source.path, iter.base);
         path_join(source.path, iter.name);
         path_absolute(source.path);
-        source.code = ReadEntireFile(source.path);
+        u64 len;
+        source.code = ReadEntireFile(source.path, &len);
         if (!source.code) {
             ReportError(pkg, FatalError, (SourceRange){ source.path }, "Failed to read source file");
             return;
         }
+        if (len > UINT32_MAX) PANIC("error: Files over 4GB are unsupported");
+        source.len = (u32) len;
         pkg->sources.count++;
         ArrayPush(pkg->sources.list, source);
         source_memory_usage += strlen(source.code);
@@ -119,12 +122,11 @@ Package *import_package(const char *path, Package *importer) {
 
         char search_path[MAX_PATH];
         package_search_path(search_path, fullpath);
-        package->searchPath = StrIntern(search_path);
+        package->search_path = StrIntern(search_path);
         if (compiler.flags.verbose) printf("Importing %s\n", package->path);
 
         MapSet(&compiler.package_map, fullpath, package);
         ArrayPush(compiler.packages, package);
-
         QueuePushBack(&compiler.parsing_queue, package);
     }
     return package;
