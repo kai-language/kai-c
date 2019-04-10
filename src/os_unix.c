@@ -62,6 +62,38 @@ void DirectoryIterOpen(DirectoryIter *it, const char *path) {
     DirectoryIterNext(it);
 }
 
+// FIXME: We are mmap()'ing this with no way to munmap it currently
+const char *ReadEntireFile(const char *path, u64 *len) {
+    char *address = NULL;
+    i32 fd = open(path, O_RDONLY); // FIXME: No matching close
+    if (fd == -1) return NULL;
+    // MMAP with nul term
+    // https://gist.github.com/pervognsen/1179630
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    off_t size = lseek(fd, 0, SEEK_END);
+    lseek(fd, pos, SEEK_SET);
+    if (size < 0) PANIC("Fseek returned -1");
+    if (len) *len = size;
+
+    char *ptr;
+    int pagesize = getpagesize();
+    if (size % pagesize != 0) {
+        // Load npages + 1 so we get the os to null terminate the last page
+        ptr = mmap(NULL, size + 1, PROT_READ, 0, fd, 0);
+    } else {
+        //
+        size_t fullsize = size + pagesize;
+        ptr = mmap(NULL, fullsize, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        ptr = mmap(ptr, fullsize, PROT_READ, MAP_FIXED, fd, 0);
+    }
+    ASSERT(ptr[size] == 0);
+
+    if (close(fd) == -1) perror("close was interupted"); // intentionally continue despite the failure, just keep the file open
+    if (address == MAP_FAILED) return NULL;
+    close(fd);
+    return address;
+}
+
 SysInfo get_current_sysinfo() {
     struct utsname *uts = malloc(sizeof(struct utsname));
     int res = uname(uts);

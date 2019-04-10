@@ -1976,7 +1976,7 @@ b32 emitObjectFile(Package *p, char *name, Context *ctx) {
         return 0;
 
     // Linking and debug symbols
-#ifdef SYSTEM_OSX
+#if defined(__APPLE__)
     bool isStatic = compiler.target_output == OutputType_Static;
 
     DynamicArray(u8) linkerFlags = NULL;

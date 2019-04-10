@@ -3,7 +3,7 @@
 
 void Backtrace() {
 #define BACKTRACE_MAX_STACK_DEPTH 50
-#if SYSTEM_POSIX
+#if defined(__unix__)
     void* callstack[BACKTRACE_MAX_STACK_DEPTH];
     int i, frames = backtrace(callstack, BACKTRACE_MAX_STACK_DEPTH);
     char** strs = backtrace_symbols(callstack, frames);
@@ -11,7 +11,7 @@ void Backtrace() {
         fprintf(stderr, "%s\n", strs[i]);
     }
     free(strs);
-#elif SYSTEM_WINDOWS
+#else
     // NOTE: Windows doesn't have a backtrace implementation that's not super tedious to use
 #endif
 }

@@ -1,4 +1,13 @@
 
+#if defined(__APPLE__)
+#define __unix__
+#endif
+
+#if defined(__unix__)
+#define _GNU_SOURCE // We need realpath defined
+#include <unistd.h>
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -14,46 +23,7 @@
 extern "C" {
 #endif
 
-#if defined(_WIN32) || defined(_WIN64)
-#ifndef SYSTEM_WINDOWS
-#define SYSTEM_WINDOWS 1
-#endif
-#elif defined(__APPLE__) && defined(__MACH__)
-#ifndef SYSTEM_POSIX
-#define SYSTEM_POSIX 1
-#endif
-
-#ifndef SYSTEM_OSX
-#define SYSTEM_OSX 1
-#endif
-#elif defined(__unix__)
-    // We need to define this for 'realpath' to be included
-#define _GNU_SOURCE
-
-#ifndef SYSTEM_POSIX
-#define SYSTEM_POSIX 1
-#endif
-
-#ifndef SYSTEM_UNIX
-#define SYSTEM_UNIX 1
-#endif
-
-#if defined(__linux__)
-#ifndef SYSTEM_LINUX
-#define SYSTEM_LINUX 1
-#endif
-#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
-#ifndef SYSTEM_FREEBSD
-#define SYSTEM_FREEBSD 1
-#endif
-#else
-#error This UNIX operating system is not supported
-#endif
-#else
-#error This operating system is not supported
-#endif
-
-#if SYSTEM_POSIX
+#if defined(__unix__)
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -63,7 +33,7 @@ extern "C" {
 #include <sys/utsname.h> // uname to default arch & os to current
 
 #define STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
-#elif SYSTEM_WINDOWS
+#elif defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
 #include <crtdbg.h>
 
@@ -86,14 +56,12 @@ extern "C" {
 #define ALIGN_DOWN_PTR(p, a) ((void *)ALIGN_DOWN((uintptr_t)(p), (a)))
 #define ALIGN_UP_PTR(p, a) ((void *)ALIGN_UP((uintptr_t)(p), (a)))
 
-#define CONCAT(x,y) x##y
-
 #define KB(x) (  (x)*1024LL)
 #define MB(x) (KB(x)*1024LL)
 #define GB(x) (MB(x)*1024LL)
 #define TB(x) (GB(x)*1024LL)
 
-    // https://stackoverflow.com/a/28703383
+// https://stackoverflow.com/a/28703383
 #define BITMASK(__TYPE__, __ONE_COUNT__) \
 ((__TYPE__) (-((__ONE_COUNT__) != 0))) \
 & (((__TYPE__) -1) >> ((sizeof(__TYPE__) * CHAR_BIT) - (__ONE_COUNT__)))
