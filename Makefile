@@ -2,6 +2,8 @@ CC = clang
 CXX = clang++
 PREFIX=/usr/local
 
+local_CXXFLAGS = -std=c++11
+
 debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG $(CFLAGS)
 release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE $(CFLAGS)
 
@@ -37,7 +39,7 @@ llvm.o:
 	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
 
 tools/genTests:
-	$(CXX) -o tools/genTests tools/gen_test_main.cpp
+	$(CXX) $(local_CXXFLAGS) -o tools/genTests tools/gen_test_main.cpp
 
 tests: clean tools/genTests
 	@./tools/genTests $(shell find src -maxdepth 1 -type d) > $(TEST_MAIN)
@@ -49,6 +51,9 @@ tests: clean tools/genTests
 
 install:
 	cp $(TARGET) $(PREFIX)/bin/
+
+generate_db:
+	intercept-build --override-compiler make CC=intercept-cc CXX=intercept-c++ all
 
 clean:
 	rm -f $(TARGET) core.o llvm.o $(TEST_TARGET) $(TEST_LOG) $(TEST_MAIN)
