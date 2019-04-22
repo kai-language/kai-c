@@ -1,9 +1,10 @@
 
+#ifndef UNITY
+#include "all.h"
+#include "utf.h"
+#endif
 // NOTE: The data passed to the Lexer must be nul terminated
 #define FileEnd 0
-
-// “
-#define LeftDoubleQuote 0x201C
 
 u32 DecodeCodePoint(u32 *cpLen, const char *str) {
     static const u32 FIRST_LEN[] = {

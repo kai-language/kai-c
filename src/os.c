@@ -1,11 +1,13 @@
 
-typedef struct SysInfo SysInfo;
+#include "all.h"
+#include "os.h"
+
+#if INTERFACE
 struct SysInfo {
     const char *name;
     const char *arch;
 };
 
-typedef struct DirectoryIter DirectoryIter;
 struct DirectoryIter {
     int valid;
     int error;
@@ -17,15 +19,14 @@ struct DirectoryIter {
     void *handle;
 };
 
-char *path_absolute(char path[MAX_PATH]);
 mode_t file_mode(const char *path);
-
-void DirectoryIterClose(DirectoryIter *it);
-void DirectoryIterNext(DirectoryIter *it);
-void DirectoryIterOpen(DirectoryIter *it, const char *path);
-
-SysInfo get_current_sysinfo(void);
+char *path_absolute(char path[MAX_PATH]);
+void dir_iter_open(DirectoryIter *it, const char *path);
+void dir_iter_next(DirectoryIter *it);
+void dir_iter_close(DirectoryIter *it);
 const char *ReadEntireFile(const char *path, u64 *len);
+SysInfo get_current_sysinfo(void);
+#endif
 
 void path_normalize(char *path) {
     char *ptr;
@@ -70,6 +71,7 @@ char *path_file(char path[MAX_PATH]) {
     return path;
 }
 
+// returns path if no '.' occurs
 char *path_ext(char path[MAX_PATH]) {
     for (char *ptr = path + strlen(path); ptr != path; ptr--) {
         if (ptr[-1] == '.') {
@@ -79,22 +81,49 @@ char *path_ext(char path[MAX_PATH]) {
     return path;
 }
 
-bool DirectoryIterSkip(DirectoryIter *it) {
+bool dir_iter_skip(DirectoryIter *it) {
     return strcmp(it->name, ".") == 0 || strcmp(it->name, "..") == 0;
 }
 
 SysInfo CurrentSystem = {0};
 
 bool HaveInitializedDetailsForCurrentSystem = false;
-void InitDetailsForCurrentSystem() {
+void InitDetailsForCurrentSystem(void) {
 
 }
 
-#if defined(_POSIX_VERSION)
-#include "os_unix.c"
+void *xcalloc(size_t num_elems, size_t elem_size) {
+    void *ptr = calloc(num_elems, elem_size);
+    if (!ptr) {
+        perror("calloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
+void *xrealloc(void *ptr, size_t num_bytes) {
+    ptr = realloc(ptr, num_bytes);
+    if (!ptr) {
+        perror("realloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
+void *xmalloc(size_t num_bytes) {
+    void *ptr = malloc(num_bytes);
+    if (!ptr) {
+        perror("malloc failed");
+        exit(1);
+    }
+    return ptr;
+}
+
+#if defined(__unix__)
+#include "os/os_unix.c"
 #elif defined(_WIN32) || defined(_WIN64)
-#include "os_win32.c"
+#include "os/os_win32.c"
 #else
-#include "os_unknown.c"
+#warning "Unsupported platform"
 #endif
 

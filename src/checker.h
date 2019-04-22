@@ -1,164 +1,105 @@
+#pragma once
 
-typedef u8 CheckerInfoKind;
-enum Enum_CheckerInfoKind {
-    // None is the zero value and so the default for zero initialized checker info.
-    CheckerInfoKindNone,
-    CheckerInfoKindConstant,
-    CheckerInfoKindVariable,
-    CheckerInfoKindForeign,
-    CheckerInfoKindIdent,
-    CheckerInfoKindSelector,
-    CheckerInfoKindBasicExpr,
-    CheckerInfoKindLabel,
-    CheckerInfoKindGoto,
-    CheckerInfoKindFor,
-    CheckerInfoKindSwitch,
-    CheckerinfoKindCase,
-    NUM_CHECKER_INFO_KINDS,
+// requires nothing
+
+// package.h
+typedef struct Package Package;
+
+// ast.h
+typedef struct Stmt Stmt;
+typedef struct Expr Expr;
+typedef struct Decl Decl;
+
+// types.h
+typedef struct Type Type;
+
+typedef union Val Val;
+union Val {
+    i64 i;
+    u64 u;
+    f64 f;
+    void *p;
 };
 
-STATIC_ASSERT(STMT_KIND_END <= UINT8_MAX, "enum values overflow storage type");
-
-typedef u8 Conversion;
-#define ConversionKindMask 0x0F // Lower 3 bits denote the class
-#define ConversionKindNone    0
-#define ConversionKindSame    1
-#define ConversionKindFtoI    2
-#define ConversionKindItoF    3
-#define ConversionKindPtoI    4
-#define ConversionKindItoP    5
-#define ConversionKindBool    6
-#define ConversionKindTuple   7 // Information on the conversion can be found on their receiver.
-#define ConversionKindAny    15
-
-#define ConversionFlag_Extend 0x10 // 0001
-#define ConversionFlag_Signed 0x20 // 0010
-#define ConversionFlag_Float  0x40 // 0100 (Source type is a Float)
-
-typedef struct CheckerInfo_Constant CheckerInfo_Constant;
-struct CheckerInfo_Constant {
-    Symbol *symbol;
+typedef enum SymKind SymKind;
+enum SymKind {
+    SYM_NONE = 0,
+    SYM_VAR,
+    SYM_VAL,
+    SYM_PACKAGE,
+    SYM_LIBRARY,
 };
 
-typedef struct CheckerInfo_Variable CheckerInfo_Variable;
-struct CheckerInfo_Variable {
-    Symbol **symbols;
-    Conversion *conversions;
+typedef enum SymState SymState;
+enum SymState {
+    SYM_UNRESOLVED = 0,
+    SYM_RESOLVING,
+    SYM_RESOLVED,
 };
 
-typedef struct CheckerInfo_Foreign CheckerInfo_Foreign;
-struct CheckerInfo_Foreign {
-    Symbol *symbol;
+typedef enum Reachable Reachable;
+enum Reachable {
+    REACHABLE_NONE = 0,
+    REACHABLE_NATURAL,
+    REACHABLE_FORCED,
 };
 
-typedef struct CheckerInfo_Ident CheckerInfo_Ident;
-struct CheckerInfo_Ident {
-    Conversion coerce;
-    Symbol *symbol;
-};
-
-typedef u8 SelectorKind;
-#define SelectorKindNone   0x0
-#define SelectorKindStruct 0x1
-#define SelectorKindImport 0x2
-
-typedef struct Selector_Struct Selector_Struct;
-struct Selector_Struct {
-    u32 index;  // The member index in the structure
-    u32 offset; // The member offset in the structure (in bits)
-};
-
-typedef struct Selector_Import Selector_Import;
-struct Selector_Import {
-    Symbol *symbol;
-    Package *package;
-};
-
-typedef union SelectorValue SelectorValue;
-union SelectorValue {
-    Selector_Struct Struct;
-    Selector_Import Import;
-};
-
-typedef struct CheckerInfo_Selector CheckerInfo_Selector;
-struct CheckerInfo_Selector {
-    Conversion coerce;
-    Type *type;
-    b8 isConstant;
-    Val val;
-    
-    SelectorKind kind;
-    SelectorValue value;
-};
-
-typedef struct CheckerInfo_BasicExpr CheckerInfo_BasicExpr;
-struct CheckerInfo_BasicExpr {
-    Conversion coerce;
-    Type *type;
-    b8 isConstant;
-    Val val;
-};
-
-typedef struct CheckerInfo_Label CheckerInfo_Label;
-struct CheckerInfo_Label {
-    Symbol *symbol;
-};
-
-typedef struct CheckerInfo_Goto CheckerInfo_Goto;
-struct CheckerInfo_Goto {
-    // NOTE: When the statement provides an expression this can be NULL. In this case the backend should generate the
-    //  expression value and branch to the address returned
-    Symbol *target;
-};
-
-typedef struct CheckerInfo_For CheckerInfo_For;
-struct CheckerInfo_For {
-    Symbol *continueTarget;
-    Symbol *breakTarget;
-};
-
-typedef struct CheckerInfo_Switch CheckerInfo_Switch;
-struct CheckerInfo_Switch {
-    Symbol *breakTarget;
-};
-
-typedef struct CheckerInfo_Case CheckerInfo_Case;
-struct CheckerInfo_Case {
-    Symbol *fallthroughTarget;
-};
-
-STATIC_ASSERT(offsetof(CheckerInfo_Ident,     coerce) == 0, "conversion must be at offset 0 for expressions");
-STATIC_ASSERT(offsetof(CheckerInfo_Selector,  coerce) == 0, "conversion must be at offset 0 for expressions");
-STATIC_ASSERT(offsetof(CheckerInfo_BasicExpr, coerce) == 0, "conversion must be at offset 0 for expressions");
-
-typedef struct CheckerInfo CheckerInfo;
-struct CheckerInfo {
-    CheckerInfoKind kind;
+typedef struct Sym Sym;
+struct Sym {
+    const char *name;
+    Package *owning_package;
+    SymKind kind;
+    SymState state;
+    Reachable reachable : 8;
+    Decl *decl;
+    const char *external_name;
     union {
-        Conversion coerce; // Present when CheckerInfo is for an expression
-        CheckerInfo_Constant Constant;
-        CheckerInfo_Variable Variable;
-        CheckerInfo_Foreign Foreign;
-        CheckerInfo_Selector Selector;
-        CheckerInfo_Ident Ident;
-        CheckerInfo_BasicExpr BasicExpr;
-        CheckerInfo_Label Label;
-        CheckerInfo_Goto Goto;
-        CheckerInfo_For For;
-        CheckerInfo_Switch Switch;
-        CheckerInfo_Case Case;
+        struct {
+            Type *type;
+            Val val;
+        };
+        Package *package;
     };
 };
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-Symbol *Lookup(Scope *scope, const char *name);
-Type *TypeFromCheckerInfo(CheckerInfo info);
-b32 IsInteger(Type *type);
-b32 IsSigned(Type *type);
-b32 IsFloat(Type *type);
-#ifdef __cplusplus
-}
-#endif
+typedef struct SymMapEntry SymMapEntry;
+struct SymMapEntry {
+    const char *key;
+    Sym *value;
+};
 
+typedef struct Scope Scope;
+struct Scope {
+    Scope *parent;
+    SymMapEntry *members;
+};
+
+typedef enum OperandFlags OperandFlags;
+enum OperandFlags {
+    OPERAND_FLAGS_NONE = 0,
+    LVALUE    = 0x01,
+    CONST     = 0x02,
+    TYPE      = 0x04,
+    PACKAGE   = 0x08,
+    LIBRARY   = 0x10,
+    SPECIAL   = 0x20, // Used to indicate something about the Operand is special
+    BAD_VALUE = 0x80,
+};
+
+typedef struct Operand Operand;
+struct Operand {
+    Type *type;
+    OperandFlags flags : 8;
+    Val val;
+};
+
+typedef struct OperandMapEntry OperandMapEntry;
+struct OperandMapEntry {
+    Expr *key;
+    Operand value;
+};
+
+void check(Package *package, Stmt *stmt);
+Val resolve_value(Package *package, Expr *expr);
+void scope_declare(Scope *scope, Sym *sym);
+Scope *scope_push(Package *package, Scope *parent);

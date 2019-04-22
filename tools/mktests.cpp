@@ -4,59 +4,150 @@
 
 #define MAX 4096
 
+
+#if defined(__unix__) || defined(__APPLE__)
+
 //
 //
 // Prelude
 //
 char prelude[] =
 R"(
-#import <XCTest/XCTest.h>
+#include <stdio.h>
+#include <setjmp.h>
+#include <signal.h>
 
-// NOTE: The XCTest Assertions expect to have `self` defined, so we do that for them and set self for each test case
-XCTestCase *current_test_case;
+#define DEBUG 1
+#define TEST  1
 
-#define ASSERT_MSG_VA(cond, ...) _XCTPrimitiveAssertTrue(current_test_case, cond, @#cond, __VA_ARGS__)
-#define ASSERT_MSG(cond, msg) ASSERT_MSG_VA((cond), "(" #cond ") " msg)
-#define ASSERT(cond) ASSERT_MSG_VA((cond))
-#define PANIC(msg) ASSERT_MSG_VA(0, msg)
-#define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented");
+int _fileTestsPassCount = 0;
+int _totalTestsPassCount = 0;
+int _currentTestAsserted = 0;
+const char *_currentTestCaseName;
 
-#pragma clang diagnostic ignored "-Wmacro-redefined" // Allow redefinition of helper macros
+jmp_buf _returnToPerformTestCase;
 
-#include "../src/main.c"
+void colorBold() {
+#ifndef NO_COLOR
+    printf("\033[1m");
+#endif
+}
+
+void colorGreen() {
+#ifndef NO_COLOR
+    printf("\033[32m");
+#endif
+}
+
+void colorRed() {
+#ifndef NO_COLOR
+    printf("\033[31m");
+#endif
+}
+
+void colorGray() {
+#ifndef NO_COLOR
+    printf("\033[90m");
+#endif
+}
+
+void colorReset() {
+#ifndef NO_COLOR
+    printf("\033[0m");
+#endif
+}
+
+void handleSignal(int sig, siginfo_t *info, void *where) {
+    longjmp(_returnToPerformTestCase, 1);
+}
+
+#define ASSERT_MSG_VA(cond, msg, ...) \
+do { \
+    if (!(cond)) { \
+        assertHandler(__FILE__, (i32)__LINE__, "(" #cond ") " msg, __VA_ARGS__); \
+        fprintf(stderr, "\n"); \
+        _currentTestAsserted = 1; \
+        longjmp(_returnToPerformTestCase, 1); \
+    } \
+} while(0)
+
+#define ASSERT_MSG(cond, msg) ASSERT_MSG_VA(cond, msg, 0)
+
+#define ASSERT(cond) ASSERT_MSG_VA(cond, "", 0)
+#define PANIC(msg) ASSERT_MSG_VA(0, msg, 0)
+#define UNIMPLEMENTED() ASSERT_MSG_VA(0, "unimplemented", 0);
+
+#include "unity.c"
+
+void setSignalHandlerCheckingError(int sig) {
+    struct sigaction sa_new = {0};
+
+    sa_new.sa_sigaction = handleSignal;
+    sa_new.sa_flags = SA_SIGINFO;
+    if (sigaction(sig, &sa_new, NULL) == -1) {
+        perror("failed to set handler for signal");
+        exit(1);
+    }
+}
+
+void _performTestCaseReportingResults(void (*testCase)(void), const char *name) {
+    _currentTestCaseName = name;
+    if (setjmp(_returnToPerformTestCase) == 0)
+        testCase();
+
+    int success = _currentTestAsserted ? 0 : 1;
+
+    size_t width = strlen(name);
+
+    int approxWidth = 60;
+
+    if (!success) approxWidth -= 4;
+
+    // Pad if it's shorter than desired.
+
+    // Then output the actual thing.
+
+    printf("  %s", name);
+
+    putchar(' ');
+
+    while (width++ <= approxWidth)
+        putchar('.');
+
+    putchar(' ');
+
+    success ? colorGreen() : colorRed();
+    printf("%s\n", success ? "OK" : "FAILED");
+    colorReset();
+
+    _fileTestsPassCount += _currentTestAsserted ? 0 : 1;
+    _totalTestsPassCount += _currentTestAsserted ? 0 : 1;
+    _currentTestAsserted = 0;
+}
+
+int main() {
+    setSignalHandlerCheckingError(SIGINT);
+    setSignalHandlerCheckingError(SIGABRT);
+    setSignalHandlerCheckingError(SIGILL);
+    setSignalHandlerCheckingError(SIGSEGV);
+    setSignalHandlerCheckingError(SIGFPE);
+    setSignalHandlerCheckingError(SIGBUS);
+    setSignalHandlerCheckingError(SIGPIPE);
+
 )";
 
-// End of Prelude
+#else
+#error "Platform not yet supported"
+#endif
 
+
+#if defined(__unix__) || defined(__APPLE__)
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
 #include <assert.h>
-#include <libgen.h>
-#include <string.h>
-
-char *GetFileName(const char *path, char *res, char **dir) {
-    size_t len = strlen(path);
-    memcpy(res, path, len);
-    res[len] = '\0';
-    char *index = strrchr(res, '/');
-
-    if (dir) {
-        *index = '\0';
-        *dir = res;
-    }
-
-    return index ? index+1 : res;
-}
-
-char *RemoveFileExtension(char *filename) {
-    char *dot = strrchr(filename, '.');
-    if (!dot) return filename;
-    *dot = '\0';
-    return filename;
-}
 
 typedef struct DirectoryEntry {
     char name[MAX];
@@ -111,6 +202,10 @@ DirectoryIter DirectoryIterOpen(const char *path) {
     return it;
 }
 
+#else
+#error "Platform not yet supported"
+#endif
+
 void eatSpace(char **stream) {
     while (isspace(**stream)) {
         (*stream)++;
@@ -122,7 +217,7 @@ int totalTests = 0;
 void discoverTests(const char *directoryPath) {
 
     char path[MAX];
-    char *scratch = (char*)malloc(MAX);
+    char *scratch = (char*)calloc(MAX, 1);
 
     size_t dirPathLen = strlen(directoryPath);
     strncpy(path, directoryPath, dirPathLen);
@@ -192,31 +287,25 @@ void discoverTests(const char *directoryPath) {
         fclose(file);
         if (fileTests < 1) continue;
 
-        static char name[MAX];
-        printf("\n");
-        printf("//\n");
-        printf("// Tests found in file %s\n", path);
-        printf("@interface %s : XCTestCase\n@end\n\n", RemoveFileExtension(GetFileName(path, name, NULL)));
-        printf("@implementation %s\n\n", RemoveFileExtension(GetFileName(path, name, NULL)));
-        printf("- (void) setUp {\n");
-        printf("    current_test_case = self;\n");
-        printf("    [self setContinueAfterFailure: false];\n");
-        printf("}\n");
-        printf("\n");
+        // Templating
+        printf("    printf(\"%s:\\n\");\n", path);
         for (int i = 0; i < fileTests; i++) {
-            printf("- (void)%s {\n", testNames[i]);
-            printf("    %s();\n", testNames[i]);
-            printf("}\n\n");
+            printf("    _performTestCaseReportingResults(%s, \"%s\");\n", testNames[i], testNames[i]);
         }
+        printf("    colorGray();\n");
+        printf("    printf(\"%%3.1f%%%% success (%%d out of %d)\\n\\n\", (double) _fileTestsPassCount / %d.f * 100, _fileTestsPassCount);\n", fileTests, fileTests);
+        printf("    colorReset();\n");
+        printf("    _fileTestsPassCount = 0;\n");
+        printf("\n");
 
-        printf("@end\n");
+
     }
     DirectoryIterClose(&iter);
 }
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Expected filename or directory as input");
+        fprintf(stderr, "Expected filename(s) or directory(s) as input");
         exit(1);
     }
 
@@ -224,6 +313,15 @@ int main(int argc, char **argv) {
 
     for (int i = 1; i < argc; i++)
         discoverTests(argv[i]);
+
+    printf("    // All tests finished\n");
+    printf("\n");
+    printf("    colorBold();\n");
+    printf("    printf(\"%%3.1f%%%% success (%%d out of %d)\\n\", (double) _totalTestsPassCount / %d.f * 100, _totalTestsPassCount);\n", totalTests, totalTests);
+    printf("    colorReset();\n");
+    printf("\n");
+    printf("    return !(_totalTestsPassCount == %d);\n", totalTests);
+    printf("}\n");
 
     return 0;
 }

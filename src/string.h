@@ -1,4 +1,11 @@
+#pragma once
 
-const char *StrInternRange(const char *start, const char *end);
-const char *StrIntern(const char *str);
-size_t StrInternLen(const char *str);
+typedef struct InternedString InternedString;
+struct InternedString {
+    size_t key;
+    char *value;
+    u32 len;
+};
+
+const char *str_intern(const char *str);
+const char *str_intern_range(const char *start,const char *end);

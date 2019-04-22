@@ -1,5 +1,5 @@
 
-#include <dirent.h>
+#include "all.h"
 
 char *path_absolute(char path[MAX_PATH]) {
     char rel_path[MAX_PATH];
@@ -7,7 +7,7 @@ char *path_absolute(char path[MAX_PATH]) {
     return realpath(rel_path, path);
 }
 
-void DirectoryIterClose(DirectoryIter *it) {
+void dir_iter_close(DirectoryIter *it) {
     if (it->valid && it->handle) {
         it->valid = false;
         it->error = false;
@@ -15,7 +15,7 @@ void DirectoryIterClose(DirectoryIter *it) {
     }
 }
 
-void DirectoryIterNext(DirectoryIter *it) {
+void dir_iter_next(DirectoryIter *it) {
     if (!it->valid) return;
     if (!it->handle) { // Single file
         it->valid = false;
@@ -26,14 +26,14 @@ void DirectoryIterNext(DirectoryIter *it) {
     do {
         struct dirent *entry = readdir((DIR *) it->handle);
         if (!entry) {
-            DirectoryIterClose(it);
+            dir_iter_close(it);
             return;
         }
         strncpy(it->name, entry->d_name, MAX_PATH - 1);
         it->name[MAX_PATH - 1] = '\0';
         // NOTE: d_type is a speed optimization to save on lstat(2) calls. It may not be supported by the filesystem.
         it->isDirectory = entry->d_type & DT_DIR;
-    } while (it->valid && DirectoryIterSkip(it));
+    } while (it->valid && dir_iter_skip(it));
 }
 
 mode_t file_mode(const char *path) {
@@ -42,7 +42,7 @@ mode_t file_mode(const char *path) {
     return path_stat.st_mode;
 }
 
-void DirectoryIterOpen(DirectoryIter *it, const char *path) {
+void dir_iter_open(DirectoryIter *it, const char *path) {
     memset(it, 0, sizeof *it);
     it->valid = true;
     mode_t mode = file_mode(path);
@@ -59,12 +59,11 @@ void DirectoryIterOpen(DirectoryIter *it, const char *path) {
         it->handle = dir;
     }
     path_copy(it->base, path);
-    DirectoryIterNext(it);
+    dir_iter_next(it);
 }
 
 // FIXME: We are mmap()'ing this with no way to munmap it currently
 const char *ReadEntireFile(const char *path, u64 *len) {
-    char *address = NULL;
     i32 fd = open(path, O_RDONLY); // FIXME: No matching close
     if (fd == -1) return NULL;
     // MMAP with nul term
@@ -72,30 +71,28 @@ const char *ReadEntireFile(const char *path, u64 *len) {
     off_t pos = lseek(fd, 0, SEEK_CUR);
     off_t size = lseek(fd, 0, SEEK_END);
     lseek(fd, pos, SEEK_SET);
-    if (size < 0) PANIC("Fseek returned -1");
+    if (size < 0) fatal("Fseek returned -1");
     if (len) *len = size;
 
     char *ptr;
     int pagesize = getpagesize();
     if (size % pagesize != 0) {
         // Load npages + 1 so we get the os to null terminate the last page
-        ptr = mmap(NULL, size + 1, PROT_READ, 0, fd, 0);
+        ptr = mmap(NULL, size + 1, PROT_READ, MAP_PRIVATE, fd, 0);
     } else {
         //
         size_t fullsize = size + pagesize;
         ptr = mmap(NULL, fullsize, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
         ptr = mmap(ptr, fullsize, PROT_READ, MAP_FIXED, fd, 0);
     }
+    if (ptr == MAP_FAILED) perror("mmapping file failed");
     ASSERT(ptr[size] == 0);
-
     if (close(fd) == -1) perror("close was interupted"); // intentionally continue despite the failure, just keep the file open
-    if (address == MAP_FAILED) return NULL;
-    close(fd);
-    return address;
+    return ptr;
 }
 
-SysInfo get_current_sysinfo() {
-    struct utsname *uts = malloc(sizeof(struct utsname));
+SysInfo get_current_sysinfo(void) {
+    struct utsname *uts = xmalloc(sizeof(struct utsname));
     int res = uname(uts);
     if (res != 0) {
         perror("uname");
@@ -104,3 +101,4 @@ SysInfo get_current_sysinfo() {
     SysInfo sysinfo = {uts->sysname, uts->machine};
     return sysinfo;
 }
+

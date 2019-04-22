@@ -1,627 +1,475 @@
+#pragma once
 
-#define AST_KIND_MASK          0xC0
-#define EXPR_KIND_PREFIX       0x40
-#define STMT_KIND_PREFIX       0x80
-#define DECL_KIND_PREFIX       0xC0
+// package.h
+typedef struct Package Package;
 
-#define EXPR_KINDS                                           \
-    FOR_EACH(Ident, "identifier", true)                      \
-    FOR_EACH(Paren, "parenthesis", false)                    \
-    FOR_EACH(Call, "call", true)                             \
-    FOR_EACH(Cast, "cast", true)                             \
-    FOR_EACH(Selector, "selector", true)                     \
-    FOR_EACH(Subscript, "subscript", true)                   \
-    FOR_EACH(Slice, "slice", true)                           \
-    FOR_EACH(Unary, "unary", true)                           \
-    FOR_EACH(Binary, "binary", true)                         \
-    FOR_EACH(Ternary, "ternary", true)                       \
-    FOR_EACH(Autocast, "autocast", false)                    \
-    FOR_EACH(LocationDirective, "location directive", true)  \
-    FOR_EACH(LitNil, "nil literal", true)                    \
-    FOR_EACH(LitInt, "integer literal", true)                \
-    FOR_EACH(LitFloat, "float literal", true)                \
-    FOR_EACH(LitString, "string literal", true)              \
-    FOR_EACH(LitCompound, "compound literal", true)          \
-    FOR_EACH(LitFunction, "function literal", true)          \
-    FOR_EACH(TypePointer, "pointer type", true)              \
-    FOR_EACH(TypeArray, "array type", true)                  \
-    FOR_EACH(TypeSlice, "slice type", true)                  \
-    FOR_EACH(TypeStruct, "struct type", true)                \
-    FOR_EACH(TypeEnum, "enum type", true)                    \
-    FOR_EACH(TypeUnion, "union type", true)                  \
-    FOR_EACH(TypePolymorphic, "polymorphic type", true)      \
-    FOR_EACH(TypeVariadic, "variadic type", true)            \
-    FOR_EACH(TypeFunction, "function type", true)
+#define EXPR_KIND_BASE 0x40
+#define STMT_KIND_BASE 0x80
+#define DECL_KIND_BASE 0xC0
 
-#define STMT_KINDS                        \
-    FOR_EACH(Empty, "empty", false)       \
-    FOR_EACH(Label, "label", true)        \
-    FOR_EACH(Assign, "assignment", false) \
-    FOR_EACH(Return, "return", false)     \
-    FOR_EACH(Defer, "defer", false)       \
-    FOR_EACH(Using, "using", false)       \
-    FOR_EACH(Goto, "goto", true)          \
-    FOR_EACH(Block, "block", false)       \
-    FOR_EACH(If, "if", false)             \
-    FOR_EACH(For, "for", true)            \
-    FOR_EACH(ForIn, "for in", true)       \
-    FOR_EACH(Switch, "switch", true)      \
-    FOR_EACH(SwitchCase, "case", true)
+#define ISEXPR(ast) (((ast)->kind & EXPR_KIND_BASE) != 0)
+#define ISSTMT(ast) (((ast)->kind & STMT_KIND_BASE) != 0)
+#define ISDECL(ast) (((ast)->kind & DECL_KIND_BASE) != 0)
 
-// TODO: This needs to include some more directives (for example static asserts `#assert` should be supported at top level)
-#define DECL_KINDS                       \
-    FOR_EACH(Variable, "variable", true) \
-    FOR_EACH(Constant, "constant", true) \
-    FOR_EACH(Foreign, "foreign", true)   \
-    FOR_EACH(ForeignBlock, "foreign block", false) \
-    FOR_EACH(Import, "import", true)
-
-typedef u8 ExprKind;
-enum Enum_ExprKind {
-    ExprKindInvalid = 0,
-   
-    EXPR_KIND_START = EXPR_KIND_PREFIX,
-    ExprKindIdent,
-    ExprKindParen,
-    ExprKindCall,
-    ExprKindCast,
-    ExprKindSelector,
-    ExprKindSubscript,
-    ExprKindSlice,
-    ExprKindUnary,
-    ExprKindBinary,
-    ExprKindTernary,
-    ExprKindAutocast,
-    ExprKindLocationDirective,
-    ExprKindLitNil,
-    ExprKindLitInt,
-    ExprKindLitFloat,
-    ExprKindLitString,
-    ExprKindLitCompound,
-    ExprKindLitFunction,
-    ExprKindTypePointer,
-    ExprKindTypeArray,
-    ExprKindTypeSlice,
-    ExprKindTypeStruct,
-    ExprKindTypeEnum,
-    ExprKindTypeUnion,
-    ExprKindTypePolymorphic,
-    ExprKindTypeVariadic,
-    ExprKindTypeFunction,
-    EXPR_KIND_END,
-};
-
-typedef u8 StmtKind;
-enum Enum_StmtKind {
-    StmtKindInvalid = 0,
-    
-    STMT_KIND_START = STMT_KIND_PREFIX,
-    StmtKindEmpty,
-    StmtKindLabel,
-    StmtKindAssign,
-    StmtKindReturn,
-    StmtKindDefer,
-    StmtKindUsing,
-    StmtKindGoto,
-    StmtKindBlock,
-    StmtKindIf,
-    StmtKindFor,
-    StmtKindForIn,
-    StmtKindSwitch,
-    StmtKindSwitchCase,
-    STMT_KIND_END,
-
-    /*
-    _StmtExprKindStart = EXPR_KIND_START,
-#define FOR_EACH(kindName, ...) StmtExprKind##kindName,
-    EXPR_KINDS
-#undef FOR_EACH
-    _StmtExprKindEnd,
-    
-    _StmtDeclKindStart = DECL_KIND_START,
-#define FOR_EACH(kindName, ...) StmtDeclKind##kindName,
-    DECL_KINDS
-#undef FOR_EACH
-    _StmtDeclKindEnd
-    */
-};
-
-typedef u8 DeclKind;
-enum Enum_DeclKind {
-    DeclKindInvalid = 0,
-
-    DECL_KIND_START = DECL_KIND_PREFIX,
-    DeclKindVariable,
-    DeclKindConstant,
-    DeclKindForeign,
-    DeclKindForeignBlock,
-    DeclKindImport,
-    DECL_KIND_END,
-};
-
-STATIC_ASSERT(EXPR_KIND_END <= UINT8_MAX, "enum values overflow storage type");
-STATIC_ASSERT(STMT_KIND_END <= UINT8_MAX, "enum values overflow storage type");
-STATIC_ASSERT(DECL_KIND_END <= UINT8_MAX, "enum values overflow storage type");
-
-typedef void * AstNode;
 typedef struct Expr Expr;
 typedef struct Stmt Stmt;
 typedef struct Decl Decl;
 
-// predefine all Ast Structs
-#define FOR_EACH(kindName, s, ...) typedef struct Expr_##kindName Expr_##kindName;
-EXPR_KINDS
-#undef FOR_EACH
-
-#define FOR_EACH(kindName, s, ...) typedef struct Stmt_##kindName Stmt_##kindName;
-STMT_KINDS
-#undef FOR_EACH
-
-#define FOR_EACH(kindName, s, ...) typedef struct Decl_##kindName Decl_##kindName;
-DECL_KINDS
-#undef FOR_EACH
-
-typedef u8 KeyValueFlag;
-enum Enum_KeyValueFlag {
-    KeyValueFlag_Index = 1,
+typedef struct Range Range;
+struct Range {
+    u32 start;
+    u32 end;
 };
-typedef struct KeyValue {
-    SourceRange pos;
+
+typedef struct Ast Ast;
+struct Ast {
+    u8 kind : 8;
+    u8 flags : 8;
+    Range range;
+};
+
+typedef struct ExprString ExprString;
+struct ExprString {
+    char *str;
+    u32 len;
+    bool mapped;
+};
+
+typedef enum CompoundFieldKind CompoundFieldKind;
+enum CompoundFieldKind {
+    COMPOUND_FIELD_NONE  = 0x00,
+    FIELD_NAME  = 0x01,
+    FIELD_INDEX = 0x02,
+};
+
+typedef struct CompoundField CompoundField;
+struct CompoundField {
+    CompoundFieldKind kind;
     Expr *key;
-    Expr *value;
-    KeyValueFlag flags;
+    Expr *val;
+};
 
-    // info is set by the checker. This is the only node to have checker info
-    // inlined onto the node instead of using an Expr id. The reason for this
-    // is that KeyValues are inlined directly for both composite literals and
-    // function literals. This will actually save space because the id is 64
-    // bits and there is also a union tag that this doesn't have.
-    void *info;
-    // if LitCompound is Array -> u64
-    // if LitCompound is Struct -> TypeField*
-} KeyValue;
-
-typedef struct AggregateItem {
-    SourceRange pos;
-    DynamicArray(const char *) names;
+typedef struct ExprCompound ExprCompound;
+struct ExprCompound {
     Expr *type;
-} AggregateItem;
-
-typedef struct EnumItem {
-    SourceRange pos;
-    const char *name;
-    Expr *init;
-} EnumItem;
-
-typedef struct AstInvalid AstInvalid;
-struct AstInvalid {
-    SourceRange pos;
+    CompoundField *fields;
 };
 
-struct Expr_Ident {
-    SourceRange pos;
-    const char *name;
-};
-
-struct Expr_Paren {
-    SourceRange pos;
+typedef struct ExprCast ExprCast;
+struct ExprCast {
+    Expr *type;
     Expr *expr;
 };
 
-struct Expr_Call {
-    SourceRange pos;
-    Expr *expr;
-    DynamicArray(KeyValue) args;
+typedef struct ExprBinary ExprBinary;
+struct ExprBinary {
+    Expr *elhs;
+    Expr *erhs;
 };
 
-struct Expr_Selector {
-    SourceRange pos;
-    Expr *expr;
-    const char *name;
+typedef struct ExprTernary ExprTernary;
+struct ExprTernary {
+    Expr *econd;
+    Expr *epass;
+    Expr *efail;
 };
 
-struct Expr_Subscript {
-    SourceRange pos;
+typedef struct CallArg CallArg;
+struct CallArg {
+    Expr *name; // Ident
+    Expr *expr;
+};
+
+typedef struct ExprCall ExprCall;
+struct ExprCall {
+    Expr *expr;
+    CallArg *args; // arr
+};
+
+typedef struct ExprField ExprField;
+struct ExprField {
+    Expr *expr;
+    Expr *name;
+};
+
+typedef struct ExprIndex ExprIndex;
+struct ExprIndex {
     Expr *expr;
     Expr *index;
 };
 
-struct Expr_Slice {
-    SourceRange pos;
-    Expr *expr;
+typedef struct ExprSlice ExprSlice;
+struct ExprSlice {
+    Expr *base;
     Expr *lo;
     Expr *hi;
 };
 
-struct Expr_Unary {
-    SourceRange pos;
-    TokenKind op;
-    Expr *expr;
+typedef enum FuncFlags FuncFlags;
+enum FuncFlags {
+    FUNC_NONE = 0,
+    FUNC_VARGS = 1 << 0,
+    FUNC_CVARGS = 1 << 1
 };
 
-struct Expr_Binary {
-    SourceRange pos;
-    Token op;
-    Expr *lhs;
-    Expr *rhs;
+typedef struct ExprFunc ExprFunc;
+struct ExprFunc {
+    Expr *type; // FuncType
+    Stmt *body;
 };
 
-struct Expr_Ternary {
-    SourceRange pos;
-    Expr *cond;
-    Expr *pass;
-    Expr *fail;
-};
-
-struct Expr_Cast {
-    SourceRange pos;
-    Expr *type;
-    Expr *expr;
-};
-
-struct Expr_Autocast {
-    SourceRange pos;
-    Expr *expr;
-};
-
-struct Expr_LocationDirective {
-    SourceRange pos;
-    const char *name;
-};
-
-struct Expr_LitNil {
-    SourceRange pos;
-};
-
-struct Expr_LitInt {
-    SourceRange pos;
-    u64 val;
-};
-
-struct Expr_LitFloat {
-    SourceRange pos;
-    f64 val;
-};
-
-struct Expr_LitString {
-    SourceRange pos;
-    const char *val;
-};
-
-struct Expr_LitCompound {
-    SourceRange pos;
-    Expr *type;
-    DynamicArray(KeyValue) elements;
-};
-
-struct Expr_LitFunction {
-    SourceRange pos;
-    Expr *type;
-    Stmt *body; // Stmt_Block
-    u8 flags;
-};
-
-struct Expr_TypePointer {
-    SourceRange pos;
+typedef struct FuncParam FuncParam;
+struct FuncParam {
+    Expr *name;
     Expr *type;
 };
 
-struct Expr_TypeArray {
-    SourceRange pos;
-    Expr *length;
+typedef struct ExprFuncType ExprFuncType;
+struct ExprFuncType {
+    FuncParam *params; // arr
+    FuncParam *result; // arr
+};
+
+typedef struct ExprArray ExprArray;
+struct ExprArray {
+    Expr *base;
+    Expr *len;
+};
+
+typedef struct ExprPointer ExprPointer;
+struct ExprPointer {
+    Expr *base;
+};
+
+typedef struct AggregateField AggregateField;
+struct AggregateField {
+    Expr **names; // arr ExprName
     Expr *type;
 };
 
-struct Expr_TypeSlice {
-    SourceRange pos;
+typedef struct ExprAggregate ExprAggregate;
+struct ExprAggregate {
+    AggregateField *fields; // arr
+};
+
+typedef enum EnumFlags EnumFlags;
+enum EnumFlags {
+    ENUM_NONE = 0,
+    ENUM_FLAGS = 1 << 0,
+};
+
+typedef struct EnumItem EnumItem;
+struct EnumItem {
+    Expr *name; // ExprName
+    Expr *init;
+};
+
+typedef struct ExprEnum ExprEnum;
+struct ExprEnum {
     Expr *type;
+    EnumItem *items; // arr EnumItem
 };
 
-struct Expr_TypeStruct {
-    SourceRange pos;
-    DynamicArray(AggregateItem) items;
+typedef struct DeclVal DeclVal;
+struct DeclVal {
+    Expr *name; // ExprName
+    Expr *type; // opt
+    Expr *val;
 };
 
-struct Expr_TypeUnion {
-    SourceRange pos;
-    DynamicArray(AggregateItem) items;
+typedef struct DeclVar DeclVar;
+struct DeclVar {
+    Expr **names; // arr ExprName
+    Expr *type; // opt
+    Expr **vals; // arr
 };
 
-struct Expr_TypeEnum {
-    SourceRange pos;
-    Expr *explicitType;
-    DynamicArray(EnumItem) items;
+typedef struct ImportItem ImportItem;
+struct ImportItem {
+    Expr *name; // ExprName
+    Expr *alias; // opt ExprName
 };
 
-struct Expr_TypePolymorphic {
-    SourceRange pos;
-    const char *name;
+typedef struct DeclImport DeclImport;
+struct DeclImport {
+    Expr *path;
+    Expr *alias; // opt ExprName
+    ImportItem *items; // arr
 };
 
-typedef u8 TypeVariadicFlag;
-enum Enum_TypeVariadicFlag {
-    TypeVariadicFlag_CVargs = 1,
-};
-struct Expr_TypeVariadic {
-    SourceRange pos;
+typedef struct DeclForeign DeclForeign;
+struct DeclForeign {
+    Expr *name;
+    Expr *library;
     Expr *type;
-    TypeVariadicFlag flags;
+    Expr *linkname; // opt
+    Expr *callconv; // opt
 };
 
-struct Expr_TypeFunction {
-    SourceRange pos;
-    DynamicArray(Expr *) result;
-    DynamicArray(KeyValue) params;
+typedef struct DeclForeignBlock DeclForeignBlock;
+struct DeclForeignBlock {
+    Expr *linkprefix; // opt
+    Expr *callconv; // opt
+    Decl **decls; // arr DeclForeign
 };
 
-struct Stmt_Empty {
-    SourceRange pos;
+typedef struct StmtAssign StmtAssign;
+struct StmtAssign {
+    Expr **lhs; // arr
+    Expr **rhs; // arr
 };
 
-struct Stmt_Label {
-    SourceRange pos;
-    const char *name;
+typedef enum GotoKind GotoKind;
+enum GotoKind {
+    GOTO_NONE,
+    GOTO_CONTINUE,
+    GOTO_FALLTHROUGH,
+    GOTO_BREAK,
+    GOTO_GOTO,
 };
 
-struct Stmt_Assign {
-    SourceRange pos;
-    DynamicArray(Expr *) lhs;
-    DynamicArray(Expr *) rhs;
-};
-
-struct Stmt_Return {
-    SourceRange pos;
-    DynamicArray(Expr *) exprs;
-};
-
-struct Stmt_Defer {
-    SourceRange pos;
-    Stmt *stmt;
-};
-
-struct Stmt_Using {
-    SourceRange pos;
-    Expr *expr;
-};
-
-struct Stmt_Goto {
-    SourceRange pos;
-    const char *keyword;
-    Expr *target;
-};
-
-struct Stmt_Block {
-    SourceRange pos;
-    DynamicArray(Stmt *) stmts;
-};
-
-struct Stmt_If {
-    SourceRange pos;
+typedef struct StmtIf StmtIf;
+struct StmtIf {
     Expr *cond;
     Stmt *pass;
     Stmt *fail;
 };
 
-struct Stmt_For {
-    SourceRange pos;
-    Stmt *init;
-    Expr *cond;
-    Stmt *step;
-    Stmt *body; // Stmt_Block
+typedef enum ForKind ForKind;
+enum ForKind {
+    FOR_NONE,
+    FOR_REGULAR,
+    FOR_AGGREGATE,
 };
 
-struct Stmt_ForIn {
-    SourceRange pos;
-    Expr *valueName; // Expr_Ident
-    Expr *indexName; // Expr_Ident
-    Expr *aggregate;
-    Stmt *body; // Stmt_Block
+typedef struct StmtFor StmtFor;
+struct StmtFor {
+    union {
+        Stmt *init;
+        Expr *value_name; // ExprName
+    };
+    union {
+        Expr *cond;
+        Expr *index_name; // ExprName
+    };
+    union {
+        Stmt *step;
+        Expr *aggregate;
+    };
+    Stmt *body;
 };
 
-struct Stmt_Switch {
-    SourceRange pos;
+typedef struct SwitchCase SwitchCase;
+struct SwitchCase {
+    Expr **matches; // arr
+    Stmt *body; // StmtBlock
+};
+
+typedef struct StmtSwitch StmtSwitch;
+struct StmtSwitch {
     Expr *match;
-    DynamicArray(Stmt *) cases;
+    SwitchCase *cases; // arr
 };
 
-struct Stmt_SwitchCase {
-    SourceRange pos;
-    DynamicArray(Expr *) matches;
-    Stmt *body; // Stmt_Block
+typedef enum ExprKind ExprKind;
+enum ExprKind {
+    EXPR_NIL = EXPR_KIND_BASE,
+    EXPR_INT,
+    EXPR_FLOAT,
+    EXPR_STR,
+    EXPR_NAME,
+    EXPR_COMPOUND,
+    EXPR_CAST,
+    EXPR_PAREN,
+    EXPR_UNARY,
+    EXPR_BINARY,
+    EXPR_TERNARY,
+    EXPR_CALL,
+    EXPR_FIELD,
+    EXPR_INDEX,
+    EXPR_SLICE,
+    EXPR_FUNC,
+    EXPR_FUNCTYPE,
+    EXPR_SLICETYPE,
+    EXPR_ARRAY,
+    EXPR_POINTER,
+    EXPR_STRUCT,
+    EXPR_UNION,
+    EXPR_ENUM,
 };
 
-struct Decl_Variable {
-    SourceRange pos;
-    DynamicArray(Expr *) names; // DynamicArray(Expr_Ident *)
-    Expr *type;
-    DynamicArray(Expr *) values;
+typedef enum Op Op;
+enum Op {
+    OP_NONE = 0,
+    OP_ADD  = '+',
+    OP_SUB  = '-',
+    OP_MUL  = '*',
+    OP_DIV  = '/',
+    OP_REM  = '%',
+    OP_AND  = '&',
+    OP_OR   = '|',
+    OP_XOR  = '^',
+    OP_SHL  = '_',
+    OP_SHR  = '`',
+    OP_NOT  = '!',
+    OP_BNOT = '~',
+    OP_LAND = 'a',
+    OP_LOR  = 'o',
+    OP_LSS  = '<',
+    OP_GTR  = '>',
+    OP_EQL  = '=' | 0x80,
+    OP_NEQ  = '!' | 0x80,
+    OP_LEQ  = '<' | 0x80,
+    OP_GEQ  = '>' | 0x80,
+    NUM_OPS,
 };
 
-struct Decl_Constant {
-    SourceRange pos;
-    DynamicArray(Expr *) names; // DynamicArray(Expr_Ident *)
-    Expr *type;
-    DynamicArray(Expr *) values;
-};
-
-struct Decl_Foreign {
-    SourceRange pos;
-    Expr *library;
-    bool isConstant;
-    const char *name;
-    Expr *type;
-    const char *linkname;
-    const char *callingConvention;
-};
-
-typedef struct Decl_ForeignBlockMember Decl_ForeignBlockMember;
-struct Decl_ForeignBlockMember {
-    SourceRange pos;
-    const char *name;
-    bool isConstant;
-    Expr *type;
-    const char *linkname;
-    Symbol *symbol;
-};
-
-struct Decl_ForeignBlock {
-    SourceRange pos;
-    Expr *library;
-    const char *callingConvention;
-    DynamicArray(Decl_ForeignBlockMember) members;
-};
-
-struct Decl_Import {
-    SourceRange pos;
-    Expr *path;
-    const char *alias;
-    Symbol *symbol;
-};
-
-#define FOR_EACH(kindName, s, ...) Expr_##kindName kindName;
-typedef union ExprValue ExprValue;
-union ExprValue {
-    EXPR_KINDS
-};
-#undef FOR_EACH
-
-#define FOR_EACH(kindName, s, ...) Stmt_##kindName kindName;
-typedef union StmtValue StmtValue;
-union StmtValue {
-    STMT_KINDS
-};
-#undef FOR_EACH
-
-#define FOR_EACH(kindName, s, ...) Decl_##kindName kindName;
-typedef union DeclValue DeclValue;
-union DeclValue {
-    DECL_KINDS
-};
-#undef FOR_EACH
-
-struct Stmt {
-    u64 id;
-    StmtKind kind;
-    union {
-        SourceRange pos;
-        StmtValue stmt;
-        ExprValue expr;
-        DeclValue decl;
-        AstInvalid Invalid;
-        
-#define FOR_EACH(kindName, ...) Stmt_##kindName kindName;
-        STMT_KINDS
-#undef FOR_EACH
-        
-#define FOR_EACH(kindName, ...) Expr_##kindName kindName;
-            EXPR_KINDS
-#undef FOR_EACH
-        
-#define FOR_EACH(kindName, ...) Decl_##kindName kindName;
-            DECL_KINDS
-#undef FOR_EACH
-    };
-};
-
+typedef struct Expr Expr;
 struct Expr {
-    u64 id;
-    ExprKind kind;
+    ExprKind kind : 8;
+    u8 flags;
+    Range range;
     union {
-        SourceRange pos;
-        ExprValue expr;
-        AstInvalid Invalid;
-        
-#define FOR_EACH(kindName, ...) Expr_##kindName kindName;
-        EXPR_KINDS
-#undef FOR_EACH
+        u8 enil[0];
+        u64 eint;
+        f64 efloat;
+        const char *ename;
+        ExprString estr;
+        ExprCompound ecompound;
+        ExprCast ecast;
+        Expr *eparen;
+        Expr *eunary;
+        ExprBinary ebinary;
+        ExprTernary eternary;
+        ExprCall ecall;
+        ExprField efield;
+        ExprIndex eindex;
+        ExprSlice eslice;
+        ExprFunc efunc;
+
+        ExprFuncType efunctype;
+        ExprArray earray;
+        Expr *eslicetype;
+        ExprPointer epointer;
+        ExprAggregate estruct;
+        ExprAggregate eunion;
+        ExprEnum eenum;
     };
 };
 
-// TODO: All decls should have space for a calling convention
+typedef enum DeclKind DeclKind;
+enum DeclKind {
+    DECL_VAR = DECL_KIND_BASE,
+    DECL_VAL,
+    DECL_IMPORT,
+    DECL_LIBRARY,
+    DECL_FOREIGN,
+    DECL_FOREIGNBLOCK,
+};
+
+typedef enum DeclFlags DeclFlags;
+enum DeclFlags {
+    DECL_NONE = 0,
+    DECL_CONSTANT = 1 << 0, // used to indicate constant foreign decls
+};
+
+typedef struct Decl Decl;
 struct Decl {
-    u64 id;
-    DeclKind kind;
+    DeclKind kind : 8;
+    u8 flags;
+    Range range;
     union {
-        SourceRange pos;
-        DeclValue decl;
-        AstInvalid Invalid;
-        
-#define FOR_EACH(kindName, ...) Decl_##kindName kindName;
-        DECL_KINDS
-#undef FOR_EACH
+        DeclVal dval;
+        DeclVar dvar;
+        DeclImport dimport;
+        DeclForeign dforeign;
+        DeclForeignBlock dforeign_block;
     };
-
-    // This is used to switch context for file level declarations. Only expect this to be set for top level declarations
-    Scope *owningScope;
-
-    // The following members exist in DEBUG builds to aid in debugging the compiler itself.
-    // Anything they enable should be achievable in another way, they are here purely for convenience.
-#if DEBUG
-    Package *owningPackage;
-#endif
 };
 
-b32 isExpr(Stmt *stmt);
+typedef enum StmtKind StmtKind;
+enum StmtKind {
+    STMT_LABEL = STMT_KIND_BASE,
+    STMT_ASSIGN,
+    STMT_RETURN,
+    STMT_DEFER,
+    STMT_USING,
+    STMT_GOTO,
+    STMT_BLOCK,
+    STMT_IF,
+    STMT_FOR,
+    STMT_SWITCH,
+    STMT_NAMES,
+};
 
-const char *DescribeStmt(Stmt *stmt);
-const char *DescribeExpr(Expr *expr);
-const char *DescribeDecl(Decl *decl);
+typedef struct Stmt Stmt;
+struct Stmt {
+    StmtKind kind : 8;
+    u8 flags;
+    Range range;
+    union {
+        Expr *slabel;
+        StmtAssign sassign;
+        Expr **sreturn; // arr
+        Stmt *sdefer;
+        Expr **susing; // arr
+        Expr *sgoto;
+        Stmt **sblock; // arr
+        StmtIf sif;
+        StmtFor sfor;
+        StmtSwitch sswitch;
 
-void *AllocAst(Package *package, size_t size);
+        Expr **snames; // arr
+    };
+};
 
-// - MARK: Exprs
-Expr *NewExpr(Package *package, ExprKind kind, SourceRange pos);
-Stmt *NewStmt(Package *package, StmtKind kind, SourceRange pos);
-Decl *NewDecl(Package *package, DeclKind kind, SourceRange pos);
-Expr *NewExprInvalid(Package *package, SourceRange pos);
-Stmt *NewStmtInvalid(Package *package, SourceRange pos);
-Decl *NewDeclInvalid(Package *package, SourceRange pos);
-Expr *NewExprIdent(Package *package, SourceRange pos, const char *name);
-Expr *NewExprParen(Package *package, SourceRange pos, Expr *expr);
-Expr *NewExprCall(Package *package, SourceRange pos, Expr *expr, DynamicArray(KeyValue) args);
-Expr *NewExprSelector(Package *package, SourceRange pos, Expr *expr, const char *name);
-Expr *NewExprSubscript(Package *package, SourceRange pos, Expr *expr, Expr *index);
-Expr *NewExprSlice(Package *package, SourceRange pos, Expr *expr, Expr *lo, Expr *hi);
-Expr *NewExprUnary(Package *package, SourceRange pos, TokenKind op, Expr *expr);
-Expr *NewExprBinary(Package *package, SourceRange pos, Token op, Expr *lhs, Expr *rhs);
-Expr *NewExprTernary(Package *package, SourceRange pos, Expr *cond, Expr *pass, Expr *fail);
-Expr *NewExprCast(Package *package, SourceRange pos, Expr *type, Expr *expr);
-Expr *NewExprAutocast(Package *package, SourceRange pos, Expr *expr);
-Expr *NewExprLocationDirective(Package *package, SourceRange pos, const char *name);
-Expr *NewExprLitNil(Package *package, SourceRange pos);
-Expr *NewExprLitInt(Package *package, SourceRange pos, u64 val);
-Expr *NewExprLitFloat(Package *package, SourceRange pos, f64 val);
-Expr *NewExprLitString(Package *package, SourceRange pos, const char *val);
-Expr *NewExprLitCompound(Package *package, SourceRange pos, Expr *type, DynamicArray(KeyValue) elements);
-Expr *NewExprLitFunction(Package *package, SourceRange pos, Expr *type, Stmt *body, u8 flags);
-Expr *NewExprTypePointer(Package *package, SourceRange pos, Expr *type);
-Expr *NewExprTypeArray(Package *package, SourceRange pos, Expr *length, Expr *type);
-Expr *NewExprTypeSlice(Package *package, SourceRange pos, Expr *type);
-Expr *NewExprTypeStruct(Package *package, SourceRange pos, DynamicArray(AggregateItem) items);
-Expr *NewExprTypeEnum(Package *package, SourceRange pos, Expr *explicitType, DynamicArray(EnumItem) items);
-Expr *NewExprTypeUnion(Package *package, SourceRange pos, DynamicArray(AggregateItem) items);
-Expr *NewExprTypePolymorphic(Package *package, SourceRange pos, const char *name);
-Expr *NewExprTypeVariadic(Package *package, SourceRange pos, Expr *type, u8 flags);
-Expr *NewExprTypeFunction(Package *package, SourceRange pos, DynamicArray(KeyValue) params, DynamicArray(Expr *)result);
-
-// - MARK: Stmts
-Stmt *NewStmtEmpty(Package *package, SourceRange pos);
-Stmt *NewStmtLabel(Package *package, SourceRange pos, const char *name);
-Stmt *NewStmtAssign(Package *package, SourceRange pos, DynamicArray(Expr *) lhs, DynamicArray(Expr*) rhs);
-Stmt *NewStmtReturn(Package *package, SourceRange pos, DynamicArray(Expr *) exprs);
-Stmt *NewStmtDefer(Package *package, SourceRange pos, Stmt *stmt);
-Stmt *NewStmtUsing(Package *package, SourceRange pos, Expr *expr);
-Stmt *NewStmtGoto(Package *package, SourceRange pos, const char *keyword, Expr *target);
-Stmt *NewStmtBlock(Package *package, SourceRange pos, DynamicArray(Stmt *) stmts);
-Stmt *NewStmtIf(Package *package, SourceRange pos, Expr *cond, Stmt *pass, Stmt *fail);
-Stmt *NewStmtFor(Package *package, SourceRange pos, Stmt *init, Expr *cond, Stmt *step, Stmt *body);
-Stmt *NewStmtForIn(Package *package, SourceRange pos, Expr *valueName, Expr *indexName, Expr *aggregate, Stmt *body);
-Stmt *NewStmtSwitch(Package *package, SourceRange pos, Expr *match, DynamicArray(Stmt *) cases);
-Stmt *NewStmtSwitchCase(Package *package, SourceRange pos, DynamicArray(Expr *) matches, Stmt *block);
-
-// - MARK: Decls
-Decl *NewDeclVariable(Package *package, SourceRange pos, DynamicArray(Expr *) names, Expr *type, DynamicArray(Expr *) values);
-Decl *NewDeclConstant(Package *package, SourceRange pos, DynamicArray(Expr *) names, Expr *type, DynamicArray(Expr *) values);
-Decl *NewDeclForeign(Package *package, SourceRange pos, Expr *library, bool isConstant, const char *name, Expr *type, const char *linkname, const char *callingConvention);
-Decl *NewDeclForeignBlock(Package *package, SourceRange pos, Expr *library, const char *callingConvention, DynamicArray(Decl_ForeignBlockMember) members);
-Decl *NewDeclImport(Package *package, SourceRange pos, Expr *path, const char *alias);
+void *new_ast_invalid(Package *package, Range range);
+Expr *new_expr_nil(Package *package, Range range);
+Expr *new_expr_paren(Package *package, Range range, Expr *expr);
+Expr *new_expr_int(Package *package, Range range, u64 val);
+Expr *new_expr_float(Package *package, Range range, f64 val);
+Expr *new_expr_str(Package *package, Range range, const char *str, u32 len, bool mapped);
+Expr *new_expr_name(Package *package, Range range, const char *name);
+Expr *new_expr_compound(Package *package, Range range, Expr *type, CompoundField *fields);
+Expr *new_expr_cast(Package *package, Range range, Expr *type, Expr *expr);
+Expr *new_expr_unary(Package *package, Range range, Op op, Expr *expr);
+Expr *new_expr_binary(Package *package, Range range, Op op, Expr *left, Expr *right);
+Expr *new_expr_ternary(Package *package, Range range, Expr *cond, Expr *pass, Expr *fail);
+Expr *new_expr_call(Package *package, Range range, Expr *expr, CallArg *args);
+Expr *new_expr_field(Package *package, Range range, Expr *expr, Expr *name);
+Expr *new_expr_index(Package *package, Range range, Expr *expr, Expr *index);
+Expr *new_expr_slice(Package *package, Range range, Expr *base, Expr *lo, Expr *hi);
+Expr *new_expr_func(Package *package, Range range, FuncFlags flags, Expr *type, Stmt *body);
+Expr *new_expr_functype(Package *package, Range range,
+                        FuncFlags flags, FuncParam *params, FuncParam *result);
+Expr *new_expr_array(Package *package, Range range, Expr *base, Expr *len);
+Expr *new_expr_slicetype(Package *package, Range range, Expr *base);
+Expr *new_expr_pointer(Package *package, Range range, Expr *base);
+Expr *new_expr_struct(Package *package, Range range, AggregateField *fields);
+Expr *new_expr_union(Package *package, Range range, AggregateField *fields);
+Expr *new_expr_enum(Package *package, Range range, EnumFlags flags, Expr *type, EnumItem *items);
+Decl *new_decl_val(Package *package, Range range, Expr *name, Expr *type, Expr *val);
+Decl *new_decl_var(Package *package, Range range, Expr **names, Expr *type, Expr **vals);
+Decl *new_decl_import(Package *package, Range range, Expr *path, Expr *alias, ImportItem *items);
+Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags, 
+                       Expr *name, Expr *library, Expr *type, 
+                       Expr *linkname, Expr *callconv);
+Decl *new_decl_foreign_block(Package *package, Range range, Decl **decls,
+                             Expr *linkprefix, Expr *callconv);
+Stmt *new_stmt_label(Package *package, Range range, Expr *label);
+Stmt *new_stmt_assign(Package *package, Range range, Expr **lhs, Expr **rhs);
+Stmt *new_stmt_return(Package *package, Range range, Expr **exprs);
+Stmt *new_stmt_defer(Package *package, Range range, Stmt *stmt);
+Stmt *new_stmt_using(Package *package, Range range, Expr **exprs);
+Stmt *new_stmt_goto(Package *package, Range range, GotoKind kind, Expr *expr);
+Stmt *new_stmt_block(Package *package, Range range, Stmt **stmts);
+Stmt *new_stmt_if(Package *package, Range range, Expr *cond, Stmt *pass, Stmt *fail);
+Stmt *new_stmt_for(Package *package, Range range, Stmt *init, Expr *cond, Stmt *step, Stmt *body);
+Stmt *new_stmt_for_aggregate(Package *package, Range range,
+                             Expr *value, Expr *index, Expr *aggregate, Stmt *body);
+Stmt *new_stmt_switch(Package *package, Range range, Expr *match, SwitchCase *cases);
+// Temp node! Needs free!
+Stmt *new_stmt_names(Package *package, Range range, Expr **names);
+const char *describe_ast_kind(int kind);
+const char *describe_ast(void *p);
+const char *describe_op(Op op);

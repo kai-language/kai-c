@@ -1,0 +1,3 @@
+[submodule "deps/uu.spdr"]
+	path = deps/uu.spdr
+	url = git@github.com:uucidl/uu.spdr

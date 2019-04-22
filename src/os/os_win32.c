@@ -1,6 +1,6 @@
 
-#include <io.h>
-#include <errno.h>
+#include "all.h"
+#include "os_win32.h"
 
 void DirectoryIterClose(DirectoryIter *it) {
     if (it->valid) {
@@ -45,7 +45,7 @@ DirectoryIter DirectoryOpen(const char *path) {
     }
 }
 
-SysInfo get_current_sysinfo() {
+SysInfo get_current_sysinfo(void) {
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
     SysInfo i = {"Windows"};

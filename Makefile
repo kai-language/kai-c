@@ -1,61 +1,78 @@
 CC = clang
 CXX = clang++
-PREFIX=/usr/local
 
-local_CXXFLAGS = -std=c++11
+target = kai
 
-debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG $(CFLAGS)
-release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE $(CFLAGS)
+sources := $(wildcard src/*.c)
+disasms := $(pathsubst src/%.c, src/%.S, $(sources))
 
-LLVM_VERSION := 6.0
+objdir = .build
+objects := $(patsubst src/%.c, $(objdir)/%.o, $(sources))
 
-ifeq ($(shell which llvm-config),)
-	LLVM_CONFIG := llvm-config-$(LLVM_VERSION)
-else
-	LLVM_CONFIG := llvm-config
-endif
+includes = -Iincludes/ -Ideps/uu.spdr/include
 
-LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
-LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs X86AsmParser X86CodeGen Core Support BitReader AsmParser Analysis TransformUtils ScalarOpts Target)
+ignored = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
+cflags = -g -O0 -std=c11 $(includes) -DDEBUG $(ignored) $(CFLAGS)
+cxxflags = -std=c++11 -stdlib=libc++ $(ignored)
 
-LFLAGS =
-DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
+test_main = test_main.c
+test_log = tests.log
 
-TARGET = kai
-TEST_TARGET = $(TARGET)_tests
-TEST_MAIN = $(TARGET)_tests.c
-TEST_LOG = $(TARGET)_tests.log
+release: cflags = -O3 -std=c11 $(includes) -march=native -DRELEASE $(CFLAGS)
 
-all: debug
+all: mkdirs $(target)
 
-debug:   clean $(TARGET)
-release: clean $(TARGET)
+release: clean all
 
-$(TARGET): core.o llvm.o
-	$(CXX) -o $(TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
-core.o:
-	$(CC) src/main.c -c -o core.o $(local_CFLAGS) $(LFLAGS) $(DISABLED_WARNINGS)
-llvm.o:
-	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
+# compile
+$(objdir)/%.o: src/%.c
+	$(CC) $(cflags) -o $@ -c $<
 
-tools/genTests:
-	$(CXX) $(local_CXXFLAGS) -o tools/genTests tools/gen_test_main.cpp
+# link
+$(target): $(objects)
+	$(CC) $(cflags) -o $@ $^
 
-tests: clean tools/genTests
-	@./tools/genTests $(shell find src -maxdepth 1 -type d) > $(TEST_MAIN)
-	@$(CC) $(TEST_MAIN) -c -o core.o  -DTEST $(LFLAGS) $(DISABLED_WARNINGS) $(local_CFLAGS)
-	@$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
-	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
-	@./$(TEST_TARGET) 2> $(TEST_LOG)
-	@rm -f $(TEST_TARGET) $(TEST_MAIN)
+# disassembly
+src/%.S: src/%.c
+	$(CC) $(cflags) -o $@ -S $<
+	
+disasm: $(disasms)
 
-install:
-	cp $(TARGET) $(PREFIX)/bin/
+unity:
+	$(CC) $(cflags) -o $(target) unity.c
 
-generate_db:
+mkdirs:
+	@mkdir -p $(objdir)
+
+mktests: tools/mktests
+	./tools/mktests src > test_main.c
+
+mkxctests: tools/mkxctests
+	./tools/mkxctests src > test_xcmain.c
+
+tests: clean tools
+	@./tools/mktests $(shell find src -maxdepth 1 -type d) > $(test_main)
+	@$(CC) -o $@ $(cflags) -DTEST $(test_main)
+	@./$@ 2>&1 $(test_log)
+	@rm $@ $(test_main)
+
+tools: tools/mktests tools/mkxctests
+
+tools/mktests:
+	$(CXX) $(cxxflags) -o $@ tools/mktests.cpp
+
+tools/mkxctests:
+	$(CXX) $(cxxflags) -o $@ tools/mkxctests.cpp
+
+generate_db: clean
 	intercept-build --override-compiler make CC=intercept-cc CXX=intercept-c++ all
 
+.PHONY: clean
+
 clean:
-	rm -f $(TARGET) core.o llvm.o $(TEST_TARGET) $(TEST_LOG) $(TEST_MAIN)
-	
-.PHONY: all clean debug release tests tools/genTests
+	rm -rf $(objdir) $(test_log) $(test_main)
+ 
+# Debugging
+## allows you to print makefile variables with make-VARIABLE
+print-% : ; $(info $* is a $(flavor $*) variable set to [$($*)]) @true
+
