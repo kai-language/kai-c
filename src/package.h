@@ -85,6 +85,7 @@ struct PackageMapEntry {
     Package *value;
 };
 
+void output_errors(Package *package);
 void add_error(Package *package, Range range, const char *fmt, ...);
 void add_note(Package *package, Range range, const char *fmt, ...);
 void package_read_source_files(Package *package);

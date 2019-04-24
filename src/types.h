@@ -123,7 +123,7 @@ Type *type_union(TypeField *fields, u8 flags);
 Type *type_enum(u8 flags);
 Type *type_ptr(Type *base, u8 flags);
 Type *type_array(Type *eltype, u64 length, u8 flags);
-Type *type_slice(Type *eltype, u64 length, u8 flags);
+Type *type_slice(Type *eltype, u8 flags);
 
 const char *typename(Type *type);
 u64 powi(u64 base,u64 exp);
@@ -142,6 +142,7 @@ bool is_arithmetic(Type *type);
 bool is_float(Type *type);
 bool is_bool(Type *type);
 bool is_integer(Type *type);
+bool is_slice(Type *type);
 bool is_array(Type *type);
 bool is_ptr_like_type(Type *type);
 bool is_func(Type *type);

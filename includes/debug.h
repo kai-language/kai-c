@@ -20,6 +20,9 @@ void fatal(const char *fmt, ...) {
     Backtrace();
     fprintf(stderr, "fatal error: %s\n", buf);
     fflush(stderr);
+#if DEBUG
+    DEBUG_TRAP();
+#endif
     exit(1);
 }
 
@@ -69,6 +72,7 @@ void assertHandler(char const *file, i32 line, char const *msg, ...) {
 #if DEBUG
 // NOTE: For hash maps call arrheader(p - 1) ... p[-1] is the default value for the hm
 stbds_array_header *arrheader(void *p) {
+    if (!p) return p;
     return stbds_header(p);
 }
 #endif

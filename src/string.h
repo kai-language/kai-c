@@ -9,3 +9,4 @@ struct InternedString {
 
 const char *str_intern(const char *str);
 const char *str_intern_range(const char *start,const char *end);
+const char *str_join(const char *a, const char *b);

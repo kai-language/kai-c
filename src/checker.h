@@ -24,17 +24,19 @@ union Val {
 typedef enum SymKind SymKind;
 enum SymKind {
     SYM_NONE = 0,
+    SYM_TYPE,
     SYM_VAR,
     SYM_VAL,
-    SYM_PACKAGE,
-    SYM_LIBRARY,
+    SYM_PKG,
+    SYM_LIB,
+    SYM_LABEL,
 };
 
 typedef enum SymState SymState;
 enum SymState {
-    SYM_UNRESOLVED = 0,
-    SYM_RESOLVING,
-    SYM_RESOLVED,
+    SYM_UNCHECKED = 0,
+    SYM_CHECKING,
+    SYM_CHECKED,
 };
 
 typedef enum Reachable Reachable;
@@ -48,8 +50,8 @@ typedef struct Sym Sym;
 struct Sym {
     const char *name;
     Package *owning_package;
-    SymKind kind;
-    SymState state;
+    SymKind kind : 8;
+    SymState state : 8; // TODO: For multithreading we will need a threadid for cycle detection
     Reachable reachable : 8;
     Decl *decl;
     const char *external_name;
@@ -75,15 +77,18 @@ struct Scope {
 };
 
 typedef enum OperandFlags OperandFlags;
-enum OperandFlags {
+enum OperandFlags { // lower 4 bits are flags upper are kind
     OPERAND_FLAGS_NONE = 0,
-    LVALUE    = 0x01,
-    CONST     = 0x02,
-    TYPE      = 0x04,
-    PACKAGE   = 0x08,
-    LIBRARY   = 0x10,
-    SPECIAL   = 0x20, // Used to indicate something about the Operand is special
-    BAD_VALUE = 0x80,
+    LVALUE     = 0x01,
+    CONST      = 0x02,
+
+    OPERAND_OK = 0x10,
+    PACKAGE    = 0x20,
+    LIBRARY    = 0x30,
+    TYPE       = 0x40,
+    LABEL      = 0x50,
+    UNCHECKED  = 0xFE,
+    BAD_VALUE  = 0xFF,
 };
 
 typedef struct Operand Operand;
@@ -99,7 +104,7 @@ struct OperandMapEntry {
     Operand value;
 };
 
-void check(Package *package, Stmt *stmt);
+bool check(Package *package, Stmt *stmt);
 Val resolve_value(Package *package, Expr *expr);
 void scope_declare(Scope *scope, Sym *sym);
 Scope *scope_push(Package *package, Scope *parent);

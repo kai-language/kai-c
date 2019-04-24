@@ -5,6 +5,8 @@
 #include "arena.h"
 #include "queue.h"
 #include "package.h"
+#include "checker.h"
+#include "string.h"
 #include "compiler.h"
 
 Type *type_invalid = &(Type){ TYPE_INVALID };
@@ -49,6 +51,10 @@ bool is_ptr_like_type(Type *type) {
 
 bool is_array(Type *type) {
     return type && type->kind == TYPE_ARRAY;
+}
+
+bool is_slice(Type *type) {
+    return type && type->kind == TYPE_SLICE;
 }
 
 bool is_bool(Type *type) {
@@ -217,7 +223,7 @@ Type *type_array(Type *eltype, u64 length, u8 flags) {
     return type;
 }
 
-Type *type_slice(Type *eltype, u64 length, u8 flags) {
+Type *type_slice(Type *eltype, u8 flags) {
     TRACE(CHECKING);
     Type *type = type_alloc(TYPE_SLICE, flags, type_size(Type, tslice));
     type->tslice.eltype = eltype;
@@ -225,22 +231,25 @@ Type *type_slice(Type *eltype, u64 length, u8 flags) {
 }
 
 const char *typename(Type *type) {
+    if (type->symbol) {
+        return type->symbol->name;
+    }
     switch (type->kind) {
-    case TYPE_INVALID:    return "invalid";
-    case TYPE_COMPLETING: return "completing";
-    case TYPE_VOID:       return "void";
-    case TYPE_BOOL:       return "bool";
-    case TYPE_INT:        return "int";
-    case TYPE_ENUM:       return "enum";
-    case TYPE_FLOAT:      return "float";
-    case TYPE_PTR:        return "ptr";
-    case TYPE_FUNC:       return "func";
-    case TYPE_ARRAY:      return "array";
-    case TYPE_SLICE:      return "slice";
-    case TYPE_STRUCT:     return "struct";
-    case TYPE_UNION:      return "union";
-    case TYPE_ANY:        return "any";
-    default:
-        fatal("Unhandled type");
+        case TYPE_INVALID:    return "invalid";
+        case TYPE_COMPLETING: return "completing";
+        case TYPE_VOID:       return "void";
+        case TYPE_BOOL:       return "bool";
+        case TYPE_INT:        return "int";
+        case TYPE_ENUM:       return "enum";
+        case TYPE_FLOAT:      return "float";
+        case TYPE_PTR: return str_join("*", typename(type->tptr.base));
+        case TYPE_FUNC:       return "func";
+        case TYPE_ARRAY:      return "array";
+        case TYPE_SLICE: return str_join("[]", typename(type->tslice.eltype));
+        case TYPE_STRUCT:     return "struct";
+        case TYPE_UNION:      return "union";
+        case TYPE_ANY:        return "any";
+        default:
+            fatal("Unhandled type");
     }
 }

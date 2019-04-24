@@ -394,11 +394,9 @@ repeat:;
             break;
         }
         case '\n': {
-            self->str++;
             self->client.online(self->client.data, (u32) (self->str - self->start));
+            self->str++;
             goto repeat;
-            //            self->tok.kind = TK_Terminator;
-            //            break;
         }
         case ';': {
             self->str++;

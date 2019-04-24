@@ -1,6 +1,6 @@
 
 #import "builtin" b
-#import "libc" libc
+#import "libc"
 
 add :: fn(x: i32, y: i32) -> i32 {
     z := x + y

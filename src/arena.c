@@ -7,6 +7,7 @@
 
 void arena_grow(Arena *arena, size_t min_size) {
     size_t size = ALIGN_UP(CLAMP_MIN(min_size, ARENA_BLOCK_SIZE), ARENA_ALIGNMENT);
+    arena->size += size;
     arena->ptr = xmalloc(size);
     ASSERT(arena->ptr == ALIGN_DOWN_PTR(arena->ptr, ARENA_ALIGNMENT));
     arena->end = arena->ptr + size;

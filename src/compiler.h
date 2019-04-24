@@ -2,6 +2,9 @@
 
 // Requires package.h queue.h
 
+// string.h
+typedef struct InternedString InternedString;
+
 // checker.h
 typedef struct Sym Sym;
 
@@ -75,8 +78,11 @@ struct Compiler {
     const char *global_search_paths[MAX_GLOBAL_SEARCH_PATHS];
     int num_global_search_paths;
 
+    InternedString *interns;
+    Arena strings;
     Arena arena;
 
+    Scope *global_scope;
     Package builtin_package;
     PackageMapEntry *packages;
 

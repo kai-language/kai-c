@@ -204,6 +204,7 @@ struct DeclForeign {
     Expr *type;
     Expr *linkname; // opt
     Expr *callconv; // opt
+    Decl *block; // opt
 };
 
 typedef struct DeclForeignBlock DeclForeignBlock;
@@ -267,7 +268,7 @@ struct SwitchCase {
 
 typedef struct StmtSwitch StmtSwitch;
 struct StmtSwitch {
-    Expr *match;
+    Expr *subject;
     SwitchCase *cases; // arr
 };
 
@@ -451,9 +452,9 @@ Expr *new_expr_enum(Package *package, Range range, EnumFlags flags, Expr *type, 
 Decl *new_decl_val(Package *package, Range range, Expr *name, Expr *type, Expr *val);
 Decl *new_decl_var(Package *package, Range range, Expr **names, Expr *type, Expr **vals);
 Decl *new_decl_import(Package *package, Range range, Expr *path, Expr *alias, ImportItem *items);
-Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags, 
-                       Expr *name, Expr *library, Expr *type, 
-                       Expr *linkname, Expr *callconv);
+Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags,
+                       Expr *name, Expr *library, Expr *type,
+                       Expr *linkname, Expr *callconv, Decl *block);
 Decl *new_decl_foreign_block(Package *package, Range range, Decl **decls,
                              Expr *linkprefix, Expr *callconv);
 Stmt *new_stmt_label(Package *package, Range range, Expr *label);
@@ -470,6 +471,7 @@ Stmt *new_stmt_for_aggregate(Package *package, Range range,
 Stmt *new_stmt_switch(Package *package, Range range, Expr *match, SwitchCase *cases);
 // Temp node! Needs free!
 Stmt *new_stmt_names(Package *package, Range range, Expr **names);
+const char *describe_goto_kind(int kind);
 const char *describe_ast_kind(int kind);
 const char *describe_ast(void *p);
 const char *describe_op(Op op);

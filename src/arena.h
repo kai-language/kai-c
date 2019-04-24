@@ -2,6 +2,7 @@
 
 typedef struct Arena Arena;
 struct Arena {
+    u64 size;
     char *ptr;
     char *end;
     char **blocks;

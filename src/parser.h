@@ -3,6 +3,9 @@
 // Requires
 // lexer.h
 
+// ast.h
+typedef struct Stmt Stmt;
+
 // package.h
 typedef struct Package Package;
 typedef struct Source Source;
@@ -71,6 +74,8 @@ struct Parser {
     bool was_newline;
     const char *calling_conv;
     const char *link_prefix;
+
+    Stmt **stmts; // arr
 };
 
 void parser_init_interns(void);

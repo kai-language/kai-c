@@ -204,7 +204,7 @@ Decl *new_decl_import(Package *package, Range range, Expr *path, Expr *alias, Im
 
 Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags, 
                        Expr *name, Expr *library, Expr *type, 
-                       Expr *linkname, Expr *callconv)
+                       Expr *linkname, Expr *callconv, Decl *block)
 {
     Decl *d = ast_alloc(package, DECL_FOREIGN, flags, range, ast_size(Decl, dforeign));
     d->dforeign.name = name;
@@ -212,6 +212,7 @@ Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags,
     d->dforeign.type = type;
     d->dforeign.linkname = linkname;
     d->dforeign.callconv = callconv;
+    d->dforeign.block = block;
     return d;
 }
 
@@ -296,7 +297,7 @@ Stmt *new_stmt_for_aggregate(Package *package, Range range, Expr *value, Expr *i
 
 Stmt *new_stmt_switch(Package *package, Range range, Expr *match, SwitchCase *cases) {
     Stmt *s = ast_alloc(package, STMT_SWITCH, 0, range, ast_size(Stmt, sswitch));
-    s->sswitch.match = match;
+    s->sswitch.subject = match;
     s->sswitch.cases = cases;
     return s;
 }
@@ -311,8 +312,19 @@ Stmt *new_stmt_names(Package *package, Range range, Expr **names) {
     return s;
 }
 
+const char *describe_goto_kind(int kind) {
+    switch (kind) {
+        case GOTO_CONTINUE:    return "continue";
+        case GOTO_FALLTHROUGH: return "fallthrough";
+        case GOTO_BREAK:       return "break";
+        case GOTO_GOTO:        return "goto";
+        default: fatal("Unknown goto kind %d", kind);
+    }
+}
+
 const char *describe_ast_kind(int kind) {
     switch (kind) {
+        case INVALID:           return "invalid";
         case EXPR_NIL:          return "nil";
         case EXPR_INT:          return "int";
         case EXPR_FLOAT:        return "float";
@@ -390,3 +402,4 @@ const char *describe_op(Op op) {
         case OP_NONE: fatal("Bad op");
     }
 }
+

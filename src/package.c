@@ -47,6 +47,7 @@ bool resolve_package_path(char dest[MAX_PATH], const char *path, Package *import
     // Check the global package search path
     for (int i = 0; i < compiler.num_global_search_paths; i++) {
         if (is_package_path(path, compiler.global_search_paths[i])) {
+            verbose("Found package %s in %s", path, compiler.global_search_paths[i]);
             path_copy(dest, compiler.global_search_paths[i]);
             path_join(dest, path);
             return true;
@@ -71,10 +72,9 @@ Package *import_package(const char *path, Package *importer) {
     Package *package = hmget(compiler.packages, fullpath);
     if (!package) { // first time seeing this package
         package = arena_calloc(&compiler.arena, sizeof *package);
-        memset(package, 0, sizeof *package);
         package->path = path;
         package->fullpath = fullpath;
-        package->scope = scope_push(package, compiler.builtin_package.scope);
+        package->scope = scope_push(package, compiler.global_scope);
         char search_path[MAX_PATH];
         package_search_path(search_path, fullpath);
         package->search_path = str_intern(search_path);
@@ -142,18 +142,21 @@ PosInfo package_posinfo(Package *package, u32 pos) {
 found:;
     u32 offset = pos - source->start;
     u32 start_of_line = 0;
+    u32 lineno = 1;
     if (source->line_offsets) {
         for (int i = 0; i < arrlen(source->line_offsets); i++) {
-            u32 line_offset = source->line_offsets[i];
-            if (line_offset > offset) {
+            lineno++;
+            start_of_line = source->line_offsets[i];
+            if (start_of_line > offset) {
                 start_of_line = source->line_offsets[i - 1];
                 break;
             }
         }
     }
     Lexer lexer;
-    PosInfo info = {source, .line = 1};
-    lexer_init(&lexer, source->code + offset);
+    PosInfo info = {source, .line = lineno};
+    lexer_init(&lexer, source->code);
+    lexer.str += offset;
     lexer.client.data = &info;
     lexer.client.online = (void *) package_posinfo_online;
     lexer_next_token(&lexer);
@@ -165,16 +168,21 @@ found:;
     return info;
 }
 
-void output_error(SourceError *error) {
-    PosInfo location = error->location;
-    fprintf(stderr, "error(%s:%u:%u) %s\n", location.source->name, location.line, location.column, error->msg);
-    if (compiler.flags.error_source)
-        fprintf(stderr, "%s", error->code_block);
+void output_error(SourceError error) {
+    PosInfo location = error.location;
+    fprintf(stderr, "error(%s:%u:%u) %s\n", location.source->name, location.line, location.column, error.msg);
+    if (compiler.flags.error_source && error.code_block)
+        fprintf(stderr, "%s", error.code_block);
 
-    for (SourceNote *note = error->note; note; note = note->next) {
+    for (SourceNote *note = error.note; note; note = note->next) {
         location = note->location;
         fprintf(stderr, "note(%s:%u:%u) %s\n", location.source->name, location.line, location.column, note->msg);
     }
+}
+
+void output_errors(Package *package) {
+    for (i64 i = 0; i < arrlen(package->errors); i++)
+        output_error(package->errors[i]);
 }
 
 char *find_code_block_and_highlight_range(Package *package, Range range) {

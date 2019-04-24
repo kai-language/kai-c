@@ -20,6 +20,8 @@ void parse_source(Package *package, Source *source);
 Stmt *parse_stmt(Parser *self);
 Expr *parse_expr(Parser *self);
 const char *name_for_import(const char *in_path);
+INLINE Token eat_tok(Parser *self);
+INLINE bool is_eof(Parser *self);
 
 const char *intern_in;
 const char *keywords[] = {
@@ -124,12 +126,45 @@ void parse_package(Package *package) {
         verbose("Parsing %s", package->sources[i].path);
         parse_source(package, package->sources + i);
     }
+}
+
+void parse_source(Package *package, Source *source) {
+    TRACE(PARSING);
+    Parser parser = {
+        .package = package,
+        .source = source,
+    };
+    lexer_init(&parser.lexer, source->code);
+    parser.lexer.client.data = &parser;
+    parser.lexer.client.online = (void *) parser_online;
+    parser.lexer.client.onname = (void *) parser_onname;
+    parser.lexer.client.onstr  = (void *) parser_onstr;
+    parser.lexer.client.onmsg  = (void *) parser_onmsg;
+    eat_tok(&parser);
+    while (!is_eof(&parser)) {
+        Stmt *stmt = parse_stmt(&parser);
+        arrput(parser.stmts, stmt);
+    }
     for (int i = 0; i < hmlen(package->imports); i++) {
         ImportMapEntry import = package->imports[i];
+        if (import.value->state == SYM_CHECKED) continue;
         const char *path = resolve_value(package, import.key->dimport.path).p;
-        import.value->name = name_for_import(path);
-        verbose("Resolved name '%s' for import path '%s'", import.value->name, path);
-        import_package(path, package);
+        if (!import.key->dimport.alias) {
+            import.value->name = name_for_import(path);
+            scope_declare(package->scope, import.value);
+            verbose("Resolved name '%s' for import path '%s'", import.value->name, path);
+        }
+        import.value->package = import_package(path, package);
+        import.value->state = SYM_CHECKED;
+        if (!import.value->package)
+            add_error(package, import.key->range, "Failed to resolve package path for %s", path);
+    }
+    for (i64 i = 0; i < arrlen(parser.stmts); i++) {
+        arrput(package->stmts, parser.stmts[i]); // @Optimize memcpy?
+        CheckerWork *work = arena_alloc(&package->arena, sizeof *work);
+        work->package = package;
+        work->stmt = parser.stmts[i];
+        queue_push_back(&compiler.checking_queue, work);
     }
 }
 
@@ -244,25 +279,6 @@ bool expect_terminator(Parser *self) {
     return false;
 }
 
-void parse_source(Package *package, Source *source) {
-    TRACE(PARSING);
-    Parser parser = {
-        .package = package,
-        .source = source,
-    };
-    lexer_init(&parser.lexer, source->code);
-    parser.lexer.client.data = &parser;
-    parser.lexer.client.online = (void *) parser_online;
-    parser.lexer.client.onname = (void *) parser_onname;
-    parser.lexer.client.onstr  = (void *) parser_onstr;
-    parser.lexer.client.onmsg  = (void *) parser_onmsg;
-    eat_tok(&parser);
-    while (!is_eof(&parser)) {
-        Stmt *stmt = parse_stmt(&parser);
-        arrput(package->stmts, stmt);
-    }
-}
-
 void parser_error(Parser *self, Range range, const char *msg, ...) {
     va_list args;
     char msg_buffer[512];
@@ -326,12 +342,14 @@ const char *name_for_import(const char *in_path) {
 
 Sym *parser_new_sym(Parser *self, Decl *decl, SymKind kind) {
     Sym *sym = arena_calloc(&self->package->arena, sizeof *sym);
+    sym->kind = kind;
     sym->owning_package = self->package;
     sym->decl = decl;
     return sym;
 }
 
-void parser_declare_and_queue_checking(Parser *self, Decl *decl) {
+// FIXME: Report collisions!
+void parser_declare(Parser *self, Decl *decl) {
     TRACE(PARSING);
     switch (decl->kind) {
         case DECL_VAL: {
@@ -350,9 +368,10 @@ void parser_declare_and_queue_checking(Parser *self, Decl *decl) {
             break;
         }
         case DECL_IMPORT: {
-            Sym *sym = parser_new_sym(self, decl, SYM_PACKAGE);
+            Sym *sym = parser_new_sym(self, decl, SYM_PKG);
             if (decl->dimport.alias) {
                 sym->name = decl->dimport.alias->ename;
+                scope_declare(self->package->scope, sym);
             }
             ImportMapEntry entry = {decl, sym};
             hmputs(self->package->imports, entry);
@@ -360,7 +379,6 @@ void parser_declare_and_queue_checking(Parser *self, Decl *decl) {
         }
         case DECL_FOREIGN: {
             Sym *sym = parser_new_sym(self, decl, decl->flags&DECL_CONSTANT ? SYM_VAL : SYM_VAR);
-            sym->state = SYM_RESOLVED;
             sym->name = decl->dforeign.name->ename;
             scope_declare(self->package->scope, sym);
             break;
@@ -371,10 +389,6 @@ void parser_declare_and_queue_checking(Parser *self, Decl *decl) {
         default:
             break;
     }
-    CheckerWork *work = arena_alloc(&self->package->arena, sizeof *work);
-    work->package = self->package;
-    work->stmt = (Stmt *) decl;
-    queue_push_back(&compiler.checking_queue, work);
 }
 
 CompoundField parse_compound_field(Parser *self) {
@@ -762,14 +776,15 @@ Expr *parse_expr_primary(Parser *self) {
                 if (x->kind == EXPR_FUNCTYPE) {
                     eat_tok(self);
                     Stmt **stmts = NULL;
+                    self->expr_level++;
                     while (!is_tok(self, TK_Rbrace) && !is_eof(self)) {
                         Stmt *stmt = parse_stmt(self);
-                        expect_terminator(self);
                         arrput(stmts, stmt);
                     }
+                    self->expr_level--;
                     expect_tok(self, TK_Rbrace);
                     Stmt *body = new_stmt_block(self->package, r(start, self->olast), stmts);
-                    x = new_expr_func(self->package, r(x->range.start, self->olast), 0, x, body);
+                    x = new_expr_func(self->package, r(x->range.start, self->olast), NONE, x, body);
                     continue;
                 }
                 if (self->expr_level < 0) return x;
@@ -790,6 +805,13 @@ Expr *parse_expr_primary(Parser *self) {
                 continue;
             }
             default:
+                if (x->kind == EXPR_FUNCTYPE && !is_terminator(self)) {
+                    self->expr_level++;
+                    Stmt *body = parse_stmt(self);
+                    self->expr_level--;
+                    x = new_expr_func(self->package, r(x->range.start, self->olast), NONE, x, body);
+                    continue;
+                }
                 return x;
         }
     }
@@ -798,10 +820,6 @@ Expr *parse_expr_primary(Parser *self) {
 Expr *parse_expr_unary(Parser *self) {
     TRACE(PARSING);
     u32 start = self->ostart;
-    if (match_tok(self, TK_Mul)) {
-        Expr *type = parse_expr(self);
-        return new_expr_pointer(self->package, r(start, type->range.end), type);
-    }
     switch (self->tok.kind) {
         case TK_Mul: {
             eat_tok(self);
@@ -909,7 +927,9 @@ Stmt *parse_simple_stmt(Parser *self) {
             Decl *decl = is_val ?
                 new_decl_val(self->package, range, exprs[0], type, rhs[0]) :
                 new_decl_var(self->package, range, exprs, type, rhs);
-            parser_declare_and_queue_checking(self, decl);
+            if (self->expr_level == 0) {
+                parser_declare(self, decl);
+            }
             return (Stmt *) decl;
         }
         default: {
@@ -925,6 +945,7 @@ Stmt *parse_simple_stmt(Parser *self) {
 
 Stmt *parse_stmt(Parser *self) {
     TRACE(PARSING);
+    self->was_newline = false;
 begin:;
     u32 start = self->ostart;
     switch (self->tok.kind) {
@@ -939,12 +960,14 @@ begin:;
         }
         case TK_Lbrace: {
             eat_tok(self);
+            self->expr_level++;
             Stmt **stmts = NULL;
             while (!is_tok(self, TK_Rbrace) || is_eof(self)) {
                 Stmt *stmt = parse_stmt(self);
                 arrput(stmts, stmt);
             }
             expect_tok(self, TK_Rbrace);
+            self->expr_level--;
             Range range = {start, self->olast};
             expect_terminator(self);
             return new_stmt_block(self->package, range, stmts);
@@ -979,8 +1002,11 @@ begin:;
                     }
                 }
                 Decl **decls = NULL;
-                bool is_block = false;
-                if (match_tok(self, TK_Lbrace)) is_block = true;
+                Decl *block = NULL;
+                if (match_tok(self, TK_Lbrace)) {
+                    block = new_decl_foreign_block(self->package, parser_range(self),
+                                                   NULL, linkprefix, callconv);
+                }
                 do {
                     u32 start = self->ostart;
                     Expr *name = parse_name(self);
@@ -1005,15 +1031,16 @@ begin:;
                     }
                     expect_terminator(self);
                     Decl *decl = new_decl_foreign(self->package, r(start, self->olast), flags,
-                                                  name, library, type, linkname, callconv);
-                    parser_declare_and_queue_checking(self, decl);
-                    if (!is_block) return (Stmt *) decl;
+                                                  name, library, type, linkname, callconv, block);
+                    parser_declare(self, decl);
+                    if (!block) return (Stmt *) decl;
                     arrput(decls, decl);
                 } while (!is_tok(self, TK_Rbrace) && !is_eof(self));
                 expect_tok(self, TK_Rbrace);
                 expect_terminator(self);
-                Range range = {start, self->olast};
-                return (Stmt *) new_decl_foreign_block(self->package, range, decls, linkprefix, callconv);
+                block->range = r(start, self->olast);
+                block->dforeign_block.decls = decls;
+                return (Stmt *) block;
             }
             if (match_directive(self, DIR_IMPORT)) {
                 Expr *path = parse_expr(self);
@@ -1037,7 +1064,7 @@ begin:;
                 expect_terminator(self);
                 Range range = {start, self->olast};
                 Decl *decl = new_decl_import(self->package, range, path, alias, items);
-                parser_declare_and_queue_checking(self, decl);
+                parser_declare(self, decl);
                 return (Stmt *) decl;
             }
             error(self, parser_range(self), "Unexpected directive #%s", self->tok.tname);
@@ -1148,10 +1175,8 @@ begin:;
             if (match_kw(self, KW_SWITCH)) {
                 i32 prev_expr_level = self->expr_level;
                 self->expr_level = -1;
-                Expr *match = NULL;
-                if (!is_tok(self, TK_Lbrace)) match = parse_expr(self);
+                Expr *subject = parse_expr(self);
                 self->expr_level = prev_expr_level;
-
                 expect_tok(self, TK_Lbrace);
                 SwitchCase *cases = NULL;
                 for (;;) {
@@ -1173,7 +1198,7 @@ begin:;
                 }
                 expect_tok(self, TK_Rbrace);
                 expect_terminator(self);
-                return new_stmt_switch(self->package, r(start, self->olast), match, cases);
+                return new_stmt_switch(self->package, r(start, self->olast), subject, cases);
             }
             if (match_kw(self, KW_RETURN)) {
                 Expr **exprs = NULL;

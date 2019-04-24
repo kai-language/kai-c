@@ -2,40 +2,38 @@
 #include "all.h"
 #include "string.h"
 #include "arena.h"
-
-#if INTERFACE
-typedef struct InternedString InternedString;
-struct InternedString {
-    size_t key;
-    char *value;
-    u32 len;
-};
-#endif
-
-InternedString *interns;
-Arena strings;
+#include "package.h"
+#include "queue.h"
+#include "compiler.h"
 
 // If end is NULL strlen will be called on start
 const char *str_intern_range(const char *start, const char *end) {
-    TRACE1(INTERN, INT("length", (int) (end - start)));
+    TRACE(INTERN);
     ASSERT(end - start < UINT32_MAX);
     size_t len = end - start;
     size_t hash = stbds_hash_bytes((void *) start, len, 0);
 
-    InternedString intern = hmgets(interns, hash);
+    InternedString intern = hmgets(compiler.interns, hash);
     if (intern.len) return intern.value;
-    intern.value = arena_alloc(&strings, len + 1);
+    intern.value = arena_alloc(&compiler.strings, len + 1);
     memcpy(intern.value, start, len);
     intern.value[len] = 0;
     intern.key = hash;
     intern.len = (u32) len;
-    stbds_hmputs(interns, intern);
-    COUNTER1(INTERN, "num_interns", INT("num", (int) hmlen(interns)));
+    stbds_hmputs(compiler.interns, intern);
+    COUNTER1(INTERN, "num_interns", INT("num", (int) hmlen(compiler.interns)));
     return intern.value;
 }
 
 const char *str_intern(const char *str) {
     return str_intern_range(str, str + strlen(str));
+}
+
+const char *str_join(const char *a, const char *b) {
+    char mem[4 * 1024];
+    strcpy(mem, a);
+    strcat(mem, b);
+    return str_intern(mem);
 }
 
 #if TEST

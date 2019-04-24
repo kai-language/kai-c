@@ -10,6 +10,7 @@
 #include "lexer.h"
 #include "parser.h"
 #include "checker.h"
+#include "types.h"
 
 void add_global_search_path(Compiler *compiler, const char *path) {
     verbose("Adding global search path %s", path);
@@ -104,7 +105,7 @@ struct CLIFlag {
     const char *argumentName;
     const char *help;
     int nOptions;
-    int offs;
+    long offs;
 };
 
 CompilerFlags default_flags = {
@@ -324,7 +325,6 @@ void configure_defaults(Compiler *compiler) {
         file = remove_kai_extension(file);
         path_copy(compiler->output_name, file);
     }
-
     SysInfo info = get_current_sysinfo();
     if (compiler->target_os == Os_Unknown) {
         compiler->target_os = OsForName(info.name);
@@ -332,13 +332,11 @@ void configure_defaults(Compiler *compiler) {
     if (compiler->target_arch == Arch_Unknown) {
         compiler->target_arch = ArchForName(info.arch);
     }
-
     if (compiler->target_os == Os_Unknown || compiler->target_arch == Arch_Unknown) {
         printf("Unsupported Os or Arch: %s %s\n",
                OsNames[compiler->target_os], ArchNames[compiler->target_arch]);
         exit(1);
     }
-
     switch (compiler->target_os) {
         case Os_Linux:
             compiler->target_metrics = Os_Linux_ArchSupport[compiler->target_arch];
@@ -349,10 +347,40 @@ void configure_defaults(Compiler *compiler) {
         case Os_Windows:
             compiler->target_metrics = Os_Windows_ArchSupport[compiler->target_arch];
             break;
-
-        default:
-            break;
+        default: break;
     }
+    
+#define DECLARE_BUILTIN_TYPE(TYPE, NAME) \
+{ \
+    Sym *sym = arena_calloc(&compiler->arena, sizeof *sym); \
+    sym->name = str_intern(NAME); \
+    sym->state = SYM_CHECKED; \
+    sym->kind = SYM_TYPE; \
+    sym->type = TYPE; \
+    TYPE->symbol = sym; \
+    scope_declare(compiler->global_scope, sym); \
+}
+    compiler->global_scope = arena_calloc(&compiler->arena, sizeof *compiler->global_scope);
+    DECLARE_BUILTIN_TYPE(type_any, "any");
+    DECLARE_BUILTIN_TYPE(type_void, "void");
+    DECLARE_BUILTIN_TYPE(type_bool, "bool");
+    DECLARE_BUILTIN_TYPE(type_i8, "i8");
+    DECLARE_BUILTIN_TYPE(type_i16, "i16");
+    DECLARE_BUILTIN_TYPE(type_i32, "i32");
+    DECLARE_BUILTIN_TYPE(type_i64, "i64");
+    DECLARE_BUILTIN_TYPE(type_u8, "u8");
+    DECLARE_BUILTIN_TYPE(type_u16, "u16");
+    DECLARE_BUILTIN_TYPE(type_u32, "u32");
+    DECLARE_BUILTIN_TYPE(type_u64, "u64");
+    DECLARE_BUILTIN_TYPE(type_f32, "f32");
+    DECLARE_BUILTIN_TYPE(type_f64, "f64");
+    DECLARE_BUILTIN_TYPE(type_int, "int");
+    DECLARE_BUILTIN_TYPE(type_uint, "uint");
+    DECLARE_BUILTIN_TYPE(type_intptr, "intptr");
+    DECLARE_BUILTIN_TYPE(type_uintptr, "uintptr");
+    DECLARE_BUILTIN_TYPE(type_rawptr, "rawptr");
+    type_string = type_slice(type_u8, NONE);
+    DECLARE_BUILTIN_TYPE(type_string, "string");
 }
 
 void output_version_and_build_info(void) {
@@ -398,15 +426,27 @@ bool compile(Compiler *compiler) {
             parse_package(pkg);
             continue;
         }
+        COUNTER1(IMPORT, "checking_queue", INT("length", (int) compiler->checking_queue.size));
         CheckerWork *work = queue_pop_front(&compiler->checking_queue);
-        if (work) {
+        if (work && !work->package->errors) {
             verbose("Checking stmt within package %s", work->package->path);
-            check(work->package, work->stmt);
+            bool requeue = check(work->package, work->stmt);
+            if (requeue) {
+                queue_push_back(&compiler->checking_queue, work);
+                verbose("Requeuing stmt within package %s", work->package->path);
+            }
             continue;
         }
         break;
     }
-    return true;
+    bool was_errors = false;
+    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
+        if (compiler->packages[i].value->errors) {
+            was_errors = true;
+            output_errors(compiler->packages[i].value);
+        }
+    }
+    return !was_errors;
 }
 
 #if TEST

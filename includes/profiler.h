@@ -1,6 +1,6 @@
 
 #ifndef PROFILING_ENABLED
-#define PROFILING_ENABLED 1
+#define PROFILING_ENABLED 0
 #endif
 
 typedef struct SPDR_Context SPDR_Context;
