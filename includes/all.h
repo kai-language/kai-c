@@ -97,9 +97,9 @@ typedef i32      b32;
 #define NONE 0
 #define INVALID 0
 
-void *xcalloc(size_t num_elems, size_t elem_size);
-void *xrealloc(void *ptr, size_t num_bytes);
 void *xmalloc(size_t num_bytes);
+void *xcalloc(size_t num_bytes);
+void *xrealloc(void *ptr, size_t num_bytes);
 
 #if defined(_MSC_VER)
 #   if _MSC_VER < 1300

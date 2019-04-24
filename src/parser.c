@@ -123,7 +123,7 @@ void parse_package(Package *package) {
     TRACE1(PARSING, STR("package.path", package->path));
     package_read_source_files(package);
     for (int i = 0; i < arrlen(package->sources); i++) {
-        verbose("Parsing %s", package->sources[i].path);
+        verbose("Parsing %s/%s", package->path, package->sources[i].filename);
         parse_source(package, package->sources + i);
     }
 }
@@ -279,30 +279,6 @@ bool expect_terminator(Parser *self) {
     return false;
 }
 
-void parser_error(Parser *self, Range range, const char *msg, ...) {
-    va_list args;
-    char msg_buffer[512];
-    va_start(args, msg);
-    vsnprintf(msg_buffer, sizeof msg_buffer, msg, args);
-    va_end(args);
-
-    char err_buffer[512];
-
-    PosInfo start = package_posinfo(self->package, range.start);
-    int len = snprintf(err_buffer, sizeof err_buffer, "ERROR(%s:%u:%u): %s\n",
-                       self->source->name, start.line, start.column, msg_buffer);
-
-    len = MIN(len, sizeof err_buffer);
-    char *err_msg = arena_alloc(&self->package->arena, len + 1);
-    memcpy(err_msg, err_buffer, len + 1);
-
-//    const char *code_block = NULL;
-    // TODO: findCodeBlockAndHighlightError with the new lexer
-
-//    DiagnosticError error = {err_msg, code_block};
-//    ArrayPush(self->package->diagnostics.errors, error);
-}
-
 INLINE
 void expect_single_expr(Parser *self, Expr **exprs) {
     TRACE(PARSING);
@@ -335,7 +311,7 @@ const char *name_for_import(const char *in_path) {
     char *last_component = path_file(path);
     strncpy(name, last_component, MAX_NAME);
     name[MAX_NAME - 1] = 0;
-    char *ext = path_ext(name);
+    char *ext = (char *) path_ext(name);
     if (ext != name) *ext = '\0';
     return str_intern(name);
 }

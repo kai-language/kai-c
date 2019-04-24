@@ -11,20 +11,20 @@ struct DirectoryIter {
     int error;
 
     char base[MAX_PATH];
-    char name[MAX_PATH];
+    char name[MAX_NAME];
     bool isDirectory;
 
     void *handle;
 };
 
 void *xmalloc(size_t num_bytes);
+void *xcalloc(size_t num_bytes);
 void *xrealloc(void *ptr, size_t num_bytes);
-void *xcalloc(size_t num_elems, size_t elem_size);
 
 void InitDetailsForCurrentSystem(void);
 SysInfo get_current_sysinfo(void);
 const char *ReadEntireFile(const char *path, u64 *len);
-char *path_ext(char path[MAX_PATH]);
+const char *path_ext(const char path[MAX_PATH]);
 char *path_file(char path[MAX_PATH]);
 void path_join(char path[MAX_PATH], const char *src);
 void path_copy(char path[MAX_PATH], const char *src);

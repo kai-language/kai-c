@@ -12,46 +12,41 @@
 
 extern u64 source_memory_usage;
 
-bool is_package_path(const char *package_path, const char *search_path) {
-    TRACE2(IMPORT, STR("package_path", package_path), STR("search_path", search_path));
-    char path[MAX_PATH];
-    path_copy(path, search_path);
-    path_join(path, package_path);
-    mode_t stat = file_mode(path);
-    if (stat & S_IFDIR) return true; // Directories are always packages
-    if ((stat & (S_IFREG | S_IFLNK)) == 0) return false; // Must be a file or symlink
+bool is_package_path(const char *path) {
+    TRACE1(IMPORT, STR("path", path));
+    mode_t mode = file_mode(path);
+    if (S_ISDIR(mode)) return true;
+    if (!S_ISREG(mode)) return false;
     const char *ext = path_ext(path);
     return strcmp(ext, "kai") == 0;
 }
 
-void package_search_path(char dest[MAX_PATH], const char *path) {
+void package_search_path(char search_path[MAX_PATH], const char *path) {
     TRACE(IMPORT);
-    path_copy(dest, path);
-    const char *ext = path_ext(dest);
+    path_copy(search_path, path);
+    const char *ext = path_ext(search_path); // TODO: use filemode instead of assuming ext means file?
     if (strcmp(ext, "kai") == 0) {
-        char *lastSlash = strrchr(dest, '/');
+        char *lastSlash = strrchr(search_path, '/');
         if (lastSlash) *lastSlash = '\0';
     }
 }
 
-bool resolve_package_path(char dest[MAX_PATH], const char *path, Package *importer) {
+bool resolve_package_path(char package_path[MAX_PATH], const char *path, Package *importer) {
     TRACE1(IMPORT, STR("path", path));
     if (importer) {
-        if (is_package_path(path, importer->search_path)) {
-            path_copy(dest, importer->search_path);
-            path_join(dest, path);
+        package_search_path(package_path, importer->path);
+        path_join(package_path, path);
+        if (is_package_path(package_path))
             return true;
-        }
+    } else if (is_package_path(path)) {
+        path_copy(package_path, path);
+        return true;
     }
-
-    // Check the global package search path
     for (int i = 0; i < compiler.num_global_search_paths; i++) {
-        if (is_package_path(path, compiler.global_search_paths[i])) {
-            verbose("Found package %s in %s", path, compiler.global_search_paths[i]);
-            path_copy(dest, compiler.global_search_paths[i]);
-            path_join(dest, path);
+        path_copy(package_path, compiler.global_search_paths[i]);
+        path_join(package_path, path);
+        if (is_package_path(package_path))
             return true;
-        }
     }
     return false;
 }
@@ -59,27 +54,18 @@ bool resolve_package_path(char dest[MAX_PATH], const char *path, Package *import
 Package *import_package(const char *path, Package *importer) {
     TRACE(IMPORT);
     char package_path[MAX_PATH];
-    path_copy(package_path, path);
     if (!resolve_package_path(package_path, path, importer)) {
         verbose("Failed to resolve package path for %s", path);
         return NULL;
     }
-    if (!path_absolute(package_path)) {
-        verbose("Failed to resolve absolute path for %s", path);
-        return NULL;
-    }
-    const char *fullpath = str_intern(package_path);
-    Package *package = hmget(compiler.packages, fullpath);
+    path = str_intern(package_path);
+    Package *package = hmget(compiler.packages, path);
     if (!package) { // first time seeing this package
         package = arena_calloc(&compiler.arena, sizeof *package);
         package->path = path;
-        package->fullpath = fullpath;
         package->scope = scope_push(package, compiler.global_scope);
-        char search_path[MAX_PATH];
-        package_search_path(search_path, fullpath);
-        package->search_path = str_intern(search_path);
         verbose("Importing %s", package->path);
-        hmput(compiler.packages, fullpath, package);
+        hmput(compiler.packages, path, package);
         COUNTER1(IMPORT, "num_packages", INT("num", (int) hmlen(compiler.packages)));
         queue_push_back(&compiler.parsing_queue, package);
         COUNTER1(IMPORT, "parsing_queue", INT("length", (int) compiler.parsing_queue.size));
@@ -90,34 +76,34 @@ Package *import_package(const char *path, Package *importer) {
 void package_read_source_files(Package *package) {
     TRACE1(IMPORT, STR("path", package->path));
     DirectoryIter iter;
-    for (dir_iter_open(&iter, package->fullpath); iter.valid; dir_iter_next(&iter)) {
+    for (dir_iter_open(&iter, package->path); iter.valid; dir_iter_next(&iter)) {
         if (iter.isDirectory || iter.name[0] == '.') continue;
-        char name[MAX_PATH];
-        path_copy(name, iter.name);
-        char *ext = path_ext(name);
-        if (ext == name || strcmp(ext, "kai") != 0) continue;
-        ext[-1] = '\0';
-        Source _source = {.start = package->total_sources_size};
-        arrput(package->sources, _source);
-        Source *source = &arrlast(package->sources);
-        path_copy(source->name, name);
-        path_copy(source->path, iter.base);
-        path_join(source->path, iter.name);
-        path_absolute(source->path);
+        Source source = {
+            .filename = str_intern(iter.name),
+            .start = package->total_sources_size
+        };
+        char filepath[MAX_PATH];
+        path_copy(filepath, package->path);
+        if (strcmp(package->path, iter.name) != 0) // @Hack supports file as package
+            path_join(filepath, iter.name);
         u64 len;
-        BEGIN1(IO, "readfile", STR("path", source->path));
-        source->code = ReadEntireFile(source->path, &len);
+        BEGIN1(IO, "readfile", STR("path", filepath));
+        source.code = ReadEntireFile(filepath, &len);
         END(IO, "readfile");
-        if (!source->code) {
-            Range range = {source->start, source->start};
-            package->total_sources_size += 1;
-            add_error(package, range, "Failed to read source file");
-            return;
+        bool read_success = source.code != NULL;
+        if (!read_success) {
+            len = 1;
+            source.code = xcalloc(len);
         }
         if (len + package->total_sources_size > UINT32_MAX)
             fatal("Packages with over 4GB of source code are unsupported.");
-        source->len = (u32) len;
+        source.len = (u32) len;
         package->total_sources_size += (u32) len;
+        arrput(package->sources, source);
+        if (!read_success) {
+            Range range = {source.start, source.start};
+            add_error(package, range, "Failed to read source file");
+        }
         source_memory_usage += len;
     }
     dir_iter_close(&iter);
@@ -135,20 +121,20 @@ PosInfo package_posinfo(Package *package, u32 pos) {
     for (int i = 0; i < arrlen(package->sources); i++) {
         source = &package->sources[i];
         u32 end = source->start + source->len;
-        if (pos > source->start && pos < end) goto found;
+        if (pos >= source->start && pos < end) goto found;
     }
     return (PosInfo){0};
 
 found:;
     u32 offset = pos - source->start;
     u32 start_of_line = 0;
-    u32 lineno = 1;
+    u32 lineno = 0;
     if (source->line_offsets) {
         for (int i = 0; i < arrlen(source->line_offsets); i++) {
             lineno++;
             start_of_line = source->line_offsets[i];
-            if (start_of_line > offset) {
-                start_of_line = source->line_offsets[i - 1];
+            if (start_of_line >= offset) {
+                start_of_line = source->line_offsets[i - 1];  // FIXME: Results in oob on first char error.
                 break;
             }
         }
@@ -168,21 +154,25 @@ found:;
     return info;
 }
 
-void output_error(SourceError error) {
+void output_error(Package *package, SourceError error) {
     PosInfo location = error.location;
-    fprintf(stderr, "error(%s:%u:%u) %s\n", location.source->name, location.line, location.column, error.msg);
+    char filepath[MAX_PATH];
+    path_copy(filepath, package->path);
+    if (strcmp(package->path, location.source->filename) != 0) // @Hack supports file as package
+        path_join(filepath, location.source->filename);
+    fprintf(stderr, "error(%s:%u:%u) %s\n", filepath, location.line, location.column, error.msg);
     if (compiler.flags.error_source && error.code_block)
         fprintf(stderr, "%s", error.code_block);
 
     for (SourceNote *note = error.note; note; note = note->next) {
         location = note->location;
-        fprintf(stderr, "note(%s:%u:%u) %s\n", location.source->name, location.line, location.column, note->msg);
+        fprintf(stderr, "note(%s:%u:%u) %s\n", filepath, location.line, location.column, note->msg);
     }
 }
 
 void output_errors(Package *package) {
     for (i64 i = 0; i < arrlen(package->errors); i++)
-        output_error(package->errors[i]);
+        output_error(package, package->errors[i]);
 }
 
 char *find_code_block_and_highlight_range(Package *package, Range range) {

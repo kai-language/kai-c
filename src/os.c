@@ -72,8 +72,8 @@ char *path_file(char path[MAX_PATH]) {
 }
 
 // returns path if no '.' occurs
-char *path_ext(char path[MAX_PATH]) {
-    for (char *ptr = path + strlen(path); ptr != path; ptr--) {
+const char *path_ext(const char path[MAX_PATH]) {
+    for (const char *ptr = path + strlen(path); ptr != path; ptr--) {
         if (ptr[-1] == '.') {
             return ptr;
         }
@@ -92,8 +92,8 @@ void InitDetailsForCurrentSystem(void) {
 
 }
 
-void *xcalloc(size_t num_elems, size_t elem_size) {
-    void *ptr = calloc(num_elems, elem_size);
+void *xcalloc(size_t num_bytes) {
+    void *ptr = calloc(num_bytes, 1);
     if (!ptr) {
         perror("calloc failed");
         exit(1);

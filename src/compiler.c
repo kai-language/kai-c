@@ -19,7 +19,6 @@ void add_global_search_path(Compiler *compiler, const char *path) {
 
 void init_global_search_paths(Compiler *compiler) {
     TRACE(INIT);
-    add_global_search_path(compiler, ".");
     add_global_search_path(compiler, "vendor");
     add_global_search_path(compiler, "packages");
     const char *kaipath_env = getenv("KAIPATH");

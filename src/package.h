@@ -15,8 +15,7 @@ typedef struct Range Range;
 
 typedef struct Source Source;
 struct Source {
-    char name[MAX_NAME];
-    char path[MAX_PATH];
+    const char *filename;
     const char *code;
     u32 start;
     u32 len;
@@ -58,8 +57,6 @@ typedef struct OperandMapEntry OperandMapEntry;
 typedef struct Package Package;
 struct Package {
     const char *path;
-    const char *fullpath;
-    const char *search_path;
 
     Source *sources; // arr
     u32 total_sources_size;

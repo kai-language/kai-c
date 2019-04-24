@@ -29,8 +29,8 @@ void dir_iter_next(DirectoryIter *it) {
             dir_iter_close(it);
             return;
         }
-        strncpy(it->name, entry->d_name, MAX_PATH - 1);
-        it->name[MAX_PATH - 1] = '\0';
+        strncpy(it->name, entry->d_name, MAX_NAME - 1);
+        it->name[MAX_NAME - 1] = '\0';
         // NOTE: d_type is a speed optimization to save on lstat(2) calls. It may not be supported by the filesystem.
         it->isDirectory = entry->d_type & DT_DIR;
     } while (it->valid && dir_iter_skip(it));
@@ -47,7 +47,8 @@ void dir_iter_open(DirectoryIter *it, const char *path) {
     it->valid = true;
     mode_t mode = file_mode(path);
     if (S_ISREG(mode)) {
-        path_copy(it->name, path);
+        strncpy(it->name, path, MAX_NAME);
+        it->name[MAX_NAME - 1] = '\0';
         return;
     } else {
         DIR *dir = opendir(path);
