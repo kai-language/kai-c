@@ -53,6 +53,11 @@ struct ImportMapEntry {
 };
 
 typedef struct OperandMapEntry OperandMapEntry;
+typedef struct SymDeclMapEntry SymDeclMapEntry;
+struct SymDeclMapEntry {
+    Expr *key; // Expr
+    Sym *value;
+};
 
 typedef struct Package Package;
 struct Package {
@@ -69,6 +74,7 @@ struct Package {
     Scope *scope;
 
     OperandMapEntry *operands; // hm
+    SymDeclMapEntry *symdecls; // hm
 
     SourceError *errors; // arr
     SourceNote *notes;   // arr
@@ -87,4 +93,5 @@ void add_error(Package *package, Range range, const char *fmt, ...);
 void add_note(Package *package, Range range, const char *fmt, ...);
 void package_read_source_files(Package *package);
 Package *import_package(const char *path, Package *importer);
+Source *package_source(Package *package, u32 pos);
 PosInfo package_posinfo(Package *package, u32 pos);

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5D2E445B22708C3A0056A4D5 /* bytecode.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D2E445A22708C3A0056A4D5 /* bytecode.c */; };
+		5D2E445E227C4CF50056A4D5 /* bytecode2.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D2E445D227C4CF50056A4D5 /* bytecode2.c */; };
 		5D2FAB82226959C1001819DD /* test_main.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D2FAB75226957BE001819DD /* test_main.c */; };
 		5D72D455226975E800CF001B /* test_xcmain.m in Sources */ = {isa = PBXBuildFile; fileRef = 5D72D454226975D100CF001B /* test_xcmain.m */; };
 		5D72D4582269839B00CF001B /* parser.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D72D4572269839B00CF001B /* parser.c */; };
@@ -91,6 +93,10 @@
 		5D1FDC1E226898F700B4C816 /* package.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = package.h; sourceTree = "<group>"; };
 		5D1FDC1F226898F700B4C816 /* parser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = parser.h; sourceTree = "<group>"; };
 		5D1FDC20226932D400B4C816 /* debug.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = debug.h; sourceTree = "<group>"; };
+		5D2E445922708C3A0056A4D5 /* bytecode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bytecode.h; sourceTree = "<group>"; };
+		5D2E445A22708C3A0056A4D5 /* bytecode.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bytecode.c; sourceTree = "<group>"; };
+		5D2E445C227C4CF50056A4D5 /* bytecode2.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bytecode2.h; sourceTree = "<group>"; };
+		5D2E445D227C4CF50056A4D5 /* bytecode2.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bytecode2.c; sourceTree = "<group>"; };
 		5D2FAB75226957BE001819DD /* test_main.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = test_main.c; sourceTree = "<group>"; };
 		5D2FAB7B22695867001819DD /* tests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = tests; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D41B52820CAD07D005E9A8E /* kai_tests.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kai_tests.c; sourceTree = "<group>"; };
@@ -239,6 +245,10 @@
 				5D7E2A1C2261AFCE004CBF98 /* arena.c */,
 				5D1FDC12226898F500B4C816 /* ast.h */,
 				5D7E2A3D2261C537004CBF98 /* ast.c */,
+				5D2E445922708C3A0056A4D5 /* bytecode.h */,
+				5D2E445A22708C3A0056A4D5 /* bytecode.c */,
+				5D2E445C227C4CF50056A4D5 /* bytecode2.h */,
+				5D2E445D227C4CF50056A4D5 /* bytecode2.c */,
 				5D1FDC13226898F500B4C816 /* checker.h */,
 				5D7E2A3B2261C138004CBF98 /* checker.c */,
 				5D1FDC1B226898F600B4C816 /* compiler.h */,
@@ -582,9 +592,11 @@
 				5DD978BD22661E8E007A57DC /* types.c in Sources */,
 				5D7E2A2C2261AFCF004CBF98 /* queue.c in Sources */,
 				5D72D45A226B1FFA00CF001B /* checker.c in Sources */,
+				5D2E445B22708C3A0056A4D5 /* bytecode.c in Sources */,
 				5D7E2A3C2261C138004CBF98 /* checker.c in Sources */,
 				5D7E2A362261AFCF004CBF98 /* main.c in Sources */,
 				5D7E2A2F2261AFCF004CBF98 /* compiler.c in Sources */,
+				5D2E445E227C4CF50056A4D5 /* bytecode2.c in Sources */,
 				5D7E2A322261AFCF004CBF98 /* parser.c in Sources */,
 				5D7E2A312261AFCF004CBF98 /* arena.c in Sources */,
 			);

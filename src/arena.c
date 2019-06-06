@@ -21,6 +21,7 @@ void *arena_alloc(Arena *arena, size_t size) {
     }
     void *ptr = arena->ptr;
     arena->ptr = ALIGN_UP_PTR(arena->ptr + size, ARENA_ALIGNMENT);
+    arena->used_size += size;
     ASSERT(arena->ptr <= arena->end);
     ASSERT(ptr == ALIGN_DOWN_PTR(ptr, ARENA_ALIGNMENT));
     return ptr;

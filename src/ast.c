@@ -3,6 +3,7 @@
 #include "ast.h"
 #include "arena.h"
 #include "package.h"
+#include "string.h"
 
 STATIC_ASSERT(offsetof(Ast, range) == offsetof(Expr, range));
 STATIC_ASSERT(offsetof(Ast, range) == offsetof(Stmt, range));
@@ -367,13 +368,17 @@ const char *describe_ast_kind(int kind) {
         case STMT_NAMES:
             return NULL;
         default:
-            fatal("Unknown ast kind %hc", kind);
+            fatal("Unknown ast kind %p", kind);
     }
 }
 
-const char *describe_ast(void *p) {
+const char *describe_ast(Package *package, void *p) {
     Ast *ast = p;
-    return describe_ast_kind(ast->kind);
+    Source *source = package_source(package, ast->range.start);
+    if (!source) return describe_ast_kind(ast->kind);
+    u32 start = ast->range.start - source->start;
+    u32 end = ast->range.end - source->start;
+    return str_intern_range(source->code + start, source->code + end);
 }
 
 const char *describe_op(Op op) {

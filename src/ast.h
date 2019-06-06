@@ -3,9 +3,9 @@
 // package.h
 typedef struct Package Package;
 
-#define EXPR_KIND_BASE 0x40
-#define STMT_KIND_BASE 0x80
-#define DECL_KIND_BASE 0xC0
+#define EXPR_KIND_BASE 0x20
+#define STMT_KIND_BASE 0x40
+#define DECL_KIND_BASE 0x80
 
 #define ISEXPR(ast) (((ast)->kind & EXPR_KIND_BASE) != 0)
 #define ISSTMT(ast) (((ast)->kind & STMT_KIND_BASE) != 0)
@@ -274,29 +274,29 @@ struct StmtSwitch {
 
 typedef enum ExprKind ExprKind;
 enum ExprKind {
-    EXPR_NIL = EXPR_KIND_BASE,
-    EXPR_INT,
-    EXPR_FLOAT,
-    EXPR_STR,
-    EXPR_NAME,
-    EXPR_COMPOUND,
-    EXPR_CAST,
-    EXPR_PAREN,
-    EXPR_UNARY,
-    EXPR_BINARY,
-    EXPR_TERNARY,
-    EXPR_CALL,
-    EXPR_FIELD,
-    EXPR_INDEX,
-    EXPR_SLICE,
-    EXPR_FUNC,
-    EXPR_FUNCTYPE,
-    EXPR_SLICETYPE,
-    EXPR_ARRAY,
-    EXPR_POINTER,
-    EXPR_STRUCT,
-    EXPR_UNION,
-    EXPR_ENUM,
+    EXPR_NIL       = EXPR_KIND_BASE + 0x00,
+    EXPR_INT       = EXPR_KIND_BASE + 0x01,
+    EXPR_FLOAT     = EXPR_KIND_BASE + 0x02,
+    EXPR_STR       = EXPR_KIND_BASE + 0x03,
+    EXPR_NAME      = EXPR_KIND_BASE + 0x04,
+    EXPR_COMPOUND  = EXPR_KIND_BASE + 0x05,
+    EXPR_CAST      = EXPR_KIND_BASE + 0x06,
+    EXPR_PAREN     = EXPR_KIND_BASE + 0x07,
+    EXPR_UNARY     = EXPR_KIND_BASE + 0x08,
+    EXPR_BINARY    = EXPR_KIND_BASE + 0x09,
+    EXPR_TERNARY   = EXPR_KIND_BASE + 0x0A,
+    EXPR_CALL      = EXPR_KIND_BASE + 0x0B,
+    EXPR_FIELD     = EXPR_KIND_BASE + 0x0C,
+    EXPR_INDEX     = EXPR_KIND_BASE + 0x0D,
+    EXPR_SLICE     = EXPR_KIND_BASE + 0x0E,
+    EXPR_FUNC      = EXPR_KIND_BASE + 0x0F,
+    EXPR_FUNCTYPE  = EXPR_KIND_BASE + 0x11,
+    EXPR_SLICETYPE = EXPR_KIND_BASE + 0x12,
+    EXPR_ARRAY     = EXPR_KIND_BASE + 0x13,
+    EXPR_POINTER   = EXPR_KIND_BASE + 0x14,
+    EXPR_STRUCT    = EXPR_KIND_BASE + 0x15,
+    EXPR_UNION     = EXPR_KIND_BASE + 0x16,
+    EXPR_ENUM      = EXPR_KIND_BASE + 0x17,
 };
 
 typedef enum Op Op;
@@ -360,12 +360,12 @@ struct Expr {
 
 typedef enum DeclKind DeclKind;
 enum DeclKind {
-    DECL_VAR = DECL_KIND_BASE,
-    DECL_VAL,
-    DECL_IMPORT,
-    DECL_LIBRARY,
-    DECL_FOREIGN,
-    DECL_FOREIGNBLOCK,
+    DECL_VAR          = DECL_KIND_BASE + 0x0,
+    DECL_VAL          = DECL_KIND_BASE + 0x1,
+    DECL_IMPORT       = DECL_KIND_BASE + 0x2,
+    DECL_LIBRARY      = DECL_KIND_BASE + 0x3,
+    DECL_FOREIGN      = DECL_KIND_BASE + 0x4,
+    DECL_FOREIGNBLOCK = DECL_KIND_BASE + 0x5,
 };
 
 typedef enum DeclFlags DeclFlags;
@@ -390,17 +390,17 @@ struct Decl {
 
 typedef enum StmtKind StmtKind;
 enum StmtKind {
-    STMT_LABEL = STMT_KIND_BASE,
-    STMT_ASSIGN,
-    STMT_RETURN,
-    STMT_DEFER,
-    STMT_USING,
-    STMT_GOTO,
-    STMT_BLOCK,
-    STMT_IF,
-    STMT_FOR,
-    STMT_SWITCH,
-    STMT_NAMES,
+    STMT_LABEL  = STMT_KIND_BASE + 0x0,
+    STMT_ASSIGN = STMT_KIND_BASE + 0x1,
+    STMT_RETURN = STMT_KIND_BASE + 0x2,
+    STMT_DEFER  = STMT_KIND_BASE + 0x3,
+    STMT_USING  = STMT_KIND_BASE + 0x4,
+    STMT_GOTO   = STMT_KIND_BASE + 0x5,
+    STMT_BLOCK  = STMT_KIND_BASE + 0x6,
+    STMT_IF     = STMT_KIND_BASE + 0x7,
+    STMT_FOR    = STMT_KIND_BASE + 0x8,
+    STMT_SWITCH = STMT_KIND_BASE + 0x9,
+    STMT_NAMES  = STMT_KIND_BASE + 0xA,
 };
 
 typedef struct Stmt Stmt;
@@ -473,5 +473,5 @@ Stmt *new_stmt_switch(Package *package, Range range, Expr *match, SwitchCase *ca
 Stmt *new_stmt_names(Package *package, Range range, Expr **names);
 const char *describe_goto_kind(int kind);
 const char *describe_ast_kind(int kind);
-const char *describe_ast(void *p);
+const char *describe_ast(Package *package, void *p);
 const char *describe_op(Op op);

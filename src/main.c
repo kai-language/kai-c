@@ -34,12 +34,10 @@ int main(int argc, const char **argv) {
     u64 total_memory_usage = source_memory_usage;
     total_memory_usage += hmsize(compiler.interns);
     total_memory_usage += arrsize(compiler.ordered_symbols);
-    total_memory_usage += compiler.arena.size;
-    total_memory_usage += compiler.strings.size;
-    total_memory_usage += compiler.parsing_queue.size;
-    total_memory_usage += compiler.checking_queue.size;
+    total_memory_usage += compiler.arena.used_size;
+    total_memory_usage += compiler.strings.used_size;
     for (i64 i = 0; i < hmlen(compiler.packages); i++) {
-        total_memory_usage += compiler.packages[i].value->arena.size;
+        total_memory_usage += compiler.packages[i].value->arena.used_size;
     }
     verbose("Processed %.2fKB of source files", (f64) source_memory_usage / 1024.f);
     verbose("Memory usage: %.2fKB\n", (f64) total_memory_usage / 1024.f);

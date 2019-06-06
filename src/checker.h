@@ -27,6 +27,7 @@ enum SymKind {
     SYM_TYPE,
     SYM_VAR,
     SYM_VAL,
+    SYM_ARG,
     SYM_PKG,
     SYM_LIB,
     SYM_LABEL,
@@ -55,6 +56,7 @@ struct Sym {
     Reachable reachable : 8;
     Decl *decl;
     const char *external_name;
+    void *userdata; // backend data
     union {
         struct {
             Type *type;
@@ -100,7 +102,7 @@ struct Operand {
 
 typedef struct OperandMapEntry OperandMapEntry;
 struct OperandMapEntry {
-    Expr *key;
+    void *key;
     Operand value;
 };
 

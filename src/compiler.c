@@ -11,6 +11,7 @@
 #include "parser.h"
 #include "checker.h"
 #include "types.h"
+#include "bytecode.h"
 
 void add_global_search_path(Compiler *compiler, const char *path) {
     verbose("Adding global search path %s", path);
@@ -443,6 +444,13 @@ bool compile(Compiler *compiler) {
         if (compiler->packages[i].value->errors) {
             was_errors = true;
             output_errors(compiler->packages[i].value);
+        }
+    }
+    BytecodeGenerator bc = {0};
+    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
+        bc.package = compiler->packages[i].value;
+        for (i64 j = 0; j < arrlen(bc.package->stmts); j++) {
+            gen_bytecode_stmt(&bc, bc.package->stmts[j]);
         }
     }
     return !was_errors;

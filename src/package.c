@@ -115,17 +115,21 @@ void package_posinfo_online(PosInfo *info, u32 offset) {
     info->line += 1;
 }
 
-PosInfo package_posinfo(Package *package, u32 pos) {
+Source *package_source(Package *package, u32 pos) {
     TRACE(LEXING);
     Source *source;
     for (int i = 0; i < arrlen(package->sources); i++) {
         source = &package->sources[i];
         u32 end = source->start + source->len;
-        if (pos >= source->start && pos < end) goto found;
+        if (pos >= source->start && pos < end) return source;
     }
-    return (PosInfo){0};
+    return NULL;
+}
 
-found:;
+PosInfo package_posinfo(Package *package, u32 pos) {
+    TRACE(LEXING);
+    Source *source = package_source(package, pos);
+    if (!source) return (PosInfo){0};
     u32 offset = pos - source->start;
     u32 start_of_line = 0;
     u32 lineno = 0;

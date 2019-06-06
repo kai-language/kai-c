@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VariablesViewState
+   version = "1.0">
+   <ContextStates>
+      <ContextState
+         contextName = "evalUnaryUnsigned:constant_eval.c">
+      </ContextState>
+      <ContextState
+         contextName = "QueuePushFront:queue.c">
+      </ContextState>
+      <ContextState
+         contextName = "checkDeclVariable:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "decl-&gt;pos">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "parseExprBinary:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "gen_bytecode_stmt:bytecode.c">
+      </ContextState>
+      <ContextState
+         contextName = "checkExprUnary:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "checkStmt:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "(Enum_StmtKind) stmt-&gt;kind">
+            </PersistentString>
+            <PersistentString
+               value = "(Enum_ExprMode) ctx-&gt;mode">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "gen_bytecode_decl_val:bytecode.c">
+      </ContextState>
+      <ContextState
+         contextName = "test_checkUnary:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "evalUnary:constant_eval.c">
+      </ContextState>
+      <ContextState
+         contextName = "parseExprAtom:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "expectToken:parser.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "p-&gt;lexer.stream">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "resetAndParseSingleStmt:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "resolve_package_path:package.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "compiler.global_search_paths">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "scanString(Lexer*):lexer.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "*l-&gt;stream">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "parseExpr:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "parseStmt:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "QueuePopBack:queue.c">
+      </ContextState>
+      <ContextState
+         contextName = "canCoerce:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "(Enum_TypeKind)type-&gt;kind">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "test_queue:queue.c">
+      </ContextState>
+      <ContextState
+         contextName = "parseExprUnary:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "test_lexer:lexer.c">
+      </ContextState>
+      <ContextState
+         contextName = "checkStmtIf:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "DirectoryIterClose:main.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "(DIR *)it-&gt;handle">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "test_parseStmt:parser.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "stmt">
+            </PersistentString>
+            <PersistentString
+               value = "(stmt_kind) stmt-&gt;kind">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "MapGrow(Map*, unsigned long):map.c">
+      </ContextState>
+      <ContextState
+         contextName = "llvm::DataLayout::getAllocaAddrSpace() const:DataLayout.h">
+      </ContextState>
+      <ContextState
+         contextName = "coerceType:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "*type">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "lexer_onstr_calloc:lexer.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "(u32 *) str">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "ParseFlags:flags.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "compiler">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "SmallestIntTypeForValue:types.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "(u64) ((u8)(i8) -128)">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "checkExprTypeArray:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "(Enum_TypeKind)ctx-&gt;desiredType-&gt;kind">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "llvm::IRBuilder&lt;llvm::ConstantFolder, llvm::IRBuilderDefaultInserter&gt;::CreateAlloca(llvm::Type*, llvm::Value*, llvm::Twine const&amp;):IRBuilder.h">
+      </ContextState>
+      <ContextState
+         contextName = "test_coercionsAreMarked:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "pkg.checkerInfo[5].BasicExpr.coerce">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "coerceTypeSilently:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "DescribeType(target)">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "parseStmtSwitch:parser.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "p-&gt;lexer-&gt;stream">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "resetAndParseReturningLastStmt:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "parseExprList:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "NextToken(Lexer*):lexer.c">
+      </ContextState>
+      <ContextState
+         contextName = "main:main.cpp">
+      </ContextState>
+      <ContextState
+         contextName = "strInternRange(char const*, char const*):string.cpp">
+      </ContextState>
+      <ContextState
+         contextName = "NewTypeFunction:types.c">
+      </ContextState>
+      <ContextState
+         contextName = "main:main.c">
+      </ContextState>
+      <ContextState
+         contextName = "bytecode_store_data:bytecode.c">
+      </ContextState>
+      <ContextState
+         contextName = "checkExprLitFunction:checker.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "bodyCtx.desiredType">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "test_checkConstantBinaryExpressions:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "NewExprTypeFunction:ast.c">
+         <PersistentStrings>
+            <PersistentString
+               value = "((Expr *) 0x10a4bb2f8)-&gt;TypeFunction">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "checkDeclConstant:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "parseStmts:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "check:checker.c">
+      </ContextState>
+      <ContextState
+         contextName = "parseFunctionType:parser.c">
+      </ContextState>
+      <ContextState
+         contextName = "parsePackageCode:parser.c">
+      </ContextState>
+   </ContextStates>
+</VariablesViewState>

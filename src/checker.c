@@ -133,21 +133,23 @@ Sym *scope_lookup(Scope *scope, const char *name) {
     return NULL;
 }
 
-Sym *checker_sym(Checker *self, const char *name, Type *type, SymKind kind) {
+Sym *checker_sym(Checker *self, Expr *name, Type *type, SymKind kind) {
+    ASSERT(name->kind == EXPR_NAME);
     Sym *sym;
     if (self->scope == self->package->scope) {
-        sym = scope_lookup(self->scope, name);
+        sym = scope_lookup(self->scope, name->ename);
         sym->type = type;
         ASSERT(sym && sym->kind == kind);
     } else {
         sym = arena_calloc(&self->package->arena, sizeof *sym);
         sym->state = SYM_CHECKED;
-        sym->name = name;
+        sym->name = name->ename;
         sym->type = type;
         sym->kind = kind;
         sym->owning_package = self->package;
         scope_declare(self->scope, sym);
     }
+    hmput(self->package->symdecls, name, sym);
     return sym;
 }
 
@@ -245,7 +247,8 @@ bool ret_operand(Operand op) {
 INLINE void expect_operand_is_a_type(Checker *self, Operand operand, Expr *expr) {
     TRACE(CHECKING);
     if (operand.flags != TYPE) {
-        error(self, expr->range, "'%s' cannot be used as a type", describe_ast(expr));
+        error(self, expr->range, "'%s' cannot be used as a type",
+              describe_ast(self->package, expr));
     }
 }
 
@@ -333,6 +336,7 @@ Operand check_expr_name(Checker *self, Expr *expr) {
     switch (sym->kind) {
         case SYM_VAL: flags |= CONST; break;
         case SYM_VAR: flags |= LVALUE; break;
+        case SYM_ARG: flags |= LVALUE; break;
         case SYM_PKG: flags |= PACKAGE; goto special;
         case SYM_LIB: flags |= LIBRARY; goto special;
         case SYM_TYPE: flags = TYPE; break;
@@ -446,7 +450,8 @@ Operand check_expr_unary(Checker *self, Expr *expr) {
     switch (op) {
         case OP_AND: {
             if ((value.flags & LVALUE) == 0) {
-                error(self, expr->range, "Cannot take address of '%s'", describe_ast(expr));
+                error(self, expr->range, "Cannot take address of '%s'",
+                      describe_ast(self->package, expr));
                 return bad_operand;
             }
             Type *type = type_ptr(value.type, NONE);
@@ -607,7 +612,7 @@ Operand check_expr_field(Checker *self, Expr *expr) {
     found:;
         switch (sym->state) {
             case SYM_UNCHECKED:
-                return bad_operand;
+                return operand_unchecked;
             case SYM_CHECKING:
                 error(self, expr->range, "Declaration initial value refers to itself");
                 return bad_operand;
@@ -617,6 +622,7 @@ Operand check_expr_field(Checker *self, Expr *expr) {
         switch (sym->kind) {
             case SYM_VAL: flags |= CONST; break;
             case SYM_VAR: flags |= LVALUE; break;
+            case SYM_ARG: flags |= LVALUE; break;
             case SYM_PKG: fatal("Expected to be unable to reference imports from imports");
             case SYM_LIB:
             default: fatal("Unhandled");
@@ -684,7 +690,8 @@ Operand check_expr_func(Checker *self, Expr *expr) {
     if (ret_operand(type)) return type;
     for (u32 i = 0; i < arrlen(type.type->tfunc.params); i++) {
         TypeFunc func = type.type->tfunc;
-        Sym *sym = checker_sym(self, func.labels[i], func.params[i], SYM_VAR);
+        Expr *name = expr->efunc.type->efunctype.params[i].name;
+        Sym *sym = checker_sym(self, name, func.params[i], SYM_ARG);
         sym->type = type.type->tfunc.params[i];
         scope_declare(self->scope, sym);
     }
@@ -805,7 +812,7 @@ Operand check_decl_val(Checker *self, Decl *decl) {
     TRACE1(CHECKING, STR("val", decl->dval.name->ename));
     Decl *prev_current_decl = self->current_decl;
     self->current_decl = decl;
-    Sym *sym = checker_sym(self, decl->dval.name->ename, NULL, SYM_VAL);
+    Sym *sym = checker_sym(self, decl->dval.name, NULL, SYM_VAL);
     Type *type = NULL;
     if (decl->dval.type) {
         Operand ty = check_expr(self, decl->dval.type);
@@ -850,15 +857,15 @@ Operand check_decl_var(Checker *self, Decl *decl) {
                   num_names, num_values);
         }
         for (i64 i = 0; i < num_names; i++) {
-            const char *name = decl->dvar.vals[i]->ename;
             Type *rhs_type = call.type->taggregate.fields[i].type;
             if (type) expect_type_coerces(self, rhs_type, type, decl->dvar.vals[0]);
-            Sym *sym = checker_sym(self, name, type ?: rhs_type, SYM_VAR);
+            Sym *sym = checker_sym(self, decl->dvar.vals[i], type ?: rhs_type, SYM_VAR);
             sym->state = SYM_CHECKED;
         }
+        return operand_ok;
     } else if (type && num_values == 0) {
         for (i64 i = 0; i < num_names; i++) {
-            Sym *sym = checker_sym(self, decl->dvar.names[i]->ename, type, SYM_VAR);
+            Sym *sym = checker_sym(self, decl->dvar.names[i], type, SYM_VAR);
             sym->state = SYM_CHECKED;
         }
         return operand_ok;
@@ -867,7 +874,7 @@ Operand check_decl_var(Checker *self, Decl *decl) {
     }
     for (i64 i = 0; i < num_names; i++) {
         Expr *expr = decl->dvar.vals[MIN(i, num_values)];
-        Sym *sym = checker_sym(self, decl->dvar.names[i]->ename, NULL, SYM_VAR);
+        Sym *sym = checker_sym(self, decl->dvar.names[i], NULL, SYM_VAR);
         Operand op = check_expr(self, expr);
         if (ret_operand(op)) return op;
         symbol_mark_checked(sym, op);
@@ -882,7 +889,7 @@ Operand check_decl_foreign(Checker *self, Decl *decl) {
     if (ret_operand(type)) return type;
     expect_operand_is_a_type(self, type, decl->dforeign.type);
     SymKind kind = decl->flags&DECL_CONSTANT ? SYM_VAL : SYM_VAR;
-    Sym *sym = checker_sym(self, decl->dforeign.name->ename, type.type, kind);
+    Sym *sym = checker_sym(self, decl->dforeign.name, type.type, kind);
     if (decl->dforeign.linkname) {
         sym->external_name = resolve_value(self->package, decl->dforeign.linkname).p;
     } else if (decl->dforeign.block && decl->dforeign.block->dforeign_block.linkprefix) {
@@ -913,7 +920,7 @@ Operand check_decl_import(Checker *self, Decl *decl) { // Nothing to do?
 
 Operand check_stmt_label(Checker *self, Stmt *stmt) {
     TRACE(CHECKING);
-    Sym *sym = checker_sym(self, stmt->slabel->ename, NULL, SYM_LABEL);
+    Sym *sym = checker_sym(self, stmt->slabel, NULL, SYM_LABEL);
     sym->state = SYM_CHECKED;
     return operand_ok;
 }
@@ -1088,14 +1095,14 @@ Operand check_stmt_for(Checker *self, Stmt *stmt) {
             }
             Type *value_type = aggregate.type->tslice.eltype;
             if (stmt->sfor.value_name) {
-                Sym *sym = checker_sym(self, stmt->sfor.value_name->ename, value_type, SYM_VAL);
+                Sym *sym = checker_sym(self, stmt->sfor.value_name, value_type, SYM_VAL);
                 sym->state = SYM_CHECKED;
             }
             if (stmt->sfor.index_name) {
                 Type *index_type = type_u64;
                 if (is_array(aggregate.type))
                     index_type = smallest_unsigned_int_for_value(aggregate.type->tarray.length);
-                Sym *sym = checker_sym(self, stmt->sfor.index_name->ename, index_type, SYM_VAL);
+                Sym *sym = checker_sym(self, stmt->sfor.index_name, index_type, SYM_VAL);
                 sym->state = SYM_CHECKED;
             }
             break;
