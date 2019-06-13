@@ -28,7 +28,7 @@ Expr *expr;
 test_parser = new_test_parser(from);  \
 expr = parse_expr(&test_parser); \
 ASSERT_MSG_VA(!test_package.errors, "Parsing produced error: '%s'", test_package.errors[0].msg); \
-ASSERT_MSG_VA(expr->kind == expect, "expected '%s' got '%s'", describe_ast_kind(expect), describe_ast_kind(expr))
+ASSERT_MSG_VA(expr->kind == expect, "expected '%s' got '%s'", describe_ast_kind(expect), describe_ast_kind(expr->kind))
 
 void test_parse_atoms() {
     AEKIND(EXPR_NAME, "a");
@@ -134,7 +134,7 @@ Stmt *stmt;
 test_parser = new_test_parser(from);  \
 stmt = parse_stmt(&test_parser); \
 ASSERT_MSG_VA(!test_package.errors, "Parsing produced error: '%s'", test_package.errors[0].msg); \
-ASSERT_MSG_VA(stmt->kind == expect, "expected '%s' got '%s'", describe_ast_kind(expect), describe_ast_kind(expr))
+ASSERT_MSG_VA(stmt->kind == expect, "expected '%s' got '%s'", describe_ast_kind(expect), describe_ast_kind(expr->kind))
 
 void test_parse_val() {
     ASKIND(DECL_VAL, "a :: b");

@@ -70,6 +70,40 @@ XCTestCase *current_test_case;
 @end
 
 //
+// Tests found in file src/tests/bytecode.c
+@interface bytecode_tests : XCTestCase
+@end
+
+@implementation bytecode_tests
+
+- (void) setUp {
+    current_test_case = self;
+    [self setContinueAfterFailure: false];
+}
+
+- (void)test_bytecode_integer_arithmetic {
+    test_bytecode_integer_arithmetic();
+}
+
+- (void)test_bytecode_floating_point_arithmetic {
+    test_bytecode_floating_point_arithmetic();
+}
+
+- (void)test_bytecode_load_and_stores_move {
+    test_bytecode_load_and_stores_move();
+}
+
+- (void)test_bytecode_conversions {
+    test_bytecode_conversions();
+}
+
+- (void)test_bytecode_cmp {
+    test_bytecode_cmp();
+}
+
+@end
+
+//
 // Tests found in file src/tests/parser.c
 @interface parser_tests : XCTestCase
 @end

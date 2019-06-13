@@ -446,13 +446,13 @@ bool compile(Compiler *compiler) {
             output_errors(compiler->packages[i].value);
         }
     }
-    BytecodeGenerator bc = {0};
-    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
-        bc.package = compiler->packages[i].value;
-        for (i64 j = 0; j < arrlen(bc.package->stmts); j++) {
-            gen_bytecode_stmt(&bc, bc.package->stmts[j]);
-        }
-    }
+//    BytecodeGenerator bc = {0};
+//    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
+//        bc.package = compiler->packages[i].value;
+//        for (i64 j = 0; j < arrlen(bc.package->stmts); j++) {
+//            gen_bytecode_stmt(&bc, bc.package->stmts[j]);
+//        }
+//    }
     return !was_errors;
 }
 
