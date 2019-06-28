@@ -1,5 +1,7 @@
 #pragma once
 
+// requires nothing
+
 typedef struct Arena Arena;
 struct Arena {
     u64 size;

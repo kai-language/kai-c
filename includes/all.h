@@ -125,6 +125,10 @@ void *xrealloc(void *ptr, size_t num_bytes);
 #   endif
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // From debug.h
 INLINE void verbose(const char *fmt, ...);
 void Backtrace(void);
@@ -132,3 +136,8 @@ _Noreturn void fatal(const char *fmt, ...);
 void warn(const char *fmt, ...);
 _Noreturn void fatal(const char *fmt, ...);
 void assertHandler(char const *file, i32 line, char const *msg, ...);
+
+
+#ifdef __cplusplus
+}
+#endif

@@ -12,6 +12,7 @@
 #include "checker.h"
 #include "types.h"
 #include "bytecode.h"
+#include "llvm.h"
 
 void add_global_search_path(Compiler *compiler, const char *path) {
     verbose("Adding global search path %s", path);
@@ -411,14 +412,76 @@ void compiler_init(Compiler *compiler, int argc, const char **argv) {
     parser_init_interns();
 }
 
-bool compile(Compiler *compiler) {
+bool compiler_parse(Compiler *compiler) {
     TRACE(GENERAL);
-    if (compiler->flags.builtins) {
-        Package *builtins = import_package("builtin", NULL);
-        if (!builtins) warn("Failed to compile builtin package"); 
-    }
     Package *main = import_package(compiler->input_name, NULL);
     if (!main) fatal("Failed to compile '%s'", compiler->input_name);
+    if (compiler->flags.builtins) {
+        Package *builtins = import_package("builtin", NULL);
+        if (!builtins) warn("Failed to compile builtin package");
+    }
+    for (;;) {
+        COUNTER1(IMPORT, "parsing_queue", INT("length", (int) compiler->parsing_queue.size));
+        Package *pkg = queue_pop_front(&compiler->parsing_queue);
+        if (pkg) {
+            parse_package(pkg);
+            continue;
+        }
+        break;
+    }
+    for (i64 i = 0; i < hmlen(compiler->packages); i++)
+        if (compiler->packages[i].value->errors) return false;
+    return true;
+}
+
+bool compiler_typecheck(Compiler *compiler) {
+    for (;;) {
+        COUNTER1(IMPORT, "checking_queue", INT("length", (int) compiler->checking_queue.size));
+        CheckerWork *work = queue_pop_front(&compiler->checking_queue);
+        if (work && !work->package->errors) {
+            verbose("Checking stmt within package %s", work->package->path);
+            bool requeue = check(work->package, work->stmt);
+            if (requeue) {
+                queue_push_back(&compiler->checking_queue, work);
+                verbose("Requeuing stmt within package %s", work->package->path);
+            }
+            continue;
+        }
+        break;
+    }
+    for (i64 i = 0; i < hmlen(compiler->packages); i++)
+        if (compiler->packages[i].value->errors) return false;
+    return true;
+}
+
+bool compiler_build(Compiler *compiler) {
+    return llvm_build_module(compiler->packages->value); // the first package is the input package
+}
+
+bool compile(Compiler *compiler) {
+    TRACE(GENERAL);
+    compiler_parse(compiler);
+    compiler_typecheck(compiler);
+    compiler_build(compiler);
+//    compiler_emit_objects(compiler);
+//    compiler_link_objects(compiler);
+//
+//    compiler_parse_input(compiler);
+//    compiler_check_input(compiler);
+//    compiler_make_module(compiler);
+//    compiler_emit_object(compiler);
+//    compiler_link_object(compiler);
+    return true;
+}
+
+bool compile_old(Compiler *compiler) {
+    TRACE(GENERAL);
+    Package *main = import_package(compiler->input_name, NULL);
+    if (!main) fatal("Failed to compile '%s'", compiler->input_name);
+    if (compiler->flags.builtins) {
+        Package *builtins = import_package("builtin", NULL);
+        if (!builtins) warn("Failed to compile builtin package");
+    }
     for (;;) {
         COUNTER1(IMPORT, "parsing_queue", INT("length", (int) compiler->parsing_queue.size));
         Package *pkg = queue_pop_front(&compiler->parsing_queue);
@@ -437,6 +500,7 @@ bool compile(Compiler *compiler) {
             }
             continue;
         }
+
         break;
     }
     bool was_errors = false;
@@ -446,13 +510,7 @@ bool compile(Compiler *compiler) {
             output_errors(compiler->packages[i].value);
         }
     }
-//    BytecodeGenerator bc = {0};
-//    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
-//        bc.package = compiler->packages[i].value;
-//        for (i64 j = 0; j < arrlen(bc.package->stmts); j++) {
-//            gen_bytecode_stmt(&bc, bc.package->stmts[j]);
-//        }
-//    }
+    llvm_build_module(main);
     return !was_errors;
 }
 

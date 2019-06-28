@@ -4,6 +4,7 @@
 
 // package.h
 typedef struct Package Package;
+typedef struct SymMapEntry SymMapEntry;
 
 // ast.h
 typedef struct Stmt Stmt;
@@ -64,12 +65,6 @@ struct Sym {
         };
         Package *package;
     };
-};
-
-typedef struct SymMapEntry SymMapEntry;
-struct SymMapEntry {
-    const char *key;
-    Sym *value;
 };
 
 typedef struct Scope Scope;

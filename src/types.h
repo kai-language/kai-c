@@ -81,8 +81,8 @@ struct TypeFunc {
 struct Type {
     TypeKind kind : 8;
     u8 flags;
-    size_t size;
-    size_t align;
+    u32 size;
+    u32 align;
     Sym *symbol;
     Type *base;
     u32 typeid;

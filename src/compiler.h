@@ -11,24 +11,22 @@ typedef struct Sym Sym;
 // package.h
 typedef struct PackageMapEntry PackageMapEntry;
 
-typedef enum Os Os;
-enum Os {
+typedef enum Os {
     Os_Unknown,
     Os_Linux,
     Os_Darwin,
     Os_Windows,
     NUM_OSES,
-};
+} Os;
 
-typedef enum Arch Arch;
-enum Arch {
+typedef enum Arch {
     Arch_Unknown,
     Arch_x86_64,
     Arch_x86,
     Arch_arm,
     Arch_arm64,
     NUM_ARCHES,
-};
+} Arch;
 
 typedef struct TargetMetrics TargetMetrics;
 struct TargetMetrics {
@@ -36,12 +34,12 @@ struct TargetMetrics {
     u32 Align;
 };
 
-typedef enum Output Output;
-enum Output {
+//typedef enum Output Output;
+typedef enum Output {
     OutputType_Exec = 0,
     OutputType_Static,
     OutputType_Dynamic
-};
+} Output;
 
 typedef struct CompilerFlags CompilerFlags;
 struct CompilerFlags {

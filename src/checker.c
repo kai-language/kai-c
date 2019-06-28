@@ -149,7 +149,7 @@ Sym *checker_sym(Checker *self, Expr *name, Type *type, SymKind kind) {
         sym->owning_package = self->package;
         scope_declare(self->scope, sym);
     }
-    hmput(self->package->symdecls, name, sym);
+    hmput(self->package->symbols, name, sym);
     return sym;
 }
 
@@ -332,6 +332,7 @@ Operand check_expr_name(Checker *self, Expr *expr) {
         error(self, sym->decl->range, "Cyclic dependency for symbol '%s'", sym->name);
         return bad_operand;
     }
+    hmput(self->package->symbols, expr, sym);
     OperandFlags flags = NONE;
     switch (sym->kind) {
         case SYM_VAL: flags |= CONST; break;

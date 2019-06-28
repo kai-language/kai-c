@@ -2,7 +2,9 @@
 
 // requires nothing
 
-
+// package.h
 typedef struct Package Package;
 
-void backend_init(Package *pkg);
+typedef struct Emitter Emitter;
+
+bool llvm_build_module(Package *package);

@@ -6,12 +6,16 @@
 // checker.h
 typedef struct Scope Scope;
 typedef struct Sym Sym;
+typedef struct OperandMapEntry OperandMapEntry;
 
 // ast.h
 typedef struct Stmt Stmt;
 typedef struct Expr Expr;
 typedef struct Decl Decl;
 typedef struct Range Range;
+
+// llvm.h
+typedef struct Emitter Emitter;
 
 typedef struct Source Source;
 struct Source {
@@ -52,10 +56,9 @@ struct ImportMapEntry {
     Sym *value;
 };
 
-typedef struct OperandMapEntry OperandMapEntry;
-typedef struct SymDeclMapEntry SymDeclMapEntry;
-struct SymDeclMapEntry {
-    Expr *key; // Expr
+typedef struct SymMapEntry SymMapEntry;
+struct SymMapEntry {
+    const void *key;
     Sym *value;
 };
 
@@ -74,10 +77,12 @@ struct Package {
     Scope *scope;
 
     OperandMapEntry *operands; // hm
-    SymDeclMapEntry *symdecls; // hm
+    SymMapEntry *symbols; // hm
 
     SourceError *errors; // arr
     SourceNote *notes;   // arr
+
+    Emitter *emitter;
 
     void *userdata;
 };

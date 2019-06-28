@@ -35,12 +35,11 @@ struct ExprString {
     bool mapped;
 };
 
-typedef enum CompoundFieldKind CompoundFieldKind;
-enum CompoundFieldKind {
+typedef enum CompoundFieldKind {
     COMPOUND_FIELD_NONE  = 0x00,
     FIELD_NAME  = 0x01,
     FIELD_INDEX = 0x02,
-};
+} CompoundFieldKind;
 
 typedef struct CompoundField CompoundField;
 struct CompoundField {
@@ -105,12 +104,11 @@ struct ExprSlice {
     Expr *hi;
 };
 
-typedef enum FuncFlags FuncFlags;
-enum FuncFlags {
+typedef enum FuncFlags {
     FUNC_NONE = 0,
     FUNC_VARGS = 1 << 0,
     FUNC_CVARGS = 1 << 1
-};
+} FuncFlags;
 
 typedef struct ExprFunc ExprFunc;
 struct ExprFunc {
@@ -152,11 +150,10 @@ struct ExprAggregate {
     AggregateField *fields; // arr
 };
 
-typedef enum EnumFlags EnumFlags;
-enum EnumFlags {
+typedef enum EnumFlags {
     ENUM_NONE = 0,
     ENUM_FLAGS = 1 << 0,
-};
+} EnumFlags;
 
 typedef struct EnumItem EnumItem;
 struct EnumItem {
@@ -220,14 +217,13 @@ struct StmtAssign {
     Expr **rhs; // arr
 };
 
-typedef enum GotoKind GotoKind;
-enum GotoKind {
+typedef enum GotoKind {
     GOTO_NONE,
     GOTO_CONTINUE,
     GOTO_FALLTHROUGH,
     GOTO_BREAK,
     GOTO_GOTO,
-};
+} GotoKind;
 
 typedef struct StmtIf StmtIf;
 struct StmtIf {
@@ -236,12 +232,11 @@ struct StmtIf {
     Stmt *fail;
 };
 
-typedef enum ForKind ForKind;
-enum ForKind {
+typedef enum ForKind {
     FOR_NONE,
     FOR_REGULAR,
     FOR_AGGREGATE,
-};
+} ForKind;
 
 typedef struct StmtFor StmtFor;
 struct StmtFor {
@@ -272,8 +267,7 @@ struct StmtSwitch {
     SwitchCase *cases; // arr
 };
 
-typedef enum ExprKind ExprKind;
-enum ExprKind {
+typedef enum ExprKind {
     EXPR_NIL       = EXPR_KIND_BASE + 0x00,
     EXPR_INT       = EXPR_KIND_BASE + 0x01,
     EXPR_FLOAT     = EXPR_KIND_BASE + 0x02,
@@ -297,10 +291,9 @@ enum ExprKind {
     EXPR_STRUCT    = EXPR_KIND_BASE + 0x15,
     EXPR_UNION     = EXPR_KIND_BASE + 0x16,
     EXPR_ENUM      = EXPR_KIND_BASE + 0x17,
-};
+} ExprKind;
 
-typedef enum Op Op;
-enum Op {
+typedef enum Op {
     OP_NONE = 0,
     OP_ADD  = '+',
     OP_SUB  = '-',
@@ -323,7 +316,7 @@ enum Op {
     OP_LEQ  = '<' | 0x80,
     OP_GEQ  = '>' | 0x80,
     NUM_OPS,
-};
+} Op;
 
 typedef struct Expr Expr;
 struct Expr {
@@ -358,21 +351,19 @@ struct Expr {
     };
 };
 
-typedef enum DeclKind DeclKind;
-enum DeclKind {
+typedef enum DeclKind {
     DECL_VAR          = DECL_KIND_BASE + 0x0,
     DECL_VAL          = DECL_KIND_BASE + 0x1,
     DECL_IMPORT       = DECL_KIND_BASE + 0x2,
     DECL_LIBRARY      = DECL_KIND_BASE + 0x3,
     DECL_FOREIGN      = DECL_KIND_BASE + 0x4,
     DECL_FOREIGNBLOCK = DECL_KIND_BASE + 0x5,
-};
+} DeclKind;
 
-typedef enum DeclFlags DeclFlags;
-enum DeclFlags {
+typedef enum DeclFlags {
     DECL_NONE = 0,
     DECL_CONSTANT = 1 << 0, // used to indicate constant foreign decls
-};
+} DeclFlags;
 
 typedef struct Decl Decl;
 struct Decl {
@@ -388,8 +379,7 @@ struct Decl {
     };
 };
 
-typedef enum StmtKind StmtKind;
-enum StmtKind {
+typedef enum StmtKind {
     STMT_LABEL  = STMT_KIND_BASE + 0x0,
     STMT_ASSIGN = STMT_KIND_BASE + 0x1,
     STMT_RETURN = STMT_KIND_BASE + 0x2,
@@ -401,7 +391,7 @@ enum StmtKind {
     STMT_FOR    = STMT_KIND_BASE + 0x8,
     STMT_SWITCH = STMT_KIND_BASE + 0x9,
     STMT_NAMES  = STMT_KIND_BASE + 0xA,
-};
+} StmtKind;
 
 typedef struct Stmt Stmt;
 struct Stmt {

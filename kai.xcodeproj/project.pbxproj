@@ -28,7 +28,7 @@
 		5DF111B222B0A9860083B78F /* bytecode.c in Sources */ = {isa = PBXBuildFile; fileRef = 5DF111B122B0A9860083B78F /* bytecode.c */; };
 		5DF111B322B0AAD70083B78F /* bytecode.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D2E445A22708C3A0056A4D5 /* bytecode.c */; };
 		5DF111B922B31E830083B78F /* llvm.c in Sources */ = {isa = PBXBuildFile; fileRef = 5DF111B822B31E830083B78F /* llvm.c */; };
-		5DF111BC22B31E930083B78F /* llvm_wrap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5DF111BA22B31E930083B78F /* llvm_wrap.cpp */; };
+		5DF111BC22B31E930083B78F /* llvm_wrap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5DF111BA22B31E930083B78F /* llvm_wrap.cpp */; settings = {COMPILER_FLAGS = "$(LLVM_CXXFLAGS)"; }; };
 		5DFDAE3422686B88000E4616 /* lexer.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D7E2A272261AFCE004CBF98 /* lexer.c */; };
 		5DFDAE4122688196000E4616 /* unity.c in Sources */ = {isa = PBXBuildFile; fileRef = 5DFDAE4022688196000E4616 /* unity.c */; };
 /* End PBXBuildFile section */
