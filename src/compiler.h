@@ -54,6 +54,9 @@ struct CompilerFlags {
     b32 emit_ir;
     b32 emit_header;
     b32 dump_ir;
+    b32 disable_all_passes;
+    b32 assertions;
+    b32 small;
     b32 debug;
     b32 link;
 };

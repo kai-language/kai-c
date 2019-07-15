@@ -82,8 +82,6 @@ struct Package {
     SourceError *errors; // arr
     SourceNote *notes;   // arr
 
-    Emitter *emitter;
-
     void *userdata;
 };
 
@@ -97,6 +95,6 @@ void output_errors(Package *package);
 void add_error(Package *package, Range range, const char *fmt, ...);
 void add_note(Package *package, Range range, const char *fmt, ...);
 void package_read_source_files(Package *package);
-Package *import_package(const char *path, Package *importer);
+Package *import_path(const char *path, Package *importer);
 Source *package_source(Package *package, u32 pos);
 PosInfo package_posinfo(Package *package, u32 pos);

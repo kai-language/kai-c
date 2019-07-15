@@ -179,6 +179,13 @@ Expr *new_expr_enum(Package *package, Range range, EnumFlags flags, Expr *type, 
     return e;
 }
 
+Decl *new_decl_file(Package *package, Source *file) {
+    Range range = {file->start, file->start + file->len};
+    Decl *d = ast_alloc(package, DECL_FILE, 0, range, ast_size(Decl, dfile));
+    d->dfile = file;
+    return d;
+}
+
 Decl *new_decl_val(Package *package, Range range, Expr *name, Expr *type, Expr *val) {
     Decl *d = ast_alloc(package, DECL_VAL, 0, range, ast_size(Decl, dval));
     d->dval.name = name;

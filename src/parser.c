@@ -140,6 +140,8 @@ void parse_source(Package *package, Source *source) {
     parser.lexer.client.onname = (void *) parser_onname;
     parser.lexer.client.onstr  = (void *) parser_onstr;
     parser.lexer.client.onmsg  = (void *) parser_onmsg;
+    Decl *dfile = new_decl_file(package, source);
+    arrput(parser.stmts, (Stmt *) dfile);
     eat_tok(&parser);
     while (!is_eof(&parser)) {
         Stmt *stmt = parse_stmt(&parser);
@@ -154,7 +156,7 @@ void parse_source(Package *package, Source *source) {
             scope_declare(package->scope, import.value);
             verbose("Resolved name '%s' for import path '%s'", import.value->name, path);
         }
-        import.value->package = import_package(path, package);
+        import.value->package = import_path(path, package);
         import.value->state = SYM_CHECKED;
         if (!import.value->package)
             add_error(package, import.key->range, "Failed to resolve package path for %s", path);

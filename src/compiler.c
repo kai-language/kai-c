@@ -12,7 +12,7 @@
 #include "checker.h"
 #include "types.h"
 #include "bytecode.h"
-#include "llvm.h"
+#include "llvm.hpp"
 
 void add_global_search_path(Compiler *compiler, const char *path) {
     verbose("Adding global search path %s", path);
@@ -110,19 +110,20 @@ struct CLIFlag {
 };
 
 CompilerFlags default_flags = {
-    .parse_comments = false,
-    .error_codes    = true,
-    .error_colors   = true,
-    .error_source   = true,
-    .builtins       = true,
-    .verbose        = false,
-    .version        = false,
-    .help           = false,
-    .emit_ir        = false,
-    .emit_header    = false,
-    .dump_ir        = false,
-    .debug          = true,
-    .link           = true,
+    .parse_comments     = false,
+    .error_codes        = true,
+    .error_colors       = true,
+    .error_source       = true,
+    .builtins           = true,
+    .verbose            = false,
+    .version            = false,
+    .help               = false,
+    .emit_ir            = false,
+    .emit_header        = false,
+    .dump_ir            = false,
+    .disable_all_passes = false,
+    .debug              = true,
+    .link               = true,
 };
 
 static
@@ -151,6 +152,10 @@ CLIFlag CLIFlags[] = {
     FLAG_BOOL("version", NULL, flags.version, "Prints compiler version"),
 
     FLAG_BOOL("verbose", "v",  flags.verbose, "Enable verbose output"),
+    FLAG_BOOL("disable-all-passes", NULL, flags.disable_all_passes, "Disables all llvm passes"),
+    FLAG_BOOL("assertions", NULL, flags.assertions, "Enable extra compiler assersions"),
+    FLAG_BOOL("small", "-Oz", flags.small, "Optimize for small output"),
+
     FLAG_BOOL("dump-ir", NULL, flags.dump_ir,  "Dump LLVM IR"),
     FLAG_BOOL("emit-ir", NULL, flags.emit_ir,  "Emit LLVM IR file(s)"),
 
@@ -410,14 +415,15 @@ void compiler_init(Compiler *compiler, int argc, const char **argv) {
     configure_defaults(compiler);
     init_global_search_paths(compiler);
     parser_init_interns();
+    init_types();
 }
 
 bool compiler_parse(Compiler *compiler) {
     TRACE(GENERAL);
-    Package *main = import_package(compiler->input_name, NULL);
+    Package *main = import_path(compiler->input_name, NULL);
     if (!main) fatal("Failed to compile '%s'", compiler->input_name);
     if (compiler->flags.builtins) {
-        Package *builtins = import_package("builtin", NULL);
+        Package *builtins = import_path("builtin", NULL);
         if (!builtins) warn("Failed to compile builtin package");
     }
     for (;;) {
@@ -458,12 +464,21 @@ bool compiler_build(Compiler *compiler) {
     return llvm_build_module(compiler->packages->value); // the first package is the input package
 }
 
+bool compiler_emit_objects(Compiler *compiler) {
+//    bool error = false;
+//    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
+//        error |= !llvm_emit_object(compiler->packages[i].value);
+//    }
+//    return error;
+    return llvm_emit_object(compiler->packages->value);
+}
+
 bool compile(Compiler *compiler) {
     TRACE(GENERAL);
     compiler_parse(compiler);
     compiler_typecheck(compiler);
     compiler_build(compiler);
-//    compiler_emit_objects(compiler);
+    compiler_emit_objects(compiler);
 //    compiler_link_objects(compiler);
 //
 //    compiler_parse_input(compiler);
@@ -476,10 +491,10 @@ bool compile(Compiler *compiler) {
 
 bool compile_old(Compiler *compiler) {
     TRACE(GENERAL);
-    Package *main = import_package(compiler->input_name, NULL);
+    Package *main = import_path(compiler->input_name, NULL);
     if (!main) fatal("Failed to compile '%s'", compiler->input_name);
     if (compiler->flags.builtins) {
-        Package *builtins = import_package("builtin", NULL);
+        Package *builtins = import_path("builtin", NULL);
         if (!builtins) warn("Failed to compile builtin package");
     }
     for (;;) {

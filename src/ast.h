@@ -2,6 +2,7 @@
 
 // package.h
 typedef struct Package Package;
+typedef struct Source Source;
 
 #define EXPR_KIND_BASE 0x20
 #define STMT_KIND_BASE 0x40
@@ -358,6 +359,7 @@ typedef enum DeclKind {
     DECL_LIBRARY      = DECL_KIND_BASE + 0x3,
     DECL_FOREIGN      = DECL_KIND_BASE + 0x4,
     DECL_FOREIGNBLOCK = DECL_KIND_BASE + 0x5,
+    DECL_FILE         = DECL_KIND_BASE + 0x6,
 } DeclKind;
 
 typedef enum DeclFlags {
@@ -371,6 +373,7 @@ struct Decl {
     u8 flags;
     Range range;
     union {
+        Source *dfile;
         DeclVal dval;
         DeclVar dvar;
         DeclImport dimport;
@@ -439,6 +442,7 @@ Expr *new_expr_pointer(Package *package, Range range, Expr *base);
 Expr *new_expr_struct(Package *package, Range range, AggregateField *fields);
 Expr *new_expr_union(Package *package, Range range, AggregateField *fields);
 Expr *new_expr_enum(Package *package, Range range, EnumFlags flags, Expr *type, EnumItem *items);
+Decl *new_decl_file(Package *package, Source *file);
 Decl *new_decl_val(Package *package, Range range, Expr *name, Expr *type, Expr *val);
 Decl *new_decl_var(Package *package, Range range, Expr **names, Expr *type, Expr **vals);
 Decl *new_decl_import(Package *package, Range range, Expr *path, Expr *alias, ImportItem *items);

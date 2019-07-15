@@ -8,7 +8,7 @@ add :: fn(x: i32, y: i32) -> i32 {
 }
 
 main :: fn() -> i32 {
-	libc.printf("%d\n", 234)
+    libc.printf("%d\n", 234)
     return b.mul(5, 8)
 }
 

@@ -36,17 +36,20 @@ void dir_iter_next(DirectoryIter *it) {
     } while (it->valid && dir_iter_skip(it));
 }
 
-mode_t file_mode(const char *path) {
+FileMode file_mode(const char *path) {
     struct stat path_stat;
-    stat(path, &path_stat);
-    return path_stat.st_mode;
+    int error = stat(path, &path_stat);
+    if (error) return FILE_INVALID;
+    if (S_ISREG(path_stat.st_mode)) return FILE_REGULAR;
+    if (S_ISDIR(path_stat.st_mode)) return FILE_DIRECTORY;
+    return FILE_OTHER;
 }
 
 void dir_iter_open(DirectoryIter *it, const char *path) {
     memset(it, 0, sizeof *it);
     it->valid = true;
-    mode_t mode = file_mode(path);
-    if (S_ISREG(mode)) {
+    FileMode mode = file_mode(path);
+    if (mode == FILE_REGULAR) {
         strncpy(it->name, path, MAX_NAME);
         it->name[MAX_NAME - 1] = '\0';
         return;

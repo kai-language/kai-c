@@ -12,7 +12,7 @@ typedef struct Expr Expr;
 typedef struct Decl Decl;
 
 // types.h
-typedef struct Type Type;
+typedef struct Ty Ty;
 
 typedef union Val Val;
 union Val {
@@ -22,8 +22,7 @@ union Val {
     void *p;
 };
 
-typedef enum SymKind SymKind;
-enum SymKind {
+typedef enum SymKind {
     SYM_NONE = 0,
     SYM_TYPE,
     SYM_VAR,
@@ -32,21 +31,19 @@ enum SymKind {
     SYM_PKG,
     SYM_LIB,
     SYM_LABEL,
-};
+} SymKind;
 
-typedef enum SymState SymState;
-enum SymState {
+typedef enum SymState {
     SYM_UNCHECKED = 0,
     SYM_CHECKING,
     SYM_CHECKED,
-};
+} SymState;
 
-typedef enum Reachable Reachable;
-enum Reachable {
+typedef enum Reachable {
     REACHABLE_NONE = 0,
     REACHABLE_NATURAL,
     REACHABLE_FORCED,
-};
+} Reachable;
 
 typedef struct Sym Sym;
 struct Sym {
@@ -60,7 +57,7 @@ struct Sym {
     void *userdata; // backend data
     union {
         struct {
-            Type *type;
+            Ty *type;
             Val val;
         };
         Package *package;
@@ -73,8 +70,7 @@ struct Scope {
     SymMapEntry *members;
 };
 
-typedef enum OperandFlags OperandFlags;
-enum OperandFlags { // lower 4 bits are flags upper are kind
+typedef enum OperandFlags { // lower 4 bits are flags upper are kind
     OPERAND_FLAGS_NONE = 0,
     LVALUE     = 0x01,
     CONST      = 0x02,
@@ -86,11 +82,11 @@ enum OperandFlags { // lower 4 bits are flags upper are kind
     LABEL      = 0x50,
     UNCHECKED  = 0xFE,
     BAD_VALUE  = 0xFF,
-};
+} OperandFlags;
 
 typedef struct Operand Operand;
 struct Operand {
-    Type *type;
+    Ty *type;
     OperandFlags flags : 8;
     Val val;
 };

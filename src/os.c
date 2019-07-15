@@ -19,7 +19,7 @@ struct DirectoryIter {
     void *handle;
 };
 
-mode_t file_mode(const char *path);
+FileMode file_mode(const char *path);
 char *path_absolute(char path[MAX_PATH]);
 void dir_iter_open(DirectoryIter *it, const char *path);
 void dir_iter_next(DirectoryIter *it);

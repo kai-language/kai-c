@@ -12,15 +12,6 @@
 
 extern u64 source_memory_usage;
 
-bool is_package_path(const char *path) {
-    TRACE1(IMPORT, STR("path", path));
-    mode_t mode = file_mode(path);
-    if (S_ISDIR(mode)) return true;
-    if (!S_ISREG(mode)) return false;
-    const char *ext = path_ext(path);
-    return strcmp(ext, "kai") == 0;
-}
-
 void package_search_path(char search_path[MAX_PATH], const char *path) {
     TRACE(IMPORT);
     path_copy(search_path, path);
@@ -31,46 +22,123 @@ void package_search_path(char search_path[MAX_PATH], const char *path) {
     }
 }
 
-bool resolve_package_path(char package_path[MAX_PATH], const char *path, Package *importer) {
+typedef enum PathType {
+    PATH_INVALID,
+    PATH_PACKAGE,
+    PATH_FILE,
+} PathType;
+
+PathType resolve_import_path(char import_path[MAX_PATH], const char *path, Package *importer) {
     TRACE1(IMPORT, STR("path", path));
-    if (importer) {
-        package_search_path(package_path, importer->path);
-        path_join(package_path, path);
-        if (is_package_path(package_path))
-            return true;
-    } else if (is_package_path(path)) {
-        path_copy(package_path, path);
-        return true;
+
+    if (!importer && path == compiler.input_name) {
+        path_copy(import_path, path);
+        FileMode mode = file_mode(import_path);
+        switch (mode) {
+            case FILE_REGULAR:
+            case FILE_DIRECTORY:
+                return PATH_PACKAGE;
+            default:
+                warn("Expected a regular file or directory at path %s", import_path);
+                return PATH_INVALID;
+        }
     }
+
+    if (importer) { // search relative to the package importing this
+        package_search_path(import_path, importer->path);
+        path_join(import_path, path);
+        FileMode mode = file_mode(path);
+        switch (mode) {
+            case FILE_REGULAR:   return PATH_FILE;
+            case FILE_DIRECTORY: return PATH_PACKAGE;
+            case FILE_OTHER:
+                warn("Expected a regular file or directory at path %s", import_path);
+                return PATH_INVALID;
+            case FILE_INVALID:
+                break;
+        }
+    }
+
     for (int i = 0; i < compiler.num_global_search_paths; i++) {
-        path_copy(package_path, compiler.global_search_paths[i]);
-        path_join(package_path, path);
-        if (is_package_path(package_path))
-            return true;
+        path_copy(import_path, compiler.global_search_paths[i]);
+        path_join(import_path, path);
+        FileMode mode = file_mode(import_path);
+        switch (mode) {
+        case FILE_REGULAR:
+            return PATH_FILE;
+        case FILE_DIRECTORY:
+            return PATH_PACKAGE;
+        case FILE_OTHER:
+            warn("Expected a regular file or directory at path %s", import_path);
+            return PATH_INVALID;
+        case FILE_INVALID:
+            continue;
+        }
     }
-    return false;
+    return PATH_INVALID;
 }
 
-Package *import_package(const char *path, Package *importer) {
+void package_add_file(Package *package, const char *path, const char *name) {
     TRACE(IMPORT);
-    char package_path[MAX_PATH];
-    if (!resolve_package_path(package_path, path, importer)) {
-        verbose("Failed to resolve package path for %s", path);
-        return NULL;
+    Source source = {
+        .filename = str_intern(name),
+        .start = package->total_sources_size
+    };
+    char filepath[MAX_PATH];
+    path_copy(filepath, package->path);
+    if (strcmp(package->path, name) != 0) // @Hack supports file as package
+        path_join(filepath, name);
+    u64 len;
+    BEGIN1(IO, "readfile", STR("path", filepath));
+    source.code = ReadEntireFile(filepath, &len);
+    END(IO, "readfile");
+    bool read_success = source.code != NULL;
+    if (!read_success) {
+        len = 1;
+        source.code = xcalloc(len);
     }
-    path = str_intern(package_path);
-    Package *package = hmget(compiler.packages, path);
-    if (!package) { // first time seeing this package
-        package = arena_calloc(&compiler.arena, sizeof *package);
-        package->path = path;
-        package->scope = scope_push(package, compiler.global_scope);
-        verbose("Importing %s", package->path);
-        hmput(compiler.packages, path, package);
-        COUNTER1(IMPORT, "num_packages", INT("num", (int) hmlen(compiler.packages)));
-        queue_push_back(&compiler.parsing_queue, package);
-        COUNTER1(IMPORT, "parsing_queue", INT("length", (int) compiler.parsing_queue.size));
+    if (len + package->total_sources_size > UINT32_MAX)
+        fatal("Packages with over 4GB of source code are unsupported.");
+    source.len = (u32) len;
+    package->total_sources_size += (u32) len;
+    arrput(package->sources, source);
+    if (!read_success) {
+        Range range = {source.start, source.start};
+        add_error(package, range, "Failed to read source file");
     }
-    return package;
+    source_memory_usage += len;
+}
+
+Package *import_path(const char *path, Package *importer) {
+    TRACE(IMPORT);
+    char import_path[MAX_PATH];
+    PathType path_type = resolve_import_path(import_path, path, importer);
+    switch (path_type) {
+        case PATH_FILE: // add file to importing package
+            ASSERT(importer);
+            path = str_intern(import_path);
+            verbose("Importing file %s", path);
+            package_add_file(importer, path, path); // FIXME: Sensible name
+            return importer;
+        case PATH_PACKAGE:
+            path = str_intern(import_path);
+            Package *package = hmget(compiler.packages, path);
+            if (!package) { // first time seeing this package
+                package = arena_calloc(&compiler.arena, sizeof *package);
+                package->path = path;
+                package->scope = scope_push(package, compiler.global_scope);
+                verbose("Importing package %s", package->path);
+                hmput(compiler.packages, path, package);
+                COUNTER1(IMPORT, "num_packages", INT("num", (int) hmlen(compiler.packages)));
+                queue_push_back(&compiler.parsing_queue, package);
+                COUNTER1(IMPORT, "parsing_queue", INT("length", (int) compiler.parsing_queue.size));
+            }
+            return package;
+        case PATH_INVALID:
+            verbose("Failed to resolve package path for %s", path);
+            return NULL;
+    }
+    fatal("Unhandled case above");
 }
 
 void package_read_source_files(Package *package) {
@@ -78,33 +146,11 @@ void package_read_source_files(Package *package) {
     DirectoryIter iter;
     for (dir_iter_open(&iter, package->path); iter.valid; dir_iter_next(&iter)) {
         if (iter.isDirectory || iter.name[0] == '.') continue;
-        Source source = {
-            .filename = str_intern(iter.name),
-            .start = package->total_sources_size
-        };
         char filepath[MAX_PATH];
         path_copy(filepath, package->path);
         if (strcmp(package->path, iter.name) != 0) // @Hack supports file as package
             path_join(filepath, iter.name);
-        u64 len;
-        BEGIN1(IO, "readfile", STR("path", filepath));
-        source.code = ReadEntireFile(filepath, &len);
-        END(IO, "readfile");
-        bool read_success = source.code != NULL;
-        if (!read_success) {
-            len = 1;
-            source.code = xcalloc(len);
-        }
-        if (len + package->total_sources_size > UINT32_MAX)
-            fatal("Packages with over 4GB of source code are unsupported.");
-        source.len = (u32) len;
-        package->total_sources_size += (u32) len;
-        arrput(package->sources, source);
-        if (!read_success) {
-            Range range = {source.start, source.start};
-            add_error(package, range, "Failed to read source file");
-        }
-        source_memory_usage += len;
+        package_add_file(package, filepath, iter.name);
     }
     dir_iter_close(&iter);
 }
