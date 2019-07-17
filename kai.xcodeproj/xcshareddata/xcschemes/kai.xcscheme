@@ -101,11 +101,11 @@
          </CommandLineArgument>
          <CommandLineArgument
             argument = "test/tmp.kai"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "test/wip.kai"
-            isEnabled = "NO">
+            argument = "test/glfw_test.kai"
+            isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
       <EnvironmentVariables>

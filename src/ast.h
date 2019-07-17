@@ -195,6 +195,12 @@ struct DeclImport {
     ImportItem *items; // arr
 };
 
+typedef struct DeclLibrary DeclLibrary;
+struct DeclLibrary {
+    Expr *path;
+    Expr *alias; // opt ExprName
+};
+
 typedef struct DeclForeign DeclForeign;
 struct DeclForeign {
     Expr *name;
@@ -377,6 +383,7 @@ struct Decl {
         DeclVal dval;
         DeclVar dvar;
         DeclImport dimport;
+        DeclLibrary dlibrary;
         DeclForeign dforeign;
         DeclForeignBlock dforeign_block;
     };
@@ -446,6 +453,7 @@ Decl *new_decl_file(Package *package, Source *file);
 Decl *new_decl_val(Package *package, Range range, Expr *name, Expr *type, Expr *val);
 Decl *new_decl_var(Package *package, Range range, Expr **names, Expr *type, Expr **vals);
 Decl *new_decl_import(Package *package, Range range, Expr *path, Expr *alias, ImportItem *items);
+Decl *new_decl_library(Package *package, Range range, Expr *path, Expr *alias);
 Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags,
                        Expr *name, Expr *library, Expr *type,
                        Expr *linkname, Expr *callconv, Decl *block);

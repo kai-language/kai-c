@@ -45,6 +45,7 @@ enum Directive {
     DIR_FUNCTION,
     DIR_LINE,
     DIR_IMPORT,
+    DIR_LIBRARY,
     DIR_FOREIGN,
     DIR_CALLCONV,
     DIR_LINKNAME,
@@ -71,6 +72,7 @@ struct Parser {
 
     bool in_control_stmt;
     bool allow_multi;
+    bool was_terminator;
     bool was_newline;
     const char *calling_conv;
     const char *link_prefix;

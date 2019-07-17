@@ -41,6 +41,15 @@ typedef enum Output {
     OutputType_Dynamic
 } Output;
 
+typedef enum CompilationStage {
+    STAGE_NONE,
+    STAGE_PARSE,
+    STAGE_TYPECHECK,
+    STAGE_BUILD,
+    STAGE_EMIT_OBJECTS,
+    STAGE_LINK_OBJECTS,
+} CompilationStage;
+
 typedef struct CompilerFlags CompilerFlags;
 struct CompilerFlags {
     b32 parse_comments;
@@ -61,12 +70,14 @@ struct CompilerFlags {
     b32 link;
 };
 
-#define MAX_GLOBAL_SEARCH_PATHS 16
+#define MAX_SEARCH_PATHS 16
 
 typedef struct Compiler Compiler;
 struct Compiler {
     int arg_count;
     const char **args;
+
+    CompilationStage failure_stage;
 
     CompilerFlags flags;
     char input_name[MAX_PATH];
@@ -76,8 +87,13 @@ struct Compiler {
     Output target_output;
     TargetMetrics target_metrics;
 
-    const char *global_search_paths[MAX_GLOBAL_SEARCH_PATHS];
-    int num_global_search_paths;
+    const char *import_search_paths[MAX_SEARCH_PATHS];
+    int num_import_search_paths;
+
+    const char *linker_search_paths[MAX_SEARCH_PATHS];
+    int num_linker_search_paths;
+
+    const char **linker_paths;
 
     InternedString *interns;
     Arena strings;
@@ -101,5 +117,6 @@ struct CheckerWork {
 
 extern Compiler compiler;
 
+const char *compiler_stage_name(CompilationStage stage);
 void compiler_init(Compiler *compiler, int argc, const char **argv);
 bool compile(Compiler *compiler);

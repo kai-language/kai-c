@@ -1,0 +1,43 @@
+
+#import "glfw"
+#import "libc"
+
+main :: fn() -> void {
+
+    window := initGlfw()
+	defer glfw.Terminate()
+
+	for !glfw.WindowShouldClose(window) {
+		glfw.PollEvents()
+		if glfw.GetKey(window, glfw.KEY_ESCAPE) break
+		glfw.SwapBuffers(window)
+    }
+}
+
+glfwErrorCallback :: fn(error: i32, desc: *u8) -> void {
+    libc.printf("Error code %d:\n\t%s\n", error, desc)
+}
+
+initGlfw :: fn() -> *glfw.Window {
+    glfw.SetErrorCallback(glfwErrorCallback)
+
+    if glfw.Init() == 0 {
+        return nil
+    }
+
+    glfw.WindowHint(glfw.SAMPLES, 4)
+    glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
+    glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3)
+    glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+    glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, 1)
+
+    window := glfw.CreateWindow(1280, 720, "Kai GLFW example", nil, nil)
+    if window == nil {
+        return nil
+    }
+
+    glfw.MakeContextCurrent(window)
+
+    return window
+}
+

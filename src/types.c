@@ -159,8 +159,8 @@ u32 aggregate_field_index(Ty *type, const char *name) {
 u64 type_max_value(Ty *type) {
     ASSERT(is_integer(type) || is_ptr(type));
     if (type->flags & SIGNED)
-        return powi(2, type->size) / 2 - 1;
-    return powi(2, type->size) - 1;
+        return powi(2, type->size * 8) / 2 - 1;
+    return powi(2, type->size * 8) - 1;
 }
 
 u64 powi(u64 base, u64 exp) {

@@ -31,13 +31,12 @@ typedef enum PathType {
 PathType resolve_import_path(char import_path[MAX_PATH], const char *path, Package *importer) {
     TRACE1(IMPORT, STR("path", path));
 
-    if (!importer && path == compiler.input_name) {
+    if (!importer && path == compiler.input_name) { // Search from cwd
         path_copy(import_path, path);
         FileMode mode = file_mode(import_path);
         switch (mode) {
-            case FILE_REGULAR:
-            case FILE_DIRECTORY:
-                return PATH_PACKAGE;
+            case FILE_REGULAR:   return PATH_FILE;
+            case FILE_DIRECTORY: return PATH_PACKAGE;
             default:
                 warn("Expected a regular file or directory at path %s", import_path);
                 return PATH_INVALID;
@@ -59,15 +58,13 @@ PathType resolve_import_path(char import_path[MAX_PATH], const char *path, Packa
         }
     }
 
-    for (int i = 0; i < compiler.num_global_search_paths; i++) {
-        path_copy(import_path, compiler.global_search_paths[i]);
+    for (int i = 0; i < compiler.num_import_search_paths; i++) {
+        path_copy(import_path, compiler.import_search_paths[i]);
         path_join(import_path, path);
         FileMode mode = file_mode(import_path);
         switch (mode) {
-        case FILE_REGULAR:
-            return PATH_FILE;
-        case FILE_DIRECTORY:
-            return PATH_PACKAGE;
+        case FILE_REGULAR:   return PATH_FILE;
+        case FILE_DIRECTORY: return PATH_PACKAGE;
         case FILE_OTHER:
             warn("Expected a regular file or directory at path %s", import_path);
             return PATH_INVALID;
@@ -86,8 +83,7 @@ void package_add_file(Package *package, const char *path, const char *name) {
     };
     char filepath[MAX_PATH];
     path_copy(filepath, package->path);
-    if (strcmp(package->path, name) != 0) // @Hack supports file as package
-        path_join(filepath, name);
+    path_join(filepath, name);
     u64 len;
     BEGIN1(IO, "readfile", STR("path", filepath));
     source.code = ReadEntireFile(filepath, &len);
@@ -109,31 +105,48 @@ void package_add_file(Package *package, const char *path, const char *name) {
     source_memory_usage += len;
 }
 
+Package *package_create(const char *path, bool is_dir) {
+    Package *package = arena_calloc(&compiler.arena, sizeof *package);
+    package->path = str_intern(path);
+    package->scope = scope_push(package, compiler.global_scope);
+    hmput(compiler.packages, path, package);
+    verbose("Importing package %s %s", is_dir ? "dir" : "file", package->path);
+    if (is_dir) package_read_source_files(package);
+    COUNTER1(IMPORT, "num_packages", INT("num", (int) hmlen(compiler.packages)));
+    queue_push_back(&compiler.parsing_queue, package);
+    COUNTER1(IMPORT, "parsing_queue", INT("length", (int) compiler.parsing_queue.size));
+    return package;
+}
+
 Package *import_path(const char *path, Package *importer) {
     TRACE(IMPORT);
     char import_path[MAX_PATH];
     PathType path_type = resolve_import_path(import_path, path, importer);
     switch (path_type) {
-        case PATH_FILE: // add file to importing package
-            ASSERT(importer);
+        case PATH_FILE: { // add file to importing package
             path = str_intern(import_path);
             verbose("Importing file %s", path);
-            package_add_file(importer, path, path); // FIXME: Sensible name
-            return importer;
-        case PATH_PACKAGE:
+            Package *package = importer;
+            if (!package) {
+                char *directory = import_path;
+                char *filename = path_file(import_path);
+                if (filename != directory) filename[-1] = '\0';
+                else directory = ".";
+                path = filename;
+                package = package_create(directory, false);
+                verbose("Importing file package %s", package->path);
+            }
+            package_add_file(package, package->path, path);
+            return package;
+        }
+        case PATH_PACKAGE: {
             path = str_intern(import_path);
             Package *package = hmget(compiler.packages, path);
             if (!package) { // first time seeing this package
-                package = arena_calloc(&compiler.arena, sizeof *package);
-                package->path = path;
-                package->scope = scope_push(package, compiler.global_scope);
-                verbose("Importing package %s", package->path);
-                hmput(compiler.packages, path, package);
-                COUNTER1(IMPORT, "num_packages", INT("num", (int) hmlen(compiler.packages)));
-                queue_push_back(&compiler.parsing_queue, package);
-                COUNTER1(IMPORT, "parsing_queue", INT("length", (int) compiler.parsing_queue.size));
+                package = package_create(path, true);
             }
             return package;
+        }
         case PATH_INVALID:
             verbose("Failed to resolve package path for %s", path);
             return NULL;

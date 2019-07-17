@@ -28,7 +28,11 @@ u64 source_memory_usage = 0;
 int main(int argc, const char **argv) {
     profiler_init();
     compiler_init(&compiler, argc, argv);
-    compile(&compiler);
+    bool success = compile(&compiler);
+    if (!success) {
+        const char *stage = compiler_stage_name(compiler.failure_stage);
+        printf("error: Compilation failed during %s\n", stage);
+    }
     profiler_output();
 
     u64 total_memory_usage = source_memory_usage;

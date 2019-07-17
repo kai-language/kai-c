@@ -169,7 +169,7 @@ struct IRContext {
             dbg.f64 = dbg.builder->createBasicType("f64", 64, DW_ATE_float);
             dbg.scopes = NULL;
 
-            DIFile *package_file = dbg.builder->createFile(package->path, "");
+            DIFile *package_file = dbg.builder->createFile(package->sources->filename, package->path);
 
             dbg.unit = dbg.builder->createCompileUnit(
                 DW_LANG_C, package_file, "Kai",
@@ -283,22 +283,16 @@ Type *llvm_struct(IRContext *c, Type **elements) {
     return StructType::get(c->context, ref);
 }
 
-Value *llvm_constant_null(IRContext *c, Type *type) {
-    return ConstantPointerNull::get((PointerType *) type);
-}
-
 // MARK: - debug
 
 void set_debug_pos(IRContext *self, Range range) {
     if (!compiler.flags.debug) return;
     PosInfo pos = package_posinfo(self->package, range.start);
-
     if (pos.source != self->dbg.source_file) {
         DIFile *file = self->dbg.builder->createFile(self->package->path, pos.source->filename);
         arrsetlen(self->dbg.scopes, 1); // TODO: Do we need to preserve the ordering?
         arrpush(self->dbg.scopes, file);
     }
-
     DebugLoc loc = DebugLoc::get(pos.line, pos.column, arrlast(self->dbg.scopes));
     self->builder.SetCurrentDebugLocation(loc);
 }
@@ -307,30 +301,6 @@ void llvm_debug_unset_pos(IRContext *c) {
     if (!compiler.flags.debug) return;
     DebugLoc loc = DebugLoc();
     c->builder.SetCurrentDebugLocation(loc);
-}
-
-DIType *llvm_debug_type_function(IRContext *c, DIType **params, DIType *result,
-                                  u32 num_params)
-{
-    std::vector<Metadata *> param_types;
-    for (int i = 0; i < num_params; i++) param_types.push_back((DIType *) params[i]);
-    DITypeRefArray p_types = c->dbg.builder->getOrCreateTypeArray(param_types);
-    return c->dbg.builder->createSubroutineType(p_types);
-}
-
-DIType *llvm_debug_type_integer(IRContext *c, bool is_signed, u32 size) {
-    using namespace dwarf;
-    switch (size) {
-        case 1:  return is_signed ? c->dbg.i8  : c->dbg.u8;
-        case 2: return is_signed ? c->dbg.i16 : c->dbg.u16;
-        case 4: return is_signed ? c->dbg.i32 : c->dbg.u32;
-        case 8: return is_signed ? c->dbg.i64 : c->dbg.u64;
-        default:
-            char name[1024] = {0};
-            snprintf(name, sizeof name, "%c%u", is_signed ? 'i' : 'u', size * 8);
-            return c->dbg.builder->createBasicType(
-                name, size, is_signed ? DW_ATE_signed : DW_ATE_unsigned);
-    }
 }
 
 bool llvm_validate(IRContext *context) {
@@ -410,22 +380,40 @@ Type *llvm_type(IRContext *c, Ty *type, Sym *sym = nullptr) {
 }
 
 DIType *llvm_debug_type(IRContext *c, Ty *type) {
+    using namespace dwarf;
     switch (type->kind) {
         case TYPE_INVALID:
         case TYPE_COMPLETING:
         case TYPE_VOID:
             return NULL;
-        case TYPE_BOOL:
-        case TYPE_ENUM:
-        case TYPE_INT:
-            return llvm_debug_type_integer(c, (type->flags&SIGNED) != 0, type->size);
-        case TYPE_FLOAT:
-        case TYPE_PTR:
+        case TYPE_BOOL: fatal("unimp");
+        case TYPE_ENUM: fatal("unimp");
+        case TYPE_INT: {
+            bool is_signed = (type->flags&SIGNED) != 0;
+            switch (type->size) {
+                case 1:  return is_signed ? c->dbg.i8  : c->dbg.u8;
+                case 2: return is_signed ? c->dbg.i16 : c->dbg.u16;
+                case 4: return is_signed ? c->dbg.i32 : c->dbg.u32;
+                case 8: return is_signed ? c->dbg.i64 : c->dbg.u64;
+                default:
+                    char name[1024] = {0};
+                    snprintf(name, sizeof name, "%c%u", is_signed ? 'i' : 'u', type->size * 8);
+                    return c->dbg.builder->createBasicType(
+                        name, type->size * 8, is_signed ? DW_ATE_signed : DW_ATE_unsigned);
+            }
+        }
+        case TYPE_FLOAT: fatal("unimp");
+        case TYPE_PTR: {
+            DIType *pointee = llvm_debug_type(c, type->tptr.base);
+            return c->dbg.builder->createPointerType(pointee, c->data_layout.getPointerSizeInBits());
+        }
         case TYPE_FUNC: {
-            DIType **params = NULL;
-            for (i64 i = 0; i < arrlen(type->tfunc.params); i++) {
+            std::vector<Metadata *> params;
+            i64 num_params = arrlen(type->tfunc.params);
+            if (type->flags&FUNC_CVARGS) num_params -= 1;
+            for (i64 i = 0; i < num_params; i++) {
                 DIType *param = llvm_debug_type(c, type->tfunc.params[i]);
-                arrput(params, param);
+                params.push_back(param);
             }
             DIType *result;
             if (type->tfunc.result->kind == TYPE_VOID) {
@@ -435,13 +423,18 @@ DIType *llvm_debug_type(IRContext *c, Ty *type) {
             } else {
                 result = llvm_debug_type(c, type->tfunc.result);
             }
-            return llvm_debug_type_function(c, params, result, (u32) arrlen(params));
+            if (type->flags&FUNC_CVARGS)
+                params.push_back(c->dbg.builder->createUnspecifiedParameter());
+            DITypeRefArray p_types = c->dbg.builder->getOrCreateTypeArray(params);
+            DINode::DIFlags flags = DINode::DIFlags::FlagZero;
+            unsigned call_conv = 0; // FIXME: Calling convention
+            return c->dbg.builder->createSubroutineType(p_types, flags, call_conv);
         }
-        case TYPE_ARRAY:
-        case TYPE_SLICE:
-        case TYPE_STRUCT:
-        case TYPE_UNION:
-        case TYPE_ANY:
+        case TYPE_ARRAY:  fatal("unimp");
+        case TYPE_SLICE:  fatal("unimp");
+        case TYPE_STRUCT: fatal("unimp");
+        case TYPE_UNION:  fatal("unimp");
+        case TYPE_ANY:    fatal("unimp");
         default:
             fatal("Unhandled type");
     }
@@ -655,12 +648,14 @@ void emit_stmt(IRContext *self, Stmt *stmt);
 Value *emit_expr_nil(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
-    return llvm_constant_null(self, type);
+    set_debug_pos(self, expr->range);
+    return ConstantPointerNull::get((PointerType *) type);
 }
 
 Value *emit_expr_int(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
+    set_debug_pos(self, expr->range);
     if (operand.type->kind == TYPE_FLOAT) {
         return ConstantFP::get(type, (f64) operand.val.u);
     }
@@ -679,9 +674,14 @@ Value *emit_expr_str(IRContext *self, Expr *expr) {
 }
 
 Value *emit_sym(IRContext *self, Package *package, Sym *sym) {
-    IRContext new_context(self, package);
-    new_context.dbg.source_file = package_posinfo(package, sym->decl->range.start).source;
-    emit_decl(&new_context, sym->decl);
+    IRContext ctx(self, package);
+    ctx.dbg.source_file = package_posinfo(package, sym->decl->range.start).source;
+    if (compiler.flags.debug) {
+        arrpush(ctx.dbg.scopes, self->dbg.unit);
+        ctx.dbg.file = ctx.dbg.builder->createFile(ctx.dbg.source_file->filename, package->path);
+        arrpush(ctx.dbg.scopes, ctx.dbg.file);
+    }
+    emit_decl(&ctx, sym->decl);
     ASSERT(sym->userdata);
     return (Value *) sym->userdata;
 }
@@ -1327,12 +1327,23 @@ void emit_decl_library(IRContext *self, Decl *decl) {}
 void emit_decl_foreign(IRContext *self, Decl *decl) {
     Operand operand = hmget(self->package->operands, decl->dforeign.type);
     Sym *sym = hmget(self->package->symbols, decl->dforeign.name);
+    set_debug_pos(self, decl->range);
 
     Type *type = llvm_type(self, operand.type);
     if (FunctionType *fn_ty = dyn_cast<FunctionType>(type)) {
         Function *fn = Function::Create(
             fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
         // FIXME: Calling convention
+        fn->setCallingConv(CallingConv::C);
+//        if (compiler.flags.debug) {
+//            DIType *dbg_type = llvm_debug_type(self, operand.type);
+//            PosInfo pos = package_posinfo(self->package, decl->dforeign.name->range.start);
+//            DISubprogram *sp = self->dbg.builder->createFunction(
+//                arrlast(self->dbg.scopes), sym->name, fn->getName(), self->dbg.file, pos.line,
+//                (DISubroutineType *) dbg_type, pos.line, DINode::DIFlags::FlagZero);
+//            fn->setSubprogram(sp);
+//            self->dbg.builder->finalizeSubprogram(sp);
+//        }
         sym->userdata = fn;
         return;
     }
@@ -1344,7 +1355,11 @@ void emit_decl_foreign(IRContext *self, Decl *decl) {
     sym->userdata = var;
 }
 
-void emit_decl_foreignblock(IRContext *self, Decl *decl) {}
+void emit_decl_foreignblock(IRContext *self, Decl *decl) {
+    for (i64 i = 0; i < arrlen(decl->dforeign_block.decls); i++) {
+        emit_decl_foreign(self, decl->dforeign_block.decls[i]);
+    }
+}
 
 void emit_stmt(IRContext *self, Stmt *stmt) {
     switch (stmt->kind) {
@@ -1413,7 +1428,7 @@ void llvm_emit_stmt(IRContext *self, Stmt *stmt) {
         case (StmtKind) DECL_FILE: {
             Source *file = ((Decl *) stmt)->dfile;
             self->dbg.source_file = file;
-            self->dbg.file = self->dbg.builder->createFile(file->filename, ".");
+            self->dbg.file = self->dbg.builder->createFile(file->filename, self->package->path);
             arrsetlen(self->dbg.scopes, 1); // 1 so we keep the compile unit at the top.
             arrpush(self->dbg.scopes, self->dbg.file);
             break;
@@ -1617,6 +1632,14 @@ void print(Module *module) {
     std::string buf;
     raw_string_ostream os(buf);
     module->print(os, nullptr);
+    os.flush();
+    puts(buf.c_str());
+}
+
+void print(Metadata *metadata) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    metadata->print(os, nullptr);
     os.flush();
     puts(buf.c_str());
 }

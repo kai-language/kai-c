@@ -46,7 +46,7 @@ bool (*unary_predicates[NUM_OPS])(Ty *) = {
     [OP_ADD]  = is_arithmetic,
     [OP_SUB]  = is_arithmetic,
     [OP_BNOT] = is_integer,
-    [OP_NOT]  = is_bool,
+    [OP_NOT]  = is_arithmetic,
     [OP_LSS]  = is_ptr,
 };
 
@@ -654,7 +654,9 @@ Operand check_expr_call(Checker *self, Expr *expr) {
         if (ret_operand(arg)) return arg;
         expect_operand_coerces(self, arg, self->wanted_type, call_arg.expr);
     }
-    return operand(self, expr, callee.type->tfunc.result, NONE);
+    Ty *result = callee.type->tfunc.result;
+    if (arrlen(result->taggregate.fields) == 1) result = result->taggregate.fields[0].type;
+    return operand(self, expr, result, NONE);
 }
 
 Operand check_expr_field(Checker *self, Expr *expr) {
@@ -688,12 +690,14 @@ Operand check_expr_field(Checker *self, Expr *expr) {
         }
         OperandFlags flags = NONE;
         switch (sym->kind) {
-            case SYM_VAL: flags |= CONST; break;
-            case SYM_VAR: flags |= LVALUE; break;
-            case SYM_ARG: flags |= LVALUE; break;
-            case SYM_PKG: fatal("Expected to be unable to reference imports from imports");
-            case SYM_LIB:
-            default: fatal("Unhandled");
+            case SYM_TYPE:  flags |= TYPE;   break;
+            case SYM_VAR:   flags |= LVALUE; break;
+            case SYM_VAL:   flags |= CONST;  break;
+            case SYM_ARG:   flags |= LVALUE; break;
+            case SYM_PKG:   fatal("Expected to be unable to reference imports from imports");
+            case SYM_LIB:   fatal("Unhandled");
+            case SYM_LABEL: fatal("Unhandled");
+            default:        fatal("Unhandled");
         }
         hmput(self->package->symbols, expr->efield.name, sym);
         return operandv(self, expr, sym->type, flags, sym->val);
@@ -989,6 +993,11 @@ Operand check_decl_import(Checker *self, Decl *decl) { // Nothing to do?
     return operand_ok;
 }
 
+Operand check_decl_library(Checker *self, Decl *decl) { // Check valid object
+    TRACE(CHECKING);
+    return operand_ok;
+}
+
 Operand check_stmt_label(Checker *self, Stmt *stmt) {
     TRACE(CHECKING);
     Sym *sym = checker_sym(self, stmt->slabel, NULL, SYM_LABEL);
@@ -1221,6 +1230,7 @@ Operand check_stmt(Checker *self, Stmt *stmt) {
         case (StmtKind) DECL_FOREIGN:      return check_decl_foreign(self, (Decl *) stmt);
         case (StmtKind) DECL_FOREIGNBLOCK: return check_decl_foreign_block(self, (Decl *) stmt);
         case (StmtKind) DECL_IMPORT:       return check_decl_import(self, (Decl *) stmt);
+        case (StmtKind) DECL_LIBRARY:      return check_decl_library(self, (Decl *) stmt);
         case (StmtKind) DECL_FILE:         return operand_ok;
         case STMT_LABEL:                   return check_stmt_label(self, stmt);
         case STMT_ASSIGN:                  return check_stmt_assign(self, stmt);

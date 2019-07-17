@@ -54,6 +54,7 @@ const char *directives[] = {
     [DIR_FUNCTION] = "function",
     [DIR_LINE] = "line",
     [DIR_IMPORT] = "import",
+    [DIR_LIBRARY] = "library",
     [DIR_FOREIGN] = "foreign",
     [DIR_CALLCONV] = "callconv",
     [DIR_LINKNAME] = "linkname",
@@ -121,7 +122,6 @@ void parser_onmsg(Parser *self, u32 offset, const char *str, u32 len) {
 
 void parse_package(Package *package) {
     TRACE1(PARSING, STR("package.path", package->path));
-    package_read_source_files(package);
     for (int i = 0; i < arrlen(package->sources); i++) {
         verbose("Parsing %s/%s", package->path, package->sources[i].filename);
         parse_source(package, package->sources + i);
@@ -266,17 +266,19 @@ bool match_terminator(Parser *self) {
 
 INLINE
 bool expect_terminator(Parser *self) {
+    bool result = false;
     if (is_tok(self, TK_Terminator)) {
         self->tok = lexer_next_token(&self->lexer);
         return true;
     }
-    if (self->was_newline) {
-        self->was_newline = false;
+    if (self->was_newline || self->was_terminator) result = true;
+    else if (is_tok(self, TK_Rbrace)) result = true;
+    else if (is_tok(self, TK_Eof))    result = true;
+    else if (is_kw(self, KW_ELSE))    result = true;
+    if (result) {
+        self->was_terminator = result;
         return true;
     }
-    if (is_tok(self, TK_Rbrace)) return true;
-    if (is_tok(self, TK_Eof)) return true;
-    if (is_kw(self, KW_ELSE)) return true;
     error(self, parser_range(self), "Expected ';' or newline");
     return false;
 }
@@ -924,6 +926,7 @@ Stmt *parse_simple_stmt(Parser *self) {
 Stmt *parse_stmt(Parser *self) {
     TRACE(PARSING);
     self->was_newline = false;
+    self->was_terminator = false;
 begin:;
     u32 start = self->ostart;
     switch (self->tok.kind) {
@@ -1023,9 +1026,8 @@ begin:;
             if (match_directive(self, DIR_IMPORT)) {
                 Expr *path = parse_expr(self);
                 Expr *alias = NULL;
-                if (!is_terminator(self) && !is_tok(self, TK_Lbrace)) {
+                if (!is_terminator(self) && !is_tok(self, TK_Lbrace))
                     alias = parse_name(self);
-                }
                 ImportItem *items = NULL;
                 if (match_tok(self, TK_Lbrace)) {
                     do {
@@ -1045,6 +1047,17 @@ begin:;
                 parser_declare(self, decl);
                 return (Stmt *) decl;
             }
+            if (match_directive(self, DIR_LIBRARY)) {
+                Expr *path = parse_expr(self);
+                Expr *alias = NULL;
+                if (!is_terminator(self))
+                    alias = parse_name(self);
+                expect_terminator(self);
+                Range range = {start, self->olast};
+                Decl *decl = new_decl_library(self->package, range, path, alias);
+                parser_declare(self, decl);
+                return (Stmt *) decl;
+            }
             error(self, parser_range(self), "Unexpected directive #%s", self->tok.tname);
             eat_tok(self);
             goto case_expr;
@@ -1061,9 +1074,7 @@ begin:;
                 self->expr_level = prev_expr_level;
                 Stmt *pass = parse_stmt(self);
                 Stmt *fail = NULL;
-                if (match_kw(self, KW_ELSE)) {
-                    fail = parse_stmt(self);
-                }
+                if (match_kw(self, KW_ELSE)) fail = parse_stmt(self);
                 expect_terminator(self);
                 return new_stmt_if(self->package, r(start, self->olast), cond, pass, fail);
             }

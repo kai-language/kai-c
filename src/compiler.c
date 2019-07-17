@@ -14,21 +14,21 @@
 #include "bytecode.h"
 #include "llvm.hpp"
 
-void add_global_search_path(Compiler *compiler, const char *path) {
+void add_import_search_path(Compiler *compiler, const char *path) {
     verbose("Adding global search path %s", path);
-    compiler->global_search_paths[compiler->num_global_search_paths++] = str_intern(path);
+    compiler->import_search_paths[compiler->num_import_search_paths++] = str_intern(path);
 }
 
-void init_global_search_paths(Compiler *compiler) {
+void init_search_paths(Compiler *compiler) {
     TRACE(INIT);
-    add_global_search_path(compiler, "vendor");
-    add_global_search_path(compiler, "packages");
+    add_import_search_path(compiler, "vendor");
+    add_import_search_path(compiler, "packages");
     const char *kaipath_env = getenv("KAIPATH");
     if (kaipath_env) {
         char path[MAX_PATH];
         path_copy(path, kaipath_env);
         path_join(path, "packages");
-        add_global_search_path(compiler, path);
+        add_import_search_path(compiler, path);
     } else {
         verbose("No KAIPATH environment variable set");
     }
@@ -413,7 +413,7 @@ void compiler_init(Compiler *compiler, int argc, const char **argv) {
         exit(1);
     }
     configure_defaults(compiler);
-    init_global_search_paths(compiler);
+    init_search_paths(compiler);
     parser_init_interns();
     init_types();
 }
@@ -435,8 +435,13 @@ bool compiler_parse(Compiler *compiler) {
         }
         break;
     }
-    for (i64 i = 0; i < hmlen(compiler->packages); i++)
-        if (compiler->packages[i].value->errors) return false;
+    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
+        if (compiler->packages[i].value->errors) {
+            output_errors(compiler->packages[i].value);
+            compiler->failure_stage = STAGE_PARSE;
+            return false;
+        }
+    }
     return true;
 }
 
@@ -445,7 +450,6 @@ bool compiler_typecheck(Compiler *compiler) {
         COUNTER1(IMPORT, "checking_queue", INT("length", (int) compiler->checking_queue.size));
         CheckerWork *work = queue_pop_front(&compiler->checking_queue);
         if (work && !work->package->errors) {
-            verbose("Checking stmt within package %s", work->package->path);
             bool requeue = check(work->package, work->stmt);
             if (requeue) {
                 queue_push_back(&compiler->checking_queue, work);
@@ -455,30 +459,34 @@ bool compiler_typecheck(Compiler *compiler) {
         }
         break;
     }
-    for (i64 i = 0; i < hmlen(compiler->packages); i++)
-        if (compiler->packages[i].value->errors) return false;
+    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
+        if (compiler->packages[i].value->errors) {
+            output_errors(compiler->packages[i].value);
+            compiler->failure_stage = STAGE_TYPECHECK;
+            return false;
+        }
+    }
     return true;
 }
 
 bool compiler_build(Compiler *compiler) {
-    return llvm_build_module(compiler->packages->value); // the first package is the input package
+    bool failure = llvm_build_module(compiler->packages->value); // the first package is the input
+    if (failure) compiler->failure_stage = STAGE_BUILD;
+    return failure;
 }
 
 bool compiler_emit_objects(Compiler *compiler) {
-//    bool error = false;
-//    for (i64 i = 0; i < hmlen(compiler->packages); i++) {
-//        error |= !llvm_emit_object(compiler->packages[i].value);
-//    }
-//    return error;
-    return llvm_emit_object(compiler->packages->value);
+    bool failure = llvm_emit_object(compiler->packages->value);
+    if (failure) compiler->failure_stage = STAGE_EMIT_OBJECTS;
+    return failure;
 }
 
 bool compile(Compiler *compiler) {
     TRACE(GENERAL);
-    compiler_parse(compiler);
-    compiler_typecheck(compiler);
-    compiler_build(compiler);
-    compiler_emit_objects(compiler);
+    if (!compiler_parse(compiler))        return false;
+    if (!compiler_typecheck(compiler))    return false;
+    if (!compiler_build(compiler))        return false;
+    if (!compiler_emit_objects(compiler)) return false;
 //    compiler_link_objects(compiler);
 //
 //    compiler_parse_input(compiler);
@@ -527,6 +535,19 @@ bool compile_old(Compiler *compiler) {
     }
     llvm_build_module(main);
     return !was_errors;
+}
+
+const char *compiler_stage_name(CompilationStage stage) {
+    switch (stage) {
+        case STAGE_PARSE: return "parsing";
+        case STAGE_TYPECHECK: return "type checking";
+        case STAGE_BUILD: return "LLVM IR generation";
+        case STAGE_EMIT_OBJECTS: return "Object emission";
+        case STAGE_LINK_OBJECTS: return "Object linking";
+        default:
+            warn("Unrecognized stage name");
+            return "unknown";
+    }
 }
 
 #if TEST

@@ -210,6 +210,13 @@ Decl *new_decl_import(Package *package, Range range, Expr *path, Expr *alias, Im
     return d;
 }
 
+Decl *new_decl_library(Package *package, Range range, Expr *path, Expr *alias) {
+    Decl *d = ast_alloc(package, DECL_LIBRARY, 0, range, ast_size(Decl, dlibrary));
+    d->dlibrary.path = path;
+    d->dlibrary.alias = alias;
+    return d;
+}
+
 Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags, 
                        Expr *name, Expr *library, Expr *type, 
                        Expr *linkname, Expr *callconv, Decl *block)
