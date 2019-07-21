@@ -18,6 +18,16 @@ typedef enum StructFlags {
     SINGLE = 0x02, // single element tuple
 } StructFlags;
 
+typedef enum SliceFlags {
+    SLICE_FLAGS_NONE = 0,
+    STRING = 0x01, // allows coercion to *u8
+} SliceFlags;
+
+typedef enum AnyFlags {
+    ANY_FLAGS_NONE = 0,
+    CVARG = 0x01, // indicates to llvm backend not to perform the coercion
+} AnyFlags;
+
 typedef enum TyKind {
     TYPE_INVALID = 0,
     TYPE_COMPLETING,
@@ -71,7 +81,6 @@ struct TyArray {
 
 typedef struct TyFunc TyFunc;
 struct TyFunc {
-    const char **labels;
     Ty **params; // arr
     Ty *result; // TypeStruct
 };
@@ -96,6 +105,7 @@ struct Ty {
 };
 
 extern Ty *type_string;
+extern Ty *type_u8ptr;
 extern Ty *type_rawptr;
 extern Ty *type_uintptr;
 extern Ty *type_intptr;
@@ -114,11 +124,12 @@ extern Ty *type_i8;
 extern Ty *type_bool;
 extern Ty *type_void;
 extern Ty *type_any;
+extern Ty *type_cvarg;
 extern Ty *type_invalid;
 
 void init_types(void);
 
-Ty *type_func(const char **labels, Ty **params, Ty *result, FuncFlags flags);
+Ty *type_func(Ty **params, Ty *result, FuncFlags flags);
 Ty *type_struct(TyField *fields, u32 size, u32 align, u8 flags);
 Ty *type_union(TyField *fields, u32 size, u32 align, u8 flags);
 Ty *type_enum(u8 flags);

@@ -198,7 +198,7 @@ void eval_binary(Operand *lhs, Operand rhs, Op op) {
 
 INLINE
 Operand operand(Checker *self, Expr *expr, Ty *type, OperandFlags flags) {
-    Operand op = { type, flags, .val.i = 0 };
+    Operand op = { expr, type, flags, .val.i = 0 };
     OperandMapEntry entry = {expr, op};
     hmputs(self->package->operands, entry);
     return op;
@@ -206,7 +206,7 @@ Operand operand(Checker *self, Expr *expr, Ty *type, OperandFlags flags) {
 
 INLINE
 Operand operandi(Checker *self, Expr *expr, Ty *type, OperandFlags flags, i64 val) {
-    Operand op = { type, flags, .val.i = val };
+    Operand op = { expr, type, flags, .val.i = val };
     OperandMapEntry entry = {expr, op};
     hmputs(self->package->operands, entry);
     return op;
@@ -214,7 +214,7 @@ Operand operandi(Checker *self, Expr *expr, Ty *type, OperandFlags flags, i64 va
 
 INLINE
 Operand operandu(Checker *self, Expr *expr, Ty *type, OperandFlags flags, i64 val) {
-    Operand op = { type, flags, .val.u = val };
+    Operand op = { expr, type, flags, .val.u = val };
     OperandMapEntry entry = {expr, op};
     hmputs(self->package->operands, entry);
     return op;
@@ -222,7 +222,7 @@ Operand operandu(Checker *self, Expr *expr, Ty *type, OperandFlags flags, i64 va
 
 INLINE
 Operand operandf(Checker *self, Expr *expr, Ty *type, OperandFlags flags, f64 val) {
-    Operand op = { type, flags, .val.f = val };
+    Operand op = { expr, type, flags, .val.f = val };
     OperandMapEntry entry = {expr, op};
     hmputs(self->package->operands, entry);
     return op;
@@ -230,7 +230,7 @@ Operand operandf(Checker *self, Expr *expr, Ty *type, OperandFlags flags, f64 va
 
 INLINE
 Operand operandp(Checker *self, Expr *expr, Ty *type, OperandFlags flags, void *val) {
-    Operand op = { type, flags, .val.p = val };
+    Operand op = { expr, type, flags, .val.p = val };
     OperandMapEntry entry = {expr, op};
     hmputs(self->package->operands, entry);
     return op;
@@ -238,7 +238,7 @@ Operand operandp(Checker *self, Expr *expr, Ty *type, OperandFlags flags, void *
 
 INLINE
 Operand operandv(Checker *self, Expr *expr, Ty *type, OperandFlags flags, Val val) {
-    Operand op = { type, flags, val };
+    Operand op = { expr, type, flags, val };
     OperandMapEntry entry = {expr, op};
     hmputs(self->package->operands, entry);
     return op;
@@ -263,7 +263,7 @@ INLINE bool operand_coerces(Checker *self, Operand operand, Ty *dst) {
     TRACE(CHECKING);
     Ty *src = operand.type;
     if (src == dst) return true;
-    if (dst->kind == TYPE_ANY) return true;
+    if (dst->kind == TYPE_ANY) goto update_operand;
     if (src->kind == TYPE_STRUCT && (src->flags&SINGLE) != 0) {
         src = src->taggregate.fields->type;
     }
@@ -278,7 +278,7 @@ INLINE bool operand_coerces(Checker *self, Operand operand, Ty *dst) {
             return false;
         case TYPE_INT:
             switch (dst->kind) {
-                case TYPE_BOOL: return true;
+                case TYPE_BOOL: goto update_operand;
                 case TYPE_ENUM: // fallthrough;
                 case TYPE_INT: {
                     bool val_const = (operand.flags&CONST) != 0;
@@ -290,34 +290,49 @@ INLINE bool operand_coerces(Checker *self, Operand operand, Ty *dst) {
                             i64 val = sext(src, operand.val);
                             if (val >= 0) {
                                 operand.val.i = val;
-                                return true;
+                                goto update_operand;
                             }
                         }
                         return false;
                     }
                     if (!src_signed && dst_signed) { // unsigned to signed
                         // constant where value is fit's within the dst type.
-                        if (val_const && operand.val.u <= type_max_value(dst)) return true;
+                        if (val_const && operand.val.u <= type_max_value(dst)) goto update_operand;
                         // widening is allowed.
-                        return src->size < dst->size;
+                        if (src->size < dst->size) goto update_operand;
+                        return false;
                     }
                     // Same signedness allow same width or widening
-                    return src->size <= dst->size;
+                    if (src->size <= dst->size) goto update_operand;
+                    return false;
                 }
-                case TYPE_FLOAT: return true;
+                case TYPE_FLOAT: goto update_operand;
                 default: return false;
             }
-        case TYPE_FLOAT: return (dst->kind == TYPE_FLOAT) && src->size <= dst->size;
-        case TYPE_PTR:   return src == type_rawptr || dst == type_rawptr;
+        case TYPE_FLOAT: {
+            if ((dst->kind == TYPE_FLOAT) && src->size <= dst->size) goto update_operand;
+            return false;
+        }
+        case TYPE_PTR: {
+            if (src == type_rawptr || dst == type_rawptr) goto update_operand;
+            return false;
+        }
+        case TYPE_SLICE: {
+            if ((src->flags&STRING) && dst == type_ptr(type_u8, NONE)) goto update_operand;
+            return false;
+        }
         case TYPE_FUNC:
         case TYPE_ARRAY:
-        case TYPE_SLICE:
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_ANY:
             return false;
         default: fatal("Unhandled case");
     }
+update_operand:
+    operand.type = dst;
+    hmput(self->package->operands, operand.key, operand);
+    return true;
 }
 
 INLINE void expect_operand_casts(Checker *self, Operand op, Ty *type, Expr *expr) {
@@ -330,6 +345,10 @@ INLINE void expect_type_coerces(Checker *self, Ty *type, Ty *target, Expr *expr)
 
 INLINE void expect_operand_coerces(Checker *self, Operand op, Ty *type, Expr *expr) {
     TRACE(CHECKING);
+    if (!operand_coerces(self, op, type)) {
+        error(self, expr->range, "Expected type %s got type %s",
+              tyname(type), tyname(op.type));
+    }
 }
 
 INLINE void expect_constant(Checker *self, Operand op, Expr *expr) {
@@ -383,6 +402,7 @@ Operand check_expr_str(Checker *self, Expr *expr) {
     TRACE(CHECKING);
     Ty *type = type_string;
     if (self->wanted_type == type_rawptr) type = type_rawptr;
+    else if (self->wanted_type == type_u8ptr) type = type_u8ptr;
     return operandp(self, expr, type, CONST, expr->estr.str);
 }
 
@@ -553,6 +573,7 @@ Operand check_expr_binary(Checker *self, Expr *expr) {
     if (ret_operand(lhs)) return lhs;
     Operand rhs = check_expr(self, expr->ebinary.erhs);
     if (ret_operand(rhs)) return rhs;
+    // FIXME: For pointer arithmetic, we need to do special checks since coercion isn't allowed.
     if (!(operand_coerces(self, lhs, rhs.type) || operand_coerces(self, rhs, lhs.type))) {
         error(self, expr->range, "No coercion can occur to make %s and %s identical types",
               tyname(lhs.type), tyname(rhs.type));
@@ -641,13 +662,14 @@ Operand check_expr_call(Checker *self, Expr *expr) {
     u32 num_params = (u32) arrlen(callee.type->tfunc.params);
     for (u32 i = 0; i < arrlen(expr->ecall.args); i++) {
         CallArg call_arg = expr->ecall.args[i];
-        if (i >= num_params && (callee.type->flags & FUNC_VARGS) == 0) {
+        bool is_vargs_argument = i >= num_params && (callee.type->flags & FUNC_VARGS) == 0;
+        if (is_vargs_argument) {
             error(self, call_arg.expr->range, "Too many arguments in call to '%s', expected %ld",
                   tyname(callee.type), num_params);
             break;
         }
         self->wanted_type = callee.type->tfunc.params[MIN(num_params - 1, i)];
-        if (self->wanted_type->kind == TYPE_SLICE && self->wanted_type->flags & FUNC_VARGS) {
+        if (is_vargs_argument && self->wanted_type->kind == TYPE_SLICE && self->wanted_type->flags & FUNC_VARGS) {
             self->wanted_type = self->wanted_type->tslice.eltype;
         }
         Operand arg = check_expr(self, call_arg.expr);
@@ -813,7 +835,7 @@ Operand check_expr_func_type(Checker *self, Expr *expr) {
     } else {
         result = type_struct(result_fields, 0, 0, TUPLE);
     }
-    Ty *type = type_func(labels, params, result, (FuncFlags) expr->flags);
+    Ty *type = type_func(params, result, (FuncFlags) expr->flags);
     return operand(self, expr, type, TYPE);
 }
 

@@ -1,3 +1,4 @@
+- [ ] Make Ty `size` & `align` both bytes and introduce a bitmask of some sort
 - [ ] Error on files over 4GB. This allows us to use a u32 instead of u64
 - [ ] Make (Aggregate|Enum)Item names into Ident's instead of `const char *`
 - [ ] Make parseIdent return an AstNode

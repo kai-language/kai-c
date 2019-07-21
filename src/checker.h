@@ -86,6 +86,7 @@ typedef enum OperandFlags { // lower 4 bits are flags upper are kind
 
 typedef struct Operand Operand;
 struct Operand {
+    void *key; // The key used to store this operand in the operands hashmap.
     Ty *type;
     OperandFlags flags : 8;
     Val val;

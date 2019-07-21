@@ -61,16 +61,16 @@ const char *ArchNames[NUM_ARCHES] = {
 
 // Type details
 TargetMetrics Os_Linux_ArchSupport[NUM_ARCHES] = {
-    [Arch_x86_64] = { .Width = 64, .Align = 64 },
+    [Arch_x86_64] = { .width = 64, .align = 64 },
 };
 
 TargetMetrics Os_Darwin_ArchSupport[NUM_ARCHES] = {
-    [Arch_x86_64] = { .Width = 64, .Align = 64 },
+    [Arch_x86_64] = { .width = 64, .align = 64 },
 };
 
 TargetMetrics Os_Windows_ArchSupport[NUM_ARCHES] = {
-    [Arch_x86_64] = { .Width = 64, .Align = 64 },
-    [Arch_x86]    = { .Width = 32, .Align = 32 },
+    [Arch_x86_64] = { .width = 64, .align = 64 },
+    [Arch_x86]    = { .width = 32, .align = 32 },
 };
 
 Os OsForName(const char *name) {
@@ -385,7 +385,6 @@ void configure_defaults(Compiler *compiler) {
     DECLARE_BUILTIN_TYPE(type_intptr, "intptr");
     DECLARE_BUILTIN_TYPE(type_uintptr, "uintptr");
     DECLARE_BUILTIN_TYPE(type_rawptr, "rawptr");
-    type_string = type_slice(type_u8, NONE);
     DECLARE_BUILTIN_TYPE(type_string, "string");
 }
 
@@ -412,10 +411,10 @@ void compiler_init(Compiler *compiler, int argc, const char **argv) {
         print_usage(prog_name);
         exit(1);
     }
+    init_types();
     configure_defaults(compiler);
     init_search_paths(compiler);
     parser_init_interns();
-    init_types();
 }
 
 bool compiler_parse(Compiler *compiler) {

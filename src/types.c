@@ -9,11 +9,18 @@
 #include "string.h"
 #include "compiler.h"
 
+typedef struct InternedType InternedType;
+struct InternedType {
+    void *key;
+    Ty *value;
+};
+
 Ty *type_invalid = &(Ty){ TYPE_INVALID };
 
 Ty *type_any  = &(Ty){ TYPE_ANY, NONE };
+Ty *type_cvarg = &(Ty){ TYPE_ANY, CVARG };
 Ty *type_void = &(Ty){ TYPE_VOID, NONE };
-Ty *type_bool = &(Ty){ TYPE_BOOL, NONE };
+Ty *type_bool = &(Ty){ TYPE_BOOL, NONE, 1, 1 };
 
 Ty *type_i8  = &(Ty){ TYPE_INT, SIGNED, 1, 1 };
 Ty *type_i16 = &(Ty){ TYPE_INT, SIGNED, 2, 2 };
@@ -28,17 +35,19 @@ Ty *type_u64 = &(Ty){ TYPE_INT, NONE, 8, 8 };
 Ty *type_f32 = &(Ty){ TYPE_FLOAT, NONE, 4, 4 };
 Ty *type_f64 = &(Ty){ TYPE_FLOAT, NONE, 8, 8 };
 
-Ty *type_int  = &(Ty){ TYPE_INT, NONE };
-Ty *type_uint = &(Ty){ TYPE_INT, NONE };
-Ty *type_intptr  = &(Ty){ TYPE_INT, NONE };
-Ty *type_uintptr = &(Ty){ TYPE_INT, NONE };
+Ty *type_int  = &(Ty){ TYPE_INT, NONE, 8, 8 };
+Ty *type_uint = &(Ty){ TYPE_INT, NONE, 8, 8 };
+Ty *type_intptr  = &(Ty){ TYPE_INT, NONE, 8, 8 };
+Ty *type_uintptr = &(Ty){ TYPE_INT, NONE, 8, 8 }; // FIXME: Non constant sizes
 
-Ty *type_rawptr  = &(Ty){ TYPE_PTR, NONE };
-
+Ty *type_u8ptr;
+Ty *type_rawptr;
 Ty *type_string;
 
 void init_types() {
-    type_rawptr->tptr.base = type_u8;
+    type_u8ptr = type_ptr(type_u8, NONE);
+    type_rawptr = type_u8ptr;
+    type_string = type_slice(type_u8, STRING);
 }
 
 bool is_ptr(Ty *type) {
@@ -203,12 +212,22 @@ Ty *type_alloc(TyKind kind, u8 flags, size_t size) {
 
 #define type_size(type, member) offsetof(type, member) + sizeof(((type *)0)->member)
 
-Ty *type_func(const char **labels, Ty **params, Ty *result, FuncFlags flags) {
+InternedType *interned_func_tys;
+
+Ty *type_func(Ty **params, Ty *result, FuncFlags flags) {
     TRACE(CHECKING);
-    Ty *type = type_alloc(TYPE_FUNC, (u8) flags, type_size(Ty, tfunc));
-    type->tfunc.labels = labels;
-    type->tfunc.params = params;
-    type->tfunc.result = result;
+    void *params_hash = (void *) stbds_hash_bytes(params, arrlen(params) * sizeof *params, 0x31415926);
+    void *bytes[] = {params_hash, result, (void *) flags};
+    void *hash = (void *) stbds_hash_bytes(&bytes, sizeof bytes, 0x31415926);
+    Ty *type = hmget(interned_func_tys, hash);
+    if (!type) {
+        type = type_alloc(TYPE_FUNC, (u8) flags, type_size(Ty, tfunc));
+        type->size = compiler.target_metrics.width;
+        type->align = compiler.target_metrics.align;
+        type->tfunc.params = params;
+        type->tfunc.result = result;
+        hmput(interned_func_tys, hash, type);
+    }
     return type;
 }
 
@@ -234,25 +253,53 @@ Ty *type_enum(u8 flags) {
     return type;
 }
 
+InternedType *interned_ptr_tys;
+
 Ty *type_ptr(Ty *base, u8 flags) {
     TRACE(CHECKING);
-    Ty *type = type_alloc(TYPE_PTR, flags, type_size(Ty, tptr));
-    type->tptr.base = base;
+    Ty *type = hmget(interned_ptr_tys, base);
+    if (!type) {
+        type = type_alloc(TYPE_PTR, flags, type_size(Ty, tptr));
+        type->size = compiler.target_metrics.width;
+        type->align = compiler.target_metrics.align;
+        type->tptr.base = base;
+        hmput(interned_ptr_tys, base, type);
+    }
     return type;
 }
+
+InternedType *interned_array_tys;
 
 Ty *type_array(Ty *eltype, u64 length, u8 flags) {
     TRACE(CHECKING);
-    Ty *type = type_alloc(TYPE_ARRAY, flags, type_size(Ty, tarray));
-    type->tarray.eltype = eltype;
-    type->tarray.length = length;
+    void *bytes[] = {eltype, (void *) length};
+    void *hash = (void *) stbds_hash_bytes(bytes, sizeof *bytes, 0x31415926);
+    Ty *type = hmget(interned_array_tys, hash);
+    if (!type) {
+        type = type_alloc(TYPE_ARRAY, flags, type_size(Ty, tarray));
+        u64 size = eltype->size * length;
+        ASSERT(size <= UINT32_MAX)
+        type->size = (u32) size;
+        type->align = eltype->align;
+        type->tarray.eltype = eltype;
+        type->tarray.length = length;
+        hmput(interned_array_tys, hash, type);
+    }
     return type;
 }
 
+InternedType *interned_slice_tys;
+
 Ty *type_slice(Ty *eltype, u8 flags) {
     TRACE(CHECKING);
-    Ty *type = type_alloc(TYPE_SLICE, flags, type_size(Ty, tslice));
-    type->tslice.eltype = eltype;
+    Ty *type = hmget(interned_slice_tys, eltype);
+    if (!type) {
+        type = type_alloc(TYPE_SLICE, flags, type_size(Ty, tslice));
+        type->size = compiler.target_metrics.width * 3; // ptr, len, cap
+        type->align = compiler.target_metrics.align;
+        type->tslice.eltype = eltype;
+        hmput(interned_slice_tys, eltype, type);
+    }
     return type;
 }
 

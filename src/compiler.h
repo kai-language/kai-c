@@ -30,8 +30,8 @@ typedef enum Arch {
 
 typedef struct TargetMetrics TargetMetrics;
 struct TargetMetrics {
-    u32 Width;
-    u32 Align;
+    u32 width;
+    u32 align;
 };
 
 //typedef enum Output Output;

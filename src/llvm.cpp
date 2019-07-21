@@ -761,8 +761,8 @@ Value *emit_expr_binary(IRContext *self, Expr *expr) {
     set_debug_pos(self, expr->range);
     IRBuilder<> b = self->builder;
     switch (expr->flags) {
-        case OP_ADD: return is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs);
-        case OP_SUB: return is_int ? b.CreateSub(lhs, rhs) : b.CreateFSub(lhs, rhs);
+        case OP_ADD: return is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs); // FIXME: Pointers?
+        case OP_SUB: return is_int ? b.CreateSub(lhs, rhs) : b.CreateFSub(lhs, rhs); // FIXME: Pointers?
         case OP_MUL: return is_int ? b.CreateMul(lhs, rhs) : b.CreateFMul(lhs, rhs);
         case OP_DIV:
             return is_int ? is_signed(operand.type) ?
@@ -778,7 +778,7 @@ Value *emit_expr_binary(IRContext *self, Expr *expr) {
         case OP_SHR:
             return is_signed(operand.type) ? b.CreateAShr(lhs, rhs) : b.CreateLShr(lhs, rhs);
         case OP_SHL: return b.CreateShl(lhs, rhs);
-        case OP_LSS:
+        case OP_LSS: // FIXME: Pointers?
             return is_int ? is_signed(operand.type) ?
                 b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs);
         case OP_LEQ:
@@ -1263,8 +1263,8 @@ void emit_decl_var(IRContext *self, Decl *decl) {
     for (i64 lhs_index = 0; lhs_index < arrlen(decl->dvar.names);) {
         Expr *name = decl->dvar.names[lhs_index++];
         Expr *expr = decl->dvar.vals[rhs_index++];
-        Value *rhs = emit_expr(self, expr);
         Operand operand = hmget(self->package->operands, expr);
+        Value *rhs = emit_expr(self, expr);
         Sym *sym = hmget(self->package->symbols, name);
         if (expr->kind == EXPR_CALL) {
             i64 num_values = arrlen(operand.type->taggregate.fields);
