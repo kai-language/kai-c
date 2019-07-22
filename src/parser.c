@@ -84,6 +84,14 @@ i32 token_precedence[255] = {
     [TK_Assign] = 0,
 };
 
+void ensure_interned_string(Parser *self, Expr *expr) {
+    ASSERT(expr->kind == EXPR_STR);
+    if (expr->estr.mapped) {
+        expr->estr.mapped = false;
+        expr->estr.str = (char *) str_intern_range(expr->estr.str, expr->estr.str + expr->estr.len);
+    }
+}
+
 void parser_online(Parser *self, u32 offset) {
     TRACE(PARSING);
     self->was_newline = true;
@@ -1025,6 +1033,7 @@ begin:;
             }
             if (match_directive(self, DIR_IMPORT)) {
                 Expr *path = parse_expr(self);
+                ensure_interned_string(self, path);
                 Expr *alias = NULL;
                 if (!is_terminator(self) && !is_tok(self, TK_Lbrace))
                     alias = parse_name(self);
@@ -1049,6 +1058,7 @@ begin:;
             }
             if (match_directive(self, DIR_LIBRARY)) {
                 Expr *path = parse_expr(self);
+                ensure_interned_string(self, path);
                 Expr *alias = NULL;
                 if (!is_terminator(self))
                     alias = parse_name(self);

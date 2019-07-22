@@ -1,5 +1,6 @@
 
 #include "all.h"
+#include "os.h"
 #include "arena.h"
 #include "queue.h"
 #include "package.h"
@@ -1023,6 +1024,19 @@ Operand check_decl_import(Checker *self, Decl *decl) { // Nothing to do?
 
 Operand check_decl_library(Checker *self, Decl *decl) { // Check valid object
     TRACE(CHECKING);
+    ExprString epath = decl->dlibrary.path->estr;
+
+    char *dot = strrchr(epath.str, '.');
+    if (dot) {
+        const char framework_ext[] = ".framework";
+        int len = sizeof framework_ext / sizeof *framework_ext;
+        if (strncmp(epath.str, framework_ext, len) == 0) {
+            const char *name = str_intern_range(epath.str, dot);
+            arrput(compiler.frameworks, name);
+            return operand_ok;
+        }
+    }
+    arrput(compiler.libraries, epath.str);
     return operand_ok;
 }
 

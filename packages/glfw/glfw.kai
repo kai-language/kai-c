@@ -1,5 +1,5 @@
 
-#library "/usr/local/lib/libglfw.dylib"
+#library "glfw"
 
 
 /*** Structs/types ***/

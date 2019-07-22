@@ -90,10 +90,14 @@ struct Compiler {
     const char *import_search_paths[MAX_SEARCH_PATHS];
     int num_import_search_paths;
 
-    const char *linker_search_paths[MAX_SEARCH_PATHS];
-    int num_linker_search_paths;
+    const char *library_search_paths[MAX_SEARCH_PATHS];
+    int num_library_search_paths;
 
-    const char **linker_paths;
+    const char *framework_search_paths[MAX_SEARCH_PATHS];
+    int num_framework_search_paths;
+
+    const char **libraries;
+    const char **frameworks;
 
     InternedString *interns;
     Arena strings;

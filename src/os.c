@@ -61,6 +61,15 @@ void path_join(char path[MAX_PATH], const char *src) {
     snprintf(ptr, path + MAX_PATH - ptr, "/%s", src);
 }
 
+void path_append(char path[MAX_PATH], const char *src) {
+    if (*path == '\0') {
+        path_copy(path, src);
+        return;
+    }
+    char *end = path + strlen(path);
+    snprintf(end, path + MAX_PATH - end, "%s", src);
+}
+
 char *path_file(char path[MAX_PATH]) {
     path_normalize(path);
     for (char *ptr = path + strlen(path); ptr != path; ptr--) {

@@ -15,8 +15,18 @@
 #include "llvm.hpp"
 
 void add_import_search_path(Compiler *compiler, const char *path) {
-    verbose("Adding global search path %s", path);
+    verbose("Adding import search path %s", path);
     compiler->import_search_paths[compiler->num_import_search_paths++] = str_intern(path);
+}
+
+void add_library_search_path(Compiler *compiler, const char *path) {
+    verbose("Adding library search path %s", path);
+    compiler->library_search_paths[compiler->num_library_search_paths++] = str_intern(path);
+}
+
+void add_framework_search_path(Compiler *compiler, const char *path) {
+    verbose("Adding framework search path %s", path);
+    compiler->framework_search_paths[compiler->num_framework_search_paths++] = str_intern(path);
 }
 
 void init_search_paths(Compiler *compiler) {
@@ -504,18 +514,27 @@ bool compiler_link_objects(Compiler *compiler) {
     char *linker_flags = NULL;
     // TODO: Output type (exec, static, dynamic)
 
-    char object_name[MAX_PATH];
-    package_object_path(compiler->packages->value, object_name);
+    char obj_name[MAX_PATH];
+    package_object_path(compiler->packages->value, obj_name);
 
-    const char *output_name = compiler->output_name;
     linker_flags = arr_printf(linker_flags, "ld %s -o %s -lSystem -macosx_version_min 10.13",
-               object_name, output_name);
+                              obj_name, compiler->output_name);
+    for (int i = 0; i < compiler->num_library_search_paths; i++)
+        linker_flags = arr_printf(linker_flags, " -L%s", compiler->library_search_paths[i]);
+    for (int i = 0; i < compiler->num_framework_search_paths; i++)
+        linker_flags = arr_printf(linker_flags, " -F%s", compiler->framework_search_paths[i]);
+
+    for (int i = 0; i < arrlen(compiler->libraries); i++)
+        linker_flags = arr_printf(linker_flags, " -l%s", compiler->libraries[i]);
+    for (int i = 0; i < arrlen(compiler->frameworks); i++)
+        linker_flags = arr_printf(linker_flags, " -framework %s", compiler->frameworks[i]);
+
     verbose("$ %s\n", linker_flags);
     int result = system((char *) linker_flags);
     if (result) return false;
     if (compiler->flags.debug && compiler->target_output != OutputType_Static) {
         char *dsymutil_flags = NULL;
-        dsymutil_flags = arr_printf(dsymutil_flags, "dsymutil %s", output_name);
+        dsymutil_flags = arr_printf(dsymutil_flags, "dsymutil %s", compiler->output_name);
 
         verbose("$ %s\n", dsymutil_flags);
         system((char *) dsymutil_flags);

@@ -34,6 +34,7 @@ const char *ReadEntireFile(const char *path, u64 *len);
 const char *path_ext(const char path[MAX_PATH]);
 char *path_file(char path[MAX_PATH]);
 void path_join(char path[MAX_PATH], const char *src);
+void path_append(char path[MAX_PATH], const char *src);
 void path_copy(char path[MAX_PATH], const char *src);
 void path_normalize(char *path);
 char *path_absolute(char path[MAX_PATH]);
