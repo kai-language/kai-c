@@ -5,12 +5,12 @@
 main :: fn() -> void {
 
     window := initGlfw()
-	defer glfw.Terminate()
+    defer glfw.Terminate()
 
-	for !glfw.WindowShouldClose(window) {
-		glfw.PollEvents()
-		if glfw.GetKey(window, glfw.KEY_ESCAPE) break
-		glfw.SwapBuffers(window)
+    for !glfw.WindowShouldClose(window) {
+        glfw.PollEvents()
+        if glfw.GetKey(window, glfw.KEY_ESCAPE) break
+        glfw.SwapBuffers(window)
     }
 }
 

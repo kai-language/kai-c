@@ -480,14 +480,58 @@ bool compiler_emit_objects(Compiler *compiler) {
     return failure;
 }
 
+char *arr_printf(char *arr, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    size_t cap = arrcap(arr) - arrlen(arr);
+    char *end = arr + arrlen(arr);
+    size_t n = 1 + vsnprintf(end, cap, fmt, args);
+    va_end(args);
+    if (n > cap) {
+        arrsetcap(arr, n + arrlen(arr));
+        va_start(args, fmt);
+        cap = arrcap(arr) - arrlen(arr);
+        end = arr + arrlen(arr);
+        n = 1 + vsnprintf(end, cap, fmt, args);
+        ASSERT(n <= cap);
+        va_end(args);
+    }
+    arrsetlen(arr, arrlen(arr) + n - 1);
+    return arr;
+}
+
+bool compiler_link_objects(Compiler *compiler) {
+    char *linker_flags = NULL;
+    // TODO: Output type (exec, static, dynamic)
+
+    char object_name[MAX_PATH];
+    package_object_path(compiler->packages->value, object_name);
+
+    const char *output_name = compiler->output_name;
+    linker_flags = arr_printf(linker_flags, "ld %s -o %s -lSystem -macosx_version_min 10.13",
+               object_name, output_name);
+    verbose("$ %s\n", linker_flags);
+    int result = system((char *) linker_flags);
+    if (result) return false;
+    if (compiler->flags.debug && compiler->target_output != OutputType_Static) {
+        char *dsymutil_flags = NULL;
+        dsymutil_flags = arr_printf(dsymutil_flags, "dsymutil %s", output_name);
+
+        verbose("$ %s\n", dsymutil_flags);
+        system((char *) dsymutil_flags);
+        if (result) return false;
+    }
+    return true;
+}
+
 bool compile(Compiler *compiler) {
     TRACE(GENERAL);
     if (!compiler_parse(compiler))        return false;
     if (!compiler_typecheck(compiler))    return false;
     if (!compiler_build(compiler))        return false;
     if (!compiler_emit_objects(compiler)) return false;
-//    compiler_link_objects(compiler);
-//
+    if (!compiler_link_objects(compiler)) return false;
+
 //    compiler_parse_input(compiler);
 //    compiler_check_input(compiler);
 //    compiler_make_module(compiler);

@@ -139,6 +139,7 @@ Sym *checker_sym(Checker *self, Expr *name, Ty *type, SymKind kind) {
     if (self->scope == self->package->scope) {
         sym = scope_lookup(self->scope, name->ename);
         sym->type = type;
+        ASSERT(sym->decl);
         ASSERT(sym && sym->kind == kind);
     } else {
         sym = arena_calloc(&self->package->arena, sizeof *sym);
@@ -146,6 +147,7 @@ Sym *checker_sym(Checker *self, Expr *name, Ty *type, SymKind kind) {
         sym->name = name->ename;
         sym->type = type;
         sym->kind = kind;
+        sym->decl = (Decl *) name; // NOTE: This is simply so locations are available to backend
         sym->owning_package = self->package;
         scope_declare(self->scope, sym);
     }
@@ -675,6 +677,10 @@ Operand check_expr_call(Checker *self, Expr *expr) {
         Operand arg = check_expr(self, call_arg.expr);
         if (ret_operand(arg)) return arg;
         expect_operand_coerces(self, arg, self->wanted_type, call_arg.expr);
+        if (callee.type->flags&FUNC_CVARGS) {
+            arg.type = type_cvarg;
+            hmput(self->package->operands, arg.key, arg);
+        }
     }
     Ty *result = callee.type->tfunc.result;
     if (arrlen(result->taggregate.fields) == 1) result = result->taggregate.fields[0].type;
@@ -1211,6 +1217,7 @@ Operand check_stmt_for(Checker *self, Stmt *stmt) {
         }
         default: fatal("Unhandled for kind %lld", stmt->flags);
     }
+    check_stmt(self, stmt->sfor.body);
     arrpop(self->sfor);
     pop_scope(self);
     return operand_ok;

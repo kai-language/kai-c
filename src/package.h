@@ -98,3 +98,4 @@ void package_read_source_files(Package *package);
 Package *import_path(const char *path, Package *importer);
 Source *package_source(Package *package, u32 pos);
 PosInfo package_posinfo(Package *package, u32 pos);
+void package_object_path(Package *package, char object_name[MAX_PATH]);

@@ -217,6 +217,21 @@ PosInfo package_posinfo(Package *package, u32 pos) {
     return info;
 }
 
+void package_object_path(Package *package, char object_name[MAX_PATH]) {
+    strncpy(object_name, package->path, MAX_PATH);
+    object_name[MAX_PATH - 1] = 0;
+    char *ext = strrchr(object_name, '.');
+    if (!ext) {
+        char *end = object_name + strlen(object_name);
+        *(end) = '.';
+        *(end+1) = 'o';
+        *(end+2) = '\0';
+    } else {
+        *(ext+1) = 'o';
+        *(ext+2) = '\0';
+    }
+}
+
 void output_error(Package *package, SourceError error) {
     PosInfo location = error.location;
     char filepath[MAX_PATH];

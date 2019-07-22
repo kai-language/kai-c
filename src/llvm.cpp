@@ -341,7 +341,7 @@ Type *llvm_type(IRContext *c, Ty *type, Sym *sym = nullptr) {
             }
             Type *fn = llvm_function(c, params, result, (type->flags&FUNC_CVARGS) != 0);
             arrfree(params);
-            return fn;
+            return PointerType::get(fn, 0);
         }
         case TYPE_ARRAY: {
             Type *base = llvm_type(c, type->tarray.eltype);
@@ -519,6 +519,7 @@ Value *coerce_int_or_ptr(IRContext *self, Value *val, Type *ty) {
 }
 
 Value *emit_coerced_load(IRContext *self, Value *src, Ty *ty) {
+    if (ty == type_cvarg) return self->builder.CreateLoad(src);
     Type *src_ty = src->getType()->getPointerElementType();
     Type *dst_ty = llvm_type(self, ty);
 
@@ -528,6 +529,10 @@ Value *emit_coerced_load(IRContext *self, Value *src, Ty *ty) {
     if (StructType *src_struct_ty = dyn_cast<StructType>(src_ty)) {
         src = enter_struct_pointer_for_coerced_access(self, src, src_struct_ty, dst_size);
         src_ty = src->getType()->getPointerElementType();
+    }
+    if (FunctionType *src_fn_ty = dyn_cast<FunctionType>(src_ty)) {
+        // Don't load memory at the address of a function
+        return src;
     }
     u64 src_size = self->data_layout.getTypeAllocSize(src_ty);
 
@@ -548,7 +553,7 @@ Value *emit_coerced_load(IRContext *self, Value *src, Ty *ty) {
         // FIXME: Assert that we aren't truncating non-padding bits when have access
         // to that information.
         src = self->builder.CreateBitCast(
-                                          src, dst_ty->getPointerTo(src_ty->getPointerAddressSpace()));
+            src, dst_ty->getPointerTo(src_ty->getPointerAddressSpace()));
         return self->builder.CreateLoad(src);
     }
 
@@ -566,8 +571,71 @@ Value *emit_coerced_load(IRContext *self, Value *src, Expr *expr) {
     return emit_coerced_load(self, src, dst);
 }
 
+void emit_agg_store(IRContext *self, Value *val, Value *dst) {
+    // Prefer scalar stores to first-class aggregate stores
+    if (StructType *sty = dyn_cast<StructType>(val->getType())) {
+        for (unsigned i = 0, e = sty->getNumElements(); i != e; i++) {
+            Value *elptr = self->builder.CreateStructGEP(dst, i);
+            Value *el = self->builder.CreateExtractValue(val, i);
+            self->builder.CreateStore(el, elptr);
+        }
+    } else {
+        self->builder.CreateStore(val, dst);
+    }
+}
+
+Value *create_element_bitcast(IRContext *self, Value *addr, Type *ty) {
+    unsigned addrspace = addr->getType()->getPointerAddressSpace();
+    Type *ptr_ty = ty->getPointerTo(addrspace);
+    return self->builder.CreateBitCast(addr, ptr_ty);
+}
+
+void emit_coerced_store(IRContext *self, Value *dst, Value *src) {
+    Type *src_ty = src->getType();
+    Type *dst_ty = dst->getType()->getPointerElementType();
+    if (src_ty == dst_ty) {
+        self->builder.CreateStore(src, dst);
+        return;
+    }
+
+    u64 src_size = self->data_layout.getTypeAllocSize(src_ty);
+
+    if (StructType *dst_struct_ty = dyn_cast<StructType>(dst_ty)) {
+        dst = enter_struct_pointer_for_coerced_access(self, src, dst_struct_ty, src_size);
+        dst_ty = dst->getType()->getPointerElementType();
+    }
+
+    // If the src and dst are int or ptr types, ext or trunc to desired
+    if ((isa<IntegerType>(src_ty) || isa<PointerType>(src_ty)) &&
+        (isa<IntegerType>(dst_ty) || isa<PointerType>(dst_ty))) {
+        src = coerce_int_or_ptr(self, src, dst_ty);
+        self->builder.CreateStore(src, dst);
+        return;
+    }
+
+    u64 dst_size = self->data_layout.getTypeAllocSize(dst_ty);
+
+    // If store is legal, just bitcast the src pointer
+    if (src_size <= dst_size) {
+        dst = create_element_bitcast(self, dst, src_ty);
+        emit_agg_store(self, src, dst);
+    } else {
+        // do coercion through memory
+        u32 align_bytes = src->getPointerAlignment(self->data_layout);
+        AllocaInst *tmp = emit_entry_alloca(self, src_ty, "coerce.alloca", align_bytes);
+        self->builder.CreateStore(src, tmp);
+
+        Value *src_casted = create_element_bitcast(self, tmp, self->ty.i8);
+        Value *dst_casted = create_element_bitcast(self, dst, self->ty.i8);
+        u32 src_align = src->getPointerAlignment(self->data_layout);
+        u32 dst_align = dst->getPointerAlignment(self->data_layout);
+        self->builder.CreateMemCpy(dst_casted, dst_align, src_casted, src_align, dst_size);
+    }
+}
+
 Value *emit_coercion_and_or_load(IRContext *self, Value *src, Expr *expr) {
     Ty *dst = hmget(self->package->operands, expr).type;
+    if (dst == type_cvarg) return src; // FIXME: C Varg rules.
     Type *src_ty = src->getType();
     Type *dst_ty = llvm_type(self, dst);
     if (expr->kind == EXPR_CALL && isa<StructType>(dst_ty) &&
@@ -822,7 +890,10 @@ Value *emit_expr_call(IRContext *self, Expr *expr) {
     for (i64 i = 0; i < arrlen(expr->ecall.args); i++) {
         CallArg arg = expr->ecall.args[i];
         Operand arg_operand = hmget(self->package->operands, arg.expr);
+        bool prev_return_address = self->return_address;
+        self->return_address = false;
         Value *val = emit_expr(self, arg.expr);
+        self->return_address = prev_return_address;
         bool last_arg = i - 1 == arrlen(operand.type->tfunc.params);
         if (is_cvargs && last_arg) { // C ABI rules (TODO: Apply to all parameters for c calls)
             if (is_integer(arg_operand.type) && arg_operand.type->size < 4) {
@@ -848,13 +919,11 @@ Value *emit_expr_slice(IRContext *self, Expr *expr) { return NULL; }
 
 Function *emit_expr_func(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
-
-    FunctionType *type = (FunctionType *) llvm_type(self, operand.type);
+    FunctionType *type = (FunctionType *) llvm_type(self, operand.type)->getPointerElementType();
     const char *name = NULL;
     if (arrlen(self->symbols)) {
         name = arrlast(self->symbols)->external_name ?: arrlast(self->symbols)->name;
     }
-
     Function::LinkageTypes linkage = Function::LinkageTypes::ExternalLinkage;
     Function *fn = Function::Create(type, linkage, name ?: "", self->module);
     if (compiler.flags.debug) {
@@ -884,7 +953,6 @@ Function *emit_expr_func(IRContext *self, Expr *expr) {
     llvm_debug_unset_pos(self);
 
     self->builder.SetInsertPoint(entry_block);
-
     if (operand.type->tfunc.result != type_void) {
         function->result_value = emit_entry_alloca(
             self, type->getReturnType(), "result", operand.type->tfunc.result->align);
@@ -910,7 +978,6 @@ Function *emit_expr_func(IRContext *self, Expr *expr) {
                 alloca, var, self->dbg.builder->createExpression(),
                 DebugLoc::get(pos.line, pos.column, arrlast(self->dbg.scopes)), entry_block);
         }
-
     }
     fn->arg_end();
 
@@ -956,7 +1023,8 @@ Function *emit_expr_func(IRContext *self, Expr *expr) {
     }
 
     // Move the return block to the end, just for readability
-    function->return_block->moveAfter(self->builder.GetInsertBlock());
+    if (compiler.flags.dump_ir || compiler.flags.emit_ir)
+        function->return_block->moveAfter(self->builder.GetInsertBlock());
 
     if (compiler.flags.debug) {
         self->dbg.builder->finalizeSubprogram(fn->getSubprogram());
@@ -964,6 +1032,7 @@ Function *emit_expr_func(IRContext *self, Expr *expr) {
     }
 
     if (verifyFunction(*fn, &errs())) {
+        printf("\n====================\n");
         self->module->print(errs(), nullptr);
         ASSERT(false);
     }
@@ -1137,8 +1206,10 @@ void emit_stmt_goto(IRContext *self, Stmt *stmt) {
                 fatal("Should always have target, and be handled above");
             case GOTO_BREAK:
                 target = arrlast(fn->post_blocks);
+                break;
             case GOTO_CONTINUE:
                 target = arrlast(fn->loop_cond_blocks);
+                break;
             case GOTO_FALLTHROUGH:
                 target = arrlast(fn->next_cases);
                 break;
@@ -1169,15 +1240,12 @@ void emit_stmt_if(IRContext *self, Stmt *stmt) {
     BasicBlock *pass = BasicBlock::Create(self->context, "if.pass", fn);
     BasicBlock *fail = stmt->sif.fail ? BasicBlock::Create(self->context, "if.fail", fn) : nullptr;
     BasicBlock *post = BasicBlock::Create(self->context, "if.post", fn);
-
     Value *cond = emit_expr(self, stmt->sif.cond);
     set_debug_pos(self, stmt->range);
     self->builder.CreateCondBr(cond, pass, fail ?: post);
-
     self->builder.SetInsertPoint(pass);
     emit_stmt(self, stmt->sif.pass);
     if (!pass->getTerminator()) self->builder.CreateBr(post);
-
     if (stmt->sif.fail) {
         self->builder.SetInsertPoint(fail);
         emit_stmt(self, stmt->sif.fail);
@@ -1208,6 +1276,10 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         body = BasicBlock::Create(self->context, "for.body", fn->function);
         post = BasicBlock::Create(self->context, "for.post", fn->function);
         self->builder.CreateBr(cond ?: body);
+        self->builder.SetInsertPoint(cond);
+        Value *cond_val = emit_expr(self, stmt->sfor.cond);
+        cond_val = coerce_int_or_ptr(self, cond_val, self->ty.i1);
+        self->builder.CreateCondBr(cond_val, body, post);
     }
     arrpush(fn->loop_cond_blocks, cond);
     arrpush(fn->post_blocks, post);
@@ -1226,8 +1298,11 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
     }
     arrpop(fn->loop_cond_blocks);
     arrpop(fn->post_blocks);
-    self->builder.CreateBr(post);
+    if (!self->builder.GetInsertBlock()->getTerminator()) self->builder.CreateBr(post);
+    self->builder.SetInsertPoint(post);
     if (compiler.flags.debug) arrpop(self->dbg.scopes);
+    if (compiler.flags.dump_ir || compiler.flags.emit_ir)
+        post->moveAfter(self->builder.GetInsertBlock());
 }
 
 void emit_stmt_switch(IRContext *self, Stmt *stmt) {}
@@ -1236,6 +1311,7 @@ void emit_decl_var_global(IRContext *self, Decl *decl) {
     Expr *name = *decl->dvar.names;
     Expr *expr = *decl->dvar.vals;
     Sym *sym = hmget(self->package->symbols, name);
+    if (sym->userdata) return; // Already emitted
     Value *val = emit_expr(self, expr);
     Constant *init = dyn_cast<Constant>(val);
     if (!init) fatal("unimplemented non constant global variables");
@@ -1266,9 +1342,12 @@ void emit_decl_var(IRContext *self, Decl *decl) {
         Operand operand = hmget(self->package->operands, expr);
         Value *rhs = emit_expr(self, expr);
         Sym *sym = hmget(self->package->symbols, name);
+        if (sym->userdata) return; // Already emitted
+        // FIXME: This is incomplete, we need to improve, debug stuff & multi return.
         if (expr->kind == EXPR_CALL) {
-            i64 num_values = arrlen(operand.type->taggregate.fields);
-            if (num_values == 1) {
+            if (operand.type->kind == TYPE_STRUCT && (operand.flags&TUPLE) != 0) {
+                fatal("Unimplemented");
+            } else {
                 Type *type = llvm_type(self, sym->type);
                 AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
                 sym->userdata = alloca;
@@ -1283,6 +1362,7 @@ void emit_decl_var(IRContext *self, Decl *decl) {
                         alloca, d, self->dbg.builder->createExpression(), loc,
                         self->builder.GetInsertBlock());
                 }
+                emit_coerced_store(self, alloca, rhs);
                 // TODO: Handle coersion
                 lhs_index++;
             }
@@ -1300,6 +1380,7 @@ void emit_decl_var(IRContext *self, Decl *decl) {
 
 void emit_decl_val(IRContext *self, Decl *decl) {
     Sym *sym = hmget(self->package->symbols, decl->dval.name);
+    if (sym->userdata) return; // Already emitted
     set_debug_pos(self, decl->dval.name->range);
     Type *type = llvm_type(self, sym->type, sym);
     if (sym->type->kind & SYM_TYPE) return;
@@ -1330,7 +1411,9 @@ void emit_decl_foreign(IRContext *self, Decl *decl) {
     set_debug_pos(self, decl->range);
 
     Type *type = llvm_type(self, operand.type);
-    if (FunctionType *fn_ty = dyn_cast<FunctionType>(type)) {
+    if (operand.type->kind == TYPE_FUNC) {
+//    if (FunctionType *fn_ty = dyn_cast<FunctionType>(type)) {
+        FunctionType *fn_ty = (FunctionType *) type->getPointerElementType();
         Function *fn = Function::Create(
             fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
         // FIXME: Calling convention
@@ -1494,18 +1577,7 @@ bool llvm_emit_object(Package *package) {
     }
 
     char object_name[MAX_PATH];
-    strncpy(object_name, package->path, MAX_PATH);
-    object_name[MAX_PATH - 1] = 0;
-    char *ext = strrchr(object_name, '.');
-    if (!ext) {
-        char *end = object_name + strlen(object_name);
-        *(end) = '.';
-        *(end+1) = 'o';
-        *(end+2) = '\0';
-    } else {
-        *(ext+1) = 'o';
-        *(ext+2) = '\0';
-    }
+    package_object_path(package, object_name);
 
     std::error_code ec;
     raw_fd_ostream dest(object_name, ec);
@@ -1624,6 +1696,14 @@ void print(Type *ty) {
     std::string buf;
     raw_string_ostream os(buf);
     ty->print(os, nullptr);
+    os.flush();
+    puts(buf.c_str());
+}
+
+void print(BasicBlock *bb) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    bb->print(os, nullptr);
     os.flush();
     puts(buf.c_str());
 }
