@@ -160,9 +160,10 @@ Expr *new_expr_pointer(Package *package, Range range, Expr *base) {
     return e;
 }
 
-Expr *new_expr_struct(Package *package, Range range, AggregateField *fields) {
+Expr *new_expr_struct(Package *package, Range range, AggregateField *fields, u8 flags) {
     Expr *e = ast_alloc(package, EXPR_STRUCT, 0, range, ast_size(Expr, estruct));
     e->estruct.fields = fields;
+    e->estruct.flags = flags;
     return e;
 }
 

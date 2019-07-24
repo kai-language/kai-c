@@ -240,7 +240,7 @@ void output_error(Package *package, SourceError error) {
         path_join(filepath, location.source->filename);
     fprintf(stderr, "error(%s:%u:%u) %s\n", filepath, location.line, location.column, error.msg);
     if (compiler.flags.error_source && error.code_block)
-        fprintf(stderr, "%s", error.code_block);
+        fprintf(stderr, "%s\n", error.code_block);
 
     for (SourceNote *note = error.note; note; note = note->next) {
         location = note->location;
@@ -249,12 +249,140 @@ void output_error(Package *package, SourceError error) {
 }
 
 void output_errors(Package *package) {
+    if (compiler.flags.developer) return;
     for (i64 i = 0; i < arrlen(package->errors); i++)
         output_error(package, package->errors[i]);
 }
 
-char *find_code_block_and_highlight_range(Package *package, Range range) {
-    return NULL;
+char *highlight_line(
+    char *buf, const char *buf_end,
+    const char *line, const char *line_end,
+    const char *start, const char *end)
+{
+    ASSERT(line <= start);
+//    ASSERT(line_end >= end);
+    int len_req = 0;
+
+    // Print line up until start into buf
+    len_req = snprintf(buf, buf_end - buf, "%.*s", (int)(start - line), line);
+    if (len_req > buf_end - buf) return NULL;
+    buf += len_req;
+    line += len_req;
+
+    if (compiler.flags.error_colors) {
+        // Print highlight codes
+        len_req = snprintf(buf, buf_end - buf, "\x1B[31m");
+        if (len_req > buf_end - buf) return NULL;
+        buf += len_req;
+    }
+
+    ASSERT(line == start);
+
+    // Print error range
+    len_req = snprintf(buf, buf_end - buf, "%.*s", (int)(end - start), line);
+    if (len_req > buf_end - buf) return NULL;
+    buf += len_req;
+    line += len_req;
+
+    if (compiler.flags.error_colors) {
+        // Print reset code
+        len_req = snprintf(buf, buf_end - buf, "\x1B[0m");
+        if (len_req > buf_end - buf) return NULL;
+        buf += len_req;
+    }
+
+    // Print the remaining line
+    len_req = snprintf(buf, buf_end - buf, "%.*s\n", (int)(line_end - line), line);
+    if (len_req > buf_end - buf) return NULL;
+    buf += len_req;
+    line += len_req;
+
+    // + 1 because we append a newline
+    ASSERT(line == line_end + 1);
+
+    return buf;
+}
+
+char *package_highlighted_range(Package *package, Range range) {
+    PosInfo pos = package_posinfo(package, range.start);
+
+#define MAX_LINES 3
+#define MAX_LINE_LENGTH 512
+
+    // We add 1 so we have a buffer incase we have color turned off and need to add ^^^^^^ pointers
+    char lines[MAX_LINES + 1][MAX_LINE_LENGTH];
+    char no_color_highlight[MAX_LINE_LENGTH];
+
+    const char *cursor = pos.source->code + pos.offset;
+
+    i64 nbytes = 0;
+    i64 nlines = 0;
+    i64 column = INT64_MAX;
+    // first find a common column offset to remove indentation with
+    for (i64 line = 0; line < MAX_LINES; line++) {
+        const char *code_start = cursor;
+        while (*cursor != '\n') {
+            if (!isspace(*cursor)) code_start = cursor;
+            cursor--;
+        }
+        // cursor is the end of the previous line (+1 is start of this line)
+        column = MIN(column, code_start - (cursor + 1));
+        cursor--;
+        if (*cursor == '\n') { // we only print contiguious code. Break on empty lines
+            break;
+        }
+    }
+    // reset cursor
+    cursor = pos.source->code + pos.offset;
+
+    for (i64 line = 0; line < MAX_LINES; line++) {
+        const char *start = cursor;
+        const char *end = cursor;
+        while (*cursor != '\n') {
+            cursor--;
+        }
+        // cursor is the end of the previous line (+1 is start of this line)
+        start = (cursor + 1) + column;
+        while (*end != '\n') end++;
+
+        // FIXME: Handle ranges that span multiple lines
+        if (line != 0) {
+            nbytes += snprintf(lines[line], sizeof lines[line], "%.*s\n", (int)(end - start), start);
+        } else {
+            char *buf = lines[line];
+            u32 line_offset = (u32) (start - pos.source->code);
+            u32 start_offset = pos.offset - line_offset;
+            u32 end_offset = start_offset + range.end - range.start;
+
+            char *result = highlight_line(
+                buf, buf + MAX_LINE_LENGTH, start, end, start + start_offset, start + end_offset);
+            if (!result) return NULL;
+            nbytes += strlen(buf);
+            if (!compiler.flags.error_colors) {
+                memset(no_color_highlight, ' ', end - start + 1);
+                memset(no_color_highlight + start_offset, '^', range.end - range.start);
+                no_color_highlight[end - start] = '\0';
+            }
+        }
+
+        nlines++;
+        cursor--;
+        if (*cursor == '\n') { // only print contiguious code. Break on empty lines
+            break;
+        }
+    }
+
+    nbytes += 1 + 1; // 1 for indentation (\t) 1 for nul termination.
+    if (!compiler.flags.error_colors) nbytes += strlen(lines[nlines - 1]) + 1;
+    char *results = arena_alloc(&package->arena, nbytes + 1 + 40);
+    char *line_cursor = results;
+    for (i64 line = nlines - 1; line >= 0; line--) {
+        line_cursor += sprintf(line_cursor, "\t%s", lines[line]);
+    }
+    if (!compiler.flags.error_colors)
+        line_cursor += sprintf(line_cursor, "\t%s", no_color_highlight);
+    *line_cursor = '\0';
+    return results;
 }
 
 void add_error(Package *package, Range range, const char *fmt, ...) {
@@ -272,8 +400,10 @@ void add_error(Package *package, Range range, const char *fmt, ...) {
     error.msg = arena_alloc(&package->arena, len + 1);
     memcpy(error.msg, msg, len + 1);
     if (compiler.flags.error_source)
-        error.code_block = find_code_block_and_highlight_range(package, range);
+        error.code_block = package_highlighted_range(package, range);
     arrput(package->errors, error);
+
+    if (compiler.flags.developer) output_error(package, error);
 }
 
 void add_note(Package *package, Range range, const char *fmt, ...) {

@@ -148,6 +148,7 @@ struct AggregateField {
 
 typedef struct ExprAggregate ExprAggregate;
 struct ExprAggregate {
+    u8 flags;
     AggregateField *fields; // arr
 };
 
@@ -446,7 +447,7 @@ Expr *new_expr_functype(Package *package, Range range,
 Expr *new_expr_array(Package *package, Range range, Expr *base, Expr *len);
 Expr *new_expr_slicetype(Package *package, Range range, Expr *base);
 Expr *new_expr_pointer(Package *package, Range range, Expr *base);
-Expr *new_expr_struct(Package *package, Range range, AggregateField *fields);
+Expr *new_expr_struct(Package *package, Range range, AggregateField *fields, u8 flags);
 Expr *new_expr_union(Package *package, Range range, AggregateField *fields);
 Expr *new_expr_enum(Package *package, Range range, EnumFlags flags, Expr *type, EnumItem *items);
 Decl *new_decl_file(Package *package, Source *file);

@@ -14,8 +14,8 @@ typedef enum IntegerFlags {
 
 typedef enum StructFlags {
     STRUCT_FLAGS_NONE = 0,
-    TUPLE = 0x01,
-    SINGLE = 0x02, // single element tuple
+    TUPLE  = 0x01,
+    OPAQUE = 0x04,
 } StructFlags;
 
 typedef enum SliceFlags {
@@ -91,7 +91,7 @@ struct Ty {
     u32 size;
     u32 align;
     u8 bitmask;
-    Sym *symbol;
+    Sym *sym;
     Ty *base;
     u32 tyid;
     union {
@@ -136,6 +136,8 @@ Ty *type_enum(u8 flags);
 Ty *type_ptr(Ty *base, u8 flags);
 Ty *type_array(Ty *eltype, u64 length, u8 flags);
 Ty *type_slice(Ty *eltype, u8 flags);
+Ty *type_alias(Ty *base, Sym *sym);
+bool types_eql(Ty *a, Ty *b);
 
 const char *tyname(Ty *type);
 u64 type_max_value(Ty *type);
@@ -153,6 +155,7 @@ bool is_signed(Ty *type);
 bool is_aggregate(Ty *type);
 bool is_scalar(Ty *type);
 bool is_arithmetic(Ty *type);
+bool is_arithmetic_or_ptr(Ty *type);
 bool is_float(Ty *type);
 bool is_bool(Ty *type);
 bool is_integer(Ty *type);

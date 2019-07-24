@@ -52,8 +52,8 @@ bool (*unary_predicates[NUM_OPS])(Ty *) = {
 };
 
 bool (*binary_predicates[NUM_OPS])(Ty *) = {
-    [OP_ADD] = is_arithmetic,
-    [OP_SUB] = is_arithmetic,
+    [OP_ADD] = is_arithmetic_or_ptr,
+    [OP_SUB] = is_arithmetic_or_ptr,
     [OP_MUL] = is_arithmetic,
     [OP_DIV] = is_arithmetic,
     [OP_REM] = is_integer,
@@ -265,14 +265,15 @@ INLINE void expect_operand_is_a_type(Checker *self, Operand operand, Expr *expr)
 INLINE bool operand_coerces(Checker *self, Operand operand, Ty *dst) {
     TRACE(CHECKING);
     Ty *src = operand.type;
-    if (src == dst) return true;
+    if (types_eql(src, dst)) return true;
     if (dst->kind == TYPE_ANY) goto update_operand;
-    if (src->kind == TYPE_STRUCT && (src->flags&SINGLE) != 0) {
+    if (src->kind == TYPE_STRUCT && (src->flags&TUPLE) != 0 &&
+        arrlen(src->taggregate.fields) == 1)
+    {
         src = src->taggregate.fields->type;
     }
     switch (src->kind) {
         case TYPE_INVALID:
-            return true; // avoid further errors
         case TYPE_COMPLETING:
             return true; // avoid further errors
         case TYPE_VOID:
@@ -340,10 +341,12 @@ update_operand:
 
 INLINE void expect_operand_casts(Checker *self, Operand op, Ty *type, Expr *expr) {
     TRACE(CHECKING);
+    warn("Unimplemented %s", __FUNCTION__);
 }
 
 INLINE void expect_type_coerces(Checker *self, Ty *type, Ty *target, Expr *expr) {
     TRACE(CHECKING);
+    warn("Unimplemented %s", __FUNCTION__);
 }
 
 INLINE void expect_operand_coerces(Checker *self, Operand op, Ty *type, Expr *expr) {
@@ -447,12 +450,8 @@ Operand check_expr_compound(Checker *self, Expr *expr) {
         if (ret_operand(op)) return op;
         type = op.type;
         expect_operand_is_a_type(self, op, expr);
-    } else if (type == NULL) {
-        error(self, expr->range,
-              "Implicitely type compound literal used in context without expected type");
-        return bad_operand;
     }
-    switch (type->kind) {
+    switch (type ? type->kind : TYPE_ARRAY) {
         case TYPE_UNION:
         case TYPE_STRUCT: {
             u32 index = 0;
@@ -485,6 +484,7 @@ Operand check_expr_compound(Checker *self, Expr *expr) {
             break;
         }
         case TYPE_ARRAY: {
+            Ty *expected_type = type ? type->tarray.eltype : NULL;
             u32 index = 0;
             u32 max_index = 0;
             for (u32 i = 0; i < arrlen(expr->ecompound.fields); i++) {
@@ -504,18 +504,30 @@ Operand check_expr_compound(Checker *self, Expr *expr) {
                     }
                     index = (u32) op.val.i;
                 }
-                if (type->tarray.length && index >= type->tarray.length) {
+                if (type && type->tarray.length && index >= type->tarray.length) {
                     error(self, field.key->range,
                           "Array index %lu is beyond the max index of %lu for type %s",
                           index, type->tarray.length, tyname(type));
                 }
             check_arr_value:;
-                self->wanted_type = type->tarray.eltype;
+                self->wanted_type = expected_type;
                 Operand op = check_expr(self, field.val);
                 if (ret_operand(op)) return op;
-                expect_operand_coerces(self, op, type->tarray.eltype, field.val);
+                if (expected_type) {
+                    expect_operand_coerces(self, op, expected_type, field.val);
+                } else {
+                    /* FIXME: this logic enables arrays of single types to be specified without
+                     needing to name a type IE: starters := { "one", "two", "three" } is string[3]
+                     The issue is that because we automatically type constant numbers with smallest
+                     possible types by default ... we would encounter an error with { 1, 256 }
+                     as the 1 would infer to u8 but then 256 would not coerce to u8. We want the
+                     resulting array type to infer to something like u16[2] in this sort of case ...
+                     */
+                    expected_type = op.type;
+                }
                 max_index = MAX(max_index, index);
                 index++;
+                type = type ?: type_array(expected_type, arrlen(expr->ecompound.fields), NONE);
             }
             break;
         }
@@ -886,7 +898,7 @@ Operand check_expr_struct(Checker *self, Expr *expr) {
             arrput(fields, field);
         }
     }
-    Ty *type = type_struct(fields, (u32) width, (u32) align, NONE);
+    Ty *type = type_struct(fields, (u32) width, (u32) align, expr->estruct.flags);
     return operand(self, expr, type, TYPE);
 }
 
@@ -929,6 +941,13 @@ Operand check_decl_val(Checker *self, Decl *decl) {
     if (type) expect_operand_coerces(self, op, type, decl->dval.val);
     sym->type = op.type;
     sym->state = SYM_CHECKED;
+    if (op.flags&TYPE) {
+        if (op.type == type_rawptr || op.type == type_void)
+            error(self, decl->range,
+                  "Alias of special type %s is disallowed", tyname(op.type));
+        op.type = type_alias(op.type, sym);
+        hmput(self->package->operands, op.key, op);
+    }
     symbol_mark_checked(sym, op);
     self->current_decl = prev_current_decl;
     return operand_ok;
@@ -963,7 +982,7 @@ Operand check_decl_var(Checker *self, Decl *decl) {
         for (i64 i = 0; i < num_names; i++) {
             Ty *rhs_type = call.type->taggregate.fields[i].type;
             if (type) expect_type_coerces(self, rhs_type, type, decl->dvar.vals[0]);
-            Sym *sym = checker_sym(self, decl->dvar.vals[i], type ?: rhs_type, SYM_VAR);
+            Sym *sym = checker_sym(self, decl->dvar.names[i], type ?: rhs_type, SYM_VAR);
             sym->state = SYM_CHECKED;
         }
         return operand_ok;
@@ -1025,7 +1044,6 @@ Operand check_decl_import(Checker *self, Decl *decl) { // Nothing to do?
 Operand check_decl_library(Checker *self, Decl *decl) { // Check valid object
     TRACE(CHECKING);
     ExprString epath = decl->dlibrary.path->estr;
-
     char *dot = strrchr(epath.str, '.');
     if (dot) {
         const char framework_ext[] = ".framework";
@@ -1245,13 +1263,14 @@ Operand check_stmt_switch(Checker *self, Stmt *stmt) {
     SwitchCase *default_case = NULL;
     for (i64 i = 0; i < arrlen(stmt->sswitch.cases); i++) {
         SwitchCase c = stmt->sswitch.cases[i];
-        for (i64 j = 0; j < arrlen(c.matches); j++) {
-            Operand match = check_expr(self, c.matches[i]);
-            if (ret_operand(match)) return match;
-            expect_constant(self, match, c.matches[j]);
-            expect_operand_coerces(self, match, subject.type, c.matches[i]);
-        }
-        if (!c.matches) {
+        if (c.matches) {
+            for (i64 j = 0; j < arrlen(c.matches); j++) {
+                Operand match = check_expr(self, c.matches[j]);
+                if (ret_operand(match)) return match;
+                expect_constant(self, match, c.matches[j]);
+                expect_operand_coerces(self, match, subject.type, c.matches[j]);
+            }
+        } else {
             if (default_case) error(self, c.body->range, "Duplicate default case");
             default_case = stmt->sswitch.cases + i;
         }

@@ -44,6 +44,7 @@ enum Directive {
     DIR_FILE,
     DIR_FUNCTION,
     DIR_LINE,
+    DIR_OPAQUE,
     DIR_IMPORT,
     DIR_LIBRARY,
     DIR_FOREIGN,

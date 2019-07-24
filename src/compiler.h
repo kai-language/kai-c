@@ -48,6 +48,7 @@ typedef enum CompilationStage {
     STAGE_BUILD,
     STAGE_EMIT_OBJECTS,
     STAGE_LINK_OBJECTS,
+    STAGE_LINK_DEBUG_INFO,
 } CompilationStage;
 
 typedef struct CompilerFlags CompilerFlags;
@@ -65,6 +66,7 @@ struct CompilerFlags {
     b32 dump_ir;
     b32 disable_all_passes;
     b32 assertions;
+    b32 developer;
     b32 small;
     b32 debug;
     b32 link;

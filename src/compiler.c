@@ -31,6 +31,7 @@ void add_framework_search_path(Compiler *compiler, const char *path) {
 
 void init_search_paths(Compiler *compiler) {
     TRACE(INIT);
+    add_library_search_path(compiler, "libs");
     add_import_search_path(compiler, "vendor");
     add_import_search_path(compiler, "packages");
     const char *kaipath_env = getenv("KAIPATH");
@@ -164,6 +165,7 @@ CLIFlag CLIFlags[] = {
     FLAG_BOOL("verbose", "v",  flags.verbose, "Enable verbose output"),
     FLAG_BOOL("disable-all-passes", NULL, flags.disable_all_passes, "Disables all llvm passes"),
     FLAG_BOOL("assertions", NULL, flags.assertions, "Enable extra compiler assersions"),
+    FLAG_BOOL("developer", NULL, flags.developer, "Enable developer compiler features"),
     FLAG_BOOL("small", "-Oz", flags.small, "Optimize for small output"),
 
     FLAG_BOOL("dump-ir", NULL, flags.dump_ir,  "Dump LLVM IR"),
@@ -365,7 +367,7 @@ void configure_defaults(Compiler *compiler) {
             break;
         default: break;
     }
-    
+
 #define DECLARE_BUILTIN_TYPE(TYPE, NAME) \
 { \
     Sym *sym = arena_calloc(&compiler->arena, sizeof *sym); \
@@ -373,7 +375,7 @@ void configure_defaults(Compiler *compiler) {
     sym->state = SYM_CHECKED; \
     sym->kind = SYM_TYPE; \
     sym->type = TYPE; \
-    TYPE->symbol = sym; \
+    TYPE->sym = sym; \
     scope_declare(compiler->global_scope, sym); \
 }
     compiler->global_scope = arena_calloc(&compiler->arena, sizeof *compiler->global_scope);
@@ -478,6 +480,11 @@ bool compiler_typecheck(Compiler *compiler) {
     return true;
 }
 
+#if TEST
+bool llvm_build_module(Package *package) { return false; }
+bool llvm_emit_object(Package *package) { return false; }
+#endif
+
 bool compiler_build(Compiler *compiler) {
     bool failure = llvm_build_module(compiler->packages->value); // the first package is the input
     if (failure) compiler->failure_stage = STAGE_BUILD;
@@ -520,25 +527,32 @@ bool compiler_link_objects(Compiler *compiler) {
     linker_flags = arr_printf(linker_flags, "ld %s -o %s -lSystem -macosx_version_min 10.13",
                               obj_name, compiler->output_name);
     for (int i = 0; i < compiler->num_library_search_paths; i++)
-        linker_flags = arr_printf(linker_flags, " -L%s", compiler->library_search_paths[i]);
+        if (file_mode(compiler->library_search_paths[i]) == FILE_DIRECTORY)
+            linker_flags = arr_printf(linker_flags, " -L%s", compiler->library_search_paths[i]);
     for (int i = 0; i < compiler->num_framework_search_paths; i++)
-        linker_flags = arr_printf(linker_flags, " -F%s", compiler->framework_search_paths[i]);
-
+        if (file_mode(compiler->library_search_paths[i]) == FILE_DIRECTORY)
+            linker_flags = arr_printf(linker_flags, " -F%s", compiler->framework_search_paths[i]);
     for (int i = 0; i < arrlen(compiler->libraries); i++)
         linker_flags = arr_printf(linker_flags, " -l%s", compiler->libraries[i]);
     for (int i = 0; i < arrlen(compiler->frameworks); i++)
         linker_flags = arr_printf(linker_flags, " -framework %s", compiler->frameworks[i]);
 
-    verbose("$ %s\n", linker_flags);
+    verbose("$ %s", linker_flags);
     int result = system((char *) linker_flags);
-    if (result) return false;
+    if (result) {
+        compiler->failure_stage = STAGE_LINK_OBJECTS;
+        return false;
+    }
+
     if (compiler->flags.debug && compiler->target_output != OutputType_Static) {
         char *dsymutil_flags = NULL;
         dsymutil_flags = arr_printf(dsymutil_flags, "dsymutil %s", compiler->output_name);
-
-        verbose("$ %s\n", dsymutil_flags);
-        system((char *) dsymutil_flags);
-        if (result) return false;
+        verbose("$ %s", dsymutil_flags);
+        result = system((char *) dsymutil_flags);
+        if (result) {
+            compiler->failure_stage = STAGE_LINK_DEBUG_INFO;
+            return false;
+        }
     }
     return true;
 }
@@ -606,6 +620,7 @@ const char *compiler_stage_name(CompilationStage stage) {
         case STAGE_BUILD: return "LLVM IR generation";
         case STAGE_EMIT_OBJECTS: return "Object emission";
         case STAGE_LINK_OBJECTS: return "Object linking";
+        case STAGE_LINK_DEBUG_INFO: return "Dwarf debug info linking";
         default:
             warn("Unrecognized stage name");
             return "unknown";

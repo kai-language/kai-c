@@ -47,7 +47,6 @@ extern "C" {
 
 using namespace llvm;
 
-typedef struct DebugContext DebugContext;
 struct DebugContext {
     DIType *i8;
     DIType *i16;
@@ -66,7 +65,6 @@ struct DebugContext {
     Source *source_file;
 };
 
-typedef struct BuiltinTypes BuiltinTypes;
 struct BuiltinTypes {
     Type *i1;
     union {
@@ -91,7 +89,6 @@ struct BuiltinTypes {
     PointerType *rawptr;
 };
 
-typedef struct BuiltinSymbols BuiltinSymbols;
 struct BuiltinSymbols {
     Value *True;
     Value *False;
@@ -243,7 +240,8 @@ IRContext *llvm_create_context(Package *pkg) {
     self->module->setDataLayout(dl);
     self->module->getOrInsertModuleFlagsMetadata();
     self->module->addModuleFlag(Module::Warning, "Debug Info Version", DEBUG_METADATA_VERSION);
-    self->module->addModuleFlag(Module::Warning, "Dwarf Version", 2);
+    if (Triple(sys::getProcessTriple()).isOSDarwin())
+        self->module->addModuleFlag(Module::Warning, "Dwarf Version", 2);
     // See https://llvm.org/docs/LangRef.html#c-type-width-module-flags-metadata
     self->module->addModuleFlag(Module::Warning, "short_enum", 1);
     // TODO: Include details about the kai compiler version in the module metadata. eg:
@@ -312,7 +310,8 @@ bool llvm_validate(IRContext *context) {
     return !broken;
 }
 
-Type *llvm_type(IRContext *c, Ty *type, Sym *sym = nullptr) {
+Type *llvm_type(IRContext *c, Ty *type) {
+    if (type->sym && type->sym->userdata) return (Type *) type->sym->userdata;
     switch (type->kind) {
         case TYPE_INVALID:
         case TYPE_COMPLETING: fatal("Invalid type in backend");
@@ -349,20 +348,22 @@ Type *llvm_type(IRContext *c, Ty *type, Sym *sym = nullptr) {
         }
         case TYPE_SLICE:      return NULL;
         case TYPE_STRUCT: {
-            Type **elements = NULL;
-            arrsetcap(elements, arrlen(type->taggregate.fields));
+            if (type->flags&OPAQUE) {
+                ASSERT(type->sym); // TODO: Frontend check? Opaque can only be named?
+                const char *name = type->sym->external_name ?: type->sym->name;
+                StructType *ty = StructType::create(c->context, name);
+                type->sym->userdata = ty;
+                return ty;
+            }
+            std::vector<Type *> elements;
             for (int i = 0; i < arrlen(type->taggregate.fields); i++) {
                 Type *element = llvm_type(c, type->taggregate.fields[i].type);
-                arrput(elements, element);
+                elements.push_back(element);
             }
-            ArrayRef<Type *> ref = ArrayRef<Type *>((Type **) elements, arrlen(elements));
-            StructType *type = StructType::get(c->context, ref);
-            arrfree(elements);
-            if (sym) {
-                type->setName(sym->external_name ?: sym->name);
-                sym->userdata = type;
-            }
-            return type;
+            const char *name = type->sym ? type->sym->external_name ?: type->sym->name : "";
+            StructType *ty = StructType::create(c->context, elements, name);
+            if (type->sym) type->sym->userdata = ty;
+            return ty;
         }
         case TYPE_UNION: {
             Type *data = llvm_integer(c, type->size);
@@ -432,12 +433,42 @@ DIType *llvm_debug_type(IRContext *c, Ty *type) {
         }
         case TYPE_ARRAY:  fatal("unimp");
         case TYPE_SLICE:  fatal("unimp");
-        case TYPE_STRUCT: fatal("unimp");
+        case TYPE_STRUCT: {
+            if (type->flags&OPAQUE) {
+                PosInfo pos = package_posinfo(c->package, type->sym->decl->range.start);
+                DIType *dtype = c->dbg.builder->createForwardDecl(
+                    DW_TAG_structure_type, type->sym->external_name ?: type->sym->name,
+                    c->dbg.file, c->dbg.file, pos.line); // NOTE: scopes being set correctly crashes
+                return dtype;
+            }
+            std::vector<Metadata *> members;
+            for (u32 i = 0; i < arrlen(type->taggregate.fields); i++) {
+                TyField field = type->taggregate.fields[i];
+                DIType *dtype = llvm_debug_type(c, field.type);
+                DIDerivedType *member = c->dbg.builder->createMemberType(
+                    arrlast(c->dbg.scopes), field.name, c->dbg.file, 0,
+                    field.type->size * 8, field.type->align * 8, field.offset * 8,
+                    DINode::DIFlags::FlagZero, dtype);
+                members.push_back(member);
+            }
+            DINodeArray members_arr = c->dbg.builder->getOrCreateArray(members);
+            PosInfo pos = package_posinfo(c->package, type->sym->decl->range.start);
+            DIType *dtype = c->dbg.builder->createStructType(
+                arrlast(c->dbg.scopes), type->sym->external_name ?: type->sym->name,
+                c->dbg.file, pos.line, type->size * 8, type->align * 8,
+                DINode::DIFlags::FlagZero, NULL, members_arr);
+            return dtype;
+        }
+
         case TYPE_UNION:  fatal("unimp");
         case TYPE_ANY:    fatal("unimp");
         default:
             fatal("Unhandled type");
     }
+// TODO: Can we use this for type aliasing Type :: u8
+// DIType *dtype = c->dbg.builder->createTypedef(
+//     base, type->sym->external_name ?: type->sym->name,
+//     c->dbg.file, pos.line, arrlast(c->dbg.scopes));
 }
 
 AllocaInst *emit_entry_alloca(IRContext *self, Type *type, const char *name, u32 alignment_bytes) {
@@ -638,6 +669,7 @@ Value *emit_coercion_and_or_load(IRContext *self, Value *src, Expr *expr) {
     if (dst == type_cvarg) return src; // FIXME: C Varg rules.
     Type *src_ty = src->getType();
     Type *dst_ty = llvm_type(self, dst);
+    if (src_ty == dst_ty) return src;
     if (expr->kind == EXPR_CALL && isa<StructType>(dst_ty) &&
         dst_ty->getStructNumElements() == 1 && dst_ty->getStructElementType(0) == src_ty) {
         return src; // ensure calls return single elements correctly
@@ -1382,7 +1414,7 @@ void emit_decl_val(IRContext *self, Decl *decl) {
     Sym *sym = hmget(self->package->symbols, decl->dval.name);
     if (sym->userdata) return; // Already emitted
     set_debug_pos(self, decl->dval.name->range);
-    Type *type = llvm_type(self, sym->type, sym);
+    Type *type = llvm_type(self, sym->type);
     if (sym->type->kind & SYM_TYPE) return;
     arrpush(self->symbols, sym);
     bool prev_return_address = self->return_address;

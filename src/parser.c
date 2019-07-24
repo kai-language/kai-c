@@ -8,6 +8,7 @@
 #include "ast.h"
 #include "checker.h"
 #include "ast.h"
+#include "types.h"
 #include "string.h"
 #include "checker.h"
 #include "queue.h"
@@ -53,6 +54,7 @@ const char *directives[] = {
     [DIR_FILE] = "file",
     [DIR_FUNCTION] = "function",
     [DIR_LINE] = "line",
+    [DIR_OPAQUE] = "opaque",
     [DIR_IMPORT] = "import",
     [DIR_LIBRARY] = "library",
     [DIR_FOREIGN] = "foreign",
@@ -82,6 +84,16 @@ i32 token_precedence[255] = {
     [TK_Shr] = 5,
     [TK_And] = 5,
     [TK_Assign] = 0,
+    [TK_AddAssign] = 0,
+    [TK_SubAssign] = 0,
+    [TK_MulAssign] = 0,
+    [TK_DivAssign] = 0,
+    [TK_RemAssign] = 0,
+    [TK_AndAssign] = 0,
+    [TK_OrAssign]  = 0,
+    [TK_XorAssign] = 0,
+    [TK_ShlAssign] = 0,
+    [TK_ShrAssign] = 0,
 };
 
 void ensure_interned_string(Parser *self, Expr *expr) {
@@ -262,6 +274,7 @@ bool is_terminator(Parser *self) {
     if (self->was_newline) return true;
     if (is_eof(self)) return true;
     if (is_tok(self, TK_Rbrace)) return true;
+    if (is_tok(self, TK_Rparen)) return true;
     if (is_tok(self, TK_Terminator)) return true;
     return false;
 }
@@ -436,7 +449,7 @@ FuncParam *parse_single_param_or_many_with_same_type(Parser *self) {
             note(self, parser_range(self), "Use '_:' instead");
         }
         for (int i = 0; i < arrlen(exprs); i++) {
-            FuncParam param = {NULL, exprs[i]};
+            FuncParam param = {NULL, exprs[i]}; // TODO: Store param names
             arrput(params, param);
         }
         arrfree(exprs);
@@ -620,6 +633,10 @@ Expr *parse_expr_atom(Parser *self) {
         }
         case_struct: {
             eat_tok(self);
+            if (match_directive(self, DIR_OPAQUE)) {
+                match_tok(self, TK_Terminator);
+                return new_expr_struct(self->package, r(start, self->olast), NULL, OPAQUE);
+            }
             expect_tok(self, TK_Lbrace);
             AggregateField *fields = NULL;
             while (!is_tok(self, TK_Rbrace)) {
@@ -633,7 +650,7 @@ Expr *parse_expr_atom(Parser *self) {
                 if (is_eof(self)) break;
             }
             expect_tok(self, TK_Rbrace);
-            return new_expr_struct(self->package, r(start, self->olast), fields);
+            return new_expr_struct(self->package, r(start, self->olast), fields, NONE);
         }
         case_union: {
             eat_tok(self);
@@ -706,33 +723,36 @@ Expr *parse_expr_primary(Parser *self) {
             case TK_Dot: { // Field
                 eat_tok(self);
                 Expr *name = parse_name(self);
-                x = new_expr_field(self->package, r(start, name->range.end), x, name);
+                x = new_expr_field(self->package, r(x->range.start, name->range.end), x, name);
                 continue;
             }
             case TK_Lbrack: { // Index | Slice
                 eat_tok(self);
                 if (match_tok(self, TK_Colon)) {
                     if (match_tok(self, TK_Rbrack)) {
-                        x = new_expr_slice(self->package, r(start, self->olast), x, NULL, NULL);
+                        x = new_expr_slice(
+                            self->package, r(x->range.start, self->olast), x, NULL, NULL);
                         continue;
                     }
                     Expr *hi = parse_expr(self);
                     expect_tok(self, TK_Rbrack);
-                    return new_expr_slice(self->package, r(start, self->olast), x, NULL, hi);
+                    return new_expr_slice(
+                        self->package, r(x->range.start, self->olast), x, NULL, hi);
                 }
                 Expr *index = parse_expr(self);
                 if (match_tok(self, TK_Colon)) {
                     if (match_tok(self, TK_Rbrack)) {
-                        x = new_expr_slice(self->package, r(start, self->olast), x, index, NULL);
+                        x = new_expr_slice(
+                            self->package, r(x->range.start, self->olast), x, index, NULL);
                         continue;
                     }
                     Expr *hi = parse_expr(self);
                     expect_tok(self, TK_Rbrack);
-                    x = new_expr_slice(self->package, r(start, self->olast), x, index, hi);
+                    x = new_expr_slice(self->package, r(x->range.start, self->olast), x, index, hi);
                     continue;
                 }
                 expect_tok(self, TK_Rbrack);
-                x = new_expr_index(self->package, r(start, self->olast), x, index);
+                x = new_expr_index(self->package, r(x->range.start, self->olast), x, index);
                 continue;
             }
             case TK_Lparen: { // Call
@@ -757,7 +777,7 @@ Expr *parse_expr_primary(Parser *self) {
                     }
                 }
                 expect_tok(self, TK_Rparen);
-                x = new_expr_call(self->package, r(start, self->olast), x, args);
+                x = new_expr_call(self->package, r(x->range.start, self->olast), x, args);
                 continue;
             }
             case TK_Lbrace: {
@@ -789,7 +809,7 @@ Expr *parse_expr_primary(Parser *self) {
                     }
                 }
                 expect_tok(self, TK_Rbrace);
-                x = new_expr_compound(self->package, r(start, self->olast), x, fields);
+                x = new_expr_compound(self->package, r(x->range.start, self->olast), x, fields);
                 continue;
             }
             default:
@@ -869,6 +889,7 @@ Stmt *parse_simple_stmt(Parser *self) {
         case TK_RemAssign: case TK_AndAssign: case TK_OrAssign:
         case TK_XorAssign: case TK_ShlAssign: case TK_ShrAssign: {
             Op op = (Op) (self->tok.kind & ~0x80);
+            eat_tok(self);
             Expr **rhs = parse_expr_list(self, parse_expr);
             expect_single_expr(self, exprs);
             expect_single_expr(self, rhs);
@@ -1075,7 +1096,7 @@ begin:;
         case TK_Keyword: {
             if (is_kw(self, KW_STRUCT) || is_kw(self, KW_UNION) || is_kw(self, KW_ENUM)
                 || is_kw(self, KW_FN) || is_kw(self, KW_NIL) || is_kw(self, KW_USING)) {
-                goto case_expr;
+                goto case_expr; // these are all starts of expressions
             }
             if (match_kw(self, KW_IF)) {
                 i32 prev_expr_level = self->expr_level;

@@ -86,6 +86,10 @@ bool is_arithmetic(Ty *type) {
     return type && (TYPE_BOOL <= type->kind && type->kind <= TYPE_FLOAT);
 }
 
+bool is_arithmetic_or_ptr(Ty *type) {
+    return type && (TYPE_BOOL <= type->kind && type->kind <= TYPE_PTR);
+}
+
 bool is_scalar(Ty *type) {
     return type && (TYPE_BOOL <= type->kind && type->kind <= TYPE_FUNC);
 }
@@ -203,6 +207,15 @@ Ty *min_int_for_pos_value(u64 val) {
     return type_u64;
 }
 
+Ty *type_base(Ty *a) {
+    while (a->base) a = a->base;
+    return a;
+}
+
+bool types_eql(Ty *a, Ty *b) {
+    return type_base(a) == type_base(b);
+}
+
 Ty *type_alloc(TyKind kind, u8 flags, size_t size) {
     Ty *type = arena_alloc(&compiler.arena, size);
     type->kind = kind;
@@ -231,12 +244,22 @@ Ty *type_func(Ty **params, Ty *result, FuncFlags flags) {
     return type;
 }
 
+InternedType *interned_struct_tuple_tys;
+
 Ty *type_struct(TyField *fields, u32 size, u32 align, u8 flags) {
     TRACE(CHECKING);
-    Ty *type = type_alloc(TYPE_STRUCT, flags, type_size(Ty, taggregate));
+    void *hash;
+    Ty *type;
+    if (flags&TUPLE) {
+        hash = (void *) stbds_hash_bytes(fields, arrlen(fields) * sizeof *fields, 0x31415926);
+        type = hmget(interned_struct_tuple_tys, hash);
+        if (type) return type;
+    }
+    type = type_alloc(TYPE_STRUCT, flags, type_size(Ty, taggregate));
     type->size = size;
     type->align = align;
     type->taggregate.fields = fields;
+    if (flags&TUPLE) hmput(interned_struct_tuple_tys, hash, type);
     return type;
 }
 
@@ -278,7 +301,7 @@ Ty *type_array(Ty *eltype, u64 length, u8 flags) {
     if (!type) {
         type = type_alloc(TYPE_ARRAY, flags, type_size(Ty, tarray));
         u64 size = eltype->size * length;
-        ASSERT(size <= UINT32_MAX)
+        ASSERT(size <= UINT32_MAX);
         type->size = (u32) size;
         type->align = eltype->align;
         type->tarray.eltype = eltype;
@@ -303,10 +326,36 @@ Ty *type_slice(Ty *eltype, u8 flags) {
     return type;
 }
 
+int type_kind_alloc_sizes[] = {
+    [TYPE_INVALID] = 0,
+    [TYPE_COMPLETING] = 0,
+    [TYPE_VOID] = sizeof(Ty),
+    [TYPE_BOOL] = sizeof(Ty),
+    [TYPE_INT] = sizeof(Ty),
+    [TYPE_ENUM] = type_size(Ty, tenum),
+    [TYPE_FLOAT] = sizeof(Ty),
+    [TYPE_PTR] = type_size(Ty, tptr),
+    [TYPE_FUNC] = type_size(Ty, tfunc),
+    [TYPE_ARRAY] = type_size(Ty, tarray),
+    [TYPE_SLICE] = type_size(Ty, tslice),
+    [TYPE_STRUCT] = type_size(Ty, taggregate),
+    [TYPE_UNION] = type_size(Ty, taggregate),
+    [TYPE_ANY] = sizeof(Ty),
+};
+
+Ty *type_alias(Ty *base, Sym *sym) {
+    TRACE(CHECKING);
+    if (base->kind == TYPE_INVALID) return base;
+    int size = type_kind_alloc_sizes[base->kind];
+    Ty *type = arena_alloc(&compiler.arena, size);
+    memcpy(type, base, size);
+    type->base = base;
+    type->sym = sym;
+    return type;
+}
+
 const char *tyname(Ty *type) {
-    if (type->symbol) {
-        return type->symbol->name;
-    }
+    if (type->sym) return type->sym->name;
     switch (type->kind) {
         case TYPE_INVALID:    return "invalid";
         case TYPE_COMPLETING: return "completing";
@@ -316,10 +365,51 @@ const char *tyname(Ty *type) {
         case TYPE_ENUM:       return "enum";
         case TYPE_FLOAT:      return "float";
         case TYPE_PTR: return str_join("*", tyname(type->tptr.base));
-        case TYPE_FUNC:       return "func";
+        case TYPE_FUNC: {
+            char buf[1024];
+            int len = 0;
+            len += snprintf(buf + len, sizeof buf - len, "fn(");
+            for (int i = 0; i < arrlen(type->tfunc.params); i++) {
+                len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tfunc.params[i]));
+            }
+            len += snprintf(buf + len, sizeof buf - len, ")");
+            if (type->tfunc.result) {
+                len += snprintf(buf + len, sizeof buf - len, " -> %s", tyname(type->tfunc.result));
+            }
+            buf[len] = '\0';
+            return str_intern(buf);
+        }
         case TYPE_ARRAY:      return "array";
         case TYPE_SLICE: return str_join("[]", tyname(type->tslice.eltype));
-        case TYPE_STRUCT:     return "struct";
+        case TYPE_STRUCT: {
+            if (type->flags&OPAQUE) return "struct #opaque";
+            char buf[1024];
+            int len = 0;
+            if (type->flags&TUPLE) {
+                if (arrlen(type->taggregate.fields) == 1)
+                    return tyname(type->taggregate.fields->type);
+                len += snprintf(buf + len, sizeof buf - len, "(");
+                for (int i = 0; i < arrlen(type->taggregate.fields); i++) {
+                    TyField field = type->taggregate.fields[i];
+                    len += snprintf(buf + len, sizeof buf - len, "%s", tyname(field.type));
+                    if (i != arrlen(type->taggregate.fields) - 1)
+                        len += snprintf(buf + len, sizeof buf - len, ", ");
+                }
+                len += snprintf(buf + len, sizeof buf - len, ")");
+            }
+            len += snprintf(buf + len, sizeof buf - len, "struct {");
+            for (int i = 0; i < arrlen(type->taggregate.fields); i++) {
+                TyField field = type->taggregate.fields[i];
+                if (field.name)
+                    len += snprintf(buf + len, sizeof buf - len, "%s: ", field.name);
+                len += snprintf(buf + len, sizeof buf - len, "%s", tyname(field.type));
+                if (i != arrlen(type->taggregate.fields) - 1)
+                    len += snprintf(buf + len, sizeof buf - len, "; ");
+            }
+            len += snprintf(buf + len, sizeof buf - len, "}");
+            buf[len] = '\0';
+            return str_intern(buf);
+        }
         case TYPE_UNION:      return "union";
         case TYPE_ANY:        return "any";
         default:

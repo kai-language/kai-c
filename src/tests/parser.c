@@ -47,6 +47,7 @@ void test_parse_types() {
 
 void test_parse_aggregate() {
     AEKIND(EXPR_STRUCT, "struct { a: A }");
+    AEKIND(EXPR_STRUCT, "struct #opaque");
     AEKIND(EXPR_UNION, "union { a: A }");
     AEKIND(EXPR_STRUCT, "struct { a, b, c: u32 }");
     AEKIND(EXPR_UNION, "union { a, b, c: u32 }");

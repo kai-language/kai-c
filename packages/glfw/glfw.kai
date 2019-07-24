@@ -3,9 +3,9 @@
 
 
 /*** Structs/types ***/
-Window  :: rawptr
-Monitor :: rawptr
-Cursor  :: rawptr
+Window  :: struct #opaque
+Monitor :: struct #opaque
+Cursor  :: struct #opaque
 
 /*
 VidMode :: struct {
@@ -25,9 +25,9 @@ Image :: struct {
 };
 */
 // temp
-VidMode :: rawptr
-GammaRamp :: rawptr
-Image :: rawptr
+VidMode :: struct #opaque
+GammaRamp :: struct #opaque
+Image :: struct #opaque
 
 /*** Procedure type declarations ***/
 GlFn              :: fn() -> void
