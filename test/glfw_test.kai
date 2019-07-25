@@ -3,10 +3,18 @@
 #import "glfw"
 #import "libc"
 
+panic :: fn(msg: *u8) -> void {
+    libc.printf("%s", msg)
+    libc.exit(1)
+}
+
 main :: fn() -> void {
 
     window := initGlfw()
+    if !window panic("Failed to create window")
     defer glfw.Terminate()
+
+    libc.printf(nil)
 
     for !glfw.WindowShouldClose(window) {
         glfw.PollEvents()
@@ -22,9 +30,8 @@ glfwErrorCallback :: fn(error: i32, desc: *u8) -> void {
 initGlfw :: fn() -> *glfw.Window {
     glfw.SetErrorCallback(glfwErrorCallback)
 
-    if glfw.Init() == 0 {
+    if !glfw.Init()
         return nil
-    }
 
     glfw.WindowHint(glfw.SAMPLES, 4)
     glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
@@ -33,9 +40,7 @@ initGlfw :: fn() -> *glfw.Window {
     glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, 1)
 
     window := glfw.CreateWindow(1280, 720, "Kai GLFW example", nil, nil)
-    if window == nil {
-        return nil
-    }
+    if !window return nil
 
     glfw.MakeContextCurrent(window)
 

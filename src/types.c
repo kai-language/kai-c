@@ -48,6 +48,36 @@ void init_types() {
     type_u8ptr = type_ptr(type_u8, NONE);
     type_rawptr = type_u8ptr;
     type_string = type_slice(type_u8, STRING);
+
+#define DECLARE_BUILTIN_TYPE(TYPE, NAME) \
+{ \
+Sym *sym = arena_calloc(&compiler.arena, sizeof *sym); \
+sym->name = str_intern(NAME); \
+sym->state = SYM_CHECKED; \
+sym->kind = SYM_TYPE; \
+sym->type = TYPE; \
+TYPE->sym = sym; \
+scope_declare(compiler.global_scope, sym); \
+}
+    DECLARE_BUILTIN_TYPE(type_any, "any");
+    DECLARE_BUILTIN_TYPE(type_void, "void");
+    DECLARE_BUILTIN_TYPE(type_bool, "bool");
+    DECLARE_BUILTIN_TYPE(type_i8, "i8");
+    DECLARE_BUILTIN_TYPE(type_i16, "i16");
+    DECLARE_BUILTIN_TYPE(type_i32, "i32");
+    DECLARE_BUILTIN_TYPE(type_i64, "i64");
+    DECLARE_BUILTIN_TYPE(type_u8, "u8");
+    DECLARE_BUILTIN_TYPE(type_u16, "u16");
+    DECLARE_BUILTIN_TYPE(type_u32, "u32");
+    DECLARE_BUILTIN_TYPE(type_u64, "u64");
+    DECLARE_BUILTIN_TYPE(type_f32, "f32");
+    DECLARE_BUILTIN_TYPE(type_f64, "f64");
+    DECLARE_BUILTIN_TYPE(type_int, "int");
+    DECLARE_BUILTIN_TYPE(type_uint, "uint");
+    DECLARE_BUILTIN_TYPE(type_intptr, "intptr");
+    DECLARE_BUILTIN_TYPE(type_uintptr, "uintptr");
+    DECLARE_BUILTIN_TYPE(type_rawptr, "rawptr");
+    DECLARE_BUILTIN_TYPE(type_string, "string");
 }
 
 bool is_ptr(Ty *type) {
@@ -216,14 +246,14 @@ bool types_eql(Ty *a, Ty *b) {
     return type_base(a) == type_base(b);
 }
 
+#define type_size(type, member) offsetof(type, member) + sizeof(((type *)0)->member)
+
 Ty *type_alloc(TyKind kind, u8 flags, size_t size) {
     Ty *type = arena_alloc(&compiler.arena, size);
-    type->kind = kind;
-    type->flags = flags;
+    Ty template = {kind, flags};
+    memcpy(type, &template, size);
     return type;
 }
-
-#define type_size(type, member) offsetof(type, member) + sizeof(((type *)0)->member)
 
 InternedType *interned_func_tys;
 

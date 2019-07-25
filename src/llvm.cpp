@@ -182,7 +182,7 @@ struct IRContext {
             ty.u32 = IntegerType::get(context, 32);
             ty.i64 = IntegerType::get(context, 64);
             ty.u64 = IntegerType::get(context, 64);
-            ty.intptr = IntegerType::get(context, target->getPointerSize(0));
+            ty.intptr = IntegerType::get(context, target->getPointerSizeInBits(0));
             ty.rawptr = PointerType::get(ty.u8, 0);
         }
 
@@ -424,6 +424,7 @@ DIType *llvm_debug_type(IRContext *c, Ty *type) {
             } else {
                 result = llvm_debug_type(c, type->tfunc.result);
             }
+            // TODO: Result types are currently useless ... how can we incorperate them?
             if (type->flags&FUNC_CVARGS)
                 params.push_back(c->dbg.builder->createUnspecifiedParameter());
             DITypeRefArray p_types = c->dbg.builder->getOrCreateTypeArray(params);
@@ -551,6 +552,7 @@ Value *coerce_int_or_ptr(IRContext *self, Value *val, Type *ty) {
 
 Value *emit_coerced_load(IRContext *self, Value *src, Ty *ty) {
     if (ty == type_cvarg) return self->builder.CreateLoad(src);
+    if (!isa<PointerType>(src->getType())) return src;
     Type *src_ty = src->getType()->getPointerElementType();
     Type *dst_ty = llvm_type(self, ty);
 
@@ -824,26 +826,26 @@ Value *emit_expr_paren(IRContext *self, Expr *expr) {
 Value *emit_expr_unary(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     bool prev_return_address = self->return_address;
-    self->return_address = true;
-    Value *value = emit_expr(self, expr->eunary);
+    self->return_address = expr->flags == OP_AND;
+    Value *val = emit_expr(self, expr->eunary);
     self->return_address = prev_return_address;
     set_debug_pos(self, expr->range);
     switch ((Op) expr->flags) {
         case OP_ADD:
         case OP_AND:
-            return value;
+            return val;
         case OP_SUB:
             if (operand.type->kind == TYPE_FLOAT) {
-                return self->builder.CreateFNeg(value);
+                return self->builder.CreateFNeg(val);
             } else {
-                return self->builder.CreateNeg(value);
+                return self->builder.CreateNeg(val);
             }
         case OP_NOT:
         case OP_BNOT:
-            return self->builder.CreateNot(value);
+            return self->builder.CreateNot(val);
         case OP_LSS:
-            if (self->return_address) return value;
-            return emit_coerced_load(self, value, operand.type);
+            if (self->return_address) return val;
+            return emit_coerced_load(self, val, operand.type);
         default:
             fatal("Unhandled unary op case %d", expr->flags);
     }
@@ -1181,20 +1183,14 @@ void emit_stmt_return(IRContext *self, Stmt *stmt) {
     Value **values = NULL;
     IRFunction fn = arrlast(self->fn);
     Type *ret_type = fn.function->getReturnType();
+    bool prev_return_address = self->return_address;
     for (i64 i = 0; i < num_returns; i++) {
         Expr *expr = stmt->sreturn[i];
-        Type *desired_type = fn.function->getReturnType();
-        if (num_returns > 1) {
-            StructType *type = dyn_cast<StructType>(ret_type);
-            ASSERT(type);
-            desired_type = type->getElementType((u32) i);
-        }
-        bool prev_return_address = false;
         self->return_address = false;
         Value *val = emit_expr(self, expr);
-        self->return_address = prev_return_address;
         arrpush(values, val);
     }
+    self->return_address = prev_return_address;
     llvm_debug_unset_pos(self);
     if (num_returns > 1) {
         for (u32 i = 0; i < num_returns; i++) {
@@ -1719,7 +1715,7 @@ bool llvm_build_module(Package *package) {
 void print(Value *val) {
     std::string buf;
     raw_string_ostream os(buf);
-    val->print(os, nullptr);
+    val->print(os);
     os.flush();
     puts(buf.c_str());
 }
@@ -1727,7 +1723,7 @@ void print(Value *val) {
 void print(Type *ty) {
     std::string buf;
     raw_string_ostream os(buf);
-    ty->print(os, nullptr);
+    ty->print(os);
     os.flush();
     puts(buf.c_str());
 }
@@ -1735,7 +1731,15 @@ void print(Type *ty) {
 void print(BasicBlock *bb) {
     std::string buf;
     raw_string_ostream os(buf);
-    bb->print(os, nullptr);
+    bb->print(os);
+    os.flush();
+    puts(buf.c_str());
+}
+
+void print(Metadata *metadata) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    metadata->print(os);
     os.flush();
     puts(buf.c_str());
 }
@@ -1744,14 +1748,6 @@ void print(Module *module) {
     std::string buf;
     raw_string_ostream os(buf);
     module->print(os, nullptr);
-    os.flush();
-    puts(buf.c_str());
-}
-
-void print(Metadata *metadata) {
-    std::string buf;
-    raw_string_ostream os(buf);
-    metadata->print(os, nullptr);
     os.flush();
     puts(buf.c_str());
 }

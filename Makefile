@@ -3,17 +3,28 @@ CXX = clang++
 
 target = kai
 
-sources := $(wildcard src/*.c)
-disasms := $(pathsubst src/%.c, src/%.S, $(sources))
+c_sources := $(wildcard src/*.c)
+cpp_sources := $(wildcard src/*.cpp)
+disasms := $(pathsubst src/%.c, src/%.S, $(c_sources))
 
 objdir = .build
-objects := $(patsubst src/%.c, $(objdir)/%.o, $(sources))
+c_objects := $(patsubst src/%.c, $(objdir)/%.o, $(c_sources))
+# cpp_objects := $(patsubst src/%.cpp, $(objdir)/%.o, $(sources))
+cpp_objects := $(patsubst src/%.cpp, $(objdir)/%.o, $(cpp_sources))
 
 includes = -Iincludes/ -Ideps/uu.spdr/include
 
 ignored = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
 cflags = -g -O0 -std=c11 $(includes) -DDEBUG $(ignored) $(CFLAGS)
-cxxflags = -std=c++11 -stdlib=libc++ $(ignored)
+cxxflags = -std=c++11 -stdlib=libc++ $(includes) -DDEBUG $(ignored)
+
+LLVM_VERSION := 8.0
+
+LLVM_CONFIG := llvm-config
+
+LLVM_CXXFLAGS = $(shell llvm-config --cxxflags)
+LLVM_CXXLFLAGS = $(shell llvm-config --ldflags --link-static --system-libs --libs)
+# --libs X86AsmParser X86CodeGen Core Support BitReader AsmParser Analysis TransformUtils ScalarOpts Target
 
 test_main = test_main.c
 test_log = tests.log
@@ -24,13 +35,17 @@ all: mkdirs $(target)
 
 release: clean all
 
-# compile
+# compile c_objects
 $(objdir)/%.o: src/%.c
 	$(CC) $(cflags) -o $@ -c $<
 
+# compile cpp_objects
+$(objdir)/%.o: src/%.cpp
+	$(CXX) $(cxxflags) $(LLVM_CXXFLAGS) -o $@ -c $<
+
 # link
-$(target): $(objects)
-	$(CC) $(cflags) -o $@ $^
+$(target): $(c_objects) $(cpp_objects)
+	$(CXX) $(cflags) $(LLVM_CXXLFLAGS) -o $@ $^
 
 # disassembly
 src/%.S: src/%.c

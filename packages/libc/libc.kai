@@ -3,5 +3,6 @@
     printf :: fn(*u8, any.. #cvargs) -> i32
     strlen :: fn(*u8) -> u64
     malloc :: fn(size: u64) -> rawptr
+	exit   :: fn(code: i32)
 }
 

@@ -367,37 +367,8 @@ void configure_defaults(Compiler *compiler) {
             break;
         default: break;
     }
-
-#define DECLARE_BUILTIN_TYPE(TYPE, NAME) \
-{ \
-    Sym *sym = arena_calloc(&compiler->arena, sizeof *sym); \
-    sym->name = str_intern(NAME); \
-    sym->state = SYM_CHECKED; \
-    sym->kind = SYM_TYPE; \
-    sym->type = TYPE; \
-    TYPE->sym = sym; \
-    scope_declare(compiler->global_scope, sym); \
-}
-    compiler->global_scope = arena_calloc(&compiler->arena, sizeof *compiler->global_scope);
-    DECLARE_BUILTIN_TYPE(type_any, "any");
-    DECLARE_BUILTIN_TYPE(type_void, "void");
-    DECLARE_BUILTIN_TYPE(type_bool, "bool");
-    DECLARE_BUILTIN_TYPE(type_i8, "i8");
-    DECLARE_BUILTIN_TYPE(type_i16, "i16");
-    DECLARE_BUILTIN_TYPE(type_i32, "i32");
-    DECLARE_BUILTIN_TYPE(type_i64, "i64");
-    DECLARE_BUILTIN_TYPE(type_u8, "u8");
-    DECLARE_BUILTIN_TYPE(type_u16, "u16");
-    DECLARE_BUILTIN_TYPE(type_u32, "u32");
-    DECLARE_BUILTIN_TYPE(type_u64, "u64");
-    DECLARE_BUILTIN_TYPE(type_f32, "f32");
-    DECLARE_BUILTIN_TYPE(type_f64, "f64");
-    DECLARE_BUILTIN_TYPE(type_int, "int");
-    DECLARE_BUILTIN_TYPE(type_uint, "uint");
-    DECLARE_BUILTIN_TYPE(type_intptr, "intptr");
-    DECLARE_BUILTIN_TYPE(type_uintptr, "uintptr");
-    DECLARE_BUILTIN_TYPE(type_rawptr, "rawptr");
-    DECLARE_BUILTIN_TYPE(type_string, "string");
+    compiler->global_scope = arena_calloc(
+        &compiler->arena, sizeof *compiler->global_scope);
 }
 
 void output_version_and_build_info(void) {
@@ -413,6 +384,7 @@ void output_version_and_build_info(void) {
 
 void compiler_init(Compiler *compiler, int argc, const char **argv) {
     TRACE(INIT);
+    memset(compiler, 0, sizeof *compiler);
     const char *prog_name = argv[0];
     parse_flags(compiler, &argc, &argv);
     if (compiler->flags.version) {
@@ -423,10 +395,10 @@ void compiler_init(Compiler *compiler, int argc, const char **argv) {
         print_usage(prog_name);
         exit(1);
     }
-    init_types();
     configure_defaults(compiler);
     init_search_paths(compiler);
     parser_init_interns();
+    init_types();
 }
 
 bool compiler_parse(Compiler *compiler) {

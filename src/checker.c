@@ -16,14 +16,10 @@ struct Checker {
     u32 flags;
 
     Scope *scope;
-    Ty *wanted_type;
 
     Expr **efuncs; // arr
     Stmt **sgotos; // arr StmtGoto (stack of goto's needing resolve @ end of checking func)
     Stmt **sdefer; // arr
-
-    // TODO: Improve naming
-    Decl *current_decl;
 
     Stmt **sswitch; // arr
     SwitchCase *snext_case;
@@ -33,8 +29,8 @@ struct Checker {
 };
 
 Operand check_stmt(Checker *self, Stmt *stmt);
-Operand check_expr(Checker *self, Expr *expr);
-Operand check_expr_func_type(Checker *self, Expr *expr);
+Operand check_expr(Checker *self, Expr *expr, Ty *wanted);
+Operand check_expr_func_type(Checker *self, Expr *expr, Ty *wanted);
 Operand check_decl_var(Checker *self, Decl *decl);
 Operand check_decl_val(Checker *self, Decl *decl);
 Operand check_decl_foreign(Checker *self, Decl *decl);
@@ -47,7 +43,7 @@ bool (*unary_predicates[NUM_OPS])(Ty *) = {
     [OP_ADD]  = is_arithmetic,
     [OP_SUB]  = is_arithmetic,
     [OP_BNOT] = is_integer,
-    [OP_NOT]  = is_arithmetic,
+    [OP_NOT]  = is_arithmetic_or_ptr,
     [OP_LSS]  = is_ptr,
 };
 
@@ -86,7 +82,6 @@ bool check(Package *package, Stmt *stmt) {
         .package = package,
         .flags = NONE,
         .scope = package->scope,
-        .current_decl = (Decl *) stmt,
     };
     return check_stmt(&checker, stmt).flags == UNCHECKED; // requeue
 }
@@ -365,54 +360,54 @@ INLINE void expect_operand_lvalue(Checker *self, Operand op, Expr *expr) {
     TRACE(CHECKING);
 }
 
-Operand check_expr_nil(Checker *self, Expr *expr) {
+Operand check_expr_nil(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    if (self->wanted_type && !is_ptr(self->wanted_type)) {
+    if (wanted && !is_ptr(wanted)) {
         add_error(self->package, expr->range,
-                  "'nil' is not convertable to '%s'", tyname(self->wanted_type));
+                  "'nil' is not convertable to '%s'", tyname(wanted));
         return bad_operand;
     }
-    Ty *type = self->wanted_type ?: type_rawptr;
+    Ty *type = wanted ?: type_rawptr;
     return operandi(self, expr, type, CONST, 0);
 }
 
-Operand check_expr_int(Checker *self, Expr *expr) {
+Operand check_expr_int(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     Val val = {expr->eint};
     Ty *type = smallest_unsigned_int_for_value(val.u);
-    if (self->wanted_type) {
-        if (is_integer(self->wanted_type) || is_ptr(self->wanted_type)) {
-            if (val.u > type_max_value(self->wanted_type)) {
+    if (wanted) {
+        if (is_integer(wanted) || is_ptr(wanted)) {
+            if (val.u > type_max_value(wanted)) {
                 error(self, expr->range,
                       "Cannot coerce value '%d' to type %s as loss of information would occur",
-                      val.u, tyname(self->wanted_type));
+                      val.u, tyname(wanted));
                 note(self, expr->range, "Cast to force conversion with overflow");
             }
-            type = self->wanted_type;
+            type = wanted;
         }
-    } else if (is_float(self->wanted_type)) {
+    } else if (is_float(wanted)) {
         val.f = (f64)val.u;
-        type = self->wanted_type;
+        type = wanted;
     }
     return operandv(self, expr, type, CONST, val);
 }
 
-Operand check_expr_float(Checker *self, Expr *expr) {
+Operand check_expr_float(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     Ty *type = type_f64;
-    if (is_float(self->wanted_type)) type = self->wanted_type;
+    if (is_float(wanted)) type = wanted;
     return operandf(self, expr, type, CONST, expr->efloat);
 }
 
-Operand check_expr_str(Checker *self, Expr *expr) {
+Operand check_expr_str(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     Ty *type = type_string;
-    if (self->wanted_type == type_rawptr) type = type_rawptr;
-    else if (self->wanted_type == type_u8ptr) type = type_u8ptr;
+    if (wanted == type_rawptr) type = type_rawptr;
+    else if (wanted == type_u8ptr) type = type_u8ptr;
     return operandp(self, expr, type, CONST, expr->estr.str);
 }
 
-Operand check_expr_name(Checker *self, Expr *expr) {
+Operand check_expr_name(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     Sym *sym = scope_lookup(self->scope, expr->ename);
     if (!sym) {
@@ -442,11 +437,11 @@ special:
     return operandp(self, expr, sym->type, flags, sym);
 }
 
-Operand check_expr_compound(Checker *self, Expr *expr) {
+Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Ty *type = self->wanted_type;
+    Ty *type = wanted;
     if (expr->ecompound.type) {
-        Operand op = check_expr(self, expr->ecompound.type);
+        Operand op = check_expr(self, expr->ecompound.type, NULL);
         if (ret_operand(op)) return op;
         type = op.type;
         expect_operand_is_a_type(self, op, expr);
@@ -475,8 +470,7 @@ Operand check_expr_compound(Checker *self, Expr *expr) {
                     goto check_agg_value;
                 }
             check_agg_value:;
-                self->wanted_type = type->taggregate.fields[index].type;
-                Operand op = check_expr(self, field.val);
+                Operand op = check_expr(self, field.val, type->taggregate.fields[index].type);
                 if (ret_operand(op)) return op;
                 expect_operand_coerces(self, op, type->taggregate.fields[index].type, field.val);
                 index++;
@@ -494,7 +488,7 @@ Operand check_expr_compound(Checker *self, Expr *expr) {
                     note(self, field.key->range, "Array or Slice key should be surrounded in `[]`");
                     goto check_arr_value;
                 } else if (field.kind == FIELD_INDEX) {
-                    Operand op = check_expr(self, field.key);
+                    Operand op = check_expr(self, field.key, type_u64);
                     if (ret_operand(op)) return op;
                     expect_operand_coerces(self, op, type_u64, field.key);
                     expect_constant(self, op, field.key);
@@ -510,8 +504,7 @@ Operand check_expr_compound(Checker *self, Expr *expr) {
                           index, type->tarray.length, tyname(type));
                 }
             check_arr_value:;
-                self->wanted_type = expected_type;
-                Operand op = check_expr(self, field.val);
+                Operand op = check_expr(self, field.val, expected_type);
                 if (ret_operand(op)) return op;
                 if (expected_type) {
                     expect_operand_coerces(self, op, expected_type, field.val);
@@ -535,18 +528,18 @@ Operand check_expr_compound(Checker *self, Expr *expr) {
     return operand(self, expr, type, LVALUE);
 }
 
-Operand check_expr_cast(Checker *self, Expr *expr) { return bad_operand; }
+Operand check_expr_cast(Checker *self, Expr *expr, Ty *wanted) { return bad_operand; }
 
-Operand check_expr_paren(Checker *self, Expr *expr) {
+Operand check_expr_paren(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Operand op = check_expr(self, expr->eparen);
+    Operand op = check_expr(self, expr->eparen, wanted);
     if (ret_operand(op)) return op;
     return operandv(self, expr, op.type, op.flags, op.val);
 }
 
-Operand check_expr_unary(Checker *self, Expr *expr) {
+Operand check_expr_unary(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Operand value = check_expr(self, expr->eunary);
+    Operand value = check_expr(self, expr->eunary, NULL);
     if (ret_operand(value)) return value;
     Op op = (Op) expr->flags;
     Ty *type = NULL;
@@ -567,6 +560,8 @@ Operand check_expr_unary(Checker *self, Expr *expr) {
                 return bad_operand;
             }
             if (expr->flags == OP_NOT) {
+                value.type = type_bool;
+                hmput(self->package->operands, value.key, value); // coerce the operand
                 type = type_bool;
             } else if (expr->flags == OP_LSS) {
                 type = value.type->tptr.base;
@@ -580,13 +575,12 @@ Operand check_expr_unary(Checker *self, Expr *expr) {
     return operand(self, expr, type, NONE);
 }
 
-Operand check_expr_binary(Checker *self, Expr *expr) {
+Operand check_expr_binary(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     Op op = (Op) expr->flags;
-    self->wanted_type = NULL;
-    Operand lhs = check_expr(self, expr->ebinary.elhs);
+    Operand lhs = check_expr(self, expr->ebinary.elhs, NULL);
     if (ret_operand(lhs)) return lhs;
-    Operand rhs = check_expr(self, expr->ebinary.erhs);
+    Operand rhs = check_expr(self, expr->ebinary.erhs, NULL);
     if (ret_operand(rhs)) return rhs;
     // FIXME: For pointer arithmetic, we need to do special checks since coercion isn't allowed.
     if (!(operand_coerces(self, lhs, rhs.type) || operand_coerces(self, rhs, lhs.type))) {
@@ -617,20 +611,16 @@ Operand check_expr_binary(Checker *self, Expr *expr) {
     return operand(self, expr, type, NONE);
 }
 
-Operand check_expr_ternary(Checker *self, Expr *expr) {
+Operand check_expr_ternary(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Ty *wanted_type = self->wanted_type;
-    self->wanted_type = type_bool;
-    Operand cond = check_expr(self, expr->eternary.econd);
+    Operand cond = check_expr(self, expr->eternary.econd, type_bool);
     if (ret_operand(cond)) return cond;
     Operand pass = cond;
     if (expr->eternary.epass) {
-        self->wanted_type = wanted_type;
-        pass = check_expr(self, expr->eternary.epass);
+        pass = check_expr(self, expr->eternary.epass, wanted);
         if (ret_operand(pass)) return pass;
     }
-    self->wanted_type = wanted_type;
-    Operand fail = check_expr(self, expr->eternary.efail);
+    Operand fail = check_expr(self, expr->eternary.efail, wanted);
     if (ret_operand(fail)) return fail;
     if (!is_bool(cond.type) && !is_arithmetic(cond.type) && !is_ptr(cond.type)) {
         error(self, expr->range, "Expected numeric or pointer type as condition");
@@ -647,9 +637,9 @@ Operand check_expr_ternary(Checker *self, Expr *expr) {
     return operand(self, expr, pass.type, NONE);
 }
 
-Operand check_expr_call(Checker *self, Expr *expr) {
+Operand check_expr_call(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Operand callee = check_expr(self, expr->ecall.expr);
+    Operand callee = check_expr(self, expr->ecall.expr, NULL);
     if (ret_operand(callee)) return callee;
     if (callee.flags&TYPE) { // Call is a cast
         if (arrlen(expr->ecall.args) < 1 || arrlen(expr->ecall.args) > 1) {
@@ -663,8 +653,7 @@ Operand check_expr_call(Checker *self, Expr *expr) {
         expr->kind = EXPR_CAST;
         expr->ecast.expr = call.args->expr;
         expr->ecast.type = call.expr;
-        self->wanted_type = callee.type;
-        Operand arg = check_expr(self, expr->ecast.expr);
+        Operand arg = check_expr(self, expr->ecast.expr, callee.type);
         if (ret_operand(arg)) return arg;
         expect_operand_casts(self, arg, callee.type, expr->ecast.expr);
         return operand(self, expr, callee.type, NONE);
@@ -677,20 +666,23 @@ Operand check_expr_call(Checker *self, Expr *expr) {
     u32 num_params = (u32) arrlen(callee.type->tfunc.params);
     for (u32 i = 0; i < arrlen(expr->ecall.args); i++) {
         CallArg call_arg = expr->ecall.args[i];
-        bool is_vargs_argument = i >= num_params && (callee.type->flags & FUNC_VARGS) == 0;
-        if (is_vargs_argument) {
+        bool is_vargs_argument = i >= (num_params - 1) && (callee.type->flags&FUNC_VARGS);
+        if (i >= num_params && !is_vargs_argument) {
             error(self, call_arg.expr->range, "Too many arguments in call to '%s', expected %ld",
                   tyname(callee.type), num_params);
             break;
         }
-        self->wanted_type = callee.type->tfunc.params[MIN(num_params - 1, i)];
-        if (is_vargs_argument && self->wanted_type->kind == TYPE_SLICE && self->wanted_type->flags & FUNC_VARGS) {
-            self->wanted_type = self->wanted_type->tslice.eltype;
+        wanted = callee.type->tfunc.params[MIN(num_params - 1, i)];
+        if (is_vargs_argument
+            && wanted->kind == TYPE_SLICE
+            && (wanted->flags&FUNC_VARGS))
+        {
+            wanted = wanted->tslice.eltype;
         }
-        Operand arg = check_expr(self, call_arg.expr);
+        Operand arg = check_expr(self, call_arg.expr, wanted);
         if (ret_operand(arg)) return arg;
-        expect_operand_coerces(self, arg, self->wanted_type, call_arg.expr);
-        if (callee.type->flags&FUNC_CVARGS) {
+        expect_operand_coerces(self, arg, wanted, call_arg.expr);
+        if ((callee.type->flags&FUNC_CVARGS) && is_vargs_argument) {
             arg.type = type_cvarg;
             hmput(self->package->operands, arg.key, arg);
         }
@@ -700,9 +692,9 @@ Operand check_expr_call(Checker *self, Expr *expr) {
     return operand(self, expr, result, NONE);
 }
 
-Operand check_expr_field(Checker *self, Expr *expr) {
+Operand check_expr_field(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Operand base = check_expr(self, expr->efield.expr);
+    Operand base = check_expr(self, expr->efield.expr, NULL);
     if (ret_operand(base)) return base;
     const char *name = expr->efield.name->ename;
     if (base.flags == PACKAGE) {
@@ -766,11 +758,11 @@ Operand check_expr_field(Checker *self, Expr *expr) {
     return bad_operand;
 }
 
-Operand check_expr_index(Checker *self, Expr *expr) {
+Operand check_expr_index(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Operand base = check_expr(self, expr->eindex.expr);
+    Operand base = check_expr(self, expr->eindex.expr, NULL);
     if (ret_operand(base)) return base;
-    Operand index = check_expr(self, expr->eindex.index);
+    Operand index = check_expr(self, expr->eindex.index, NULL);
     if (ret_operand(index)) return index;
     if (!is_integer(index.type)) {
         error(self, expr->eindex.index->range, "Cannot index with non integer type '%s'",
@@ -797,10 +789,10 @@ Operand check_expr_index(Checker *self, Expr *expr) {
     return operand(self, expr, type, NONE);
 }
 
-Operand check_expr_func(Checker *self, Expr *expr) {
+Operand check_expr_func(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     push_scope(self); // allow shadowing by declaring a separate params scope
-    Operand type = check_expr_func_type(self, expr->efunc.type);
+    Operand type = check_expr_func_type(self, expr->efunc.type, NULL);
     if (ret_operand(type)) return type;
     for (u32 i = 0; i < arrlen(type.type->tfunc.params); i++) {
         TyFunc func = type.type->tfunc;
@@ -816,7 +808,7 @@ Operand check_expr_func(Checker *self, Expr *expr) {
     if (ret_operand(body)) return body;
     arrpop(self->efuncs);
     for (i64 i = 0; i < arrlen(self->sgotos); i++) { // resolve goto's
-        Operand op = check_expr_name(self, self->sgotos[i]->sgoto);
+        Operand op = check_expr_name(self, self->sgotos[i]->sgoto, NULL);
         if (op.flags != LABEL) error(self, self->sgotos[i]->sgoto->range, "Expected label");
     }
     pop_scope(self);
@@ -825,7 +817,7 @@ Operand check_expr_func(Checker *self, Expr *expr) {
     return operand(self, expr, type.type, NONE);
 }
 
-Operand check_expr_func_type(Checker *self, Expr *expr) {
+Operand check_expr_func_type(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     Ty **params = NULL;
     const char **labels = NULL;
@@ -833,7 +825,7 @@ Operand check_expr_func_type(Checker *self, Expr *expr) {
     arrsetcap(params, arrlen(expr->efunctype.params));
     arrsetcap(result_fields, arrlen(expr->efunctype.result));
     for (u32 i = 0; i < arrlen(expr->efunctype.params); i++) {
-        Operand param = check_expr(self, expr->efunctype.params[i].type);
+        Operand param = check_expr(self, expr->efunctype.params[i].type, NULL);
         if (ret_operand(param)) return param;
         expect_operand_is_a_type(self, param, expr->efunctype.params[i].type);
         if (expr->efunctype.params[i].name)
@@ -841,7 +833,7 @@ Operand check_expr_func_type(Checker *self, Expr *expr) {
         arrput(params, param.type);
     }
     for (u32 i = 0; i < arrlen(expr->efunctype.result); i++) {
-        Operand result = check_expr(self, expr->efunctype.result[i].type);
+        Operand result = check_expr(self, expr->efunctype.result[i].type, NULL);
         if (ret_operand(result)) return result;
         expect_operand_is_a_type(self, result, expr->efunctype.result[i].type);
         TyField field = { NULL, result.type };
@@ -858,37 +850,37 @@ Operand check_expr_func_type(Checker *self, Expr *expr) {
     return operand(self, expr, type, TYPE);
 }
 
-Operand check_expr_array(Checker *self, Expr *expr) {
+Operand check_expr_array(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Operand element = check_expr(self, expr->earray.base);
+    Operand element = check_expr(self, expr->earray.base, NULL);
     if (ret_operand(element)) return element;
     expect_operand_is_a_type(self, element, expr->earray.base);
     if (!expr->earray.len) fatal("Unimplemented"); // TODO: Implicitly sized arrays
-    Operand length = check_expr(self, expr->earray.len);
+    Operand length = check_expr(self, expr->earray.len, NULL);
     if (ret_operand(length)) return length;
     expect_constant(self, length, expr->earray.len);
     Ty *type = type_array(element.type, length.val.u, TYPE);
     return operand(self, expr, type, TYPE);
 }
 
-Operand check_expr_pointer(Checker *self, Expr *expr) {
+Operand check_expr_pointer(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     // FIXME: ??? ALLOW UNRESOLVED TYPES
-    Operand base = check_expr(self, expr->epointer.base);
+    Operand base = check_expr(self, expr->epointer.base, NULL);
     if (ret_operand(base)) return base;
     expect_operand_is_a_type(self, base, expr->epointer.base);
     Ty *type = type_ptr(base.type, NONE);
     return operand(self, expr, type, TYPE);
 }
 
-Operand check_expr_struct(Checker *self, Expr *expr) {
+Operand check_expr_struct(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     TyField *fields = NULL;
     arrsetcap(fields, arrlen(expr->estruct.fields));
     u64 align = 0;
     u64 width = 0;
     for (i64 i = 0; i < arrlen(expr->estruct.fields); i++) {
-        Operand type = check_expr(self, expr->estruct.fields->type);
+        Operand type = check_expr(self, expr->estruct.fields->type, NULL);
         if (ret_operand(type)) return type;
         align = MAX(align, type.type->align);
         for (i64 j = 0; j < arrlen(expr->estruct.fields->names); j++) {
@@ -902,14 +894,14 @@ Operand check_expr_struct(Checker *self, Expr *expr) {
     return operand(self, expr, type, TYPE);
 }
 
-Operand check_expr_union(Checker *self, Expr *expr) {
+Operand check_expr_union(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     TyField *fields = NULL;
     arrsetcap(fields, arrlen(expr->estruct.fields));
     u64 align = 0;
     u64 width = 0;
     for (i64 i = 0; i < arrlen(expr->estruct.fields); i++) {
-        Operand type = check_expr(self, expr->estruct.fields->type);
+        Operand type = check_expr(self, expr->estruct.fields->type, NULL);
         if (ret_operand(type)) return type;
         align = MAX(align, type.type->align);
         for (i64 j = 0; j < arrlen(expr->estruct.fields->names); j++) {
@@ -922,21 +914,19 @@ Operand check_expr_union(Checker *self, Expr *expr) {
     return operand(self, expr, type, NONE);
 }
 
-Operand check_expr_enum(Checker *self, Expr *expr) { return bad_operand; }
+Operand check_expr_enum(Checker *self, Expr *expr, Ty *wanted) { return bad_operand; }
 
 Operand check_decl_val(Checker *self, Decl *decl) {
     TRACE1(CHECKING, STR("val", decl->dval.name->ename));
-    Decl *prev_current_decl = self->current_decl;
-    self->current_decl = decl;
     Sym *sym = checker_sym(self, decl->dval.name, NULL, SYM_VAL);
     Ty *type = NULL;
     if (decl->dval.type) {
-        Operand ty = check_expr(self, decl->dval.type);
+        Operand ty = check_expr(self, decl->dval.type, NULL);
         if (ret_operand(ty)) return ty;
         expect_operand_is_a_type(self, ty, decl->dval.type);
         type = ty.type;
     }
-    Operand op = check_expr(self, decl->dval.val);
+    Operand op = check_expr(self, decl->dval.val, type);
     if (ret_operand(op)) return op;
     if (type) expect_operand_coerces(self, op, type, decl->dval.val);
     sym->type = op.type;
@@ -949,7 +939,6 @@ Operand check_decl_val(Checker *self, Decl *decl) {
         hmput(self->package->operands, op.key, op);
     }
     symbol_mark_checked(sym, op);
-    self->current_decl = prev_current_decl;
     return operand_ok;
 }
 
@@ -957,7 +946,7 @@ Operand check_decl_var(Checker *self, Decl *decl) {
     TRACE(CHECKING);
     Ty *type = NULL;
     if (decl->dvar.type) {
-        Operand ty = check_expr(self, decl->dvar.type);
+        Operand ty = check_expr(self, decl->dvar.type, NULL);
         if (ret_operand(ty)) return ty;
         expect_operand_is_a_type(self, ty, decl->dvar.type);
         type = ty.type;
@@ -965,7 +954,7 @@ Operand check_decl_var(Checker *self, Decl *decl) {
     i64 num_names = arrlen(decl->dvar.names);
     i64 num_values = arrlen(decl->dvar.vals);
     if (num_names > 1 && num_values == 1 && decl->dvar.vals[0]->kind == EXPR_CALL) {
-        Operand call = check_expr_call(self, decl->dvar.vals[0]);
+        Operand call = check_expr_call(self, decl->dvar.vals[0], NULL); // wanted should be ..?
         if (ret_operand(call)) return call;
         if (call.type->kind != TYPE_STRUCT || call.type->flags != TUPLE) {
             error(self, decl->range,
@@ -998,7 +987,7 @@ Operand check_decl_var(Checker *self, Decl *decl) {
     for (i64 i = 0; i < num_names; i++) {
         Expr *expr = decl->dvar.vals[MIN(i, num_values)];
         Sym *sym = checker_sym(self, decl->dvar.names[i], NULL, SYM_VAR);
-        Operand op = check_expr(self, expr);
+        Operand op = check_expr(self, expr, type);
         if (ret_operand(op)) return op;
         symbol_mark_checked(sym, op);
         if (type) expect_operand_coerces(self, op, type, expr);
@@ -1008,7 +997,7 @@ Operand check_decl_var(Checker *self, Decl *decl) {
 
 Operand check_decl_foreign(Checker *self, Decl *decl) {
     TRACE1(CHECKING, STR("val", decl->dforeign.name->ename));
-    Operand type = check_expr(self, decl->dforeign.type);
+    Operand type = check_expr(self, decl->dforeign.type, NULL);
     if (ret_operand(type)) return type;
     expect_operand_is_a_type(self, type, decl->dforeign.type);
     SymKind kind = decl->flags&DECL_CONSTANT ? SYM_VAL : SYM_VAR;
@@ -1044,6 +1033,8 @@ Operand check_decl_import(Checker *self, Decl *decl) { // Nothing to do?
 Operand check_decl_library(Checker *self, Decl *decl) { // Check valid object
     TRACE(CHECKING);
     ExprString epath = decl->dlibrary.path->estr;
+    if (strncmp(epath.str, "libc", sizeof "libc") == 0) return operand_ok;
+    if (strncmp(epath.str, "llvm", sizeof "llvm") == 0) return operand_ok;
     char *dot = strrchr(epath.str, '.');
     if (dot) {
         const char framework_ext[] = ".framework";
@@ -1070,7 +1061,8 @@ Operand check_stmt_assign(Checker *self, Stmt *stmt) {
     i64 num_names = arrlen(stmt->sassign.lhs);
     i64 num_values = arrlen(stmt->sassign.rhs);
     if (num_names > 1 && num_values == 1 && stmt->sassign.rhs[0]->kind == EXPR_CALL) {
-        Operand call = check_expr_call(self, stmt->sassign.rhs[0]);
+        // FIXME: We probably do want to set wanted types through these paths ...
+        Operand call = check_expr_call(self, stmt->sassign.rhs[0], NULL);
         if (ret_operand(call)) return call;
         if (call.type->kind != TYPE_STRUCT || call.type->flags != TUPLE) {
             error(self, stmt->range,
@@ -1085,7 +1077,7 @@ Operand check_stmt_assign(Checker *self, Stmt *stmt) {
                   num_names, num_values);
         }
         for (i64 i = 0; i < num_names; i++) {
-            Operand lhs = check_expr(self, stmt->sassign.lhs[i]);
+            Operand lhs = check_expr(self, stmt->sassign.lhs[i], NULL);
             if (ret_operand(lhs)) return lhs;
             expect_operand_lvalue(self, lhs, stmt->sassign.lhs[i]);
             Ty *rhs = call.type->taggregate.fields[i].type;
@@ -1096,9 +1088,9 @@ Operand check_stmt_assign(Checker *self, Stmt *stmt) {
     }
     for (i64 i = 0; i < num_names; i++) {
         Expr *expr = stmt->sassign.rhs[MIN(i, num_values)];
-        Operand lhs = check_expr(self, stmt->sassign.lhs[i]);
+        Operand lhs = check_expr(self, stmt->sassign.lhs[i], NULL);
         if (ret_operand(lhs)) return lhs;
-        Operand rhs = check_expr(self, expr);
+        Operand rhs = check_expr(self, expr, lhs.type);
         if (ret_operand(rhs)) return rhs;
         expect_operand_lvalue(self, lhs, stmt->sassign.lhs[i]);
         expect_operand_coerces(self, rhs, lhs.type, expr);
@@ -1121,7 +1113,7 @@ Operand check_stmt_return(Checker *self, Stmt *stmt) {
     TyField *fields = functype.type->tfunc.result->taggregate.fields;
     for (i64 i = 0; i < arrlen(stmt->sreturn); i++) {
         Ty *expected = fields[i].type;
-        Operand op = check_expr(self, stmt->sreturn[i]);
+        Operand op = check_expr(self, stmt->sreturn[i], expected);
         if (ret_operand(op)) return op;
         expect_operand_coerces(self, op, expected, stmt->sreturn[i]);
     }
@@ -1168,7 +1160,7 @@ Operand check_stmt_goto(Checker *self, Stmt *stmt) {
         default: fatal("Unrecognized goto kind %d", stmt->flags);
     }
     if (stmt->sgoto) {
-        Operand op = check_expr_name(self, stmt->sgoto);
+        Operand op = check_expr_name(self, stmt->sgoto, NULL);
         if (op.flags != LABEL) error(self, stmt->sgoto->range, "Expected label");
     }
     return operand_ok;
@@ -1188,8 +1180,7 @@ Operand check_stmt_block(Checker *self, Stmt *stmt) {
 Operand check_stmt_if(Checker *self, Stmt *stmt) {
     TRACE(CHECKING);
     push_scope(self);
-    self->wanted_type = type_bool;
-    Operand cond = check_expr(self, stmt->sif.cond);
+    Operand cond = check_expr(self, stmt->sif.cond, type_bool);
     if (ret_operand(cond)) return cond;
     expect_operand_coerces(self, cond, type_bool, stmt->sif.cond);
     Operand pass = check_stmt(self, stmt->sif.pass);
@@ -1213,8 +1204,7 @@ Operand check_stmt_for(Checker *self, Stmt *stmt) {
                 if (ret_operand(init)) return init;
             }
             if (stmt->sfor.cond) {
-                self->wanted_type = type_bool;
-                Operand cond = check_expr(self, stmt->sfor.cond);
+                Operand cond = check_expr(self, stmt->sfor.cond, type_bool);
                 if (ret_operand(cond)) return cond;
                 expect_operand_coerces(self, cond, type_bool, stmt->sfor.cond);
             }
@@ -1225,7 +1215,7 @@ Operand check_stmt_for(Checker *self, Stmt *stmt) {
             break;
         }
         case FOR_AGGREGATE: {
-            Operand aggregate = check_expr(self, stmt->sfor.aggregate);
+            Operand aggregate = check_expr(self, stmt->sfor.aggregate, NULL);
             if (ret_operand(aggregate)) return aggregate;
             STATIC_ASSERT(offsetof(Ty, tarray.eltype) == offsetof(Ty, tslice.eltype));
             if (!is_array(aggregate.type) && !is_slice(aggregate.type)) {
@@ -1258,14 +1248,14 @@ Operand check_stmt_for(Checker *self, Stmt *stmt) {
 Operand check_stmt_switch(Checker *self, Stmt *stmt) {
     TRACE(CHECKING);
     arrput(self->sswitch, stmt);
-    Operand subject = check_expr(self, stmt->sswitch.subject);
+    Operand subject = check_expr(self, stmt->sswitch.subject, NULL);
     if (ret_operand(subject)) return subject;
     SwitchCase *default_case = NULL;
     for (i64 i = 0; i < arrlen(stmt->sswitch.cases); i++) {
         SwitchCase c = stmt->sswitch.cases[i];
         if (c.matches) {
             for (i64 j = 0; j < arrlen(c.matches); j++) {
-                Operand match = check_expr(self, c.matches[j]);
+                Operand match = check_expr(self, c.matches[j], subject.type);
                 if (ret_operand(match)) return match;
                 expect_constant(self, match, c.matches[j]);
                 expect_operand_coerces(self, match, subject.type, c.matches[j]);
@@ -1306,35 +1296,35 @@ Operand check_stmt(Checker *self, Stmt *stmt) {
         case STMT_SWITCH:                  return check_stmt_switch(self, stmt);
         default:
             if (stmt->kind < STMT_KIND_BASE)
-                return check_expr(self, (Expr *) stmt);
+                return check_expr(self, (Expr *) stmt, NULL);
             fatal("Unrecognized StmtKind %d", stmt->kind);
     }
 }
 
-Operand check_expr(Checker *self, Expr *expr) {
+Operand check_expr(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     switch (expr->kind) {
-        case EXPR_NIL:      return check_expr_nil(self, expr);
-        case EXPR_INT:      return check_expr_int(self, expr);
-        case EXPR_FLOAT:    return check_expr_float(self, expr);
-        case EXPR_STR:      return check_expr_str(self, expr);
-        case EXPR_NAME:     return check_expr_name(self, expr);
-        case EXPR_COMPOUND: return check_expr_compound(self, expr);
-        case EXPR_CAST:     return check_expr_cast(self, expr);
-        case EXPR_PAREN:    return check_expr_paren(self, expr);
-        case EXPR_UNARY:    return check_expr_unary(self, expr);
-        case EXPR_BINARY:   return check_expr_binary(self, expr);
-        case EXPR_TERNARY:  return check_expr_ternary(self, expr);
-        case EXPR_CALL:     return check_expr_call(self, expr);
-        case EXPR_FIELD:    return check_expr_field(self, expr);
-        case EXPR_INDEX:    return check_expr_index(self, expr);
-        case EXPR_FUNC:     return check_expr_func(self, expr);
-        case EXPR_FUNCTYPE: return check_expr_func_type(self, expr);
-        case EXPR_ARRAY:    return check_expr_array(self, expr);
-        case EXPR_POINTER:  return check_expr_pointer(self, expr);
-        case EXPR_STRUCT:   return check_expr_struct(self, expr);
-        case EXPR_UNION:    return check_expr_union(self, expr);
-        case EXPR_ENUM:     return check_expr_enum(self, expr);
+        case EXPR_NIL:      return check_expr_nil(self, expr, wanted);
+        case EXPR_INT:      return check_expr_int(self, expr, wanted);
+        case EXPR_FLOAT:    return check_expr_float(self, expr, wanted);
+        case EXPR_STR:      return check_expr_str(self, expr, wanted);
+        case EXPR_NAME:     return check_expr_name(self, expr, wanted);
+        case EXPR_COMPOUND: return check_expr_compound(self, expr, wanted);
+        case EXPR_CAST:     return check_expr_cast(self, expr, wanted);
+        case EXPR_PAREN:    return check_expr_paren(self, expr, wanted);
+        case EXPR_UNARY:    return check_expr_unary(self, expr, wanted);
+        case EXPR_BINARY:   return check_expr_binary(self, expr, wanted);
+        case EXPR_TERNARY:  return check_expr_ternary(self, expr, wanted);
+        case EXPR_CALL:     return check_expr_call(self, expr, wanted);
+        case EXPR_FIELD:    return check_expr_field(self, expr, wanted);
+        case EXPR_INDEX:    return check_expr_index(self, expr, wanted);
+        case EXPR_FUNC:     return check_expr_func(self, expr, wanted);
+        case EXPR_FUNCTYPE: return check_expr_func_type(self, expr, wanted);
+        case EXPR_ARRAY:    return check_expr_array(self, expr, wanted);
+        case EXPR_POINTER:  return check_expr_pointer(self, expr, wanted);
+        case EXPR_STRUCT:   return check_expr_struct(self, expr, wanted);
+        case EXPR_UNION:    return check_expr_union(self, expr, wanted);
+        case EXPR_ENUM:     return check_expr_enum(self, expr, wanted);
         default: fatal("Should not have gotten through parsing");
     }
 }
