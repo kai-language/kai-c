@@ -271,16 +271,6 @@ Type *llvm_float(IRContext *c, u64 bits) {
     }
 }
 
-Type *llvm_function(IRContext *c, Type **params, Type *result, bool vargs) {
-    auto ref = ArrayRef<Type *>((Type **)params, arrlen(params));
-    return FunctionType::get(result, ref, vargs);
-}
-
-Type *llvm_struct(IRContext *c, Type **elements) {
-    auto ref = ArrayRef<Type *>((Type **) elements, arrlen(elements));
-    return StructType::get(c->context, ref);
-}
-
 // MARK: - debug
 
 void set_debug_pos(IRContext *self, Range range) {
@@ -322,13 +312,12 @@ Type *llvm_type(IRContext *c, Ty *type) {
         case TYPE_FLOAT:      return llvm_float(c, type->size * 8);
         case TYPE_PTR:        return PointerType::get(llvm_type(c, type->tptr.base), 0);
         case TYPE_FUNC: {
-            Type **params = NULL;
+            std::vector<Type *> params;
             i64 num_params = arrlen(type->tfunc.params);
             if (type->flags&FUNC_CVARGS) num_params -= 1;
-            arrsetcap(params, num_params);
             for (i64 i = 0; i < num_params; i++) {
                 Type *param = llvm_type(c, type->tfunc.params[i]);
-                arrput(params, param);
+                params.push_back(param);
             }
             Type *result;
             if (type->tfunc.result->kind == TYPE_VOID) {
@@ -338,8 +327,7 @@ Type *llvm_type(IRContext *c, Ty *type) {
             } else {
                 result = llvm_type(c, type->tfunc.result);
             }
-            Type *fn = llvm_function(c, params, result, (type->flags&FUNC_CVARGS) != 0);
-            arrfree(params);
+            Type *fn = FunctionType::get(result, params, type->flags&FUNC_CVARGS);
             return PointerType::get(fn, 0);
         }
         case TYPE_ARRAY: {

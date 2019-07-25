@@ -823,7 +823,7 @@ Operand check_expr_func_type(Checker *self, Expr *expr, Ty *wanted) {
     const char **labels = NULL;
     TyField *result_fields = NULL;
     arrsetcap(params, arrlen(expr->efunctype.params));
-    arrsetcap(result_fields, arrlen(expr->efunctype.result));
+    if (expr->efunctype.result) arrsetcap(result_fields, arrlen(expr->efunctype.result));
     for (u32 i = 0; i < arrlen(expr->efunctype.params); i++) {
         Operand param = check_expr(self, expr->efunctype.params[i].type, NULL);
         if (ret_operand(param)) return param;
@@ -840,7 +840,7 @@ Operand check_expr_func_type(Checker *self, Expr *expr, Ty *wanted) {
         arrput(result_fields, field);
     }
     Ty *result = NULL;
-    if (result_fields && result_fields[0].type == type_void) {
+    if ((result_fields && result_fields[0].type == type_void) || !expr->efunctype.result) {
         arrfree(result_fields);
         result = type_void;
     } else {
