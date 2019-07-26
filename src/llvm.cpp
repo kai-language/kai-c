@@ -41,6 +41,7 @@ extern "C" {
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Utils.h>
+#include <llvm/LinkAllPasses.h>
 
 
 #pragma clang diagnostic pop
@@ -463,9 +464,13 @@ DIType *llvm_debug_type(IRContext *c, Ty *type) {
 AllocaInst *emit_entry_alloca(IRContext *self, Type *type, const char *name, u32 alignment_bytes) {
     IRFunction *fn = &arrlast(self->fn);
     IRBuilder<> b(fn->entry_block);
-    if (fn->last_entry_alloca)
+    if (fn->last_entry_alloca) {
         if (Instruction *next = fn->last_entry_alloca->getNextNode())
             b.SetInsertPoint(next);
+    } else {
+        b.SetInsertPoint(fn->entry_block, fn->entry_block->begin());
+        fn->entry_block->end();
+    }
     AllocaInst *alloca = b.CreateAlloca(type, 0, name ?: "");
     fn->last_entry_alloca = alloca;
     if (alignment_bytes) alloca->setAlignment(alignment_bytes);
@@ -561,7 +566,8 @@ Value *emit_coerced_load(IRContext *self, Value *src, Ty *ty) {
     // extension or truncation to the desired type.
     if ((isa<IntegerType>(dst_ty) || isa<PointerType>(dst_ty)) &&
         (isa<IntegerType>(src_ty) || isa<PointerType>(src_ty))) {
-        Value *load = self->builder.CreateLoad(src);
+        u32 src_align = self->data_layout.getPrefTypeAlignment(src_ty);
+        Value *load = self->builder.CreateAlignedLoad(src, src_align);
         return coerce_int_or_ptr(self, load, dst_ty);
     }
 
@@ -575,16 +581,18 @@ Value *emit_coerced_load(IRContext *self, Value *src, Ty *ty) {
         // to that information.
         src = self->builder.CreateBitCast(
             src, dst_ty->getPointerTo(src_ty->getPointerAddressSpace()));
-        return self->builder.CreateLoad(src);
+        u32 src_align = self->data_layout.getPrefTypeAlignment(src_ty->getPointerElementType());
+        return self->builder.CreateAlignedLoad(src, src_align);
     }
 
     // Otherwise do coercion through memory. This is stupid, but simple.
-    u32 align_bytes = src->getPointerAlignment(self->data_layout);
-    AllocaInst *tmp = emit_entry_alloca(self, src_ty, "coerce.alloca", align_bytes);
+    u32 src_align = self->data_layout.getPrefTypeAlignment(src_ty->getPointerElementType());
+    u32 dst_align = self->data_layout.getPrefTypeAlignment(dst_ty->getPointerElementType());
+    AllocaInst *tmp = emit_entry_alloca(self, src_ty, "coerce.alloca", src_align);
     Value *casted = self->builder.CreateBitCast(tmp, self->ty.rawptr);
     Value *src_casted = self->builder.CreateBitCast(src, self->ty.rawptr);
     self->builder.CreateMemCpy(casted, 0, src_casted, 0, src_size);
-    return self->builder.CreateLoad(tmp);
+    return self->builder.CreateAlignedLoad(tmp, dst_align);
 }
 
 Value *emit_coerced_load(IRContext *self, Value *src, Expr *expr) {
@@ -615,10 +623,12 @@ void emit_coerced_store(IRContext *self, Value *dst, Value *src) {
     Type *src_ty = src->getType();
     Type *dst_ty = dst->getType()->getPointerElementType();
     if (src_ty == dst_ty) {
-        self->builder.CreateStore(src, dst);
+        u32 align = self->data_layout.getPrefTypeAlignment(dst_ty->getPointerElementType());
+        self->builder.CreateAlignedStore(src, dst, align);
         return;
     }
 
+    u32 src_align = self->data_layout.getPrefTypeAlignment(dst_ty->getPointerElementType());
     u64 src_size = self->data_layout.getTypeAllocSize(src_ty);
 
     if (StructType *dst_struct_ty = dyn_cast<StructType>(dst_ty)) {
@@ -630,7 +640,8 @@ void emit_coerced_store(IRContext *self, Value *dst, Value *src) {
     if ((isa<IntegerType>(src_ty) || isa<PointerType>(src_ty)) &&
         (isa<IntegerType>(dst_ty) || isa<PointerType>(dst_ty))) {
         src = coerce_int_or_ptr(self, src, dst_ty);
-        self->builder.CreateStore(src, dst);
+        u32 dst_align = self->data_layout.getPrefTypeAlignment(dst_ty->getPointerElementType());
+        self->builder.CreateAlignedStore(src, dst, dst_align);
         return;
     }
 
@@ -642,14 +653,13 @@ void emit_coerced_store(IRContext *self, Value *dst, Value *src) {
         emit_agg_store(self, src, dst);
     } else {
         // do coercion through memory
-        u32 align_bytes = src->getPointerAlignment(self->data_layout);
-        AllocaInst *tmp = emit_entry_alloca(self, src_ty, "coerce.alloca", align_bytes);
+        AllocaInst *tmp = emit_entry_alloca(self, src_ty, "coerce.alloca", src_align);
+        self->builder.CreateAlignedStore(src, tmp, src_align);
         self->builder.CreateStore(src, tmp);
 
         Value *src_casted = create_element_bitcast(self, tmp, self->ty.i8);
         Value *dst_casted = create_element_bitcast(self, dst, self->ty.i8);
-        u32 src_align = src->getPointerAlignment(self->data_layout);
-        u32 dst_align = dst->getPointerAlignment(self->data_layout);
+        u32 dst_align = self->data_layout.getPrefTypeAlignment(dst_ty->getPointerElementType());
         self->builder.CreateMemCpy(dst_casted, dst_align, src_casted, src_align, dst_size);
     }
 }
@@ -907,7 +917,7 @@ Value *emit_expr_ternary(IRContext *self, Expr *expr) {
 
 Value *emit_expr_call(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr->ecall.expr);
-    Value **args = NULL;
+    std::vector<Value *> args;
     bool is_cvargs = (operand.type->flags&FUNC_CVARGS) != 0;
     for (i64 i = 0; i < arrlen(expr->ecall.args); i++) {
         CallArg arg = expr->ecall.args[i];
@@ -925,15 +935,14 @@ Value *emit_expr_call(IRContext *self, Expr *expr) {
                 self->builder.CreateFPExt(val, self->ty.f64);
             }
         }
-        arrpush(args, val);
+        args.push_back(val);
     }
     bool prev_return_address = self->return_address;
     self->return_address = true;
     Value *fn = emit_expr(self, expr->ecall.expr);
     self->return_address = prev_return_address;
     set_debug_pos(self, expr->range);
-    ArrayRef<Value *> ref = ArrayRef<Value *>(args, arrlen(args));
-    return self->builder.CreateCall(fn, ref);
+    return self->builder.CreateCall(fn, args);
 }
 
 Value *emit_expr_index(IRContext *self, Expr *expr) { return NULL; }
@@ -1362,7 +1371,7 @@ void emit_decl_var(IRContext *self, Decl *decl) {
         // FIXME: This is incomplete, we need to improve, debug stuff & multi return.
         if (expr->kind == EXPR_CALL) {
             if (operand.type->kind == TYPE_STRUCT && (operand.flags&TUPLE) != 0) {
-                fatal("Unimplemented");
+                fatal("Unimplemented, multiple returns as declarations");
             } else {
                 Type *type = llvm_type(self, sym->type);
                 AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
@@ -1584,14 +1593,6 @@ static void addDiscriminatorsPass(const PassManagerBuilder &Builder, legacy::Pas
 bool llvm_emit_object(Package *package) {
     IRContext *self = (IRContext *) package->userdata;
 
-    if (compiler.flags.dump_ir) {
-        std::string buf;
-        raw_string_ostream os(buf);
-        self->module->print(os, nullptr);
-        os.flush();
-        puts(buf.c_str());
-    }
-
     char object_name[MAX_PATH];
     package_object_path(package, object_name);
 
@@ -1645,6 +1646,12 @@ bool llvm_emit_object(Package *package) {
     legacy::PassManager module_pm;
     pm_builder->populateModulePassManager(module_pm);
 
+    module_pm.add(createBasicAAWrapperPass());
+    module_pm.add(createInstructionCombiningPass());
+    module_pm.add(createAggressiveDCEPass());
+    module_pm.add(createReassociatePass());
+    module_pm.add(createPromoteMemoryToRegisterPass());
+
     if (!compiler.flags.disable_all_passes) {
         TargetMachine::CodeGenFileType file_type = TargetMachine::CGFT_ObjectFile;
         if (self->target->addPassesToEmitFile(module_pm, dest, nullptr, file_type)) {
@@ -1663,13 +1670,13 @@ bool llvm_emit_object(Package *package) {
     }
     dest.flush();
 
-//    if (compiler.flags.dump_ir) {
-//        std::string buf;
-//        raw_string_ostream os(buf);
-//        self->module->print(os, nullptr);
-//        os.flush();
-//        puts(buf.c_str());
-//    }
+    if (compiler.flags.dump_ir) {
+        std::string buf;
+        raw_string_ostream os(buf);
+        self->module->print(os, nullptr);
+        os.flush();
+        puts(buf.c_str());
+    }
 
     if (compiler.flags.emit_ir) {
         std::error_code error_code;

@@ -314,6 +314,7 @@ INLINE bool operand_coerces(Checker *self, Operand operand, Ty *dst) {
         }
         case TYPE_PTR: {
             if (src == type_rawptr || dst == type_rawptr) goto update_operand;
+            if (dst == type_bool) goto update_operand;
             return false;
         }
         case TYPE_SLICE: {

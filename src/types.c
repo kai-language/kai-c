@@ -401,6 +401,8 @@ const char *tyname(Ty *type) {
             len += snprintf(buf + len, sizeof buf - len, "fn(");
             for (int i = 0; i < arrlen(type->tfunc.params); i++) {
                 len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tfunc.params[i]));
+                if (i != arrlen(type->tfunc.params) - 1)
+                    len += snprintf(buf + len, sizeof buf - len, ", ");
             }
             len += snprintf(buf + len, sizeof buf - len, ")");
             if (type->tfunc.result) {

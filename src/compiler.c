@@ -72,16 +72,16 @@ const char *ArchNames[NUM_ARCHES] = {
 
 // Type details
 TargetMetrics Os_Linux_ArchSupport[NUM_ARCHES] = {
-    [Arch_x86_64] = { .width = 64, .align = 64 },
+    [Arch_x86_64] = { .width = 8, .align = 8 },
 };
 
 TargetMetrics Os_Darwin_ArchSupport[NUM_ARCHES] = {
-    [Arch_x86_64] = { .width = 64, .align = 64 },
+    [Arch_x86_64] = { .width = 8, .align = 8 },
 };
 
 TargetMetrics Os_Windows_ArchSupport[NUM_ARCHES] = {
-    [Arch_x86_64] = { .width = 64, .align = 64 },
-    [Arch_x86]    = { .width = 32, .align = 32 },
+    [Arch_x86_64] = { .width = 8, .align = 8 },
+    [Arch_x86]    = { .width = 4, .align = 4 },
 };
 
 Os OsForName(const char *name) {
