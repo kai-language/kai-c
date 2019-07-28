@@ -30,7 +30,6 @@ GammaRamp :: struct #opaque
 Image :: struct #opaque
 
 /*** Procedure type declarations ***/
-GlFn              :: fn() -> void
 
 WindowPosFn       :: fn(*Window, i32, i32) -> void
 WindowSizeFn      :: fn(*Window, i32, i32) -> void
@@ -145,7 +144,7 @@ ErrorFn           :: fn(i32, *u8) -> void
 
     MakeContextCurrent :: fn(window: *Window) -> void
     GetCurrentContext :: fn() -> *Window
-    GetProcAddress :: fn(name : *u8) -> GlFn
+    GetProcAddress :: fn(name : *u8) -> rawptr
     ExtensionSupported :: fn(extension: *u8) -> i32
     VulkanSupported :: fn() -> i32
 

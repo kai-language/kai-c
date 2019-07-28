@@ -301,7 +301,7 @@ bool llvm_validate(IRContext *context) {
     return broken;
 }
 
-Type *llvm_type(IRContext *c, Ty *type, bool function = false) {
+Type *llvm_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false) {
     if (type->sym && type->sym->userdata) return (Type *) type->sym->userdata;
     switch (type->kind) {
         case TYPE_INVALID:
@@ -329,12 +329,13 @@ Type *llvm_type(IRContext *c, Ty *type, bool function = false) {
                 result = llvm_type(c, type->tfunc.result);
             }
             Type *fn = FunctionType::get(result, params, type->flags&FUNC_CVARGS);
-            if (function) return fn;
+            if (do_not_hide_behind_pointer) return fn;
             return PointerType::get(fn, 0);
         }
         case TYPE_ARRAY: {
             Type *base = llvm_type(c, type->tarray.eltype);
-            return ArrayType::get(base, type->tarray.length);
+            Type *ty = ArrayType::get(base, type->tarray.length);
+            return ty;
         }
         case TYPE_SLICE: {
             if (type == type_string) return c->ty.rawptr; // FIXME: Temp hack while we don't have slices
@@ -376,7 +377,7 @@ Type *llvm_type(IRContext *c, Ty *type, bool function = false) {
     }
 }
 
-DIType *llvm_debug_type(IRContext *c, Ty *type, bool function = false) {
+DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false) {
     using namespace dwarf;
     switch (type->kind) {
         case TYPE_INVALID:
@@ -436,7 +437,7 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool function = false) {
             DINode::DIFlags flags = DINode::DIFlags::FlagZero;
             unsigned call_conv = 0; // FIXME: Calling convention
             DIType *type = c->dbg.builder->createSubroutineType(p_types, flags, call_conv);
-            if (function) return type;
+            if (do_not_hide_behind_pointer) return type;
             return c->dbg.builder->createPointerType(type, c->data_layout.getPointerSizeInBits());
         }
         case TYPE_ARRAY: {
@@ -821,7 +822,7 @@ Value *emit_expr_compound(IRContext *self, Expr *expr) {
         case TYPE_UNION:
             fatal("Unimplemented");
         case TYPE_ARRAY: {
-            Type *type = llvm_type(self, operand.type);
+            Type *type = llvm_type(self, operand.type, true);
             Value *value = Constant::getNullValue(type);
             if (!expr->ecompound.fields) return value;
             bool is_constant = true;
@@ -857,7 +858,11 @@ Value *emit_expr_compound(IRContext *self, Expr *expr) {
             fatal("Unimplmented");
     }
 }
-Value *emit_expr_cast(IRContext *self, Expr *expr) { return NULL; }
+Value *emit_expr_cast(IRContext *self, Expr *expr) {
+    Value *value = emit_expr(self, expr->ecast.expr);
+    warn("Unimplemented cast");
+    return value;
+}
 
 Value *emit_expr_paren(IRContext *self, Expr *expr) {
     return emit_expr(self, expr->eparen);
@@ -960,7 +965,31 @@ Value *emit_expr_call(IRContext *self, Expr *expr) {
     return self->builder.CreateCall(fn, args);
 }
 
-Value *emit_expr_index(IRContext *self, Expr *expr) { return NULL; }
+Value *emit_expr_index(IRContext *self, Expr *expr) {
+    Operand value_operand = hmget(self->package->operands, expr->eindex.expr);
+    Operand index_operand = hmget(self->package->operands, expr->eindex.index);
+    Value *value = emit_expr(self, expr->eindex.expr, LVALUE);
+    Value *index = emit_expr(self, expr->eindex.index);
+    // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
+    // of an unsigned integer would get wrapped and become negative. We can
+    // prevent this by ZExt-ing the index
+    if (!is_signed(index_operand.type))
+        index = self->builder.CreateZExtOrBitCast(index, self->ty.u64);
+    switch (value_operand.type->kind) {
+        case TYPE_ARRAY: {
+            Value *zero = ConstantInt::get(self->ty.i32, 0);
+            Value *addr = self->builder.CreateGEP(value, {zero, index});
+            return create_load(self, addr);
+        }
+        case TYPE_PTR: {
+            Value *addr = self->builder.CreateGEP(value, index);
+            return create_load(self, addr);
+        }
+        default:
+            fatal("Unhandled case %s", describe_ast(self->package, expr));
+    }
+}
+
 Value *emit_expr_slice(IRContext *self, Expr *expr) { return NULL; }
 
 Function *emit_expr_func(IRContext *self, Expr *expr) {
@@ -1083,13 +1112,13 @@ Function *emit_expr_func(IRContext *self, Expr *expr) {
     return fn;
 }
 
-Value *emit_expr_functype(IRContext *self, Expr *expr) { return NULL; }
-Value *emit_expr_slicetype(IRContext *self, Expr *expr) { return NULL; }
-Value *emit_expr_array(IRContext *self, Expr *expr) { return NULL; }
-Value *emit_expr_pointer(IRContext *self, Expr *expr) { return NULL; }
-Value *emit_expr_struct(IRContext *self, Expr *expr) { return NULL; }
-Value *emit_expr_union(IRContext *self, Expr *expr) { return NULL; }
-Value *emit_expr_enum(IRContext *self, Expr *expr) { return NULL; }
+Value *emit_expr_functype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+Value *emit_expr_slicetype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+Value *emit_expr_array(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+Value *emit_expr_pointer(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+Value *emit_expr_struct(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+Value *emit_expr_union(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+Value *emit_expr_enum(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
 
 Value *emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
     Value *val;
