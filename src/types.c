@@ -411,7 +411,14 @@ const char *tyname(Ty *type) {
             buf[len] = '\0';
             return str_intern(buf);
         }
-        case TYPE_ARRAY:      return "array";
+        case TYPE_ARRAY: {
+            char buf[1024];
+            int len = 0;
+            len += snprintf(buf + len, sizeof buf - len, "[%llu]", type->tarray.length);
+            len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tarray.eltype));
+            buf[len] = '\0';
+            return str_intern(buf);
+        }
         case TYPE_SLICE: return str_join("[]", tyname(type->tslice.eltype));
         case TYPE_STRUCT: {
             if (type->flags&OPAQUE) return "struct #opaque";
@@ -428,6 +435,7 @@ const char *tyname(Ty *type) {
                         len += snprintf(buf + len, sizeof buf - len, ", ");
                 }
                 len += snprintf(buf + len, sizeof buf - len, ")");
+                return str_intern(buf);
             }
             len += snprintf(buf + len, sizeof buf - len, "struct {");
             for (int i = 0; i < arrlen(type->taggregate.fields); i++) {

@@ -133,7 +133,7 @@ CompilerFlags default_flags = {
     .emit_header        = false,
     .dump_ir            = false,
     .disable_all_passes = false,
-    .debug              = true,
+    .debug              = false,
     .link               = true,
 };
 
@@ -460,13 +460,13 @@ bool llvm_emit_object(Package *package) { return false; }
 bool compiler_build(Compiler *compiler) {
     bool failure = llvm_build_module(compiler->packages->value); // the first package is the input
     if (failure) compiler->failure_stage = STAGE_BUILD;
-    return failure;
+    return !failure;
 }
 
 bool compiler_emit_objects(Compiler *compiler) {
     bool failure = llvm_emit_object(compiler->packages->value);
     if (failure) compiler->failure_stage = STAGE_EMIT_OBJECTS;
-    return failure;
+    return !failure;
 }
 
 char *arr_printf(char *arr, const char *fmt, ...) {

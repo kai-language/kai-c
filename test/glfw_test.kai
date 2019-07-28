@@ -9,16 +9,19 @@ panic :: fn(msg: *u8) -> void {
 }
 
 main :: fn() -> void {
-
     window := initGlfw()
     if !window panic("Failed to create window")
     defer glfw.Terminate()
 
-    libc.printf(nil)
+    opengl.init(glfw.GetProcAddress)
+
+    err := opengl.GetError()
+    if err != opengl.NO_ERROR panic("OpenGL encountered an error during init")
 
     for !glfw.WindowShouldClose(window) {
         glfw.PollEvents()
         if glfw.GetKey(window, glfw.KEY_ESCAPE) break
+        opengl.Clear(opengl.COLOR_BUFFER_BIT | opengl.DEPTH_BUFFER_BIT)
         glfw.SwapBuffers(window)
     }
 }
@@ -30,8 +33,7 @@ glfwErrorCallback :: fn(error: i32, desc: *u8) -> void {
 initGlfw :: fn() -> *glfw.Window {
     glfw.SetErrorCallback(glfwErrorCallback)
 
-    if !glfw.Init()
-        return nil
+    if !glfw.Init() return nil
 
     glfw.WindowHint(glfw.SAMPLES, 4)
     glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
@@ -40,9 +42,8 @@ initGlfw :: fn() -> *glfw.Window {
     glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, 1)
 
     window := glfw.CreateWindow(1280, 720, "Kai GLFW example", nil, nil)
-    if !window return nil
 
-    glfw.MakeContextCurrent(window)
+    if window glfw.MakeContextCurrent(window)
 
     return window
 }

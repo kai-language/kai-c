@@ -511,7 +511,7 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
                     expect_operand_coerces(self, op, expected_type, field.val);
                 } else {
                     /* FIXME: this logic enables arrays of single types to be specified without
-                     needing to name a type IE: starters := { "one", "two", "three" } is string[3]
+                     needing to name a type IE: starters := { "one", "two", "three" } is [3]string
                      The issue is that because we automatically type constant numbers with smallest
                      possible types by default ... we would encounter an error with { 1, 256 }
                      as the 1 would infer to u8 but then 256 would not coerce to u8. We want the
