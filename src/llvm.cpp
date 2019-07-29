@@ -1611,7 +1611,7 @@ void emit_stmt(IRContext *self, Stmt *stmt) {
         case (StmtKind) DECL_IMPORT: return emit_decl_import(self, (Decl *) stmt);
         case (StmtKind) DECL_LIBRARY: return emit_decl_library(self, (Decl *) stmt);
         case (StmtKind) DECL_FOREIGN: return emit_decl_foreign(self, (Decl *) stmt);
-        case (StmtKind) DECL_FOREIGNBLOCK: return emit_decl_foreignblock(self, (Decl *) stmt);
+        case (StmtKind) DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, (Decl *) stmt);
         case STMT_LABEL:
             emit_stmt_label(self, stmt);
             break;
@@ -1658,7 +1658,7 @@ void emit_decl(IRContext *self, Decl *decl) {
         case DECL_IMPORT: return emit_decl_import(self, decl);
         case DECL_LIBRARY: return emit_decl_library(self, decl);
         case DECL_FOREIGN: return emit_decl_foreign(self, decl);
-        case DECL_FOREIGNBLOCK: return emit_decl_foreignblock(self, decl);
+        case DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, decl);
         default:
             fatal("Unrecognized DeclKind %s", describe_ast_kind(decl->kind));
     }
@@ -1685,7 +1685,7 @@ void llvm_emit_stmt(IRContext *self, Stmt *stmt) {
             break;
         case (StmtKind) DECL_LIBRARY:
         case (StmtKind) DECL_FOREIGN:
-        case (StmtKind) DECL_FOREIGNBLOCK:
+        case (StmtKind) DECL_FOREIGN_BLOCK:
             break;
         case STMT_LABEL: 
             emit_stmt_label(self, stmt);

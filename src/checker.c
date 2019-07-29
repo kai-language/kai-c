@@ -1281,7 +1281,7 @@ Operand check_stmt(Checker *self, Stmt *stmt) {
         case (StmtKind) DECL_VAL:          return check_decl_val(self, (Decl *) stmt);
         case (StmtKind) DECL_VAR:          return check_decl_var(self, (Decl *) stmt);
         case (StmtKind) DECL_FOREIGN:      return check_decl_foreign(self, (Decl *) stmt);
-        case (StmtKind) DECL_FOREIGNBLOCK: return check_decl_foreign_block(self, (Decl *) stmt);
+        case (StmtKind) DECL_FOREIGN_BLOCK: return check_decl_foreign_block(self, (Decl *) stmt);
         case (StmtKind) DECL_IMPORT:       return check_decl_import(self, (Decl *) stmt);
         case (StmtKind) DECL_LIBRARY:      return check_decl_library(self, (Decl *) stmt);
         case (StmtKind) DECL_FILE:         return operand_ok;

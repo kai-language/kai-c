@@ -384,7 +384,7 @@ void parser_declare(Parser *self, Decl *decl) {
             scope_declare(self->package->scope, sym);
             break;
         }
-        case DECL_FOREIGNBLOCK: {
+        case DECL_FOREIGN_BLOCK: {
             fatal("Parser should call parser_declare for each member of the block");
         }
         default:
@@ -894,7 +894,8 @@ Stmt *parse_simple_stmt(Parser *self) {
             expect_single_expr(self, exprs);
             expect_single_expr(self, rhs);
             Range range = {exprs[0]->range.start, arrlast(rhs)->range.end};
-            rhs[0] = new_expr_binary(self->package, range, op, exprs[0], rhs[0]);
+            Expr *lhs = ast_copy(self->package, exprs[0]);
+            rhs[0] = new_expr_binary(self->package, range, op, lhs, rhs[0]);
             return new_stmt_assign(self->package, range, exprs, rhs);
         }
         case TK_Colon: {

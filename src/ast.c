@@ -10,7 +10,7 @@ STATIC_ASSERT(offsetof(Ast, range) == offsetof(Stmt, range));
 STATIC_ASSERT(offsetof(Ast, range) == offsetof(Decl, range));
 
 void *ast_alloc(Package *package, int kind, int flags, Range range, size_t size) {
-    ASSERT(size >= sizeof(Ast));
+    ASSERT(size >= offsetof(Ast, enil));
     ASSERT(kind < UINT8_MAX);
     ASSERT(flags < UINT8_MAX);
     Ast *ast = arena_alloc(&package->arena, size);
@@ -235,7 +235,7 @@ Decl *new_decl_foreign(Package *package, Range range, DeclFlags flags,
 Decl *new_decl_foreign_block(Package *package, Range range, Decl **decls,
                              Expr *linkprefix, Expr *callconv)
 {
-    Decl *d = ast_alloc(package, DECL_FOREIGNBLOCK, 0, range, ast_size(Decl, dforeign_block));
+    Decl *d = ast_alloc(package, DECL_FOREIGN_BLOCK, 0, range, ast_size(Decl, dforeign_block));
     d->dforeign_block.linkprefix = linkprefix;
     d->dforeign_block.callconv = callconv;
     d->dforeign_block.decls = decls;
@@ -369,7 +369,7 @@ const char *describe_ast_kind(int kind) {
         case DECL_IMPORT:       return "import";
         case DECL_LIBRARY:      return "library";
         case DECL_FOREIGN:      return "foreign";
-        case DECL_FOREIGNBLOCK: return "foreign_block";
+        case DECL_FOREIGN_BLOCK: return "foreign_block";
         case STMT_LABEL:        return "label";
         case STMT_ASSIGN:       return "assign";
         case STMT_RETURN:       return "return";
@@ -423,3 +423,306 @@ const char *describe_op(Op op) {
     }
 }
 
+int ast_sizes[] = {
+    [INVALID]            = sizeof(Stmt),
+    [EXPR_NIL]           = ast_size(Expr, enil),
+    [EXPR_INT]           = ast_size(Expr, eint),
+    [EXPR_FLOAT]         = ast_size(Expr, efloat),
+    [EXPR_STR]           = ast_size(Expr, estr),
+    [EXPR_NAME]          = ast_size(Expr, ename),
+    [EXPR_COMPOUND]      = ast_size(Expr, ecompound),
+    [EXPR_CAST]          = ast_size(Expr, ecast),
+    [EXPR_PAREN]         = ast_size(Expr, eparen),
+    [EXPR_UNARY]         = ast_size(Expr, eunary),
+    [EXPR_BINARY]        = ast_size(Expr, ebinary),
+    [EXPR_TERNARY]       = ast_size(Expr, eternary),
+    [EXPR_CALL]          = ast_size(Expr, ecall),
+    [EXPR_FIELD]         = ast_size(Expr, efield),
+    [EXPR_INDEX]         = ast_size(Expr, eindex),
+    [EXPR_SLICE]         = ast_size(Expr, eslice),
+    [EXPR_FUNC]          = ast_size(Expr, efunc),
+    [EXPR_FUNCTYPE]      = ast_size(Expr, efunctype),
+    [EXPR_SLICETYPE]     = ast_size(Expr, eslicetype),
+    [EXPR_ARRAY]         = ast_size(Expr, earray),
+    [EXPR_POINTER]       = ast_size(Expr, epointer),
+    [EXPR_STRUCT]        = ast_size(Expr, estruct),
+    [EXPR_UNION]         = ast_size(Expr, eunion),
+    [EXPR_ENUM]          = ast_size(Expr, eenum),
+    [DECL_VAR]           = ast_size(Decl, dvar),
+    [DECL_VAL]           = ast_size(Decl, dval),
+    [DECL_IMPORT]        = ast_size(Decl, dimport),
+    [DECL_LIBRARY]       = ast_size(Decl, dlibrary),
+    [DECL_FOREIGN]       = ast_size(Decl, dforeign),
+    [DECL_FOREIGN_BLOCK] = ast_size(Decl, dforeign_block),
+    [DECL_FILE]          = ast_size(Decl, dfile),
+    [STMT_LABEL]         = ast_size(Stmt, slabel),
+    [STMT_ASSIGN]        = ast_size(Stmt, sassign),
+    [STMT_RETURN]        = ast_size(Stmt, sreturn),
+    [STMT_DEFER]         = ast_size(Stmt, sdefer),
+    [STMT_USING]         = ast_size(Stmt, susing),
+    [STMT_GOTO]          = ast_size(Stmt, sgoto),
+    [STMT_BLOCK]         = ast_size(Stmt, sblock),
+    [STMT_IF]            = ast_size(Stmt, sif),
+    [STMT_FOR]           = ast_size(Stmt, sfor),
+    [STMT_SWITCH]        = ast_size(Stmt, sswitch),
+    [STMT_NAMES]         = ast_size(Stmt, snames),
+};
+
+void *ast_copy(Package *package, void *ast) {
+    ASSERT(ast);
+    Ast *old = ast;
+    int size = ast_sizes[old->kind];
+
+#define copy(ast) (ast_copy(package, (ast)))
+#define copy_can_null(ast) ((ast) ? ast_copy(package, (ast)) : NULL)
+
+    Ast *new = arena_alloc(&package->arena, size);
+    memcpy(new, old, size);
+
+    switch (old->kind) {
+        case INVALID: return ast;
+        case EXPR_NIL: return new;
+        case EXPR_INT: return new;
+        case EXPR_FLOAT: return new;
+        case EXPR_STR: return new;
+        case EXPR_NAME: return new;
+        case EXPR_COMPOUND: {
+            new->ecompound.fields = NULL;
+            for (i64 i = 0; i < arrlen(old->ecompound.fields); i++) {
+                CompoundField field = old->ecompound.fields[i];
+                field.key = copy_can_null(field.key);
+                field.val = copy(field.val);
+                arrput(new->ecompound.fields, field);
+            }
+            new->ecompound.type = copy_can_null(old->ecompound.type);
+            return new;
+        }
+        case EXPR_CAST: {
+            new->ecast.type = copy_can_null(old->ecast.type);
+            new->ecast.expr = copy_can_null(old->ecast.expr);
+            return new;
+        }
+        case EXPR_PAREN: {
+            new->eparen = copy(old->eparen);
+            return new;
+        }
+        case EXPR_UNARY: {
+            new->eunary = copy(old->eparen);
+            return new;
+        }
+        case EXPR_BINARY: {
+            new->ebinary.elhs = copy(old->ebinary.elhs);
+            new->ebinary.erhs = copy(old->ebinary.erhs);
+            return new;
+        }
+        case EXPR_TERNARY: {
+            new->eternary.econd = copy(old->eternary.econd);
+            new->eternary.epass = copy_can_null(old->eternary.epass);
+            new->eternary.efail = copy(old->eternary.efail);
+            return new;
+        }
+        case EXPR_CALL: {
+            new->ecall.expr = copy(old->ecall.expr);
+            new->ecall.args = NULL;
+            for (i64 i = 0; i < arrlen(old->ecall.args); i++) {
+                CallArg arg = old->ecall.args[i];
+                arg.name = copy_can_null(arg.name);
+                arg.expr = copy(arg.expr);
+                arrput(new->ecall.args, arg);
+            }
+            return new;
+        }
+        case EXPR_FIELD: {
+            new->efield.expr = copy(old->efield.expr);
+            new->efield.name = copy(old->efield.name);
+            return new;
+        }
+        case EXPR_INDEX: {
+            new->eindex.expr = copy(old->eindex.expr);
+            new->eindex.index = copy(old->eindex.index);
+            return new;
+        }
+        case EXPR_SLICE: {
+            new->eslice.base = copy(old->eslice.base);
+            new->eslice.lo = copy_can_null(old->eslice.lo);
+            new->eslice.hi = copy_can_null(old->eslice.hi);
+            return new;
+        }
+        case EXPR_FUNC: {
+            new->efunc.type = copy(old->efunc.type);
+            new->efunc.body = copy(old->efunc.body);
+            return new;
+        }
+        case EXPR_FUNCTYPE: {
+            new->efunctype.params = NULL;
+            for (i64 i = 0; i < arrlen(old->efunctype.params); i++) {
+                FuncParam param = old->efunctype.params[i];
+                param.name = copy_can_null(param.name);
+                param.type = copy(param.type);
+                arrput(new->efunctype.params, param);
+            }
+            new->efunctype.result = NULL;
+            for (i64 i = 0; i < arrlen(old->efunctype.result); i++) {
+                FuncParam result = old->efunctype.result[i];
+                result.name = copy_can_null(result.name);
+                result.type = copy(result.type);
+                arrput(new->efunctype.result, result);
+            }
+            return new;
+        }
+        case EXPR_SLICETYPE: {
+            new->eslicetype = copy(old->eslicetype);            
+            return new;
+        }
+        case EXPR_ARRAY: {
+            new->earray.base = copy(old->earray.base);
+            new->earray.len = copy_can_null(old->earray.len);
+            return new;
+        }
+        case EXPR_POINTER: {
+            new->epointer.base = copy(old->epointer.base);
+            return new;
+        }
+        case EXPR_STRUCT: {
+            new->estruct.fields = NULL;
+            for (i64 i = 0; i < arrlen(old->estruct.fields); i++) {
+                AggregateField field = old->estruct.fields[i];
+                Expr **names = NULL;
+                for (i64 i = 0; i < arrlen(field.names); i++) {
+                    Expr *name = copy(field.names[i]);
+                    arrput(names, name);
+                }
+                field.names = names;
+                field.type = copy(field.type);
+                arrput(new->estruct.fields, field);
+            }
+            return new;
+        }
+        case EXPR_UNION: {
+            new->eunion.fields = NULL;
+            for (i64 i = 0; i < arrlen(old->estruct.fields); i++) {
+                AggregateField field = old->eunion.fields[i];
+                Expr **names = NULL;
+                for (i64 i = 0; i < arrlen(field.names); i++) {
+                    Expr *name = copy(field.names[i]);
+                    arrput(names, name);
+                }
+                field.names = names;
+                field.type = copy(field.type);
+                arrput(new->eunion.fields, field);
+            }
+            return new;
+        }
+        case EXPR_ENUM: {
+            new->eenum.items = NULL;
+            for (i64 i = 0; i < arrlen(old->eenum.items); i++) {
+                EnumItem item = old->eenum.items[i];
+                item.name = copy(item.name);
+                item.init = copy_can_null(item.init);
+                arrput(new->eenum.items, item);
+            }
+            new->eenum.type = copy(old->eenum.type);
+            return new;
+        }
+        case DECL_VAR: {
+            new->dvar.names = NULL;
+            for (i64 i = 0; i < arrlen(old->dvar.names); i++) {
+                Expr *name = copy(old->dvar.names[i]);
+                arrput(new->dvar.names, name);
+            }
+            new->dvar.type = copy_can_null(old->dvar.type);
+            new->dvar.vals = NULL;
+            for (i64 i = 0; i < arrlen(old->dvar.vals); i++) {
+                Expr *val = copy(old->dvar.vals[i]);
+                arrput(new->dvar.vals, val);
+            }
+            return new;
+        }
+        case DECL_VAL: {
+            new->dval.name = copy(old->dval.name);
+            new->dval.type = copy(old->dval.type);
+            new->dval.val = copy(old->dval.val);
+            return new;
+        }
+        case DECL_IMPORT:
+        case DECL_LIBRARY:
+        case DECL_FOREIGN: // TODO: Make sure when we implement polymorphing that we forbid foreign
+        case DECL_FOREIGN_BLOCK:
+        case DECL_FILE: return new; // N/A currently very little reason to polymorph these
+        case STMT_LABEL: {
+            new->slabel = copy(old->slabel);
+            return new;
+        }
+        case STMT_ASSIGN: {
+            new->sassign.lhs = NULL;
+            new->sassign.rhs = NULL;
+            for (i64 i = 0; i < arrlen(old->sassign.lhs); i++) {
+                Expr *lhs = copy(old->sassign.lhs[i]);
+                Expr *rhs = copy(old->sassign.rhs[i]);
+                arrput(new->sassign.lhs, lhs);
+                arrput(new->sassign.rhs, rhs);
+            }
+            return new;
+        }
+        case STMT_RETURN: {
+            new->sreturn = NULL;
+            for (i64 i = 0; i < arrlen(old->sreturn); i++) {
+                Expr *expr = copy(old->sreturn[i]);
+                arrput(new->sreturn, expr);
+            }
+            return new;
+        }
+        case STMT_DEFER: {
+            new->sdefer = copy(old->sdefer);
+            return new;
+        }
+        case STMT_USING: fatal("Unimplemented");
+        case STMT_GOTO: {
+            new->sgoto = copy_can_null(old->sgoto);
+            return new;
+        }
+        case STMT_BLOCK: {
+            new->sblock = NULL;
+            for (i64 i = 0; i < arrlen(old->sblock); i++) {
+                Stmt *stmt = copy(old->sblock[i]);
+                arrput(new->sblock, stmt);
+            }
+            return new;
+        }
+        case STMT_IF: {
+            new->sif.cond = copy(old->sif.cond);
+            new->sif.pass = copy(old->sif.pass);
+            new->sif.fail = copy_can_null(old->sif.fail);
+            return new;
+        }
+        case STMT_FOR: {
+            new->sfor.init = copy_can_null(old->sfor.init);
+            new->sfor.cond = copy_can_null(old->sfor.cond);
+            new->sfor.step = copy_can_null(old->sfor.step);
+            new->sfor.body = copy(old->sfor.body);
+            return new;
+        }
+        case STMT_SWITCH: {
+            new->sswitch.subject = copy(old->sswitch.subject);
+            new->sswitch.cases = NULL;
+            for (i64 i = 0; i < arrlen(old->sswitch.cases); i++) {
+                SwitchCase cse = old->sswitch.cases[i];
+                cse.body = copy(cse.body);
+                Expr **matches = NULL;
+                for (i64 i = 0; i < arrlen(cse.matches); i++) {
+                    Expr *match = copy(cse.matches[i]);
+                    arrput(matches, match);
+                }
+                cse.matches = matches;
+                arrput(new->sswitch.cases, cse);
+            }
+            return new;
+        }
+        case STMT_NAMES:
+        default:
+            fatal("Unrecognized ast case %s", describe_ast(package, ast));
+    }
+
+#undef copy
+#undef copy_can_null
+}

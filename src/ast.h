@@ -22,13 +22,6 @@ struct Range {
     u32 end;
 };
 
-typedef struct Ast Ast;
-struct Ast {
-    u8 kind : 8;
-    u8 flags : 8;
-    Range range;
-};
-
 typedef struct ExprString ExprString;
 struct ExprString {
     char *str;
@@ -101,8 +94,8 @@ struct ExprIndex {
 typedef struct ExprSlice ExprSlice;
 struct ExprSlice {
     Expr *base;
-    Expr *lo;
-    Expr *hi;
+    Expr *lo; // opt
+    Expr *hi; // opt
 };
 
 typedef enum FuncFlags {
@@ -329,7 +322,7 @@ typedef enum Op {
 typedef struct Expr Expr;
 struct Expr {
     ExprKind kind : 8;
-    u8 flags;
+    u8 flags : 8;
     Range range;
     union {
         u8 enil[0];
@@ -365,7 +358,7 @@ typedef enum DeclKind {
     DECL_IMPORT       = DECL_KIND_BASE + 0x2,
     DECL_LIBRARY      = DECL_KIND_BASE + 0x3,
     DECL_FOREIGN      = DECL_KIND_BASE + 0x4,
-    DECL_FOREIGNBLOCK = DECL_KIND_BASE + 0x5,
+    DECL_FOREIGN_BLOCK = DECL_KIND_BASE + 0x5,
     DECL_FILE         = DECL_KIND_BASE + 0x6,
 } DeclKind;
 
@@ -377,7 +370,7 @@ typedef enum DeclFlags {
 typedef struct Decl Decl;
 struct Decl {
     DeclKind kind : 8;
-    u8 flags;
+    u8 flags : 8;
     Range range;
     union {
         Source *dfile;
@@ -407,7 +400,7 @@ typedef enum StmtKind {
 typedef struct Stmt Stmt;
 struct Stmt {
     StmtKind kind : 8;
-    u8 flags;
+    u8 flags : 8;
     Range range;
     union {
         Expr *slabel;
@@ -422,6 +415,63 @@ struct Stmt {
         StmtSwitch sswitch;
 
         Expr **snames; // arr
+    };
+};
+
+typedef struct Ast Ast;
+struct Ast {
+    u8 kind : 8;
+    u8 flags : 8;
+    Range range;
+    union {
+        // Exprs
+        u8 enil[0];
+        u64 eint;
+        f64 efloat;
+        const char *ename;
+        ExprString estr;
+        ExprCompound ecompound;
+        ExprCast ecast;
+        Expr *eparen;
+        Expr *eunary;
+        ExprBinary ebinary;
+        ExprTernary eternary;
+        ExprCall ecall;
+        ExprField efield;
+        ExprIndex eindex;
+        ExprSlice eslice;
+        ExprFunc efunc;
+
+        ExprFuncType efunctype;
+        ExprArray earray;
+        Expr *eslicetype;
+        ExprPointer epointer;
+        ExprAggregate estruct;
+        ExprAggregate eunion;
+        ExprEnum eenum;
+
+        // Stmts
+        Expr *slabel;
+        StmtAssign sassign;
+        Expr **sreturn; // arr
+        Stmt *sdefer;
+        Expr **susing; // arr
+        Expr *sgoto;
+        Stmt **sblock; // arr
+        StmtIf sif;
+        StmtFor sfor;
+        StmtSwitch sswitch;
+
+        Expr **snames; // arr
+
+        // Decls
+        Source *dfile;
+        DeclVal dval;
+        DeclVar dvar;
+        DeclImport dimport;
+        DeclLibrary dlibrary;
+        DeclForeign dforeign;
+        DeclForeignBlock dforeign_block;
     };
 };
 
@@ -478,3 +528,5 @@ const char *describe_goto_kind(int kind);
 const char *describe_ast_kind(int kind);
 const char *describe_ast(Package *package, void *p);
 const char *describe_op(Op op);
+
+void *ast_copy(Package *package, void *ast);

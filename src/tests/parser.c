@@ -154,12 +154,12 @@ void test_parse_foreign() {
 }
 
 void test_parse_foreignblock() {
-    ASKIND(DECL_FOREIGNBLOCK,
+    ASKIND(DECL_FOREIGN_BLOCK,
            "#foreign libc {" "\n"
            "  printf :: fn(fmt: *u8, args: any..) -> i32" "\n"
            "  puts :: fn(str: *u8) -> i32" "\n"
            "}");
-    ASKIND(DECL_FOREIGNBLOCK,
+    ASKIND(DECL_FOREIGN_BLOCK,
            "#foreign libc #linkprefix \"glfw\" #callconv \"c\"" "\n"
            "{" "\n"
            "  Init :: fn -> i32" "\n"
