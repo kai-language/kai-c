@@ -740,6 +740,78 @@ start:
     return val;
 }
 
+Value *create_cast(IRContext *self, Value *val, Expr *expr, bool is_lvalue = false) {
+    Ty *dst = hmget(self->package->operands, expr).type;
+    if (dst == type_cvarg) return val; // FIXME: C Varg rules
+    Type *dst_ty = llvm_type(self, dst);
+start:
+    Type *val_ty = val->getType();
+    if (val_ty == dst_ty) return val;
+    if (is_lvalue && val_ty->getPointerElementType() == dst_ty) return val;
+    switch (val_ty->getTypeID()) {
+        case Type::VoidTyID: return val;
+        case Type::HalfTyID:
+        case Type::FloatTyID:
+        case Type::DoubleTyID:
+        case Type::X86_FP80TyID:
+        case Type::FP128TyID:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return val;
+                }
+                case Type::IntegerTyID: { // TODO: Coercion rules shouldn't allow ftoi
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return val;
+                }
+                default:
+                    break;
+            }
+            break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
+            if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
+            return self->builder.CreateZExtOrTrunc(val, dst_ty);
+        }
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
+            return val;
+        }
+        case Type::StructTyID: return val;
+        case Type::ArrayTyID: return val;
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+            }
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+            if (isa<FunctionType>(val_ty)) return val;
+            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
+            // FIXME: IF isa<ArrayType> What do?
+            return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
+        }
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
+    }
+    return val;
+}
+
 // MARK: - Emission
 
 Value *emit_expr(IRContext *self, Expr *expr, bool is_lvalue = false);
@@ -858,10 +930,76 @@ Value *emit_expr_compound(IRContext *self, Expr *expr) {
             fatal("Unimplmented");
     }
 }
+
 Value *emit_expr_cast(IRContext *self, Expr *expr) {
-    Value *value = emit_expr(self, expr->ecast.expr);
-    warn("Unimplemented cast");
-    return value;
+    Ty *dst = hmget(self->package->operands, expr->ecast.type).type;
+    Type *dst_ty = llvm_type(self, dst);
+    Value *val = emit_expr(self, expr->ecast.expr);
+start:
+    Type *val_ty = val->getType();
+    if (val_ty == dst_ty) return val;
+    switch (val_ty->getTypeID()) {
+        case Type::VoidTyID: return val;
+        case Type::HalfTyID:
+        case Type::FloatTyID:
+        case Type::DoubleTyID:
+        case Type::X86_FP80TyID:
+        case Type::FP128TyID:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return val;
+                }
+                case Type::IntegerTyID: {
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return val;
+                }
+                default:
+                    break;
+            }
+            break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
+            if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
+            return self->builder.CreateZExtOrTrunc(val, dst_ty);
+        }
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
+            return val;
+        }
+        case Type::StructTyID: return val;
+        case Type::ArrayTyID: return val;
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+            }
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+            if (isa<FunctionType>(val_ty)) return val;
+            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
+            // FIXME: IF isa<ArrayType> What do?
+            return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
+        }
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
+    }
+    return val;
 }
 
 Value *emit_expr_paren(IRContext *self, Expr *expr) {

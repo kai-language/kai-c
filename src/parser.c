@@ -14,7 +14,7 @@
 #include "queue.h"
 #include "compiler.h"
 
-#define error(self, range, fmt, ...) add_error(self->package, range, fmt, ##__VA_ARGS__)
+#define error(self, range, fmt, ...) (self->was_error_in_line = true, add_error(self->package, range, fmt, ##__VA_ARGS__))
 #define note(self, range, fmt, ...) add_note(self->package, range, fmt, ##__VA_ARGS__)
 
 void parse_source(Package *package, Source *source);
@@ -24,7 +24,6 @@ const char *name_for_import(const char *in_path);
 INLINE Token eat_tok(Parser *self);
 INLINE bool is_eof(Parser *self);
 
-const char *intern_in;
 const char *keywords[] = {
     [KW_IF] = "if",
     [KW_FN] = "fn",
@@ -38,7 +37,7 @@ const char *keywords[] = {
     [KW_USING] = "using",
     [KW_DEFER] = "defer",
     [KW_CAST] = "cast",
-    [KW_AUTOCAST] = "autocast",
+    [KW_AUTOCAST] = "autocast", // FIXME: Determine fate
     [KW_GOTO] = "goto",
     [KW_BREAK] = "break",
     [KW_RETURN] = "return",
@@ -107,6 +106,7 @@ void ensure_interned_string(Parser *self, Expr *expr) {
 void parser_online(Parser *self, u32 offset) {
     TRACE(PARSING);
     self->was_newline = true;
+    self->was_error_in_line = false;
     arrput(self->source->line_offsets, offset);
 }
 
@@ -261,8 +261,9 @@ bool match_tok(Parser *self, TokenKind kind) {
 INLINE
 bool expect_tok(Parser *self, TokenKind kind) {
     if (!is_tok(self, kind)) {
-        error(self, parser_range(self), "Expected token %s, got %s",
-              token_name(kind), token_info(self->tok));
+        if (!self->was_error_in_line)
+            error(self, parser_range(self), "Expected token %s, got %s",
+                  token_name(kind), token_info(self->tok));
         return false;
     }
     eat_tok(self);
@@ -300,7 +301,14 @@ bool expect_terminator(Parser *self) {
         self->was_terminator = result;
         return true;
     }
-    error(self, parser_range(self), "Expected ';' or newline");
+    // Check for error on line.
+    if (!self->was_error_in_line)
+        error(self, parser_range(self), "Expected ';' or newline");
+
+    // Eat to the next terminator, loosely resetting the parser
+    while (!is_tok(self, TK_Terminator) && !self->was_newline) eat_tok(self);
+    match_terminator(self);
+
     return false;
 }
 
@@ -581,7 +589,10 @@ Expr *parse_expr_atom(Parser *self) {
             Expr *length = NULL;
             if (!match_tok(self, TK_Ellipsis)) length = parse_expr(self);
             expect_tok(self, TK_Rbrack);
+            u32 prev_expr_level = self->expr_level;
+            self->expr_level = -1;
             Expr *type = parse_expr(self);
+            self->expr_level = prev_expr_level;
             return new_expr_array(self->package, r(start, type->range.end), type, length);
         }
         case TK_Lbrace: {
@@ -626,6 +637,13 @@ Expr *parse_expr_atom(Parser *self) {
             } else if (name == keywords[KW_NIL]) {
                 eat_tok(self);
                 return new_expr_nil(self->package, r(start, self->olast));
+            } else if (name == keywords[KW_CAST]) {
+                eat_tok(self);
+                expect_tok(self, TK_Lparen);
+                Expr *type = parse_expr(self);
+                expect_tok(self, TK_Rparen);
+                Expr *expr = parse_expr(self);
+                return new_expr_cast(self->package, r(start, self->olast), type, expr);
             }
             eat_tok(self);
             error(self, r(start, self->olast), "Unexpected keyword '%s'", name);
@@ -1257,6 +1275,9 @@ void parser_init_interns(void) {
         directives[i] = str_intern(directive);
     }
     intern_in = str_intern("in");
+    intern_ptr = str_intern("ptr");
+    intern_len = str_intern("len");
+    intern_cap = str_intern("cap");
 }
 
 #undef error

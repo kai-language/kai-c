@@ -191,7 +191,7 @@ PosInfo package_posinfo(Package *package, u32 pos) {
     if (!source) return (PosInfo){0};
     u32 offset = pos - source->start;
     u32 start_of_line = 0;
-    u32 lineno = 0;
+    u32 lineno = 1;
     if (source->line_offsets) {
         for (int i = 0; i < arrlen(source->line_offsets); i++) {
             lineno++;
@@ -260,7 +260,7 @@ char *highlight_line(
     const char *start, const char *end)
 {
     ASSERT(line <= start);
-//    ASSERT(line_end >= end);
+    ASSERT(line_end >= end);
     int len_req = 0;
 
     // Print line up until start into buf
@@ -303,6 +303,7 @@ char *highlight_line(
     return buf;
 }
 
+// FIXME: This can run past the start if the error is on the first line for example.
 char *package_highlighted_range(Package *package, Range range) {
     PosInfo pos = package_posinfo(package, range.start);
 
@@ -328,9 +329,8 @@ char *package_highlighted_range(Package *package, Range range) {
         // cursor is the end of the previous line (+1 is start of this line)
         column = MIN(column, code_start - (cursor + 1));
         cursor--;
-        if (*cursor == '\n') { // we only print contiguious code. Break on empty lines
-            break;
-        }
+        // we only print contiguious code. Break on empty lines
+        if (*cursor == '\n' || cursor < pos.source->code) break;
     }
     // reset cursor
     cursor = pos.source->code + pos.offset;
@@ -338,7 +338,7 @@ char *package_highlighted_range(Package *package, Range range) {
     for (i64 line = 0; line < MAX_LINES; line++) {
         const char *start = cursor;
         const char *end = cursor;
-        while (*cursor != '\n') {
+        while (*cursor != '\n' && cursor >= pos.source->code) {
             cursor--;
         }
         // cursor is the end of the previous line (+1 is start of this line)
@@ -367,9 +367,8 @@ char *package_highlighted_range(Package *package, Range range) {
 
         nlines++;
         cursor--;
-        if (*cursor == '\n') { // only print contiguious code. Break on empty lines
-            break;
-        }
+        // only print contiguious code. Break on empty lines
+        if (*cursor == '\n' || cursor < pos.source->code) break;
     }
 
     nbytes += 1 + 1; // 1 for indentation (\t) 1 for nul termination.

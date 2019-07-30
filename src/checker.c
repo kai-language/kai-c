@@ -403,6 +403,7 @@ Operand check_expr_float(Checker *self, Expr *expr, Ty *wanted) {
 Operand check_expr_str(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     Ty *type = type_string;
+    type = type_u8ptr; // FIXME: temp, until we have slices
     if (wanted == type_rawptr) type = type_rawptr;
     else if (wanted == type_u8ptr) type = type_u8ptr;
     return operandp(self, expr, type, CONST, expr->estr.str);
@@ -446,6 +447,10 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
         if (ret_operand(op)) return op;
         type = op.type;
         expect_operand_is_a_type(self, op, expr);
+        if (is_array(type) && type->flags&IMPL_LENGTH) {
+            type->flags &= ~IMPL_LENGTH;
+            type->tarray.length = arrlen(expr->ecompound.fields);
+        }
     }
     switch (type ? type->kind : TYPE_ARRAY) {
         case TYPE_UNION:
@@ -529,7 +534,13 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
     return operand(self, expr, type, LVALUE);
 }
 
-Operand check_expr_cast(Checker *self, Expr *expr, Ty *wanted) { return bad_operand; }
+Operand check_expr_cast(Checker *self, Expr *expr, Ty *wanted) {
+    Operand ty = check_expr(self, expr->ecast.type, NULL);
+    Operand arg = check_expr(self, expr->ecast.expr, NULL);
+    if (ret_operand(arg)) return arg;
+    expect_operand_casts(self, arg, ty.type, expr->ecast.expr);
+    return operand(self, expr, ty.type, NONE);
+}
 
 Operand check_expr_paren(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
@@ -540,10 +551,10 @@ Operand check_expr_paren(Checker *self, Expr *expr, Ty *wanted) {
 
 Operand check_expr_unary(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Operand value = check_expr(self, expr->eunary, NULL);
+    Operand value = check_expr(self, expr->eunary, wanted);
     if (ret_operand(value)) return value;
     Op op = (Op) expr->flags;
-    Ty *type = NULL;
+    Ty *type = value.type;
     switch (op) {
         case OP_AND: {
             if ((value.flags & LVALUE) == 0) {
@@ -740,6 +751,12 @@ Operand check_expr_field(Checker *self, Expr *expr, Ty *wanted) {
         error(self, expr->efield.expr->range, "Libraries types have no members");
         return bad_operand;
     }
+    if (is_slice(base.type)) {
+        if (name == intern_ptr)
+            return operand(self, expr, type_ptr(base.type->tslice.eltype, NONE), NONE);
+        if (name == intern_len || name == intern_cap)
+            return operand(self, expr, type_intptr, NONE);
+    }
     if (is_aggregate(base.type)) {
         u32 index = 0;
         TyField *field = NULL;
@@ -787,7 +804,7 @@ Operand check_expr_index(Checker *self, Expr *expr, Ty *wanted) {
             error(self, expr->eindex.expr->range, "Unable to index type '%s'", tyname(base.type));
             return bad_operand;
     }
-    return operand(self, expr, type, NONE);
+    return operand(self, expr, type, LVALUE);
 }
 
 Operand check_expr_func(Checker *self, Expr *expr, Ty *wanted) {
@@ -856,7 +873,10 @@ Operand check_expr_array(Checker *self, Expr *expr, Ty *wanted) {
     Operand element = check_expr(self, expr->earray.base, NULL);
     if (ret_operand(element)) return element;
     expect_operand_is_a_type(self, element, expr->earray.base);
-    if (!expr->earray.len) fatal("Unimplemented"); // TODO: Implicitly sized arrays
+    if (!expr->earray.len) {
+        Ty *type = type_array(element.type, 0, IMPL_LENGTH); // TODO: Ensure no issues from intern
+        return operand(self, expr, type, TYPE);
+    }
     Operand length = check_expr(self, expr->earray.len, NULL);
     if (ret_operand(length)) return length;
     expect_constant(self, length, expr->earray.len);
@@ -1276,6 +1296,7 @@ Operand check_stmt_switch(Checker *self, Stmt *stmt) {
     return operand_ok;
 }
 
+INLINE
 Operand check_stmt(Checker *self, Stmt *stmt) {
     switch (stmt->kind) {
         case (StmtKind) DECL_VAL:          return check_decl_val(self, (Decl *) stmt);
@@ -1302,6 +1323,7 @@ Operand check_stmt(Checker *self, Stmt *stmt) {
     }
 }
 
+INLINE
 Operand check_expr(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     switch (expr->kind) {

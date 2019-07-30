@@ -126,18 +126,20 @@ const char *scan_string(Lexer *self) {
     const char *start = self->str;
     char quote = *self->str++;
     ASSERT(quote == '"' || quote == '`');
-    b8 isMultiline = quote == '`';
+    b8 is_multiline = quote == '`';
     bool has_escape = false;
     u32 width;
     while (*self->str && *self->str != quote) {
         u32 rune = DecodeCodePoint(&width, self->str);
         self->str += width;
         u32 val;
-        if (rune == '\n' && !isMultiline) {
+        if (rune == '\n') {
             self->client.online(self->client.data, (u32) (self->str - self->start));
-            char msg[] = "Regular string literal cannot contain a newline";
-            self->client.onmsg(self->client.data, (u32) (self->str - self->start), msg, sizeof msg);
-            return NULL;
+            if (!is_multiline) {
+                char msg[] = "Regular string literal cannot contain a newline";
+                self->client.onmsg(self->client.data, (u32) (self->str - self->start), msg, sizeof msg);
+                return NULL;
+            }
         } else if (rune == '\\') {
             if (!has_escape) { // We need to copy the string into the temp buffer
                 has_escape = true;

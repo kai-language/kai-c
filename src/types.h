@@ -8,23 +8,23 @@ typedef struct Sym Sym;
 typedef struct Ty Ty;
 
 typedef enum IntegerFlags {
-    INTEGER_FLAGS_NONE = 0,
     SIGNED = 0x01,
 } IntegerFlags;
 
 typedef enum StructFlags {
-    STRUCT_FLAGS_NONE = 0,
     TUPLE  = 0x01,
     OPAQUE = 0x04,
 } StructFlags;
 
 typedef enum SliceFlags {
-    SLICE_FLAGS_NONE = 0,
     STRING = 0x01, // allows coercion to *u8
 } SliceFlags;
 
+typedef enum ArrayFlags {
+    IMPL_LENGTH = 0x01,
+} ArrayFlags;
+
 typedef enum AnyFlags {
-    ANY_FLAGS_NONE = 0,
     CVARG = 0x01, // indicates to llvm backend not to perform the coercion
 } AnyFlags;
 

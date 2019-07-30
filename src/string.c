@@ -6,6 +6,11 @@
 #include "queue.h"
 #include "compiler.h"
 
+const char *intern_in;
+const char *intern_ptr;
+const char *intern_len;
+const char *intern_cap;
+
 // If end is NULL strlen will be called on start
 const char *str_intern_range(const char *start, const char *end) {
     TRACE(INTERN);

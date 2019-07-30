@@ -75,6 +75,7 @@ struct Parser {
     bool allow_multi;
     bool was_terminator;
     bool was_newline;
+    bool was_error_in_line;
     const char *calling_conv;
     const char *link_prefix;
 
