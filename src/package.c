@@ -303,7 +303,7 @@ char *highlight_line(
     return buf;
 }
 
-// FIXME: This can run past the start if the error is on the first line for example.
+// FIXME: Handle highlighting ranges that span multiple lines right now we just don't highlight
 char *package_highlighted_range(Package *package, Range range) {
     PosInfo pos = package_posinfo(package, range.start);
 

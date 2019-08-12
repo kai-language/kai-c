@@ -55,6 +55,7 @@ const char *directives[] = {
     [DIR_LINE] = "line",
     [DIR_OPAQUE] = "opaque",
     [DIR_IMPORT] = "import",
+    [DIR_VECTOR] = "vector",
     [DIR_LIBRARY] = "library",
     [DIR_FOREIGN] = "foreign",
     [DIR_CALLCONV] = "callconv",
@@ -619,6 +620,21 @@ Expr *parse_expr_atom(Parser *self) {
             return new_expr_pointer(self->package, r(start, type->range.end), type);
         }
         case TK_Directive: {
+            if (match_directive(self, DIR_LINE)) {
+                fatal("Unimplemented");
+            } else if (match_directive(self, DIR_FILE)) {
+                fatal("Unimplemented");
+            } else if (match_directive(self, DIR_FUNCTION)) {
+                fatal("Unimplemented");
+            } else if (match_directive(self, DIR_LOCATION)) {
+                fatal("Unimplemented");
+            } else if (match_directive(self, DIR_VECTOR)) {
+                expect_tok(self, TK_Lparen);
+                Expr *len = parse_expr(self);
+                expect_tok(self, TK_Rparen);
+                Expr *base = parse_expr(self);
+                return new_expr_vector(self->package, r(start, self->olast), base, len);
+            }
             const char *name = self->tok.tname;
             eat_tok(self);
             error(self, r(start, self->olast), "Unexpected directive '%s'", name);
@@ -1003,7 +1019,8 @@ begin:;
         }
         case TK_Directive: {
             if (is_directive(self, DIR_FILE) || is_directive(self, DIR_LINE) ||
-                is_directive(self, DIR_LOCATION) || is_directive(self, DIR_FUNCTION))
+                is_directive(self, DIR_LOCATION) || is_directive(self, DIR_FUNCTION) ||
+                is_directive(self, DIR_VECTOR))
             {
                 goto case_expr;
             }
@@ -1033,8 +1050,8 @@ begin:;
                 Decl **decls = NULL;
                 Decl *block = NULL;
                 if (match_tok(self, TK_Lbrace)) {
-                    block = new_decl_foreign_block(self->package, parser_range(self),
-                                                   NULL, linkprefix, callconv);
+                    block = new_decl_foreign_block(
+                        self->package, parser_range(self), NULL, linkprefix, callconv);
                 }
                 do {
                     u32 start = self->ostart;
@@ -1045,14 +1062,10 @@ begin:;
                     Expr *type = parse_expr(self);
                     for (;;) { // Parse trailing directives
                         if (match_directive(self, DIR_LINKNAME)) {
-                            if (linkname) {
-                                error(self, parser_range(self), "Duplicate #linkname");
-                            }
+                            if (linkname) error(self, parser_range(self), "Duplicate #linkname");
                             linkname = parse_str(self);
                         } else if (match_directive(self, DIR_CALLCONV)) {
-                            if (callconv) {
-                                error(self, parser_range(self), "Duplicate #callconv");
-                            }
+                            if (callconv) error(self, parser_range(self), "Duplicate #callconv");
                             callconv = parse_str(self);
                         } else {
                             break;
@@ -1062,6 +1075,8 @@ begin:;
                     Decl *decl = new_decl_foreign(self->package, r(start, self->olast), flags,
                                                   name, library, type, linkname, callconv, block);
                     parser_declare(self, decl);
+                    linkname = NULL;
+                    callconv = NULL;
                     if (!block) return (Stmt *) decl;
                     arrput(decls, decl);
                 } while (!is_tok(self, TK_Rbrace) && !is_eof(self));

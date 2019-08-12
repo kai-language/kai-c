@@ -395,7 +395,7 @@ Operand check_expr_int(Checker *self, Expr *expr, Ty *wanted) {
 
 Operand check_expr_float(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
-    Ty *type = type_f64;
+    Ty *type = type_f32; // FIXME: Check float is representable or use f64
     if (is_float(wanted)) type = wanted;
     return operandf(self, expr, type, CONST, expr->efloat);
 }
@@ -566,7 +566,7 @@ Operand check_expr_unary(Checker *self, Expr *expr, Ty *wanted) {
             return operand(self, expr, type, NONE);
         }
         default: {
-            if (!unary_predicates[op](value.type)) {
+            if (!unary_predicates[op](type_scalar(value.type))) {
                 error(self, expr->range, "Operation '%s' undefined for type %s",
                       describe_op(expr->flags), tyname(value.type));
                 return bad_operand;
@@ -601,7 +601,7 @@ Operand check_expr_binary(Checker *self, Expr *expr, Ty *wanted) {
         return bad_operand;
     }
     Ty *type = lhs.type; // both sides of the expression have this type.
-    if (!binary_predicates[expr->flags](type)) {
+    if (!binary_predicates[expr->flags](type_scalar(type))) {
         error(self, expr->range, "Operation '%s' undefined for type %s",
               describe_op(expr->flags), tyname(type));
         return bad_operand;
@@ -757,6 +757,35 @@ Operand check_expr_field(Checker *self, Expr *expr, Ty *wanted) {
         if (name == intern_len || name == intern_cap)
             return operand(self, expr, type_intptr, NONE);
     }
+    if (is_vector(base.type)) {
+        int i = 0;
+        while (expr->efield.name->ename[i]) {
+            char ch = expr->efield.name->ename[i++];
+            switch (ch) {
+                case 'x': case 'r': break;
+                case 'y': case 'g':
+                    if (base.type->tvector.length < 2) goto error;
+                    break;
+                case 'z': case 'b':
+                    if (base.type->tvector.length < 3) goto error;
+                    break;
+                case 'w': case 'a':
+                    if (base.type->tvector.length < 4) goto error;
+                    break;
+                error:
+                default:
+                    error(self, expr->range, "%s has no component '%c'", tyname(base.type), ch);
+                    return bad_operand;
+            }
+        }
+        Ty *type = base.type;
+        if (i == 1) {
+            type = base.type->tvector.eltype;
+        } else if (i != base.type->tvector.length) {
+            type = type_vector(base.type->tvector.eltype, i, NONE);
+        }
+        return operand(self, expr, type, LVALUE);
+    }
     if (is_aggregate(base.type)) {
         u32 index = 0;
         TyField *field = NULL;
@@ -789,7 +818,7 @@ Operand check_expr_index(Checker *self, Expr *expr, Ty *wanted) {
     }
     Ty *type;
     switch (base.type->kind) {
-        case TYPE_ARRAY: {
+        case TYPE_ARRAY: case TYPE_VECTOR: {
             type = base.type->tarray.eltype;
             if (index.flags&CONST && (index.val.i < 0 || index.val.u >= base.type->tarray.length)) {
                 error(self, expr->range, "Index %d is out of the bounds for type %s",
@@ -881,6 +910,18 @@ Operand check_expr_array(Checker *self, Expr *expr, Ty *wanted) {
     if (ret_operand(length)) return length;
     expect_constant(self, length, expr->earray.len);
     Ty *type = type_array(element.type, length.val.u, TYPE);
+    return operand(self, expr, type, TYPE);
+}
+
+Operand check_expr_vector(Checker *self, Expr *expr, Ty *wanted) {
+    TRACE(CHECKING);
+    Operand element = check_expr(self, expr->evector.base, NULL);
+    if (ret_operand(element)) return element;
+    expect_operand_is_a_type(self, element, expr->evector.base);
+    Operand length = check_expr(self, expr->evector.len, NULL);
+    if (ret_operand(length)) return length;
+    expect_constant(self, length, expr->evector.len);
+    Ty *type = type_vector(element.type, length.val.u, TYPE);
     return operand(self, expr, type, TYPE);
 }
 
@@ -1343,6 +1384,7 @@ Operand check_expr(Checker *self, Expr *expr, Ty *wanted) {
         case EXPR_INDEX:    return check_expr_index(self, expr, wanted);
         case EXPR_FUNC:     return check_expr_func(self, expr, wanted);
         case EXPR_FUNCTYPE: return check_expr_func_type(self, expr, wanted);
+        case EXPR_VECTOR:   return check_expr_vector(self, expr, wanted);
         case EXPR_ARRAY:    return check_expr_array(self, expr, wanted);
         case EXPR_POINTER:  return check_expr_pointer(self, expr, wanted);
         case EXPR_STRUCT:   return check_expr_struct(self, expr, wanted);

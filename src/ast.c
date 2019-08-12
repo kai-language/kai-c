@@ -148,6 +148,13 @@ Expr *new_expr_array(Package *package, Range range, Expr *base, Expr *len) {
     return e;
 }
 
+Expr *new_expr_vector(Package *package, Range range, Expr *base, Expr *len) {
+    Expr *e = ast_alloc(package, EXPR_VECTOR, 0, range, ast_size(Expr, evector));
+    e->evector.base = base;
+    e->evector.len = len;
+    return e;
+}
+
 Expr *new_expr_slicetype(Package *package, Range range, Expr *base) {
     Expr *e = ast_alloc(package, EXPR_SLICETYPE, 0, range, ast_size(Expr, eslicetype));
     e->eslicetype = base;
@@ -577,6 +584,11 @@ void *ast_copy(Package *package, void *ast) {
         case EXPR_ARRAY: {
             new->earray.base = copy(old->earray.base);
             new->earray.len = copy_can_null(old->earray.len);
+            return new;
+        }
+        case EXPR_VECTOR: {
+            new->evector.base = copy(old->evector.base);
+            new->evector.base = copy(old->evector.len);
             return new;
         }
         case EXPR_POINTER: {

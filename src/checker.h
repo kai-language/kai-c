@@ -74,6 +74,7 @@ typedef enum OperandFlags { // lower 4 bits are flags upper are kind
     OPERAND_FLAGS_NONE = 0,
     LVALUE     = 0x01,
     CONST      = 0x02,
+    ZERO       = 0x04, // Constant is a zero value
 
     OPERAND_OK = 0x10,
     PACKAGE    = 0x20,

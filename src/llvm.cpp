@@ -48,6 +48,11 @@ extern "C" {
 
 using namespace llvm;
 
+struct IRValue {
+    Value *val;
+    bool is_temp_alloca;
+};
+
 struct DebugContext {
     DIType *i8;
     DIType *i16;
@@ -444,8 +449,8 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
             std::vector<llvm::Metadata *> subscripts;
             Ty *eltype = type;
             while (eltype->kind == TYPE_ARRAY) { // NOTE: That 0 is probably wrong
-                subscripts.push_back(c->dbg.builder->getOrCreateSubrange(0, type->tarray.length));
-                eltype = type->tarray.eltype;
+                subscripts.push_back(c->dbg.builder->getOrCreateSubrange(0, eltype->tarray.length));
+                eltype = eltype->tarray.eltype;
             }
             Type *irtype = llvm_type(c, type);
             u64 size = c->data_layout.getTypeSizeInBits(irtype);
@@ -812,41 +817,46 @@ start:
     return val;
 }
 
+// MARK: - IRValue returns
+IRValue irval(Value *value, bool is_temp_alloca = false) {
+    return {value, is_temp_alloca};
+}
+
 // MARK: - Emission
 
-Value *emit_expr(IRContext *self, Expr *expr, bool is_lvalue = false);
+IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue = false);
 void emit_decl(IRContext *self, Decl *decl);
 void emit_stmt(IRContext *self, Stmt *stmt);
 
-Value *emit_expr_nil(IRContext *self, Expr *expr) {
+IRValue emit_expr_nil(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
     set_debug_pos(self, expr->range);
-    return ConstantPointerNull::get((PointerType *) type);
+    return irval(ConstantPointerNull::get((PointerType *) type));
 }
 
-Value *emit_expr_int(IRContext *self, Expr *expr) {
+IRValue emit_expr_int(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
     set_debug_pos(self, expr->range);
     if (operand.type->kind == TYPE_FLOAT) {
-        return ConstantFP::get(type, (f64) operand.val.u);
+        return irval(ConstantFP::get(type, (f64) operand.val.u));
     }
-    return ConstantInt::get(type, operand.val.u, is_signed(operand.type));
+    return irval(ConstantInt::get(type, operand.val.u, is_signed(operand.type)));
 }
 
-Value *emit_expr_float(IRContext *self, Expr *expr) {
+IRValue emit_expr_float(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
-    return ConstantFP::get(type, operand.val.f);
+    return irval(ConstantFP::get(type, operand.val.f));
 }
 
-Value *emit_expr_str(IRContext *self, Expr *expr) {
-    auto ref = StringRef(expr->estr.str, expr->estr.len);
-    return self->builder.CreateGlobalStringPtr(ref);
+IRValue emit_expr_str(IRContext *self, Expr *expr) {
+    StringRef ref = StringRef(expr->estr.str, expr->estr.len);
+    return irval(self->builder.CreateGlobalStringPtr(ref));
 }
 
-Value *emit_sym(IRContext *self, Package *package, Sym *sym) {
+IRValue emit_sym(IRContext *self, Package *package, Sym *sym) {
     IRContext ctx(self, package);
     ctx.dbg.source_file = package_posinfo(package, sym->decl->range.start).source;
     if (compiler.flags.debug) {
@@ -856,20 +866,20 @@ Value *emit_sym(IRContext *self, Package *package, Sym *sym) {
     }
     emit_decl(&ctx, sym->decl);
     ASSERT(sym->userdata);
-    return (Value *) sym->userdata;
+    return irval((Value *) sym->userdata);
 }
 
-Value *emit_expr_name(IRContext *self, Expr *expr) {
+IRValue emit_expr_name(IRContext *self, Expr *expr) {
     Sym *sym = hmget(self->package->symbols, expr);
     if (!sym->userdata) {
         emit_sym(self, self->package, sym);
         ASSERT(sym->userdata);
     }
-    if (isa<Function>((Value *) sym->userdata)) return (Value *) sym->userdata;
-    return create_load(self, (Value *) sym->userdata);
+    if (isa<Function>((Value *) sym->userdata)) return irval((Value *) sym->userdata);
+    return irval(create_load(self, (Value *) sym->userdata));
 }
 
-Value *emit_expr_field(IRContext *self, Expr *expr) {
+IRValue emit_expr_field(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr->efield.expr);
     if (operand.flags&PACKAGE) { // operand.val is a pointer to the package Symbol
         Sym *package_sym = (Sym *) operand.val.p;
@@ -877,8 +887,8 @@ Value *emit_expr_field(IRContext *self, Expr *expr) {
         if (!sym->userdata) { // TODO: Switch some of the context stuff (DIFile) etc.
             emit_sym(self, package_sym->package, sym);
         }
-        if (isa<Function>((Value *) sym->userdata)) return (Value *) sym->userdata;
-        return create_load(self, (Value *) sym->userdata);
+        if (isa<Function>((Value *) sym->userdata)) return irval((Value *) sym->userdata);
+        return irval(create_load(self, (Value *) sym->userdata));
     }
     switch (operand.type->kind) {
         case TYPE_STRUCT:
@@ -887,43 +897,84 @@ Value *emit_expr_field(IRContext *self, Expr *expr) {
     fatal("Unhandled field base kind");
 }
 
-Value *emit_expr_compound(IRContext *self, Expr *expr) {
+IRValue emit_expr_compound(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     switch (operand.type->kind) {
         case TYPE_STRUCT:
         case TYPE_UNION:
             fatal("Unimplemented");
         case TYPE_ARRAY: {
-            Type *type = llvm_type(self, operand.type, true);
-            Value *value = Constant::getNullValue(type);
-            if (!expr->ecompound.fields) return value;
-            bool is_constant = true;
-            std::vector<Value *> values;
+            Type *eltype = llvm_type(self, operand.type->tarray.eltype);
+            ArrayType *type = (ArrayType *) llvm_type(self, operand.type);
+            Value *agg = Constant::getNullValue(type);
+            u32 index = 0;
             for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
-                Value *el = emit_expr(self, expr->ecompound.fields[i].val);
-                is_constant |= isa<Constant>(el);
+                Value *val = emit_expr(self, expr->ecompound.fields[i].val).val;
+                if (expr->ecompound.fields[i].key) {
+                    Operand op = hmget(self->package->operands, expr->ecompound.fields[i].key);
+                    index = (u32) op.val.u;
+                }
+                agg = self->builder.CreateInsertValue(agg, val, index);
+                index++;
+            }
+            return irval(agg);
+
+
+            Value *value;
+            if (!expr->ecompound.fields) return irval(value);
+            bool is_all_members_constant = true;
+            std::vector<Value *> values;
+            std::vector<Constant *> constants;
+            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                Value *el = emit_expr(self, expr->ecompound.fields[i].val).val;
+                is_all_members_constant |= isa<Constant>(el);
+                if (Constant *constant = dyn_cast<Constant>(el)) {
+                    constants.push_back(constant);
+                } else {
+                    Constant *null = Constant::getNullValue(eltype);
+                    constants.push_back(null);
+                }
                 values.push_back(el);
             }
             u32 alignment = self->data_layout.getPrefTypeAlignment(type);
+            // FIXME: can't do this if we aren't in a function.
+            Constant *constant =  ConstantArray::get(type, constants);
+            return irval(constant);
+            
+            if (constant->isZeroValue()) {
+                GlobalVariable *global = new GlobalVariable(
+                    *self->module, type, true, GlobalValue::PrivateLinkage, constant,
+                    "compound.lit");
+                return irval(global);
+            }
+
             AllocaInst *alloca = emit_entry_alloca(self, type, "compound.lit", alignment);
-            if (is_constant) {
+            if (is_all_members_constant) {
                 for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
                     CompoundField field = expr->ecompound.fields[i];
                     u64 target_index = hmget(self->package->operands, field.key).val.u;
                     value = self->builder.CreateInsertValue(value, values[i], {(u32) target_index});
                 }
-                ASSERT(isa<Constant>(value));
-                GlobalVariable *global = new GlobalVariable(*self->module, type, true, GlobalValue::PrivateLinkage, (Constant *)value, "compound.lit");
-                self->builder.CreateMemCpy(alloca, alignment, global, global->getAlignment(), type->getPrimitiveSizeInBits() / 8);
-                value = alloca;
+                if (isa<Constant>(value)) {
+                    GlobalVariable *global = new GlobalVariable(
+                        *self->module, type, true, GlobalValue::PrivateLinkage, (Constant *)value,
+                        "compound.lit");
+                    self->builder.CreateMemCpy(
+                        alloca, alignment, global, global->getAlignment(),
+                        type->getPrimitiveSizeInBits() / 8);
+                    value = alloca;
+                } else {
+//                    create_store(self, value, alloca);
+                }
             } else {
                 for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
                     CompoundField field = expr->ecompound.fields[i];
                     u64 target_index = hmget(self->package->operands, field.key).val.u;
-                    value = self->builder.CreateInsertValue(alloca, values[i], {0, (u32) target_index});
+                    value = self->builder.CreateInsertValue(
+                        alloca, values[i], {0, (u32) target_index});
                 }
             }
-            return alloca;
+            return irval(alloca);
         }
         case TYPE_SLICE:
         default:
@@ -931,15 +982,15 @@ Value *emit_expr_compound(IRContext *self, Expr *expr) {
     }
 }
 
-Value *emit_expr_cast(IRContext *self, Expr *expr) {
+IRValue emit_expr_cast(IRContext *self, Expr *expr) {
     Ty *dst = hmget(self->package->operands, expr->ecast.type).type;
     Type *dst_ty = llvm_type(self, dst);
-    Value *val = emit_expr(self, expr->ecast.expr);
+    Value *val = emit_expr(self, expr->ecast.expr).val;
 start:
     Type *val_ty = val->getType();
-    if (val_ty == dst_ty) return val;
+    if (val_ty == dst_ty) return irval(val);
     switch (val_ty->getTypeID()) {
-        case Type::VoidTyID: return val;
+        case Type::VoidTyID: return irval(val);
         case Type::HalfTyID:
         case Type::FloatTyID:
         case Type::DoubleTyID:
@@ -957,41 +1008,42 @@ start:
                     u64 dst_size = dst_ty->getPrimitiveSizeInBits();
                     if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
                     else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
-                    return val;
+                    return irval(val);
                 }
                 case Type::IntegerTyID: {
                     if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
                     else                val = self->builder.CreateFPToUI(val, dst_ty);
-                    return val;
+                    return irval(val);
                 }
                 default:
                     break;
             }
             break;
         case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
-            if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
-            if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
-            return self->builder.CreateZExtOrTrunc(val, dst_ty);
+            if (is_signed(dst)) return irval(self->builder.CreateSExtOrTrunc(val, dst_ty));
+            if (isa<PointerType>(dst_ty)) return irval(self->builder.CreateIntToPtr(val, dst_ty));
+            return irval(self->builder.CreateZExtOrTrunc(val, dst_ty));
         }
         case Type::FunctionTyID: {
-            if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
-            return val;
+            if (isa<PointerType>(dst_ty))
+                return irval(self->builder.CreateBitOrPointerCast(val, dst_ty));
+            return irval(val);
         }
-        case Type::StructTyID: return val;
-        case Type::ArrayTyID: return val;
+        case Type::StructTyID: return irval(val);
+        case Type::ArrayTyID: return irval(val);
         case Type::PointerTyID: {
             if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
                 PointerType *src_ty = (PointerType *) val->getType();
-                return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+                return irval(self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty)));
             }
             if (isa<IntegerType>(dst_ty)) {
                 val = self->builder.CreatePtrToInt(val, self->ty.intptr);
                 goto start;
             }
-            if (isa<FunctionType>(val_ty)) return val;
-            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
+            if (isa<FunctionType>(val_ty)) return irval(val);
+            if (val_ty->getPointerElementType() == dst_ty) return irval(create_load(self, val)); // FIXME: Do not do this....
             // FIXME: IF isa<ArrayType> What do?
-            return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
+            return irval(self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty));
         }
         case Type::VectorTyID:
         case Type::LabelTyID:
@@ -999,94 +1051,94 @@ start:
         case Type::X86_MMXTyID:
         case Type::TokenTyID: fatal("Unsupported type in IR");
     }
-    return val;
+    return irval(val);
 }
 
-Value *emit_expr_paren(IRContext *self, Expr *expr) {
+IRValue emit_expr_paren(IRContext *self, Expr *expr) {
     return emit_expr(self, expr->eparen);
 }
 
-Value *emit_expr_unary(IRContext *self, Expr *expr) {
+IRValue emit_expr_unary(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
-    Value *val = emit_expr(self, expr->eunary, expr->flags == OP_AND);
+    Value *val = emit_expr(self, expr->eunary, expr->flags == OP_AND).val;
     set_debug_pos(self, expr->range);
     switch ((Op) expr->flags) {
         case OP_ADD:
         case OP_AND:
-            return val;
+            return irval(val);
         case OP_SUB:
-            if (operand.type->kind == TYPE_FLOAT) return self->builder.CreateFNeg(val);
-            else                                  return self->builder.CreateNeg(val);
+            if (operand.type->kind == TYPE_FLOAT) return irval(self->builder.CreateFNeg(val));
+            else                                  return irval(self->builder.CreateNeg(val));
         case OP_NOT: // fallthrough
-        case OP_BNOT: return self->builder.CreateNot(val);
-        case OP_LSS:  return create_load(self, val);
+        case OP_BNOT: return irval(self->builder.CreateNot(val));
+        case OP_LSS:  return irval(create_load(self, val));
         default:
             fatal("Unhandled unary op case %d", expr->flags);
     }
 }
 
-Value *emit_expr_binary(IRContext *self, Expr *expr) {
+IRValue emit_expr_binary(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     bool is_int = is_integer(operand.type) || is_ptr(operand.type);
     Type *type = llvm_type(self, operand.type);
-    Value *lhs = emit_expr(self, expr->ebinary.elhs);
-    Value *rhs = emit_expr(self, expr->ebinary.erhs);
+    Value *lhs = emit_expr(self, expr->ebinary.elhs).val;
+    Value *rhs = emit_expr(self, expr->ebinary.erhs).val;
     set_debug_pos(self, expr->range);
     IRBuilder<> b = self->builder;
     switch (expr->flags) {
-        case OP_ADD: return is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs); // FIXME: Pointers?
-        case OP_SUB: return is_int ? b.CreateSub(lhs, rhs) : b.CreateFSub(lhs, rhs); // FIXME: Pointers?
-        case OP_MUL: return is_int ? b.CreateMul(lhs, rhs) : b.CreateFMul(lhs, rhs);
+        case OP_ADD: return irval(is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs)); // FIXME: Pointers?
+        case OP_SUB: return irval(is_int ? b.CreateSub(lhs, rhs) : b.CreateFSub(lhs, rhs)); // FIXME: Pointers?
+        case OP_MUL: return irval(is_int ? b.CreateMul(lhs, rhs) : b.CreateFMul(lhs, rhs));
         case OP_DIV:
-            return is_int ? is_signed(operand.type) ?
-                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs);
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
         case OP_REM:
-            return is_int ? is_signed(operand.type) ?
-                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs);
-        case OP_AND: return b.CreateAnd(lhs, rhs);
-        case OP_OR:  return b.CreateOr (lhs, rhs);
-        case OP_XOR: return b.CreateXor(lhs, rhs);
-        case OP_LOR: return b.CreateTruncOrBitCast(b.CreateOr(lhs, rhs), type);
-        case OP_LAND: return b.CreateTruncOrBitCast(b.CreateAnd(lhs, rhs), type);
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
+        case OP_AND: return irval(b.CreateAnd(lhs, rhs));
+        case OP_OR:  return irval(b.CreateOr (lhs, rhs));
+        case OP_XOR: return irval(b.CreateXor(lhs, rhs));
+        case OP_LOR: return irval(b.CreateTruncOrBitCast(b.CreateOr(lhs, rhs), type));
+        case OP_LAND: return irval(b.CreateTruncOrBitCast(b.CreateAnd(lhs, rhs), type));
         case OP_SHR:
-            return is_signed(operand.type) ? b.CreateAShr(lhs, rhs) : b.CreateLShr(lhs, rhs);
-        case OP_SHL: return b.CreateShl(lhs, rhs);
+            return irval(is_signed(operand.type) ? b.CreateAShr(lhs, rhs) : b.CreateLShr(lhs, rhs));
+        case OP_SHL: return irval(b.CreateShl(lhs, rhs));
         case OP_LSS: // FIXME: Pointers?
-            return is_int ? is_signed(operand.type) ?
-                b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs);
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs));
         case OP_LEQ:
-            return is_int ? is_signed(operand.type) ?
-                b.CreateICmpSLE(lhs, rhs) : b.CreateICmpULE(lhs, rhs) : b.CreateFCmpOLE(lhs, rhs);
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSLE(lhs, rhs) : b.CreateICmpULE(lhs, rhs) : b.CreateFCmpOLE(lhs, rhs));
         case OP_GTR:
-            return is_int ? is_signed(operand.type) ?
-                b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs) : b.CreateFCmpOGT(lhs, rhs);
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs) : b.CreateFCmpOGT(lhs, rhs));
         case OP_GEQ:
-            return is_int ? is_signed(operand.type) ?
-                b.CreateICmpSGE(lhs, rhs) : b.CreateICmpUGE(lhs, rhs) : b.CreateFCmpOGE(lhs, rhs);
-        case OP_EQL: return is_int ? b.CreateICmpEQ(lhs, rhs) : b.CreateFCmpOEQ(lhs, rhs);
-        case OP_NEQ: return is_int ? b.CreateICmpNE(lhs, rhs) : b.CreateFCmpONE(lhs, rhs);
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSGE(lhs, rhs) : b.CreateICmpUGE(lhs, rhs) : b.CreateFCmpOGE(lhs, rhs));
+        case OP_EQL: return irval(is_int ? b.CreateICmpEQ(lhs, rhs) : b.CreateFCmpOEQ(lhs, rhs));
+        case OP_NEQ: return irval(is_int ? b.CreateICmpNE(lhs, rhs) : b.CreateFCmpONE(lhs, rhs));
         default:
             fatal("Unhandled binary op case %d", expr->flags);
     }
 }
 
-Value *emit_expr_ternary(IRContext *self, Expr *expr) {
-    Value *cond = emit_expr(self, expr->eternary.econd);
+IRValue emit_expr_ternary(IRContext *self, Expr *expr) {
+    Value *cond = emit_expr(self, expr->eternary.econd).val;
     Value *pass = cond;
     if (expr->eternary.epass)
-        pass = emit_expr(self, expr->eternary.epass);
-    Value *fail = emit_expr(self, expr->eternary.efail);
-    return self->builder.CreateSelect(cond, pass, fail);
+        pass = emit_expr(self, expr->eternary.epass).val;
+    Value *fail = emit_expr(self, expr->eternary.efail).val;
+    return irval(self->builder.CreateSelect(cond, pass, fail));
 }
 
-Value *emit_expr_call(IRContext *self, Expr *expr) {
+IRValue emit_expr_call(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr->ecall.expr);
     std::vector<Value *> args;
     bool is_cvargs = (operand.type->flags&FUNC_CVARGS) != 0;
     for (i64 i = 0; i < arrlen(expr->ecall.args); i++) {
         CallArg arg = expr->ecall.args[i];
         Operand arg_operand = hmget(self->package->operands, arg.expr);
-        Value *val = emit_expr(self, arg.expr);
+        Value *val = emit_expr(self, arg.expr).val;
         bool last_arg = i - 1 == arrlen(operand.type->tfunc.params);
         if (is_cvargs && last_arg) { // C ABI rules (TODO: Apply to all parameters for c calls)
             if (is_integer(arg_operand.type) && arg_operand.type->size < 4) {
@@ -1098,16 +1150,16 @@ Value *emit_expr_call(IRContext *self, Expr *expr) {
         }
         args.push_back(val);
     }
-    Value *fn = emit_expr(self, expr->ecall.expr);
+    Value *fn = emit_expr(self, expr->ecall.expr).val;
     set_debug_pos(self, expr->range);
-    return self->builder.CreateCall(fn, args);
+    return irval(self->builder.CreateCall(fn, args));
 }
 
-Value *emit_expr_index(IRContext *self, Expr *expr) {
+IRValue emit_expr_index(IRContext *self, Expr *expr) {
     Operand value_operand = hmget(self->package->operands, expr->eindex.expr);
     Operand index_operand = hmget(self->package->operands, expr->eindex.index);
-    Value *value = emit_expr(self, expr->eindex.expr, LVALUE);
-    Value *index = emit_expr(self, expr->eindex.index);
+    Value *value = emit_expr(self, expr->eindex.expr, LVALUE).val;
+    Value *index = emit_expr(self, expr->eindex.index).val;
     // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
     // of an unsigned integer would get wrapped and become negative. We can
     // prevent this by ZExt-ing the index
@@ -1117,20 +1169,20 @@ Value *emit_expr_index(IRContext *self, Expr *expr) {
         case TYPE_ARRAY: {
             Value *zero = ConstantInt::get(self->ty.i32, 0);
             Value *addr = self->builder.CreateGEP(value, {zero, index});
-            return create_load(self, addr);
+            return irval(create_load(self, addr));
         }
         case TYPE_PTR: {
             Value *addr = self->builder.CreateGEP(value, index);
-            return create_load(self, addr);
+            return irval(create_load(self, addr));
         }
         default:
             fatal("Unhandled case %s", describe_ast(self->package, expr));
     }
 }
 
-Value *emit_expr_slice(IRContext *self, Expr *expr) { return NULL; }
+IRValue emit_expr_slice(IRContext *self, Expr *expr) { return {}; }
 
-Function *emit_expr_func(IRContext *self, Expr *expr) {
+IRValue emit_expr_func(IRContext *self, Expr *expr) {
     Operand operand = hmget(self->package->operands, expr);
     FunctionType *type = (FunctionType *) llvm_type(self, operand.type, true);
     const char *name = NULL;
@@ -1247,19 +1299,19 @@ Function *emit_expr_func(IRContext *self, Expr *expr) {
 //        ASSERT(false);
 //    }
 
-    return fn;
+    return irval(fn);
 }
 
-Value *emit_expr_functype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
-Value *emit_expr_slicetype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
-Value *emit_expr_array(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
-Value *emit_expr_pointer(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
-Value *emit_expr_struct(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
-Value *emit_expr_union(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
-Value *emit_expr_enum(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_functype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_slicetype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_array(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_pointer(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_struct(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_union(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_enum(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
 
-Value *emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
-    Value *val;
+IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
+    IRValue val;
     switch (expr->kind) {
         case EXPR_NIL:       val = emit_expr_nil(self, expr); break;
         case EXPR_INT:       val = emit_expr_int(self, expr); break;
@@ -1287,8 +1339,17 @@ Value *emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
         default:
             fatal("Unrecognized ExprKind %s", describe_ast_kind(expr->kind));
     }
-    if (is_lvalue) val = remove_load(self, val);
-    return create_coerce(self, val, expr, is_lvalue);
+    if (is_lvalue) val.val = remove_load(self, val.val);
+    if (is_lvalue && !isa<PointerType>(val.val->getType())) {
+        // make the val into an lvalue using a temp alloca
+        u32 alignment = self->data_layout.getPrefTypeAlignment(val.val->getType());
+        AllocaInst *alloca = emit_entry_alloca(self, val.val->getType(), NULL, alignment);
+        create_store(self, val.val, alloca);
+        val.val = alloca;
+        val.is_temp_alloca = true;
+    }
+    val.val = create_coerce(self, val.val, expr, is_lvalue);
+    return val;
 }
 
 void emit_stmt_label(IRContext *self, Stmt *stmt) {
@@ -1309,12 +1370,12 @@ void emit_stmt_assign(IRContext *self, Stmt *stmt) {
     i64 rhs_index = 0;
     for (i64 lhs_index = 0; lhs_index < num_lhs;) {
         Expr *expr = stmt->sassign.rhs[rhs_index++];
-        Value *rhs = emit_expr(self, expr);
+        Value *rhs = emit_expr(self, expr).val;
         if (expr->kind == EXPR_CALL) {
             Operand operand = hmget(self->package->operands, expr->ecall.expr);
             i64 num_results = arrlen(operand.type->tfunc.result->taggregate.fields);
             if (num_results == 1) {
-                Value *lhs = emit_expr(self, stmt->sassign.lhs[lhs_index++], LVALUE);
+                Value *lhs = emit_expr(self, stmt->sassign.lhs[lhs_index++], LVALUE).val;
                 set_debug_pos(self, stmt->range);
                 create_coerced_store(self, rhs, lhs);
             } else {
@@ -1324,7 +1385,7 @@ void emit_stmt_assign(IRContext *self, Stmt *stmt) {
 
                 for (i64 result_index = 0; result_index < num_lhs; result_index++) {
                     Expr *lhs_expr = stmt->sassign.lhs[lhs_index++];
-                    Value *lhs = emit_expr(self, lhs_expr, LVALUE);
+                    Value *lhs = emit_expr(self, lhs_expr, LVALUE).val;
                     set_debug_pos(self, stmt->range);
 
                     Value *addr = self->builder.CreateStructGEP(
@@ -1336,7 +1397,7 @@ void emit_stmt_assign(IRContext *self, Stmt *stmt) {
             }
         } else {
             Expr *lhs_expr = stmt->sassign.lhs[lhs_index++];
-            Value *lhs = emit_expr(self, lhs_expr, LVALUE);
+            Value *lhs = emit_expr(self, lhs_expr, LVALUE).val;
             set_debug_pos(self, stmt->range);
             create_coerced_store(self, rhs, lhs);
         }
@@ -1350,7 +1411,7 @@ void emit_stmt_return(IRContext *self, Stmt *stmt) {
     Type *ret_type = fn.function->getReturnType();
     for (i64 i = 0; i < num_returns; i++) {
         Expr *expr = stmt->sreturn[i];
-        Value *val = emit_expr(self, expr);
+        Value *val = emit_expr(self, expr).val;
         arrpush(values, val);
     }
     llvm_debug_unset_pos(self);
@@ -1429,7 +1490,7 @@ void emit_stmt_if(IRContext *self, Stmt *stmt) {
     BasicBlock *pass = BasicBlock::Create(self->context, "if.pass", fn);
     BasicBlock *fail = stmt->sif.fail ? BasicBlock::Create(self->context, "if.fail", fn) : nullptr;
     BasicBlock *post = BasicBlock::Create(self->context, "if.post", fn);
-    Value *cond = emit_expr(self, stmt->sif.cond);
+    Value *cond = emit_expr(self, stmt->sif.cond).val;
     set_debug_pos(self, stmt->range);
     self->builder.CreateCondBr(cond, pass, fail ?: post);
     self->builder.SetInsertPoint(pass);
@@ -1474,7 +1535,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         Operand op = hmget(self->package->operands, stmt->sfor.aggregate);
         switch (op.type->kind) {
             case TYPE_ARRAY: {
-                aggregate = emit_expr(self, stmt->sfor.aggregate, LVALUE);
+                aggregate = emit_expr(self, stmt->sfor.aggregate, LVALUE).val;
                 length = Constant::getNullValue(self->ty.intptr);
                 break;
             }
@@ -1523,7 +1584,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         post = BasicBlock::Create(self->context, "for.post", fn->function);
         self->builder.CreateBr(cond ?: body);
         self->builder.SetInsertPoint(cond);
-        Value *cond_val = emit_expr(self, stmt->sfor.cond);
+        Value *cond_val = emit_expr(self, stmt->sfor.cond).val;
         self->builder.CreateCondBr(cond_val, body, post);
     }
     arrpush(fn->loop_cond_blocks, cond);
@@ -1568,7 +1629,7 @@ void emit_stmt_switch(IRContext *self, Stmt *stmt) {
             case_blocks.push_back(then);
         }
     }
-    Value *value = emit_expr(self, stmt->sswitch.subject);
+    Value *value = emit_expr(self, stmt->sswitch.subject).val;
     std::vector<std::vector<Value *>> matches;
     for (i64 i = 0; i < num_cases; i++) {
         if (i + 1 < num_cases) arrpush(fn->next_cases, case_blocks[i + 1]);
@@ -1579,7 +1640,7 @@ void emit_stmt_switch(IRContext *self, Stmt *stmt) {
         if (num_matches) {
             std::vector<Value *> vals;
             for (i64 match_index = 0; match_index < num_matches; match_index++) {
-                Value *val = emit_expr(self, scase.matches[match_index]);
+                Value *val = emit_expr(self, scase.matches[match_index]).val;
                 vals.push_back(val);
             }
             matches.push_back(vals);
@@ -1605,7 +1666,7 @@ void emit_decl_var_global(IRContext *self, Decl *decl) {
     Constant *init = NULL;
     if (decl->dvar.vals) {
         Expr *expr = *decl->dvar.vals;
-        Value *val = emit_expr(self, expr);
+        Value *val = emit_expr(self, expr).val;
         init = dyn_cast<Constant>(val);
         if (!init) fatal("unimplemented non constant global variables");
     } else {
@@ -1647,10 +1708,13 @@ void emit_decl_var(IRContext *self, Decl *decl) {
         if (sym->userdata) return; // Already emitted
 
         Value *rhs = NULL;
+        bool rhs_is_alloca = false;
         if (decl->dvar.vals) {
             Expr *expr = decl->dvar.vals[index];
             Operand operand = hmget(self->package->operands, expr);
-            rhs = emit_expr(self, expr);
+            IRValue res = emit_expr(self, expr);
+            rhs_is_alloca = res.is_temp_alloca;
+            rhs = res.val;
 
             if (expr->kind == EXPR_CALL && operand.type->kind == TYPE_STRUCT &&
                 (operand.type->flags&TUPLE)) {
@@ -1669,11 +1733,19 @@ void emit_decl_var(IRContext *self, Decl *decl) {
             }
         }
         Type *type = llvm_type(self, sym->type);
-        AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
+
+        Value *alloca;
+        if (rhs_is_alloca) {
+            alloca = rhs;
+        } else {
+            // FIXME: Alloca can't happen at global scope instead use a global variable and add
+            //  check that we only initialize with global variables.
+            alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
+            if (rhs) create_coerced_store(self, rhs, alloca);
+        }
         sym->userdata = alloca;
         set_debug_pos(self, name->range);
         if (compiler.flags.debug) declare_auto_variable(self, sym);
-        if (rhs) create_coerced_store(self, rhs, alloca);
     }
 }
 
@@ -1684,7 +1756,7 @@ void emit_decl_val(IRContext *self, Decl *decl) {
     Type *type = llvm_type(self, sym->type);
     if (sym->type->kind & SYM_TYPE) return;
     arrpush(self->symbols, sym);
-    Value *value = emit_expr(self, decl->dval.val);
+    Value *value = emit_expr(self, decl->dval.val).val;
     arrpop(self->symbols);
     if (isa<Function>(value)) {
         sym->userdata = value;

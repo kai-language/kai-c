@@ -128,6 +128,12 @@ struct ExprArray {
     Expr *len;
 };
 
+typedef struct ExprVector ExprVector;
+struct ExprVector {
+    Expr *base;
+    Expr *len;
+};
+
 typedef struct ExprPointer ExprPointer;
 struct ExprPointer {
     Expr *base;
@@ -288,10 +294,11 @@ typedef enum ExprKind {
     EXPR_FUNCTYPE  = EXPR_KIND_BASE + 0x11,
     EXPR_SLICETYPE = EXPR_KIND_BASE + 0x12,
     EXPR_ARRAY     = EXPR_KIND_BASE + 0x13,
-    EXPR_POINTER   = EXPR_KIND_BASE + 0x14,
-    EXPR_STRUCT    = EXPR_KIND_BASE + 0x15,
-    EXPR_UNION     = EXPR_KIND_BASE + 0x16,
-    EXPR_ENUM      = EXPR_KIND_BASE + 0x17,
+    EXPR_VECTOR    = EXPR_KIND_BASE + 0x14,
+    EXPR_POINTER   = EXPR_KIND_BASE + 0x15,
+    EXPR_STRUCT    = EXPR_KIND_BASE + 0x16,
+    EXPR_UNION     = EXPR_KIND_BASE + 0x17,
+    EXPR_ENUM      = EXPR_KIND_BASE + 0x18,
 } ExprKind;
 
 typedef enum Op {
@@ -344,6 +351,7 @@ struct Expr {
 
         ExprFuncType efunctype;
         ExprArray earray;
+        ExprVector evector;
         Expr *eslicetype;
         ExprPointer epointer;
         ExprAggregate estruct;
@@ -444,6 +452,7 @@ struct Ast {
 
         ExprFuncType efunctype;
         ExprArray earray;
+        ExprVector evector;
         Expr *eslicetype;
         ExprPointer epointer;
         ExprAggregate estruct;
@@ -495,6 +504,7 @@ Expr *new_expr_func(Package *package, Range range, FuncFlags flags, Expr *type, 
 Expr *new_expr_functype(Package *package, Range range,
                         FuncFlags flags, FuncParam *params, FuncParam *result);
 Expr *new_expr_array(Package *package, Range range, Expr *base, Expr *len);
+Expr *new_expr_vector(Package *package, Range range, Expr *base, Expr *len);
 Expr *new_expr_slicetype(Package *package, Range range, Expr *base);
 Expr *new_expr_pointer(Package *package, Range range, Expr *base);
 Expr *new_expr_struct(Package *package, Range range, AggregateField *fields, u8 flags);

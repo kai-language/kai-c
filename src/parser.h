@@ -46,6 +46,7 @@ enum Directive {
     DIR_LINE,
     DIR_OPAQUE,
     DIR_IMPORT,
+    DIR_VECTOR,
     DIR_LIBRARY,
     DIR_FOREIGN,
     DIR_CALLCONV,

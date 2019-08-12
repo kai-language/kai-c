@@ -96,6 +96,10 @@ bool is_array(Ty *type) {
     return type && type->kind == TYPE_ARRAY;
 }
 
+bool is_vector(Ty *type) {
+    return type && type->kind == TYPE_VECTOR;
+}
+
 bool is_slice(Ty *type) {
     return type && type->kind == TYPE_SLICE;
 }
@@ -246,6 +250,11 @@ bool types_eql(Ty *a, Ty *b) {
     return type_base(a) == type_base(b);
 }
 
+Ty *type_scalar(Ty *ty) {
+    if (ty->kind == TYPE_VECTOR) return ty->tvector.eltype;
+    return ty;
+}
+
 #define type_size(type, member) offsetof(type, member) + sizeof(((type *)0)->member)
 
 Ty *type_alloc(TyKind kind, u8 flags, size_t size) {
@@ -323,10 +332,10 @@ Ty *type_ptr(Ty *base, u8 flags) {
 
 InternedType *interned_array_tys;
 
-Ty *type_array(Ty *eltype, u64 length, u8 flags) {
+Ty *type_array(Ty *eltype, u64 length, u8 flags) { // FIXME: IMPL_LENGTH handling & interning
     TRACE(CHECKING);
     void *bytes[] = {eltype, (void *) length};
-    void *hash = (void *) stbds_hash_bytes(bytes, sizeof *bytes, 0x31415926);
+    void *hash = (void *) stbds_hash_bytes(bytes, sizeof bytes, 0x31415926);
     Ty *type = hmget(interned_array_tys, hash);
     if (!type) {
         type = type_alloc(TYPE_ARRAY, flags, type_size(Ty, tarray));
@@ -337,6 +346,26 @@ Ty *type_array(Ty *eltype, u64 length, u8 flags) {
         type->tarray.eltype = eltype;
         type->tarray.length = length;
         hmput(interned_array_tys, hash, type);
+    }
+    return type;
+}
+
+InternedType *interned_vector_tys;
+
+Ty *type_vector(Ty *eltype, u64 length, u8 flags) {
+    TRACE(CHECKING);
+    void *bytes[] = {eltype, (void *) length};
+    void *hash = (void *) stbds_hash_bytes(bytes, sizeof bytes, 0x31415926);
+    Ty *type = hmget(interned_vector_tys, hash);
+    if (!type) {
+        type = type_alloc(TYPE_VECTOR, flags, type_size(Ty, tvector));
+        u64 size = eltype->size * length;
+        ASSERT(size <= UINT32_MAX);
+        type->size = (u32) size;
+        type->align = eltype->align;
+        type->tvector.eltype = eltype;
+        type->tvector.length = length;
+        hmput(interned_vector_tys, hash, type);
     }
     return type;
 }
@@ -368,6 +397,7 @@ int type_kind_alloc_sizes[] = {
     [TYPE_FUNC] = type_size(Ty, tfunc),
     [TYPE_ARRAY] = type_size(Ty, tarray),
     [TYPE_SLICE] = type_size(Ty, tslice),
+    [TYPE_VECTOR] = type_size(Ty, tvector),
     [TYPE_STRUCT] = type_size(Ty, taggregate),
     [TYPE_UNION] = type_size(Ty, taggregate),
     [TYPE_ANY] = sizeof(Ty),
@@ -415,6 +445,14 @@ const char *tyname(Ty *type) {
             char buf[1024];
             int len = 0;
             len += snprintf(buf + len, sizeof buf - len, "[%llu]", type->tarray.length);
+            len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tarray.eltype));
+            buf[len] = '\0';
+            return str_intern(buf);
+        }
+        case TYPE_VECTOR: {
+            char buf[1024];
+            int len = 0;
+            len += snprintf(buf + len, sizeof buf - len, "#vector(%llu)", type->tarray.length);
             len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tarray.eltype));
             buf[len] = '\0';
             return str_intern(buf);

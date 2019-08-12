@@ -40,6 +40,7 @@ typedef enum TyKind {
     TYPE_FUNC,
     TYPE_ARRAY,
     TYPE_SLICE,
+    TYPE_VECTOR,
     TYPE_STRUCT,
     TYPE_UNION,
     TYPE_ANY,
@@ -79,6 +80,12 @@ struct TyArray {
     u64 length;
 };
 
+typedef struct TyVector TyVector;
+struct TyVector {
+    Ty *eltype;
+    u64 length;
+};
+
 typedef struct TyFunc TyFunc;
 struct TyFunc {
     Ty **params; // arr
@@ -99,6 +106,7 @@ struct Ty {
         TyEnum tenum;
         TyArray tarray;
         TySlice tslice;
+        TyVector tvector;
         TyPointer tptr;
         TyAggregate taggregate;
     };
@@ -135,9 +143,11 @@ Ty *type_union(TyField *fields, u32 size, u32 align, u8 flags);
 Ty *type_enum(u8 flags);
 Ty *type_ptr(Ty *base, u8 flags);
 Ty *type_array(Ty *eltype, u64 length, u8 flags);
+Ty *type_vector(Ty *eltype, u64 length, u8 flags);
 Ty *type_slice(Ty *eltype, u8 flags);
 Ty *type_alias(Ty *base, Sym *sym);
 bool types_eql(Ty *a, Ty *b);
+Ty *type_scalar(Ty *ty);
 
 const char *tyname(Ty *type);
 u64 type_max_value(Ty *type);
@@ -159,6 +169,7 @@ bool is_arithmetic_or_ptr(Ty *type);
 bool is_float(Ty *type);
 bool is_bool(Ty *type);
 bool is_integer(Ty *type);
+bool is_vector(Ty *type);
 bool is_slice(Ty *type);
 bool is_array(Ty *type);
 bool is_ptr_like_type(Ty *type);
