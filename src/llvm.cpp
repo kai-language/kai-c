@@ -2000,16 +2000,23 @@ bool llvm_emit_object(Package *package) {
     pm_builder->populateFunctionPassManager(function_pm);
 
     legacy::PassManager module_pm;
-    pm_builder->populateModulePassManager(module_pm);
+    TargetMachine::CodeGenFileType file_type = TargetMachine::CGFT_ObjectFile; // TODO: Assembly
 
-    module_pm.add(createBasicAAWrapperPass());
-    module_pm.add(createInstructionCombiningPass());
-    module_pm.add(createAggressiveDCEPass());
-    module_pm.add(createReassociatePass());
-    module_pm.add(createPromoteMemoryToRegisterPass());
+    if (compiler.flags.disable_all_passes) {
+        if (self->target->addPassesToEmitFile(module_pm, dest, nullptr, file_type)) {
+            errs() << "TargetMachine cannot emit a file of this type";
+            return false;
+        }
+        module_pm.run(*self->module);
+    } else {
+        pm_builder->populateModulePassManager(module_pm);
 
-    if (!compiler.flags.disable_all_passes) {
-        TargetMachine::CodeGenFileType file_type = TargetMachine::CGFT_ObjectFile;
+        module_pm.add(createBasicAAWrapperPass());
+        module_pm.add(createInstructionCombiningPass());
+        module_pm.add(createAggressiveDCEPass());
+        module_pm.add(createReassociatePass());
+        module_pm.add(createPromoteMemoryToRegisterPass());
+
         if (self->target->addPassesToEmitFile(module_pm, dest, nullptr, file_type)) {
             errs() << "TargetMachine cannot emit a file of this type";
             return false;
