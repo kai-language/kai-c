@@ -9,7 +9,12 @@ extern struct SPDR_Context *spdr;
 void profiler_init(void);
 
 #if PROFILING_ENABLED
+
+#if defined(__cplusplus)
+#include "spdr/spdr.hh"
+#else
 #include "spdr/spdr.h"
+#endif
 
 // Categories
 #define GENERAL "general"
@@ -18,6 +23,9 @@ void profiler_init(void);
 #define LEXING "lexing"
 #define PARSING "parsing"
 #define CHECKING "checking"
+#define EMITTING "emitting"
+#define LLVM "llvm"
+#define LINKING "linking"
 #define INTERN "interning"
 #define IO "io"
 
@@ -123,8 +131,7 @@ static void trace(const char *line, void *_) {
         fputs(buffer, tracefile);
 }
 
-// 10MB
-#define TRACE_MEMORY 10 * 1024 * 1024
+#define TRACE_MEMORY 200 * 1024 * 1024
 static char spdr_buffer[TRACE_MEMORY];
 
 void profiler_init(void) {

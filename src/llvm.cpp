@@ -91,6 +91,7 @@ struct BuiltinTypes {
     };
     Type *f32;
     Type *f64;
+    Type *void_;
     IntegerType *intptr;
     PointerType *rawptr;
 };
@@ -188,6 +189,7 @@ struct IRContext {
             ty.u64 = IntegerType::get(context, 64);
             ty.f32 = Type::getFloatTy(context);
             ty.f64 = Type::getDoubleTy(context);
+            ty.void_ = Type::getVoidTy(context);
             ty.intptr = IntegerType::get(context, target->getPointerSizeInBits(0));
             ty.rawptr = PointerType::get(ty.u8, 0);
         }
@@ -258,14 +260,6 @@ IRContext *llvm_create_context(Package *pkg) {
     return self;
 }
 
-Type *llvm_void(IRContext *c) {
-    return Type::getVoidTy(c->context);
-}
-
-Type *llvm_integer(IRContext *c, u64 bits) {
-    return IntegerType::get(c->context, (u32) bits);
-}
-
 Type *llvm_float(IRContext *c, u64 bits) {
     switch (bits) {
         case 16:  return Type::getHalfTy(c->context);
@@ -280,6 +274,7 @@ Type *llvm_float(IRContext *c, u64 bits) {
 // MARK: - debug
 
 void set_debug_pos(IRContext *self, Range range) {
+    TRACE(EMITTING);
     if (!compiler.flags.debug) return;
     PosInfo pos = package_posinfo(self->package, range.start);
     if (pos.source != self->dbg.source_file) {
@@ -298,6 +293,7 @@ void llvm_debug_unset_pos(IRContext *c) {
 }
 
 bool llvm_validate(IRContext *context) {
+    TRACE(EMITTING);
     bool broken = verifyModule(*context->module);
     if (broken) {
         context->module->print(errs(), nullptr);
@@ -307,14 +303,15 @@ bool llvm_validate(IRContext *context) {
 }
 
 Type *llvm_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false) {
+    TRACE(EMITTING);
     if (type->sym && type->sym->userdata) return (Type *) type->sym->userdata;
     switch (type->kind) {
         case TYPE_INVALID:
         case TYPE_COMPLETING: fatal("Invalid type in backend");
-        case TYPE_VOID:       return llvm_void(c);
-        case TYPE_BOOL:       return llvm_integer(c, 1);
+        case TYPE_VOID:       return c->ty.void_;
+        case TYPE_BOOL:       return IntegerType::get(c->context, 1);
         case TYPE_ENUM:    // fallthrough
-        case TYPE_INT:        return llvm_integer(c, type->size * 8);
+        case TYPE_INT:        return IntegerType::get(c->context, type->size * 8);
         case TYPE_FLOAT:      return llvm_float(c, type->size * 8);
         case TYPE_PTR:        return PointerType::get(llvm_type(c, type->tptr.base), 0);
         case TYPE_FUNC: {
@@ -327,7 +324,7 @@ Type *llvm_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false)
             }
             Type *result;
             if (type->tfunc.result->kind == TYPE_VOID) {
-                result = llvm_void(c);
+                result = c->ty.void_;
             } else if (arrlen(type->tfunc.result->taggregate.fields) == 1) {
                 result = llvm_type(c, type->tfunc.result->taggregate.fields->type);
             } else {
@@ -336,6 +333,11 @@ Type *llvm_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false)
             Type *fn = FunctionType::get(result, params, type->flags&FUNC_CVARGS);
             if (do_not_hide_behind_pointer) return fn;
             return PointerType::get(fn, 0);
+        }
+        case TYPE_VECTOR: {
+            Type *base = llvm_type(c, type->tvector.eltype);
+            Type *ty = VectorType::get(base, (u32) type->tvector.length);
+            return ty;
         }
         case TYPE_ARRAY: {
             Type *base = llvm_type(c, type->tarray.eltype);
@@ -368,7 +370,7 @@ Type *llvm_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false)
             return StructType::get(c->context, elements);
         }
         case TYPE_UNION: {
-            Type *data = llvm_integer(c, type->size);
+            Type *data = IntegerType::get(c->context, type->size * 8);
             Type **elements = NULL;
             arrput(elements, data);
             ArrayRef<Type *> ref = ArrayRef<Type *>((Type **) elements, arrlen(elements));
@@ -383,6 +385,7 @@ Type *llvm_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false)
 }
 
 DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false) {
+    TRACE(EMITTING);
     using namespace dwarf;
     switch (type->kind) {
         case TYPE_INVALID:
@@ -445,10 +448,12 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
             if (do_not_hide_behind_pointer) return type;
             return c->dbg.builder->createPointerType(type, c->data_layout.getPointerSizeInBits());
         }
+        case TYPE_VECTOR: // fallthrough
         case TYPE_ARRAY: {
             std::vector<llvm::Metadata *> subscripts;
             Ty *eltype = type;
-            while (eltype->kind == TYPE_ARRAY) { // NOTE: That 0 is probably wrong
+            while (eltype->kind == TYPE_ARRAY || eltype->kind == TYPE_VECTOR) {
+                // NOTE: That 0 is probably wrong
                 subscripts.push_back(c->dbg.builder->getOrCreateSubrange(0, eltype->tarray.length));
                 eltype = eltype->tarray.eltype;
             }
@@ -457,6 +462,8 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
             u32 align = c->data_layout.getPrefTypeAlignment(irtype) * 8;
             DIType *deltype = llvm_debug_type(c, type->tarray.eltype);
             DINodeArray arr = c->dbg.builder->getOrCreateArray(subscripts);
+            if (type->kind == TYPE_VECTOR)
+                return c->dbg.builder->createVectorType(size, align, deltype, arr);
             return c->dbg.builder->createArrayType(size, align, deltype, arr);
         }
         case TYPE_SLICE: {
@@ -502,6 +509,7 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
 }
 
 AllocaInst *emit_entry_alloca(IRContext *self, Type *type, const char *name, u32 alignment_bytes) {
+    TRACE(EMITTING);
     IRFunction *fn = &arrlast(self->fn);
     IRBuilder<> b(fn->entry_block);
     if (fn->last_entry_alloca) {
@@ -608,6 +616,7 @@ Value *create_element_bitcast(IRContext *self, Value *addr, Type *ty) {
 }
 
 void create_store(IRContext *self, Value *src, Value *dst) {
+    TRACE(EMITTING);
     Type *src_ty = src->getType();
     Type *dst_ty = dst->getType()->getPointerElementType();
     ASSERT(src_ty == dst_ty);
@@ -616,12 +625,14 @@ void create_store(IRContext *self, Value *src, Value *dst) {
 }
 
 Value *create_load(IRContext *self, Value *val) {
+    TRACE(EMITTING);
     Type *ty = val->getType()->getPointerElementType();
     u32 align = self->data_layout.getPrefTypeAlignment(ty);
     return self->builder.CreateAlignedLoad(ty, val, align);
 }
 
 Value *remove_load(IRContext *self, Value *val) {
+    TRACE(EMITTING);
     if (LoadInst *load = dyn_cast<LoadInst>(val)) {
         val = load->getPointerOperand();
         load->eraseFromParent();
@@ -630,6 +641,7 @@ Value *remove_load(IRContext *self, Value *val) {
 }
 
 void create_coerced_store(IRContext *self, Value *src, Value *dst) {
+    TRACE(EMITTING);
     Type *src_ty = src->getType();
     Type *dst_ty = dst->getType()->getPointerElementType();
     if (src_ty == dst_ty) {
@@ -674,6 +686,7 @@ void create_coerced_store(IRContext *self, Value *src, Value *dst) {
 }
 
 Value *create_coerce(IRContext *self, Value *val, Expr *expr, bool is_lvalue = false) {
+    TRACE(EMITTING);
     Ty *dst = hmget(self->package->operands, expr).type;
     if (dst == type_cvarg) return val; // FIXME: C Varg rules
     Type *dst_ty = llvm_type(self, dst);
@@ -746,6 +759,7 @@ start:
 }
 
 Value *create_cast(IRContext *self, Value *val, Expr *expr, bool is_lvalue = false) {
+    TRACE(EMITTING);
     Ty *dst = hmget(self->package->operands, expr).type;
     if (dst == type_cvarg) return val; // FIXME: C Varg rules
     Type *dst_ty = llvm_type(self, dst);
@@ -829,6 +843,7 @@ void emit_decl(IRContext *self, Decl *decl);
 void emit_stmt(IRContext *self, Stmt *stmt);
 
 IRValue emit_expr_nil(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
     set_debug_pos(self, expr->range);
@@ -836,6 +851,7 @@ IRValue emit_expr_nil(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_int(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
     set_debug_pos(self, expr->range);
@@ -846,17 +862,20 @@ IRValue emit_expr_int(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_float(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
     return irval(ConstantFP::get(type, operand.val.f));
 }
 
 IRValue emit_expr_str(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     StringRef ref = StringRef(expr->estr.str, expr->estr.len);
     return irval(self->builder.CreateGlobalStringPtr(ref));
 }
 
 IRValue emit_sym(IRContext *self, Package *package, Sym *sym) {
+    TRACE(EMITTING);
     IRContext ctx(self, package);
     ctx.dbg.source_file = package_posinfo(package, sym->decl->range.start).source;
     if (compiler.flags.debug) {
@@ -870,6 +889,7 @@ IRValue emit_sym(IRContext *self, Package *package, Sym *sym) {
 }
 
 IRValue emit_expr_name(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Sym *sym = hmget(self->package->symbols, expr);
     if (!sym->userdata) {
         emit_sym(self, self->package, sym);
@@ -880,29 +900,69 @@ IRValue emit_expr_name(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_field(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr->efield.expr);
     if (operand.flags&PACKAGE) { // operand.val is a pointer to the package Symbol
         Sym *package_sym = (Sym *) operand.val.p;
         Sym *sym = hmget(self->package->symbols, expr->efield.name);
-        if (!sym->userdata) { // TODO: Switch some of the context stuff (DIFile) etc.
+        if (!sym->userdata)
             emit_sym(self, package_sym->package, sym);
-        }
         if (isa<Function>((Value *) sym->userdata)) return irval((Value *) sym->userdata);
         return irval(create_load(self, (Value *) sym->userdata));
     }
     switch (operand.type->kind) {
         case TYPE_STRUCT:
             break;
+        case TYPE_VECTOR: {
+            Value *agg = emit_expr(self, expr->efield.expr).val;
+            std::vector<u32> indices;
+            const char *ch = expr->efield.name->ename;
+            for (; *ch; ch++) {
+                switch (*ch) {
+                    case 'x': case 'r':
+                        indices.push_back(0);
+                        break;
+                    case 'y': case 'g':
+                        indices.push_back(1);
+                        break;
+                    case 'z': case 'b':
+                        indices.push_back(2);
+                        break;
+                    case 'w': case 'a':
+                        indices.push_back(3);
+                        break;
+                    default:
+                        fatal("Unimplemented case within %s", __FUNCTION__);
+                }
+            }
+            if (indices.size() == 1) {
+                return irval(self->builder.CreateExtractElement(agg, indices[0]));
+            } else {
+                Value *v2 = UndefValue::get(agg->getType());
+                return irval(self->builder.CreateShuffleVector(agg, v2, indices));
+            }
+        }
+        default:
+            fatal("Unhandled field base kind");
     }
-    fatal("Unhandled field base kind");
 }
 
 IRValue emit_expr_compound(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     switch (operand.type->kind) {
         case TYPE_STRUCT:
         case TYPE_UNION:
             fatal("Unimplemented");
+        case TYPE_VECTOR: {
+            VectorType *type = (VectorType *) llvm_type(self, operand.type);
+            Value *agg = Constant::getNullValue(type);
+            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                Value *val = emit_expr(self, expr->ecompound.fields[i].val).val;
+                agg = self->builder.CreateInsertElement(agg, val, i);
+            }
+            return irval(agg);
+        }
         case TYPE_ARRAY: {
             Type *eltype = llvm_type(self, operand.type->tarray.eltype);
             ArrayType *type = (ArrayType *) llvm_type(self, operand.type);
@@ -983,6 +1043,7 @@ IRValue emit_expr_compound(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_cast(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Ty *dst = hmget(self->package->operands, expr->ecast.type).type;
     Type *dst_ty = llvm_type(self, dst);
     Value *val = emit_expr(self, expr->ecast.expr).val;
@@ -1055,10 +1116,12 @@ start:
 }
 
 IRValue emit_expr_paren(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     return emit_expr(self, expr->eparen);
 }
 
 IRValue emit_expr_unary(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     Value *val = emit_expr(self, expr->eunary, expr->flags == OP_AND).val;
     set_debug_pos(self, expr->range);
@@ -1078,6 +1141,7 @@ IRValue emit_expr_unary(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_binary(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     bool is_int = is_integer(operand.type) || is_ptr(operand.type);
     Type *type = llvm_type(self, operand.type);
@@ -1123,6 +1187,7 @@ IRValue emit_expr_binary(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_ternary(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Value *cond = emit_expr(self, expr->eternary.econd).val;
     Value *pass = cond;
     if (expr->eternary.epass)
@@ -1132,6 +1197,7 @@ IRValue emit_expr_ternary(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_call(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr->ecall.expr);
     std::vector<Value *> args;
     bool is_cvargs = (operand.type->flags&FUNC_CVARGS) != 0;
@@ -1156,6 +1222,7 @@ IRValue emit_expr_call(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr_index(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand value_operand = hmget(self->package->operands, expr->eindex.expr);
     Operand index_operand = hmget(self->package->operands, expr->eindex.index);
     Value *value = emit_expr(self, expr->eindex.expr, LVALUE).val;
@@ -1183,6 +1250,7 @@ IRValue emit_expr_index(IRContext *self, Expr *expr) {
 IRValue emit_expr_slice(IRContext *self, Expr *expr) { return {}; }
 
 IRValue emit_expr_func(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     FunctionType *type = (FunctionType *) llvm_type(self, operand.type, true);
     const char *name = NULL;
@@ -1309,7 +1377,9 @@ IRValue emit_expr_pointer(IRContext *self, Expr *expr) { fatal("Unimplemented %s
 IRValue emit_expr_struct(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
 IRValue emit_expr_union(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
 IRValue emit_expr_enum(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+
 IRValue emit_expr_directive(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
     Operand op = hmget(self->package->operands, expr);
     switch ((Directive) expr->flags) {
         case DIR_LINE: return irval(ConstantInt::get(self->ty.u32, op.val.u));
@@ -1324,6 +1394,7 @@ IRValue emit_expr_directive(IRContext *self, Expr *expr) {
 }
 
 IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
+    TRACE(EMITTING);
     IRValue val;
     switch (expr->kind) {
         case EXPR_NIL:       val = emit_expr_nil(self, expr); break;
@@ -1367,6 +1438,7 @@ IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
 }
 
 void emit_stmt_label(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     Sym *sym = hmget(self->package->symbols, stmt->slabel);
     if (sym->userdata) { // Label has been previously emitted
         BasicBlock *bb = (BasicBlock *) sym->userdata;
@@ -1380,6 +1452,7 @@ void emit_stmt_label(IRContext *self, Stmt *stmt) {
 }
 
 void emit_stmt_assign(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     i64 num_lhs = arrlen(stmt->sassign.lhs);
     i64 rhs_index = 0;
     for (i64 lhs_index = 0; lhs_index < num_lhs;) {
@@ -1419,6 +1492,7 @@ void emit_stmt_assign(IRContext *self, Stmt *stmt) {
 }
 
 void emit_stmt_return(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     i64 num_returns = arrlen(stmt->sreturn);
     Value **values = NULL;
     IRFunction fn = arrlast(self->fn);
@@ -1443,6 +1517,7 @@ void emit_stmt_return(IRContext *self, Stmt *stmt) {
 }
 
 void emit_stmt_defer(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     IRFunction *fn = &arrlast(self->fn);
     BasicBlock *block = BasicBlock::Create(self->context, "defer", arrlast(self->fn).function);
     arrpush(fn->defer_blocks, block);
@@ -1454,6 +1529,7 @@ void emit_stmt_defer(IRContext *self, Stmt *stmt) {
 
 void emit_stmt_using(IRContext *self, Stmt *stmt) {}
 void emit_stmt_goto(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     IRFunction *fn = &arrlast(self->fn);
     BasicBlock *target;
     if (stmt->sgoto) {
@@ -1485,6 +1561,7 @@ void emit_stmt_goto(IRContext *self, Stmt *stmt) {
 }
 
 void emit_stmt_block(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     if (compiler.flags.debug) {
         PosInfo pos = package_posinfo(self->package, stmt->range.start);
         DILexicalBlock *block = self->dbg.builder->createLexicalBlock(
@@ -1500,6 +1577,7 @@ void emit_stmt_block(IRContext *self, Stmt *stmt) {
 }
 
 void emit_stmt_if(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     Function *fn = arrlast(self->fn).function;
     BasicBlock *pass = BasicBlock::Create(self->context, "if.pass", fn);
     BasicBlock *fail = stmt->sif.fail ? BasicBlock::Create(self->context, "if.fail", fn) : nullptr;
@@ -1519,6 +1597,7 @@ void emit_stmt_if(IRContext *self, Stmt *stmt) {
 }
 
 void emit_stmt_for(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     IRFunction *fn = &arrlast(self->fn);
     BasicBlock *body, *post, *cond, *step;
     body = post = cond = step = NULL;
@@ -1626,6 +1705,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
 }
 
 void emit_stmt_switch(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     BasicBlock *current_block = self->builder.GetInsertBlock();
     IRFunction *fn = &arrlast(self->fn);
     BasicBlock *post = BasicBlock::Create(self->context, "switch.post", fn->function);
@@ -1674,6 +1754,7 @@ void emit_stmt_switch(IRContext *self, Stmt *stmt) {
 }
 
 void emit_decl_var_global(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
     Expr *name = *decl->dvar.names;
     Sym *sym = hmget(self->package->symbols, name);
     if (sym->userdata) return; // Already emitted
@@ -1705,6 +1786,7 @@ void emit_decl_var_global(IRContext *self, Decl *decl) {
 }
 
 void declare_auto_variable(IRContext *self, Sym *sym) {
+    TRACE(EMITTING);
     PosInfo pos = package_posinfo(self->package, sym->decl->range.start);
     BasicBlock *block = self->builder.GetInsertBlock();
     DIScope *scope = arrlast(self->dbg.scopes);
@@ -1716,6 +1798,7 @@ void declare_auto_variable(IRContext *self, Sym *sym) {
 }
 
 void emit_decl_var(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
     for (u32 index = 0; index < arrlen(decl->dvar.names); index++) {
         Expr *name = decl->dvar.names[index];
         Sym *sym = hmget(self->package->symbols, name);
@@ -1764,6 +1847,7 @@ void emit_decl_var(IRContext *self, Decl *decl) {
 }
 
 void emit_decl_val(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
     Sym *sym = hmget(self->package->symbols, decl->dval.name);
     if (sym->userdata) return; // Already emitted
     set_debug_pos(self, decl->dval.name->range);
@@ -1788,18 +1872,26 @@ void emit_decl_import(IRContext *self, Decl *decl) {}
 void emit_decl_library(IRContext *self, Decl *decl) {}
 
 void emit_decl_foreign(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, decl->dforeign.type);
     Sym *sym = hmget(self->package->symbols, decl->dforeign.name);
     set_debug_pos(self, decl->range);
 
+    // FIXME: Check for existing decl
+
     Type *type = llvm_type(self, operand.type);
     if (operand.type->kind == TYPE_FUNC) {
+
+
 //    if (FunctionType *fn_ty = dyn_cast<FunctionType>(type)) {
         FunctionType *fn_ty = (FunctionType *) type->getPointerElementType();
-        Function *fn = Function::Create(
-            fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
-        // FIXME: Calling convention
+        Function *fn = (Function *) self->module->getOrInsertFunction(sym->external_name, fn_ty);
         fn->setCallingConv(CallingConv::C);
+
+//        Function *fn = Function::Create(
+//            fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
+        // FIXME: Calling convention
+//        fn->setCallingConv(CallingConv::C);
 //        if (compiler.flags.debug) {
 //            DIType *dbg_type = llvm_debug_type(self, operand.type);
 //            PosInfo pos = package_posinfo(self->package, decl->dforeign.name->range.start);
@@ -1821,13 +1913,24 @@ void emit_decl_foreign(IRContext *self, Decl *decl) {
 }
 
 void emit_decl_foreignblock(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
     for (i64 i = 0; i < arrlen(decl->dforeign_block.decls); i++) {
         emit_decl_foreign(self, decl->dforeign_block.decls[i]);
     }
 }
 
 void emit_stmt(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
     switch (stmt->kind) {
+        case (StmtKind) DECL_FILE: {
+            if (!compiler.flags.debug) return;
+            Source *file = ((Decl *) stmt)->dfile;
+            self->dbg.source_file = file;
+            self->dbg.file = self->dbg.builder->createFile(file->filename, self->package->path);
+            arrsetlen(self->dbg.scopes, 1); // 1 so we keep the compile unit at the top.
+            arrpush(self->dbg.scopes, self->dbg.file);
+            break;
+        }
         case (StmtKind) DECL_VAR:
             if (!arrlen(self->fn)) return emit_decl_var_global(self, (Decl *) stmt);
             else return emit_decl_var(self, (Decl *) stmt);
@@ -1874,6 +1977,7 @@ void emit_stmt(IRContext *self, Stmt *stmt) {
 }
 
 void emit_decl(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
     switch (decl->kind) {
         case DECL_VAR:
             if (!arrlen(self->fn)) return emit_decl_var_global(self, decl);
@@ -1888,71 +1992,12 @@ void emit_decl(IRContext *self, Decl *decl) {
     }
 }
 
-void llvm_emit_stmt(IRContext *self, Stmt *stmt) {
-    switch (stmt->kind) {
-        case (StmtKind) DECL_FILE: {
-            if (!compiler.flags.debug) return;
-            Source *file = ((Decl *) stmt)->dfile;
-            self->dbg.source_file = file;
-            self->dbg.file = self->dbg.builder->createFile(file->filename, self->package->path);
-            arrsetlen(self->dbg.scopes, 1); // 1 so we keep the compile unit at the top.
-            arrpush(self->dbg.scopes, self->dbg.file);
-            break;
-        }
-        case (StmtKind) DECL_VAL:
-            emit_decl_val(self, (Decl *) stmt);
-            break;
-        case (StmtKind) DECL_VAR:
-            emit_decl_var(self, (Decl *) stmt);
-            break;
-        case (StmtKind) DECL_IMPORT:
-            break;
-        case (StmtKind) DECL_LIBRARY:
-        case (StmtKind) DECL_FOREIGN:
-        case (StmtKind) DECL_FOREIGN_BLOCK:
-            break;
-        case STMT_LABEL: 
-            emit_stmt_label(self, stmt);
-            break;
-        case STMT_ASSIGN: 
-            emit_stmt_assign(self, stmt);
-            break;
-        case STMT_RETURN: 
-            emit_stmt_return(self, stmt);
-            break;
-        case STMT_DEFER: 
-            emit_stmt_defer(self, stmt);
-            break;
-        case STMT_USING: 
-            emit_stmt_using(self, stmt);
-            break;
-        case STMT_GOTO: 
-            emit_stmt_goto(self, stmt);
-            break;
-        case STMT_BLOCK: 
-            emit_stmt_block(self, stmt);
-            break;
-        case STMT_IF: 
-            emit_stmt_if(self, stmt);
-            break;
-        case STMT_FOR: 
-            emit_stmt_for(self, stmt);
-            break;
-        case STMT_SWITCH: 
-            emit_stmt_switch(self, stmt);
-            break;
-        default:
-            if (stmt->kind < STMT_KIND_BASE)
-                emit_expr(self, (Expr *) stmt);
-            fatal("Unrecognized StmtKind %s", describe_ast_kind(stmt->kind));
-    }
-}
-
 static void addDiscriminatorsPass(const PassManagerBuilder &Builder, legacy::PassManagerBase &PM) {
     PM.add(createAddDiscriminatorsPass());
 }
 
 bool llvm_emit_object(Package *package) {
+    TRACE(LLVM);
     IRContext *self = (IRContext *) package->userdata;
 
     char object_name[MAX_PATH];
@@ -2075,10 +2120,11 @@ bool llvm_emit_object(Package *package) {
 }
 
 bool llvm_build_module(Package *package) {
+    TRACE(EMITTING);
     IRContext *context = llvm_create_context(package);
     package->userdata = context;
     for (int i = 0; i < arrlen(package->stmts); i++) {
-        llvm_emit_stmt(context, package->stmts[i]);
+        emit_stmt(context, package->stmts[i]);
     }
     return llvm_validate(context);
 }

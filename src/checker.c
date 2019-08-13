@@ -484,6 +484,7 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
             }
             break;
         }
+        case TYPE_VECTOR: // fallthrough
         case TYPE_ARRAY: {
             Ty *expected_type = type ? type->tarray.eltype : NULL;
             u32 index = 0;

@@ -429,6 +429,7 @@ bool compiler_parse(Compiler *compiler) {
 }
 
 bool compiler_typecheck(Compiler *compiler) {
+    TRACE(GENERAL);
     for (;;) {
         COUNTER1(IMPORT, "checking_queue", INT("length", (int) compiler->checking_queue.size));
         CheckerWork *work = queue_pop_front(&compiler->checking_queue);
@@ -458,12 +459,14 @@ bool llvm_emit_object(Package *package) { return false; }
 #endif
 
 bool compiler_build(Compiler *compiler) {
+    TRACE(GENERAL);
     bool failure = llvm_build_module(compiler->packages->value); // the first package is the input
     if (failure) compiler->failure_stage = STAGE_BUILD;
     return !failure;
 }
 
 bool compiler_emit_objects(Compiler *compiler) {
+    TRACE(GENERAL);
     bool failure = llvm_emit_object(compiler->packages->value);
     if (failure) compiler->failure_stage = STAGE_EMIT_OBJECTS;
     return !failure;
@@ -490,6 +493,7 @@ char *arr_printf(char *arr, const char *fmt, ...) {
 }
 
 bool compiler_link_objects(Compiler *compiler) {
+    TRACE(GENERAL);
     char *linker_flags = NULL;
     // TODO: Output type (exec, static, dynamic)
 
