@@ -53,6 +53,7 @@ const char *directives[] = {
     [DIR_FILE] = "file",
     [DIR_FUNCTION] = "function",
     [DIR_LINE] = "line",
+    [DIR_UNDEF] = "undef",
     [DIR_OPAQUE] = "opaque",
     [DIR_IMPORT] = "import",
     [DIR_VECTOR] = "vector",
@@ -621,13 +622,15 @@ Expr *parse_expr_atom(Parser *self) {
         }
         case TK_Directive: {
             if (match_directive(self, DIR_LINE)) {
-                fatal("Unimplemented");
+                return new_expr_directive(self->package, r(start, self->olast), DIR_LINE);
             } else if (match_directive(self, DIR_FILE)) {
-                fatal("Unimplemented");
+                return new_expr_directive(self->package, r(start, self->olast), DIR_FILE);
             } else if (match_directive(self, DIR_FUNCTION)) {
-                fatal("Unimplemented");
+                return new_expr_directive(self->package, r(start, self->olast), DIR_FUNCTION);
             } else if (match_directive(self, DIR_LOCATION)) {
-                fatal("Unimplemented");
+                return new_expr_directive(self->package, r(start, self->olast), DIR_LOCATION);
+            } else if (match_directive(self, DIR_UNDEF)) {
+                return new_expr_directive(self->package, r(start, self->olast), DIR_UNDEF);
             } else if (match_directive(self, DIR_VECTOR)) {
                 expect_tok(self, TK_Lparen);
                 Expr *len = parse_expr(self);
@@ -1020,7 +1023,7 @@ begin:;
         case TK_Directive: {
             if (is_directive(self, DIR_FILE) || is_directive(self, DIR_LINE) ||
                 is_directive(self, DIR_LOCATION) || is_directive(self, DIR_FUNCTION) ||
-                is_directive(self, DIR_VECTOR))
+                is_directive(self, DIR_VECTOR) || is_directive(self, DIR_UNDEF))
             {
                 goto case_expr;
             }

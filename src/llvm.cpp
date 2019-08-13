@@ -1309,6 +1309,19 @@ IRValue emit_expr_pointer(IRContext *self, Expr *expr) { fatal("Unimplemented %s
 IRValue emit_expr_struct(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
 IRValue emit_expr_union(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
 IRValue emit_expr_enum(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_directive(IRContext *self, Expr *expr) {
+    Operand op = hmget(self->package->operands, expr);
+    switch ((Directive) expr->flags) {
+        case DIR_LINE: return irval(ConstantInt::get(self->ty.u32, op.val.u));
+        case DIR_FILE: // fallthrough
+        case DIR_FUNCTION: return irval(self->builder.CreateGlobalStringPtr((char *) op.val.p));
+        case DIR_UNDEF: {
+            Type *type = llvm_type(self, op.type);
+            return irval(UndefValue::get(type));
+        }
+        default: fatal("Unimplemented %s", __FUNCTION__);
+    }
+}
 
 IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
     IRValue val;
@@ -1336,6 +1349,7 @@ IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
         case EXPR_STRUCT:    val = emit_expr_struct(self, expr); break;
         case EXPR_UNION:     val = emit_expr_union(self, expr); break;
         case EXPR_ENUM:      val = emit_expr_enum(self, expr); break;
+        case EXPR_DIRECTIVE: val = emit_expr_directive(self, expr); break;
         default:
             fatal("Unrecognized ExprKind %s", describe_ast_kind(expr->kind));
     }

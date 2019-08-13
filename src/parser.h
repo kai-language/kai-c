@@ -35,26 +35,6 @@ enum Keyword {
     NUM_KEYWORDS,
 };
 
-typedef enum Directive Directive;
-enum Directive {
-    DIR_NONE,
-    DIR_FLAGS,
-    DIR_CVARGS,
-    DIR_LOCATION,
-    DIR_FILE,
-    DIR_FUNCTION,
-    DIR_LINE,
-    DIR_OPAQUE,
-    DIR_IMPORT,
-    DIR_VECTOR,
-    DIR_LIBRARY,
-    DIR_FOREIGN,
-    DIR_CALLCONV,
-    DIR_LINKNAME,
-    DIR_LINKPREFIX,
-    NUM_DIRECTIVES,
-};
-
 typedef struct Parser Parser;
 struct Parser {
     Package *package;

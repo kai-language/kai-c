@@ -17,6 +17,7 @@ struct Checker {
 
     Scope *scope;
 
+    Decl **decls;  // arr
     Expr **efuncs; // arr
     Stmt **sgotos; // arr StmtGoto (stack of goto's needing resolve @ end of checking func)
     Stmt **sdefer; // arr
@@ -685,19 +686,14 @@ Operand check_expr_call(Checker *self, Expr *expr, Ty *wanted) {
             break;
         }
         wanted = callee.type->tfunc.params[MIN(num_params - 1, i)];
-        if (is_vargs_argument
-            && wanted->kind == TYPE_SLICE
-            && (wanted->flags&FUNC_VARGS))
-        {
+        if (is_vargs_argument && wanted->kind == TYPE_SLICE && (wanted->flags&FUNC_VARGS)) {
             wanted = wanted->tslice.eltype;
+        } else if (is_vargs_argument && callee.type->flags&FUNC_CVARGS && wanted == type_any) {
+            wanted = type_cvarg;
         }
         Operand arg = check_expr(self, call_arg.expr, wanted);
         if (ret_operand(arg)) return arg;
         expect_operand_coerces(self, arg, wanted, call_arg.expr);
-        if ((callee.type->flags&FUNC_CVARGS) && is_vargs_argument) {
-            arg.type = type_cvarg;
-            hmput(self->package->operands, arg.key, arg);
-        }
     }
     Ty *result = callee.type->tfunc.result;
     if (arrlen(result->taggregate.fields) == 1) result = result->taggregate.fields[0].type;
@@ -978,6 +974,46 @@ Operand check_expr_union(Checker *self, Expr *expr, Ty *wanted) {
 
 Operand check_expr_enum(Checker *self, Expr *expr, Ty *wanted) { return bad_operand; }
 
+Operand check_expr_directive(Checker *self, Expr *expr, Ty *wanted) {
+    switch ((Directive) expr->flags) {
+        case DIR_LINE: {
+            PosInfo pos = package_posinfo(self->package, expr->range.start);
+            return operandu(self, expr, type_u32, CONST, pos.line);
+        }
+        case DIR_FILE: {
+            PosInfo pos = package_posinfo(self->package, expr->range.start);
+            char path[MAX_PATH];
+            path_copy(path, self->package->path);
+            path_join(path, pos.source->filename);
+            return operandp(self, expr, type_string, CONST, (char *) str_intern(path));
+        }
+        case DIR_FUNCTION: {
+            Expr *name = NULL;
+            Expr *func = arrlast(self->efuncs);
+            for (i32 i = (i32) arrlen(self->decls) - 1; i >= 0; i--) {
+                Decl *decl = self->decls[i];
+                if (decl->kind == DECL_VAL && decl->dval.val == func) {
+                    name = decl->dval.name;
+                    break;
+                } else if (decl->kind == DECL_VAR && decl->dvar.vals && decl->dvar.vals[0] == func) {
+                    name = decl->dvar.names[0];
+                    break;
+                }
+            }
+            if (!name) {
+                return operandp(self, expr, type_string, CONST, "anonymous function");
+            }
+            return operandp(self, expr, type_string, CONST, (char *) name->ename);
+        }
+        case DIR_LOCATION: fatal("Unimplemented %s", __FUNCTION__);
+        case DIR_UNDEF: {
+            if (!wanted) error(self, expr->range, "#undef requires a contextual type");
+            return operand(self, expr, wanted, NONE);
+        }
+    }
+    return bad_operand;
+}
+
 Operand check_decl_val(Checker *self, Decl *decl) {
     TRACE1(CHECKING, STR("val", decl->dval.name->ename));
     Sym *sym = checker_sym(self, decl->dval.name, NULL, SYM_VAL);
@@ -988,7 +1024,9 @@ Operand check_decl_val(Checker *self, Decl *decl) {
         expect_operand_is_a_type(self, ty, decl->dval.type);
         type = ty.type;
     }
+    arrpush(self->decls, decl);
     Operand op = check_expr(self, decl->dval.val, type);
+    arrpop(self->decls);
     if (ret_operand(op)) return op;
     if (type) expect_operand_coerces(self, op, type, decl->dval.val);
     sym->type = op.type;
@@ -1015,8 +1053,10 @@ Operand check_decl_var(Checker *self, Decl *decl) {
     }
     i64 num_names = arrlen(decl->dvar.names);
     i64 num_values = arrlen(decl->dvar.vals);
+    arrpush(self->decls, decl);
     if (num_names > 1 && num_values == 1 && decl->dvar.vals[0]->kind == EXPR_CALL) {
         Operand call = check_expr_call(self, decl->dvar.vals[0], NULL); // wanted should be ..?
+        arrpop(self->decls);
         if (ret_operand(call)) return call;
         if (call.type->kind != TYPE_STRUCT || call.type->flags != TUPLE) {
             error(self, decl->range,
@@ -1054,6 +1094,7 @@ Operand check_decl_var(Checker *self, Decl *decl) {
         symbol_mark_checked(sym, op);
         if (type) expect_operand_coerces(self, op, type, expr);
     }
+    arrpop(self->decls);
     return operand_ok;
 }
 
@@ -1368,29 +1409,30 @@ INLINE
 Operand check_expr(Checker *self, Expr *expr, Ty *wanted) {
     TRACE(CHECKING);
     switch (expr->kind) {
-        case EXPR_NIL:      return check_expr_nil(self, expr, wanted);
-        case EXPR_INT:      return check_expr_int(self, expr, wanted);
-        case EXPR_FLOAT:    return check_expr_float(self, expr, wanted);
-        case EXPR_STR:      return check_expr_str(self, expr, wanted);
-        case EXPR_NAME:     return check_expr_name(self, expr, wanted);
-        case EXPR_COMPOUND: return check_expr_compound(self, expr, wanted);
-        case EXPR_CAST:     return check_expr_cast(self, expr, wanted);
-        case EXPR_PAREN:    return check_expr_paren(self, expr, wanted);
-        case EXPR_UNARY:    return check_expr_unary(self, expr, wanted);
-        case EXPR_BINARY:   return check_expr_binary(self, expr, wanted);
-        case EXPR_TERNARY:  return check_expr_ternary(self, expr, wanted);
-        case EXPR_CALL:     return check_expr_call(self, expr, wanted);
-        case EXPR_FIELD:    return check_expr_field(self, expr, wanted);
-        case EXPR_INDEX:    return check_expr_index(self, expr, wanted);
-        case EXPR_FUNC:     return check_expr_func(self, expr, wanted);
-        case EXPR_FUNCTYPE: return check_expr_func_type(self, expr, wanted);
-        case EXPR_VECTOR:   return check_expr_vector(self, expr, wanted);
-        case EXPR_ARRAY:    return check_expr_array(self, expr, wanted);
-        case EXPR_POINTER:  return check_expr_pointer(self, expr, wanted);
-        case EXPR_STRUCT:   return check_expr_struct(self, expr, wanted);
-        case EXPR_UNION:    return check_expr_union(self, expr, wanted);
-        case EXPR_ENUM:     return check_expr_enum(self, expr, wanted);
-        default: fatal("Should not have gotten through parsing");
+        case EXPR_NIL:       return check_expr_nil(self, expr, wanted);
+        case EXPR_INT:       return check_expr_int(self, expr, wanted);
+        case EXPR_FLOAT:     return check_expr_float(self, expr, wanted);
+        case EXPR_STR:       return check_expr_str(self, expr, wanted);
+        case EXPR_NAME:      return check_expr_name(self, expr, wanted);
+        case EXPR_COMPOUND:  return check_expr_compound(self, expr, wanted);
+        case EXPR_CAST:      return check_expr_cast(self, expr, wanted);
+        case EXPR_PAREN:     return check_expr_paren(self, expr, wanted);
+        case EXPR_UNARY:     return check_expr_unary(self, expr, wanted);
+        case EXPR_BINARY:    return check_expr_binary(self, expr, wanted);
+        case EXPR_TERNARY:   return check_expr_ternary(self, expr, wanted);
+        case EXPR_CALL:      return check_expr_call(self, expr, wanted);
+        case EXPR_FIELD:     return check_expr_field(self, expr, wanted);
+        case EXPR_INDEX:     return check_expr_index(self, expr, wanted);
+        case EXPR_FUNC:      return check_expr_func(self, expr, wanted);
+        case EXPR_FUNCTYPE:  return check_expr_func_type(self, expr, wanted);
+        case EXPR_VECTOR:    return check_expr_vector(self, expr, wanted);
+        case EXPR_ARRAY:     return check_expr_array(self, expr, wanted);
+        case EXPR_POINTER:   return check_expr_pointer(self, expr, wanted);
+        case EXPR_STRUCT:    return check_expr_struct(self, expr, wanted);
+        case EXPR_UNION:     return check_expr_union(self, expr, wanted);
+        case EXPR_ENUM:      return check_expr_enum(self, expr, wanted);
+        case EXPR_DIRECTIVE: return check_expr_directive(self, expr, wanted);
+        default: fatal("Bad expr case in check_expr %s", describe_ast(self->package, expr));
     }
 }
 

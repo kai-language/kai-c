@@ -16,6 +16,26 @@ typedef struct Expr Expr;
 typedef struct Stmt Stmt;
 typedef struct Decl Decl;
 
+typedef enum Directive {
+    DIR_NONE,
+    DIR_FLAGS,
+    DIR_CVARGS,
+    DIR_LOCATION,
+    DIR_FILE,
+    DIR_FUNCTION,
+    DIR_LINE,
+    DIR_UNDEF,
+    DIR_OPAQUE,
+    DIR_IMPORT,
+    DIR_VECTOR,
+    DIR_LIBRARY,
+    DIR_FOREIGN,
+    DIR_CALLCONV,
+    DIR_LINKNAME,
+    DIR_LINKPREFIX,
+    NUM_DIRECTIVES,
+} Directive;
+
 typedef struct Range Range;
 struct Range {
     u32 start;
@@ -299,6 +319,7 @@ typedef enum ExprKind {
     EXPR_STRUCT    = EXPR_KIND_BASE + 0x16,
     EXPR_UNION     = EXPR_KIND_BASE + 0x17,
     EXPR_ENUM      = EXPR_KIND_BASE + 0x18,
+    EXPR_DIRECTIVE = EXPR_KIND_BASE + 0x19,
 } ExprKind;
 
 typedef enum Op {
@@ -510,6 +531,7 @@ Expr *new_expr_pointer(Package *package, Range range, Expr *base);
 Expr *new_expr_struct(Package *package, Range range, AggregateField *fields, u8 flags);
 Expr *new_expr_union(Package *package, Range range, AggregateField *fields);
 Expr *new_expr_enum(Package *package, Range range, EnumFlags flags, Expr *type, EnumItem *items);
+Expr *new_expr_directive(Package *package, Range range, Directive directive);
 Decl *new_decl_file(Package *package, Source *file);
 Decl *new_decl_val(Package *package, Range range, Expr *name, Expr *type, Expr *val);
 Decl *new_decl_var(Package *package, Range range, Expr **names, Expr *type, Expr **vals);

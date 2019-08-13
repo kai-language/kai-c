@@ -187,6 +187,11 @@ Expr *new_expr_enum(Package *package, Range range, EnumFlags flags, Expr *type, 
     return e;
 }
 
+Expr *new_expr_directive(Package *package, Range range, Directive directive) {
+    Expr *e = ast_alloc(package, EXPR_DIRECTIVE, directive, range, ast_size(Expr, ename));
+    return e;
+}
+
 Decl *new_decl_file(Package *package, Source *file) {
     Range range = {file->start, file->start + file->len};
     Decl *d = ast_alloc(package, DECL_FILE, 0, range, ast_size(Decl, dfile));
