@@ -505,7 +505,7 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
                     index = (u32) op.val.i;
                 }
                 if (type && type->tarray.length && index >= type->tarray.length) {
-                    error(self, field.key->range,
+					error(self, (field.key ?: field.val)->range,
                           "Array index %lu is beyond the max index of %lu for type %s",
                           index, type->tarray.length, tyname(type));
                 }
