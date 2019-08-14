@@ -1166,10 +1166,10 @@ IRValue emit_expr_binary(IRContext *self, Expr *expr) {
         case OP_MUL: return irval(is_int ? b.CreateMul(lhs, rhs) : b.CreateFMul(lhs, rhs));
         case OP_DIV:
             return irval(is_int ? is_signed(operand.type) ?
-                         b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
+                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
         case OP_REM:
             return irval(is_int ? is_signed(operand.type) ?
-                         b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
+                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
         case OP_AND: return irval(b.CreateAnd(lhs, rhs));
         case OP_OR:  return irval(b.CreateOr (lhs, rhs));
         case OP_XOR: return irval(b.CreateXor(lhs, rhs));
@@ -1180,16 +1180,16 @@ IRValue emit_expr_binary(IRContext *self, Expr *expr) {
         case OP_SHL: return irval(b.CreateShl(lhs, rhs));
         case OP_LSS: // FIXME: Pointers?
             return irval(is_int ? is_signed(operand.type) ?
-                         b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs));
+                b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs));
         case OP_LEQ:
             return irval(is_int ? is_signed(operand.type) ?
-                         b.CreateICmpSLE(lhs, rhs) : b.CreateICmpULE(lhs, rhs) : b.CreateFCmpOLE(lhs, rhs));
+                b.CreateICmpSLE(lhs, rhs) : b.CreateICmpULE(lhs, rhs) : b.CreateFCmpOLE(lhs, rhs));
         case OP_GTR:
             return irval(is_int ? is_signed(operand.type) ?
-                         b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs) : b.CreateFCmpOGT(lhs, rhs));
+                b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs) : b.CreateFCmpOGT(lhs, rhs));
         case OP_GEQ:
             return irval(is_int ? is_signed(operand.type) ?
-                         b.CreateICmpSGE(lhs, rhs) : b.CreateICmpUGE(lhs, rhs) : b.CreateFCmpOGE(lhs, rhs));
+                b.CreateICmpSGE(lhs, rhs) : b.CreateICmpUGE(lhs, rhs) : b.CreateFCmpOGE(lhs, rhs));
         case OP_EQL: return irval(is_int ? b.CreateICmpEQ(lhs, rhs) : b.CreateFCmpOEQ(lhs, rhs));
         case OP_NEQ: return irval(is_int ? b.CreateICmpNE(lhs, rhs) : b.CreateFCmpONE(lhs, rhs));
         default:
@@ -1646,12 +1646,12 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         Value *length;
         Operand op = hmget(self->package->operands, stmt->sfor.aggregate);
         switch (op.type->kind) {
-        case TYPE_ARRAY: {
-            aggregate = emit_expr(self, stmt->sfor.aggregate, LVALUE).val;
-            length = Constant::getNullValue(self->ty.intptr);
-            break;
-        }
-        default: fatal("Unhandled type for emission of for aggregate");
+            case TYPE_ARRAY: {
+                aggregate = emit_expr(self, stmt->sfor.aggregate, LVALUE).val;
+                length = Constant::getNullValue(self->ty.intptr);
+                break;
+            }
+            default: fatal("Unhandled type for emission of for aggregate");
         }
         cond = BasicBlock::Create(self->context, "for.cond", fn->function);
         step = BasicBlock::Create(self->context, "for.step", fn->function);
@@ -2040,13 +2040,13 @@ bool llvm_emit_object(Package *package) {
         return false;
     }
 
-    //    if (compiler.flags.dump_ir) {
-    //        std::string buf;
-    //        raw_string_ostream os(buf);
-    //        self->module->print(os, nullptr);
-    //        os.flush();
-    //        puts(buf.c_str());
-    //    }
+//    if (compiler.flags.dump_ir) {
+//        std::string buf;
+//        raw_string_ostream os(buf);
+//        self->module->print(os, nullptr);
+//        os.flush();
+//        puts(buf.c_str());
+//    }
 
     PassManagerBuilder *pm_builder = new(std::nothrow) PassManagerBuilder();
     if (pm_builder == nullptr) {
