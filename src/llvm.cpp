@@ -217,34 +217,34 @@ void setupTarget() {
 
 IRContext *llvm_create_context(Package *pkg) {
     LLVMContext *context = new LLVMContext();
-    
+
     setupTarget();
-    
+
     std::string error;
     Triple triple = Triple(sys::getDefaultTargetTriple());
     if (triple.getOS() == Triple::Darwin) triple.setOS(Triple::MacOSX);
-    
+
     auto target = TargetRegistry::lookupTarget(triple.str(), error);
     if (!target) {
         errs() << error;
         return nullptr;
     }
-    
+
     verbose("Target: %s\n", triple.str().c_str());
-    
+
     const char *cpu = "generic";
     const char *features = "";
-    
+
     TargetOptions opt;
     TargetMachine *tm = target->createTargetMachine(triple.str(), cpu, features, opt, None);
-    
+
     // TODO: Only on unoptimized builds
     tm->setO0WantsFastISel(true);
-    
+
     DataLayout dl = tm->createDataLayout();
-    
+
     IRContext *self = new IRContext(pkg, tm, dl, *context);
-    
+
     self->module->setTargetTriple(triple.str());
     self->module->setDataLayout(dl);
     self->module->getOrInsertModuleFlagsMetadata();
@@ -257,7 +257,7 @@ IRContext *llvm_create_context(Package *pkg) {
     /*  !llvm.ident = !{!1}
      *  !1 = !{!"clang version 6.0.0 (tags/RELEASE_600/final)"}
      */
-    
+
     return self;
 }
 
@@ -407,7 +407,7 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
                     char name[1024] = {0};
                     snprintf(name, sizeof name, "%c%u", is_signed ? 'i' : 'u', type->size * 8);
                     return c->dbg.builder->createBasicType(
-                                                           name, type->size * 8, is_signed ? DW_ATE_signed : DW_ATE_unsigned);
+                        name, type->size * 8, is_signed ? DW_ATE_signed : DW_ATE_unsigned);
             }
         }
         case TYPE_FLOAT:
@@ -432,15 +432,15 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
                 DIType *param = llvm_debug_type(c, type->tfunc.params[i]);
                 params.push_back(param);
             }
-            // TODO: Result types are currently useless ... how can we incorperate them?
-            //            DIType *result;
-            //            if (type->tfunc.result->kind == TYPE_VOID) {
-            //                result = NULL; // Void type?
-            //            } else if (arrlen(type->tfunc.result->taggregate.fields) == 1) {
-            //                result = llvm_debug_type(c, type->tfunc.result->taggregate.fields->type);
-            //            } else {
-            //                result = llvm_debug_type(c, type->tfunc.result);
-            //            }
+// TODO: Result types are currently useless ... how can we incorperate them?
+//            DIType *result;
+//            if (type->tfunc.result->kind == TYPE_VOID) {
+//                result = NULL; // Void type?
+//            } else if (arrlen(type->tfunc.result->taggregate.fields) == 1) {
+//                result = llvm_debug_type(c, type->tfunc.result->taggregate.fields->type);
+//            } else {
+//                result = llvm_debug_type(c, type->tfunc.result);
+//            }
             if (type->flags&FUNC_CVARGS)
                 params.push_back(c->dbg.builder->createUnspecifiedParameter());
             DITypeRefArray p_types = c->dbg.builder->getOrCreateTypeArray(params);
@@ -498,16 +498,16 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
                 DINode::DIFlags::FlagZero, NULL, members_arr);
             return dtype;
         }
-            
+
         case TYPE_UNION:  fatal("unimp");
         case TYPE_ANY:    fatal("unimp");
         default:
             fatal("Unhandled type");
     }
-    // TODO: Can we use this for type aliasing Type :: u8
-    // DIType *dtype = c->dbg.builder->createTypedef(
-    //     base, type->sym->external_name ?: type->sym->name,
-    //     c->dbg.file, pos.line, arrlast(c->dbg.scopes));
+// TODO: Can we use this for type aliasing Type :: u8
+// DIType *dtype = c->dbg.builder->createTypedef(
+//     base, type->sym->external_name ?: type->sym->name,
+//     c->dbg.file, pos.line, arrlast(c->dbg.scopes));
 }
 
 AllocaInst *emit_entry_alloca(IRContext *self, Type *type, const char *name, u32 alignment_bytes) {
@@ -534,9 +534,9 @@ Value *enter_struct_pointer_for_coerced_access(
 {
     // We can't dive into a zero-element struct.
     if (src_struct_type->getNumElements() == 0) return src_ptr;
-    
+
     Type *first_el = src_struct_type->getElementType(0);
-    
+
     // If the first elt is at least as large as what we're looking for, or if the
     // first element is the same size as the whole struct, we can enter it. The
     // comparison must be made on the store size and not the alloca size. Using
@@ -545,15 +545,15 @@ Value *enter_struct_pointer_for_coerced_access(
     if (first_el_size < dst_size &&
         first_el_size < self->data_layout.getTypeStoreSize(src_struct_type))
         return src_ptr;
-    
+
     // GEP into the first element.
     src_ptr = self->builder.CreateStructGEP(src_ptr, 0, "coerce.dive");
-    
+
     // If the first element is a struct, recurse.
     Type *src_ty = src_ptr->getType()->getPointerElementType();
     if (StructType *src_struct_type = dyn_cast<StructType>(src_ty))
         return enter_struct_pointer_for_coerced_access(self, src_ptr, src_struct_type, dst_size);
-    
+
     return src_ptr;
 }
 
@@ -567,7 +567,7 @@ Value *coerce_int_or_ptr(IRContext *self, Value *val, Type *ty) {
     Type *dest_int_ty = ty;
     if (isa<PointerType>(dest_int_ty))
         dest_int_ty = self->ty.intptr;
-    
+
     if (val->getType() != dest_int_ty) {
         DataLayout dl = self->data_layout;
         if (dl.isBigEndian()) {
@@ -575,7 +575,7 @@ Value *coerce_int_or_ptr(IRContext *self, Value *val, Type *ty) {
             // That is what memory coercion does.
             uint64_t src_size = dl.getTypeSizeInBits(val->getType());
             uint64_t dst_size = dl.getTypeSizeInBits(dest_int_ty);
-            
+
             if (src_size > dst_size) {
                 val = self->builder.CreateLShr(val, src_size - dst_size, "coerce.highbits");
                 val = self->builder.CreateTrunc(val, dest_int_ty, "coerce.val.ii");
@@ -599,7 +599,7 @@ void emit_agg_store(IRContext *self, Value *val, Value *dst) {
         for (unsigned i = 0, e = sty->getNumElements(); i != e; i++) {
             Value *elptr = self->builder.CreateStructGEP(dst, i);
             Value *el = self->builder.CreateExtractValue(val, i);
-            
+
             Type *target_type = elptr->getType()->getPointerElementType();
             u32 align = self->data_layout.getPrefTypeAlignment(target_type);
             self->builder.CreateAlignedStore(el, elptr, align);
@@ -651,15 +651,15 @@ void create_coerced_store(IRContext *self, Value *src, Value *dst) {
         self->builder.CreateAlignedStore(src, dst, align);
         return;
     }
-    
+
     u32 src_align = self->data_layout.getPrefTypeAlignment(dst_ty);
     u64 src_size = self->data_layout.getTypeAllocSize(src_ty);
-    
+
     if (StructType *dst_struct_ty = dyn_cast<StructType>(dst_ty)) {
         dst = enter_struct_pointer_for_coerced_access(self, dst, dst_struct_ty, src_size);
         dst_ty = dst->getType()->getPointerElementType();
     }
-    
+
     // If the src and dst are int or ptr types, ext or trunc to desired
     if ((isa<IntegerType>(src_ty) || isa<PointerType>(src_ty)) &&
         (isa<IntegerType>(dst_ty) || isa<PointerType>(dst_ty))) {
@@ -668,9 +668,9 @@ void create_coerced_store(IRContext *self, Value *src, Value *dst) {
         self->builder.CreateAlignedStore(src, dst, dst_align);
         return;
     }
-    
+
     u64 dst_size = self->data_layout.getTypeAllocSize(dst_ty);
-    
+
     // If store is legal, just bitcast the src pointer
     if (src_size <= dst_size) {
         dst = create_element_bitcast(self, dst, src_ty);
@@ -679,7 +679,7 @@ void create_coerced_store(IRContext *self, Value *src, Value *dst) {
         // do coercion through memory
         AllocaInst *tmp = emit_entry_alloca(self, src_ty, "coerce.alloca", src_align);
         self->builder.CreateAlignedStore(src, tmp, src_align);
-        
+
         Value *src_casted = create_element_bitcast(self, tmp, self->ty.i8);
         Value *dst_casted = create_element_bitcast(self, dst, self->ty.i8);
         u32 dst_align = self->data_layout.getPrefTypeAlignment(dst_ty);
