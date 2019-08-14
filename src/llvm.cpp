@@ -108,7 +108,7 @@ struct IRFunction {
     BasicBlock *return_block;
     AllocaInst *last_entry_alloca;
     AllocaInst *result_value;
-    
+
     BasicBlock **defer_blocks;
     BasicBlock **loop_cond_blocks; // for, continue
     BasicBlock **post_blocks; // for & switch, breaks
@@ -122,15 +122,15 @@ struct IRContext {
     TargetMachine *target;
     DataLayout data_layout;
     IRBuilder<> builder;
-    
+
     DebugContext dbg;
-    
+
     IRFunction *fn; // arr
     Sym **symbols; // arr
-    
+
     BuiltinTypes ty;
     BuiltinSymbols sym;
-    
+
     IRContext(IRContext *prev, Package *new_package) :
     context(prev->context),
     data_layout(prev->data_layout),
@@ -147,7 +147,7 @@ struct IRContext {
         symbols = NULL;
         arrpush(dbg.scopes, prev->dbg.unit); // Everything in 1 CU
     }
-    
+
     IRContext(Package *package, TargetMachine *tm, DataLayout dl, LLVMContext &context) :
     context(context), data_layout(dl), builder(context)
     {
@@ -171,14 +171,14 @@ struct IRContext {
             dbg.f32 = dbg.builder->createBasicType("f32", 32, DW_ATE_float);
             dbg.f64 = dbg.builder->createBasicType("f64", 64, DW_ATE_float);
             dbg.scopes = NULL;
-            
+
             DIFile *package_file = dbg.builder->createFile(package->sources->filename, package->path);
-            
+
             dbg.unit = dbg.builder->createCompileUnit(
-                                                      DW_LANG_C, package_file, "Kai",
-                                                      /*isOptimized*/ false, /*flags*/ "", /*RuntimeVersion*/ 0);
+                DW_LANG_C, package_file, "Kai",
+                /*isOptimized*/ false, /*flags*/ "", /*RuntimeVersion*/ 0);
             arrpush(dbg.scopes, dbg.unit);
-            
+
             ty.i1  = IntegerType::getInt1Ty(context);
             ty.i8  = IntegerType::get(context, 8);
             ty.u8  = IntegerType::get(context, 8);
@@ -194,7 +194,7 @@ struct IRContext {
             ty.intptr = IntegerType::get(context, target->getPointerSizeInBits(0));
             ty.rawptr = PointerType::get(ty.u8, 0);
         }
-        
+
         sym.True  = ConstantInt::getTrue(context);
         sym.False = ConstantInt::getFalse(context);
     }
@@ -205,7 +205,7 @@ struct IRContext {
 void setupTarget() {
     static b32 initialized = false;
     if (initialized) return;
-    
+
     // TODO: Initialize only for the targets we are outputting.
     LLVMInitializeX86Target();
     LLVMInitializeX86TargetMC();
@@ -432,7 +432,7 @@ DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer 
                 DIType *param = llvm_debug_type(c, type->tfunc.params[i]);
                 params.push_back(param);
             }
-// TODO: Result types are currently useless ... how can we incorperate them?
+            // TODO: Result types are currently useless ... how can we incorperate them?
 //            DIType *result;
 //            if (type->tfunc.result->kind == TYPE_VOID) {
 //                result = NULL; // Void type?
@@ -559,7 +559,7 @@ Value *enter_struct_pointer_for_coerced_access(
 
 Value *coerce_int_or_ptr(IRContext *self, Value *val, Type *ty) {
     if (val->getType() == ty) return val;
-    
+
     if (isa<PointerType>(val->getType())) {
         if (isa<PointerType>(ty)) return self->builder.CreateBitCast(val, ty, "coerce.val");
         val = self->builder.CreatePtrToInt(val, self->ty.intptr, "coerce.val.pi");
@@ -588,7 +588,7 @@ Value *coerce_int_or_ptr(IRContext *self, Value *val, Type *ty) {
             val = self->builder.CreateIntCast(val, dest_int_ty, false, "coerce.val.ii");
         }
     }
-    
+
     if (isa<PointerType>(ty)) val = self->builder.CreateIntToPtr(val, ty, "coerce.val.ip");
     return val;
 }
@@ -697,67 +697,67 @@ start:
     if (val_ty == dst_ty) return val;
     if (is_lvalue && val_ty->getPointerElementType() == dst_ty) return val;
     switch (val_ty->getTypeID()) {
-    case Type::VoidTyID: return val;
-    case Type::HalfTyID:
-    case Type::FloatTyID:
-    case Type::DoubleTyID:
-    case Type::X86_FP80TyID:
-    case Type::FP128TyID:
-    case Type::PPC_FP128TyID:
-        switch (dst_ty->getTypeID()) {
+        case Type::VoidTyID: return val;
         case Type::HalfTyID:
         case Type::FloatTyID:
         case Type::DoubleTyID:
         case Type::X86_FP80TyID:
         case Type::FP128TyID:
-        case Type::PPC_FP128TyID: {
-            u64 src_size = val_ty->getPrimitiveSizeInBits();
-            u64 dst_size = dst_ty->getPrimitiveSizeInBits();
-            if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
-            else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
-            return val;
-        }
-        case Type::IntegerTyID: {
-            if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
-            else                val = self->builder.CreateFPToUI(val, dst_ty);
-            return val;
-        }
-        default:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return val;
+                }
+                case Type::IntegerTyID: {
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return val;
+                }
+                default:
+                    break;
+            }
             break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
+            if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
+            return self->builder.CreateZExtOrTrunc(val, dst_ty);
         }
-        break;
-    case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
-        if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
-        if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
-        return self->builder.CreateZExtOrTrunc(val, dst_ty);
-    }
-    case Type::FunctionTyID: {
-        if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
-        return val;
-    }
-    case Type::StructTyID: return val;
-    case Type::ArrayTyID: return val;
-    case Type::PointerTyID: {
-        if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
-            PointerType *src_ty = (PointerType *) val->getType();
-            return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
-        }
-        if (isa<IntegerType>(dst_ty)) {
-            val = self->builder.CreatePtrToInt(val, self->ty.intptr);
-            goto start;
-        }
-        
-        if (isa<FunctionType>(val_ty))
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
             return val;
-        
-        // FIXME: IF isa<ArrayType> What do?
-        return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
-    }
-    case Type::VectorTyID:
-    case Type::LabelTyID:
-    case Type::MetadataTyID:
-    case Type::X86_MMXTyID:
-    case Type::TokenTyID: fatal("Unsupported type in IR");
+        }
+        case Type::StructTyID: return val;
+        case Type::ArrayTyID: return val;
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+            }
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+
+            if (isa<FunctionType>(val_ty))
+                return val;
+
+            // FIXME: IF isa<ArrayType> What do?
+            return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
+        }
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
     }
     return val;
 }
@@ -772,65 +772,65 @@ start:
     if (val_ty == dst_ty) return val;
     if (is_lvalue && val_ty->getPointerElementType() == dst_ty) return val;
     switch (val_ty->getTypeID()) {
-    case Type::VoidTyID: return val;
-    case Type::HalfTyID:
-    case Type::FloatTyID:
-    case Type::DoubleTyID:
-    case Type::X86_FP80TyID:
-    case Type::FP128TyID:
-    case Type::PPC_FP128TyID:
-        switch (dst_ty->getTypeID()) {
+        case Type::VoidTyID: return val;
         case Type::HalfTyID:
         case Type::FloatTyID:
         case Type::DoubleTyID:
         case Type::X86_FP80TyID:
         case Type::FP128TyID:
-        case Type::PPC_FP128TyID: {
-            u64 src_size = val_ty->getPrimitiveSizeInBits();
-            u64 dst_size = dst_ty->getPrimitiveSizeInBits();
-            if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
-            else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
-            return val;
-        }
-        case Type::IntegerTyID: { // TODO: Coercion rules shouldn't allow ftoi
-            if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
-            else                val = self->builder.CreateFPToUI(val, dst_ty);
-            return val;
-        }
-        default:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return val;
+                }
+                case Type::IntegerTyID: { // TODO: Coercion rules shouldn't allow ftoi
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return val;
+                }
+                default:
+                    break;
+            }
             break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
+            if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
+            return self->builder.CreateZExtOrTrunc(val, dst_ty);
         }
-        break;
-    case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
-        if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
-        if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
-        return self->builder.CreateZExtOrTrunc(val, dst_ty);
-    }
-    case Type::FunctionTyID: {
-        if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
-        return val;
-    }
-    case Type::StructTyID: return val;
-    case Type::ArrayTyID: return val;
-    case Type::PointerTyID: {
-        if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
-            PointerType *src_ty = (PointerType *) val->getType();
-            return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
+            return val;
         }
-        if (isa<IntegerType>(dst_ty)) {
-            val = self->builder.CreatePtrToInt(val, self->ty.intptr);
-            goto start;
+        case Type::StructTyID: return val;
+        case Type::ArrayTyID: return val;
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+            }
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+            if (isa<FunctionType>(val_ty)) return val;
+            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
+            // FIXME: IF isa<ArrayType> What do?
+            return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
         }
-        if (isa<FunctionType>(val_ty)) return val;
-        if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
-        // FIXME: IF isa<ArrayType> What do?
-        return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
-    }
-    case Type::VectorTyID:
-    case Type::LabelTyID:
-    case Type::MetadataTyID:
-    case Type::X86_MMXTyID:
-    case Type::TokenTyID: fatal("Unsupported type in IR");
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
     }
     return val;
 }
@@ -915,39 +915,39 @@ IRValue emit_expr_field(IRContext *self, Expr *expr) {
         return irval(create_load(self, (Value *) sym->userdata));
     }
     switch (operand.type->kind) {
-    case TYPE_STRUCT:
-        break;
-    case TYPE_VECTOR: {
-        Value *agg = emit_expr(self, expr->efield.expr).val;
-        std::vector<u32> indices;
-        const char *ch = expr->efield.name->ename;
-        for (; *ch; ch++) {
-            switch (*ch) {
-            case 'x': case 'r':
-                indices.push_back(0);
-                break;
-            case 'y': case 'g':
-                indices.push_back(1);
-                break;
-            case 'z': case 'b':
-                indices.push_back(2);
-                break;
-            case 'w': case 'a':
-                indices.push_back(3);
-                break;
-            default:
-                fatal("Unimplemented case within %s", __FUNCTION__);
+        case TYPE_STRUCT:
+            break;
+        case TYPE_VECTOR: {
+            Value *agg = emit_expr(self, expr->efield.expr).val;
+            std::vector<u32> indices;
+            const char *ch = expr->efield.name->ename;
+            for (; *ch; ch++) {
+                switch (*ch) {
+                    case 'x': case 'r':
+                        indices.push_back(0);
+                        break;
+                    case 'y': case 'g':
+                        indices.push_back(1);
+                        break;
+                    case 'z': case 'b':
+                        indices.push_back(2);
+                        break;
+                    case 'w': case 'a':
+                        indices.push_back(3);
+                        break;
+                    default:
+                        fatal("Unimplemented case within %s", __FUNCTION__);
+                }
+            }
+            if (indices.size() == 1) {
+                return irval(self->builder.CreateExtractElement(agg, indices[0]));
+            } else {
+                Value *v2 = UndefValue::get(agg->getType());
+                return irval(self->builder.CreateShuffleVector(agg, v2, indices));
             }
         }
-        if (indices.size() == 1) {
-            return irval(self->builder.CreateExtractElement(agg, indices[0]));
-        } else {
-            Value *v2 = UndefValue::get(agg->getType());
-            return irval(self->builder.CreateShuffleVector(agg, v2, indices));
-        }
-    }
-    default:
-        fatal("Unhandled field base kind");
+        default:
+            fatal("Unhandled field base kind");
     }
 }
 
@@ -955,102 +955,101 @@ IRValue emit_expr_compound(IRContext *self, Expr *expr) {
     TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     switch (operand.type->kind) {
-    case TYPE_STRUCT:
-    case TYPE_UNION:
-        fatal("Unimplemented");
-    case TYPE_VECTOR: {
-        VectorType *type = (VectorType *) llvm_type(self, operand.type);
-        Value *agg = Constant::getNullValue(type);
-        for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
-            Value *val = emit_expr(self, expr->ecompound.fields[i].val).val;
-            agg = self->builder.CreateInsertElement(agg, val, i);
-        }
-        return irval(agg);
-    }
-    case TYPE_ARRAY: {
-        Type *eltype = llvm_type(self, operand.type->tarray.eltype);
-        ArrayType *type = (ArrayType *) llvm_type(self, operand.type, true);
-        
-        Value *agg = Constant::getNullValue(type);
-        
-        if (!expr->ecompound.fields)
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            fatal("Unimplemented");
+        case TYPE_VECTOR: {
+            VectorType *type = (VectorType *) llvm_type(self, operand.type);
+            Value *agg = Constant::getNullValue(type);
+            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                Value *val = emit_expr(self, expr->ecompound.fields[i].val).val;
+                agg = self->builder.CreateInsertElement(agg, val, i);
+            }
             return irval(agg);
-        
-        bool is_all_members_constant = true;
-        bool does_have_gaps = operand.type->tarray.length != arrlen(expr->ecompound.fields);
-        
-        std::vector<Value *> values;
-        std::vector<Constant *> constants;
-        for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
-            Value *el = emit_expr(self, expr->ecompound.fields[i].val).val;
-            is_all_members_constant &= isa<Constant>(el);
-            if (Constant *constant = dyn_cast<Constant>(el)) {
-                constants.push_back(constant);
+        }
+        case TYPE_ARRAY: {
+            Type *eltype = llvm_type(self, operand.type->tarray.eltype);
+            ArrayType *type = (ArrayType *) llvm_type(self, operand.type, true);
+
+            Value *agg = Constant::getNullValue(type);
+
+            if (!expr->ecompound.fields)
+                return irval(agg);
+
+            bool is_all_members_constant = true;
+            bool does_have_gaps = operand.type->tarray.length != arrlen(expr->ecompound.fields);
+
+            std::vector<Value *> values;
+            std::vector<Constant *> constants;
+            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                Value *el = emit_expr(self, expr->ecompound.fields[i].val).val;
+                is_all_members_constant &= isa<Constant>(el);
+                if (Constant *constant = dyn_cast<Constant>(el)) {
+                    constants.push_back(constant);
+                } else {
+                    Constant *null = Constant::getNullValue(eltype);
+                    constants.push_back(null);
+                }
+                values.push_back(el);
+            }
+
+            if (!self->fn) {
+                return irval(llvm::ConstantArray::get(type, constants));
+            }
+
+            u32 alignment = self->data_layout.getPrefTypeAlignment(type);
+            u32 size = (u32)self->data_layout.getTypeStoreSize(type);
+
+            AllocaInst *alloca = emit_entry_alloca(self, type, "compound.lit", alignment);
+
+            if (is_all_members_constant) {
+                u64 target_index = 0;
+                for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                    CompoundField field = expr->ecompound.fields[i];
+                    if (field.kind == FIELD_INDEX) {
+                        target_index = (u32) hmget(self->package->operands, field.key).val.u;
+                    }
+
+                    agg = self->builder.CreateInsertValue(agg, constants[i], {(u32)target_index});
+                    target_index++;
+                }
+
+                GlobalVariable *global = new GlobalVariable(
+                    *self->module, type, true, GlobalValue::PrivateLinkage, (Constant *)agg,
+                    "compound.lit");
+
+                self->builder.CreateMemCpy(
+                    alloca, alignment, global, global->getAlignment(), size);
             } else {
-                Constant *null = Constant::getNullValue(eltype);
-                constants.push_back(null);
-            }
-            values.push_back(el);
-        }
-        
-        if (!self->fn) {
-            return irval(llvm::ConstantArray::get(type, constants));
-        }
-        
-        u32 alignment = self->data_layout.getPrefTypeAlignment(type);
-        u32 size = (u32)self->data_layout.getTypeStoreSize(type);
-        
-        AllocaInst *alloca = emit_entry_alloca(self, type, "compound.lit", alignment);
-        
-        if (is_all_members_constant) {
-            u64 target_index = 0;
-            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
-                CompoundField field = expr->ecompound.fields[i];
-                if (field.kind == FIELD_INDEX) {
-                    target_index = (u32) hmget(self->package->operands, field.key).val.u;
+                // NOTE: memset requires `zero` to be a char
+                llvm::Value *zero = llvm::ConstantInt::get(self->ty.i8, 0);
+                llvm::Value *element = self->builder.CreateInBoundsGEP(alloca, {zero, zero});
+
+                if (does_have_gaps) {
+                    self->builder.CreateMemSet(alloca, zero, size, alignment);
                 }
-                
-                agg = self->builder.CreateInsertValue(agg, constants[i], {(u32)target_index});
-                target_index++;
-            }
-            
-            GlobalVariable *global = new GlobalVariable(
-                                                        *self->module, type, true, GlobalValue::PrivateLinkage, (Constant *)agg,
-                                                        "compound.lit");
-            
-            self->builder.CreateMemCpy(
-                                       alloca, alignment, global, global->getAlignment(), size
-                                       );
-        } else {
-            // NOTE: memset requires `zero` to be a char
-            llvm::Value *zero = llvm::ConstantInt::get(self->ty.i8, 0);
-            llvm::Value *element = self->builder.CreateInBoundsGEP(alloca, {zero, zero});
-            
-            if (does_have_gaps) {
-                self->builder.CreateMemSet(alloca, zero, size, alignment);
-            }
-            
-            u64 target_index = 0;
-            
-            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
-                CompoundField field = expr->ecompound.fields[i];
-                if (field.kind == FIELD_INDEX) {
-                    target_index = (u32) hmget(self->package->operands, field.key).val.u;
+
+                u64 target_index = 0;
+
+                for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                    CompoundField field = expr->ecompound.fields[i];
+                    if (field.kind == FIELD_INDEX) {
+                        target_index = (u32) hmget(self->package->operands, field.key).val.u;
+                    }
+
+                    llvm::Value *offset = llvm::ConstantInt::get(self->ty.i64, target_index);
+                    self->builder.CreateInBoundsGEP(element, offset);
+                    create_store(self, values[i], element);
+
+                    target_index++;
                 }
-                
-                llvm::Value *offset = llvm::ConstantInt::get(self->ty.i64, target_index);
-                self->builder.CreateInBoundsGEP(element, offset);
-                create_store(self, values[i], element);
-                
-                target_index++;
             }
+
+            return irval(alloca, true);
         }
-        
-        return irval(alloca, true);
-    }
-    case TYPE_SLICE:
-    default:
-        fatal("Unimplmented");
+        case TYPE_SLICE:
+        default:
+            fatal("Unimplmented");
     }
 }
 
@@ -1063,66 +1062,66 @@ start:
     Type *val_ty = val->getType();
     if (val_ty == dst_ty) return irval(val);
     switch (val_ty->getTypeID()) {
-    case Type::VoidTyID: return irval(val);
-    case Type::HalfTyID:
-    case Type::FloatTyID:
-    case Type::DoubleTyID:
-    case Type::X86_FP80TyID:
-    case Type::FP128TyID:
-    case Type::PPC_FP128TyID:
-        switch (dst_ty->getTypeID()) {
-            case Type::HalfTyID:
-            case Type::FloatTyID:
-            case Type::DoubleTyID:
-            case Type::X86_FP80TyID:
-            case Type::FP128TyID:
-            case Type::PPC_FP128TyID: {
-                u64 src_size = val_ty->getPrimitiveSizeInBits();
-                u64 dst_size = dst_ty->getPrimitiveSizeInBits();
-                if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
-                else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
-                return irval(val);
+        case Type::VoidTyID: return irval(val);
+        case Type::HalfTyID:
+        case Type::FloatTyID:
+        case Type::DoubleTyID:
+        case Type::X86_FP80TyID:
+        case Type::FP128TyID:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return irval(val);
+                }
+                case Type::IntegerTyID: {
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return irval(val);
+                }
+                default:
+                    break;
             }
-            case Type::IntegerTyID: {
-                if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
-                else                val = self->builder.CreateFPToUI(val, dst_ty);
-                return irval(val);
+            break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return irval(self->builder.CreateSExtOrTrunc(val, dst_ty));
+            if (isa<PointerType>(dst_ty)) return irval(self->builder.CreateIntToPtr(val, dst_ty));
+            return irval(self->builder.CreateZExtOrTrunc(val, dst_ty));
+        }
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty))
+                return irval(self->builder.CreateBitOrPointerCast(val, dst_ty));
+            return irval(val);
+        }
+        case Type::StructTyID: return irval(val);
+        case Type::ArrayTyID: return irval(val);
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return irval(self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty)));
             }
-            default:
-                break;
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+            if (isa<FunctionType>(val_ty)) return irval(val);
+            if (val_ty->getPointerElementType() == dst_ty) return irval(create_load(self, val)); // FIXME: Do not do this....
+            // FIXME: IF isa<ArrayType> What do?
+            return irval(self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty));
         }
-        break;
-    case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
-        if (is_signed(dst)) return irval(self->builder.CreateSExtOrTrunc(val, dst_ty));
-        if (isa<PointerType>(dst_ty)) return irval(self->builder.CreateIntToPtr(val, dst_ty));
-        return irval(self->builder.CreateZExtOrTrunc(val, dst_ty));
-    }
-    case Type::FunctionTyID: {
-        if (isa<PointerType>(dst_ty))
-            return irval(self->builder.CreateBitOrPointerCast(val, dst_ty));
-        return irval(val);
-    }
-    case Type::StructTyID: return irval(val);
-    case Type::ArrayTyID: return irval(val);
-    case Type::PointerTyID: {
-        if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
-            PointerType *src_ty = (PointerType *) val->getType();
-            return irval(self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty)));
-        }
-        if (isa<IntegerType>(dst_ty)) {
-            val = self->builder.CreatePtrToInt(val, self->ty.intptr);
-            goto start;
-        }
-        if (isa<FunctionType>(val_ty)) return irval(val);
-        if (val_ty->getPointerElementType() == dst_ty) return irval(create_load(self, val)); // FIXME: Do not do this....
-        // FIXME: IF isa<ArrayType> What do?
-        return irval(self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty));
-    }
-    case Type::VectorTyID:
-    case Type::LabelTyID:
-    case Type::MetadataTyID:
-    case Type::X86_MMXTyID:
-    case Type::TokenTyID: fatal("Unsupported type in IR");
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
     }
     return irval(val);
 }
@@ -1138,17 +1137,17 @@ IRValue emit_expr_unary(IRContext *self, Expr *expr) {
     Value *val = emit_expr(self, expr->eunary, expr->flags == OP_AND).val;
     set_debug_pos(self, expr->range);
     switch ((Op) expr->flags) {
-    case OP_ADD:
-    case OP_AND:
-        return irval(val);
-    case OP_SUB:
-        if (operand.type->kind == TYPE_FLOAT) return irval(self->builder.CreateFNeg(val));
-        else                                  return irval(self->builder.CreateNeg(val));
-    case OP_NOT: // fallthrough
-    case OP_BNOT: return irval(self->builder.CreateNot(val));
-    case OP_LSS:  return irval(create_load(self, val));
-    default:
-        fatal("Unhandled unary op case %d", expr->flags);
+        case OP_ADD:
+        case OP_AND:
+            return irval(val);
+        case OP_SUB:
+            if (operand.type->kind == TYPE_FLOAT) return irval(self->builder.CreateFNeg(val));
+            else                                  return irval(self->builder.CreateNeg(val));
+        case OP_NOT: // fallthrough
+        case OP_BNOT: return irval(self->builder.CreateNot(val));
+        case OP_LSS:  return irval(create_load(self, val));
+        default:
+            fatal("Unhandled unary op case %d", expr->flags);
     }
 }
 
@@ -1162,39 +1161,39 @@ IRValue emit_expr_binary(IRContext *self, Expr *expr) {
     set_debug_pos(self, expr->range);
     IRBuilder<> b = self->builder;
     switch (expr->flags) {
-    case OP_ADD: return irval(is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs)); // FIXME: Pointers?
-    case OP_SUB: return irval(is_int ? b.CreateSub(lhs, rhs) : b.CreateFSub(lhs, rhs)); // FIXME: Pointers?
-    case OP_MUL: return irval(is_int ? b.CreateMul(lhs, rhs) : b.CreateFMul(lhs, rhs));
-    case OP_DIV:
-        return irval(is_int ? is_signed(operand.type) ?
-                     b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
-    case OP_REM:
-        return irval(is_int ? is_signed(operand.type) ?
-                     b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
-    case OP_AND: return irval(b.CreateAnd(lhs, rhs));
-    case OP_OR:  return irval(b.CreateOr (lhs, rhs));
-    case OP_XOR: return irval(b.CreateXor(lhs, rhs));
-    case OP_LOR: return irval(b.CreateTruncOrBitCast(b.CreateOr(lhs, rhs), type));
-    case OP_LAND: return irval(b.CreateTruncOrBitCast(b.CreateAnd(lhs, rhs), type));
-    case OP_SHR:
-        return irval(is_signed(operand.type) ? b.CreateAShr(lhs, rhs) : b.CreateLShr(lhs, rhs));
-    case OP_SHL: return irval(b.CreateShl(lhs, rhs));
-    case OP_LSS: // FIXME: Pointers?
-        return irval(is_int ? is_signed(operand.type) ?
-                     b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs));
-    case OP_LEQ:
-        return irval(is_int ? is_signed(operand.type) ?
-                     b.CreateICmpSLE(lhs, rhs) : b.CreateICmpULE(lhs, rhs) : b.CreateFCmpOLE(lhs, rhs));
-    case OP_GTR:
-        return irval(is_int ? is_signed(operand.type) ?
-                     b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs) : b.CreateFCmpOGT(lhs, rhs));
-    case OP_GEQ:
-        return irval(is_int ? is_signed(operand.type) ?
-                     b.CreateICmpSGE(lhs, rhs) : b.CreateICmpUGE(lhs, rhs) : b.CreateFCmpOGE(lhs, rhs));
-    case OP_EQL: return irval(is_int ? b.CreateICmpEQ(lhs, rhs) : b.CreateFCmpOEQ(lhs, rhs));
-    case OP_NEQ: return irval(is_int ? b.CreateICmpNE(lhs, rhs) : b.CreateFCmpONE(lhs, rhs));
-    default:
-        fatal("Unhandled binary op case %d", expr->flags);
+        case OP_ADD: return irval(is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs)); // FIXME: Pointers?
+        case OP_SUB: return irval(is_int ? b.CreateSub(lhs, rhs) : b.CreateFSub(lhs, rhs)); // FIXME: Pointers?
+        case OP_MUL: return irval(is_int ? b.CreateMul(lhs, rhs) : b.CreateFMul(lhs, rhs));
+        case OP_DIV:
+            return irval(is_int ? is_signed(operand.type) ?
+                         b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
+        case OP_REM:
+            return irval(is_int ? is_signed(operand.type) ?
+                         b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
+        case OP_AND: return irval(b.CreateAnd(lhs, rhs));
+        case OP_OR:  return irval(b.CreateOr (lhs, rhs));
+        case OP_XOR: return irval(b.CreateXor(lhs, rhs));
+        case OP_LOR: return irval(b.CreateTruncOrBitCast(b.CreateOr(lhs, rhs), type));
+        case OP_LAND: return irval(b.CreateTruncOrBitCast(b.CreateAnd(lhs, rhs), type));
+        case OP_SHR:
+            return irval(is_signed(operand.type) ? b.CreateAShr(lhs, rhs) : b.CreateLShr(lhs, rhs));
+        case OP_SHL: return irval(b.CreateShl(lhs, rhs));
+        case OP_LSS: // FIXME: Pointers?
+            return irval(is_int ? is_signed(operand.type) ?
+                         b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs));
+        case OP_LEQ:
+            return irval(is_int ? is_signed(operand.type) ?
+                         b.CreateICmpSLE(lhs, rhs) : b.CreateICmpULE(lhs, rhs) : b.CreateFCmpOLE(lhs, rhs));
+        case OP_GTR:
+            return irval(is_int ? is_signed(operand.type) ?
+                         b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs) : b.CreateFCmpOGT(lhs, rhs));
+        case OP_GEQ:
+            return irval(is_int ? is_signed(operand.type) ?
+                         b.CreateICmpSGE(lhs, rhs) : b.CreateICmpUGE(lhs, rhs) : b.CreateFCmpOGE(lhs, rhs));
+        case OP_EQL: return irval(is_int ? b.CreateICmpEQ(lhs, rhs) : b.CreateFCmpOEQ(lhs, rhs));
+        case OP_NEQ: return irval(is_int ? b.CreateICmpNE(lhs, rhs) : b.CreateFCmpONE(lhs, rhs));
+        default:
+            fatal("Unhandled binary op case %d", expr->flags);
     }
 }
 
@@ -1245,17 +1244,17 @@ IRValue emit_expr_index(IRContext *self, Expr *expr) {
     if (!is_signed(index_operand.type))
         index = self->builder.CreateZExtOrBitCast(index, self->ty.u64);
     switch (value_operand.type->kind) {
-    case TYPE_ARRAY: {
-        Value *zero = ConstantInt::get(self->ty.i32, 0);
-        Value *addr = self->builder.CreateGEP(value, {zero, index});
-        return irval(create_load(self, addr));
-    }
-    case TYPE_PTR: {
-        Value *addr = self->builder.CreateGEP(value, index);
-        return irval(create_load(self, addr));
-    }
-    default:
-        fatal("Unhandled case %s", describe_ast(self->package, expr));
+        case TYPE_ARRAY: {
+            Value *zero = ConstantInt::get(self->ty.i32, 0);
+            Value *addr = self->builder.CreateGEP(value, {zero, index});
+            return irval(create_load(self, addr));
+        }
+        case TYPE_PTR: {
+            Value *addr = self->builder.CreateGEP(value, index);
+            return irval(create_load(self, addr));
+        }
+        default:
+            fatal("Unhandled case %s", describe_ast(self->package, expr));
     }
 }
 
@@ -1399,14 +1398,14 @@ IRValue emit_expr_directive(IRContext *self, Expr *expr) {
     TRACE(EMITTING);
     Operand op = hmget(self->package->operands, expr);
     switch ((Directive) expr->flags) {
-    case DIR_LINE: return irval(ConstantInt::get(self->ty.u32, op.val.u));
-    case DIR_FILE: // fallthrough
-    case DIR_FUNCTION: return irval(self->builder.CreateGlobalStringPtr((char *) op.val.p));
-    case DIR_UNDEF: {
-        Type *type = llvm_type(self, op.type);
-        return irval(UndefValue::get(type));
-    }
-    default: fatal("Unimplemented %s", __FUNCTION__);
+        case DIR_LINE: return irval(ConstantInt::get(self->ty.u32, op.val.u));
+        case DIR_FILE: // fallthrough
+        case DIR_FUNCTION: return irval(self->builder.CreateGlobalStringPtr((char *) op.val.p));
+        case DIR_UNDEF: {
+            Type *type = llvm_type(self, op.type);
+            return irval(UndefValue::get(type));
+        }
+        default: fatal("Unimplemented %s", __FUNCTION__);
     }
 }
 
@@ -1414,32 +1413,32 @@ IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
     TRACE(EMITTING);
     IRValue val;
     switch (expr->kind) {
-    case EXPR_NIL:       val = emit_expr_nil(self, expr); break;
-    case EXPR_INT:       val = emit_expr_int(self, expr); break;
-    case EXPR_FLOAT:     val = emit_expr_float(self, expr); break;
-    case EXPR_STR:       val = emit_expr_str(self, expr); break;
-    case EXPR_NAME:      val = emit_expr_name(self, expr); break;
-    case EXPR_COMPOUND:  val = emit_expr_compound(self, expr); break;
-    case EXPR_CAST:      val = emit_expr_cast(self, expr); break;
-    case EXPR_PAREN:     val = emit_expr_paren(self, expr); break;
-    case EXPR_UNARY:     val = emit_expr_unary(self, expr); break;
-    case EXPR_BINARY:    val = emit_expr_binary(self, expr); break;
-    case EXPR_TERNARY:   val = emit_expr_ternary(self, expr); break;
-    case EXPR_CALL:      val = emit_expr_call(self, expr); break;
-    case EXPR_FIELD:     val = emit_expr_field(self, expr); break;
-    case EXPR_INDEX:     val = emit_expr_index(self, expr); break;
-    case EXPR_SLICE:     val = emit_expr_slice(self, expr); break;
-    case EXPR_FUNC:      val = emit_expr_func(self, expr); break;
-    case EXPR_FUNCTYPE:  val = emit_expr_functype(self, expr); break;
-    case EXPR_SLICETYPE: val = emit_expr_slicetype(self, expr); break;
-    case EXPR_ARRAY:     val = emit_expr_array(self, expr); break;
-    case EXPR_POINTER:   val = emit_expr_pointer(self, expr); break;
-    case EXPR_STRUCT:    val = emit_expr_struct(self, expr); break;
-    case EXPR_UNION:     val = emit_expr_union(self, expr); break;
-    case EXPR_ENUM:      val = emit_expr_enum(self, expr); break;
-    case EXPR_DIRECTIVE: val = emit_expr_directive(self, expr); break;
-    default:
-        fatal("Unrecognized ExprKind %s", describe_ast_kind(expr->kind));
+        case EXPR_NIL:       val = emit_expr_nil(self, expr); break;
+        case EXPR_INT:       val = emit_expr_int(self, expr); break;
+        case EXPR_FLOAT:     val = emit_expr_float(self, expr); break;
+        case EXPR_STR:       val = emit_expr_str(self, expr); break;
+        case EXPR_NAME:      val = emit_expr_name(self, expr); break;
+        case EXPR_COMPOUND:  val = emit_expr_compound(self, expr); break;
+        case EXPR_CAST:      val = emit_expr_cast(self, expr); break;
+        case EXPR_PAREN:     val = emit_expr_paren(self, expr); break;
+        case EXPR_UNARY:     val = emit_expr_unary(self, expr); break;
+        case EXPR_BINARY:    val = emit_expr_binary(self, expr); break;
+        case EXPR_TERNARY:   val = emit_expr_ternary(self, expr); break;
+        case EXPR_CALL:      val = emit_expr_call(self, expr); break;
+        case EXPR_FIELD:     val = emit_expr_field(self, expr); break;
+        case EXPR_INDEX:     val = emit_expr_index(self, expr); break;
+        case EXPR_SLICE:     val = emit_expr_slice(self, expr); break;
+        case EXPR_FUNC:      val = emit_expr_func(self, expr); break;
+        case EXPR_FUNCTYPE:  val = emit_expr_functype(self, expr); break;
+        case EXPR_SLICETYPE: val = emit_expr_slicetype(self, expr); break;
+        case EXPR_ARRAY:     val = emit_expr_array(self, expr); break;
+        case EXPR_POINTER:   val = emit_expr_pointer(self, expr); break;
+        case EXPR_STRUCT:    val = emit_expr_struct(self, expr); break;
+        case EXPR_UNION:     val = emit_expr_union(self, expr); break;
+        case EXPR_ENUM:      val = emit_expr_enum(self, expr); break;
+        case EXPR_DIRECTIVE: val = emit_expr_directive(self, expr); break;
+        default:
+            fatal("Unrecognized ExprKind %s", describe_ast_kind(expr->kind));
     }
     
     if (is_lvalue)
@@ -1562,19 +1561,19 @@ void emit_stmt_goto(IRContext *self, Stmt *stmt) {
         }
     } else {
         switch ((GotoKind) stmt->flags) {
-        case GOTO_GOTO:
-            fatal("Should always have target, and be handled above");
-        case GOTO_BREAK:
-            target = arrlast(fn->post_blocks);
-            break;
-        case GOTO_CONTINUE:
-            target = arrlast(fn->loop_cond_blocks);
-            break;
-        case GOTO_FALLTHROUGH:
-            target = arrlast(fn->next_cases);
-            break;
-        default:
-            fatal("Unrecognized goto kind %d", stmt->flags);
+            case GOTO_GOTO:
+                fatal("Should always have target, and be handled above");
+            case GOTO_BREAK:
+                target = arrlast(fn->post_blocks);
+                break;
+            case GOTO_CONTINUE:
+                target = arrlast(fn->loop_cond_blocks);
+                break;
+            case GOTO_FALLTHROUGH:
+                target = arrlast(fn->next_cases);
+                break;
+            default:
+                fatal("Unrecognized goto kind %d", stmt->flags);
         }
     }
     self->builder.CreateBr(target);
@@ -1920,7 +1919,7 @@ void emit_decl_foreign(IRContext *self, Decl *decl) {
 
 //        Function *fn = Function::Create(
 //            fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
-// FIXME: Calling convention
+        // FIXME: Calling convention
 //        fn->setCallingConv(CallingConv::C);
 //        if (compiler.flags.debug) {
 //            DIType *dbg_type = llvm_debug_type(self, operand.type);
@@ -1952,56 +1951,56 @@ void emit_decl_foreignblock(IRContext *self, Decl *decl) {
 void emit_stmt(IRContext *self, Stmt *stmt) {
     TRACE(EMITTING);
     switch (stmt->kind) {
-    case (StmtKind) DECL_FILE: {
-        if (!compiler.flags.debug) return;
-        Source *file = ((Decl *) stmt)->dfile;
-        self->dbg.source_file = file;
-        self->dbg.file = self->dbg.builder->createFile(file->filename, self->package->path);
-        arrsetlen(self->dbg.scopes, 1); // 1 so we keep the compile unit at the top.
-        arrpush(self->dbg.scopes, self->dbg.file);
-        break;
-    }
-    case (StmtKind) DECL_VAR:
-        if (!arrlen(self->fn)) return emit_decl_var_global(self, (Decl *) stmt);
-        else return emit_decl_var(self, (Decl *) stmt);
-    case (StmtKind) DECL_VAL: return emit_decl_val(self, (Decl *) stmt);
-    case (StmtKind) DECL_IMPORT: return emit_decl_import(self, (Decl *) stmt);
-    case (StmtKind) DECL_LIBRARY: return emit_decl_library(self, (Decl *) stmt);
-    case (StmtKind) DECL_FOREIGN: return emit_decl_foreign(self, (Decl *) stmt);
-    case (StmtKind) DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, (Decl *) stmt);
-    case STMT_LABEL:
-        emit_stmt_label(self, stmt);
-        break;
-    case STMT_ASSIGN:
-        emit_stmt_assign(self, stmt);
-        break;
-    case STMT_RETURN:
-        emit_stmt_return(self, stmt);
-        break;
-    case STMT_DEFER:
-        emit_stmt_defer(self, stmt);
-        break;
-    case STMT_USING:
-        emit_stmt_using(self, stmt);
-        break;
-    case STMT_GOTO:
-        emit_stmt_goto(self, stmt);
-        break;
-    case STMT_BLOCK:
-        emit_stmt_block(self, stmt);
-        break;
-    case STMT_IF:
-        emit_stmt_if(self, stmt);
-        break;
-    case STMT_FOR:
-        emit_stmt_for(self, stmt);
-        break;
-    case STMT_SWITCH:
-        emit_stmt_switch(self, stmt);
-        break;
-    case STMT_NAMES:
-        fatal("Shouldn't see this here");
-        break;
+        case (StmtKind) DECL_FILE: {
+            if (!compiler.flags.debug) return;
+            Source *file = ((Decl *) stmt)->dfile;
+            self->dbg.source_file = file;
+            self->dbg.file = self->dbg.builder->createFile(file->filename, self->package->path);
+            arrsetlen(self->dbg.scopes, 1); // 1 so we keep the compile unit at the top.
+            arrpush(self->dbg.scopes, self->dbg.file);
+            break;
+        }
+        case (StmtKind) DECL_VAR:
+            if (!arrlen(self->fn)) return emit_decl_var_global(self, (Decl *) stmt);
+            else return emit_decl_var(self, (Decl *) stmt);
+        case (StmtKind) DECL_VAL: return emit_decl_val(self, (Decl *) stmt);
+        case (StmtKind) DECL_IMPORT: return emit_decl_import(self, (Decl *) stmt);
+        case (StmtKind) DECL_LIBRARY: return emit_decl_library(self, (Decl *) stmt);
+        case (StmtKind) DECL_FOREIGN: return emit_decl_foreign(self, (Decl *) stmt);
+        case (StmtKind) DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, (Decl *) stmt);
+        case STMT_LABEL:
+            emit_stmt_label(self, stmt);
+            break;
+        case STMT_ASSIGN:
+            emit_stmt_assign(self, stmt);
+            break;
+        case STMT_RETURN:
+            emit_stmt_return(self, stmt);
+            break;
+        case STMT_DEFER:
+            emit_stmt_defer(self, stmt);
+            break;
+        case STMT_USING:
+            emit_stmt_using(self, stmt);
+            break;
+        case STMT_GOTO:
+            emit_stmt_goto(self, stmt);
+            break;
+        case STMT_BLOCK:
+            emit_stmt_block(self, stmt);
+            break;
+        case STMT_IF:
+            emit_stmt_if(self, stmt);
+            break;
+        case STMT_FOR:
+            emit_stmt_for(self, stmt);
+            break;
+        case STMT_SWITCH:
+            emit_stmt_switch(self, stmt);
+            break;
+        case STMT_NAMES:
+            fatal("Shouldn't see this here");
+            break;
     }
     if (ISEXPR(stmt)) emit_expr(self, (Expr *) stmt);
 }
@@ -2009,16 +2008,16 @@ void emit_stmt(IRContext *self, Stmt *stmt) {
 void emit_decl(IRContext *self, Decl *decl) {
     TRACE(EMITTING);
     switch (decl->kind) {
-    case DECL_VAR:
-        if (!arrlen(self->fn)) return emit_decl_var_global(self, decl);
-        else return emit_decl_var(self, decl);
-    case DECL_VAL: return emit_decl_val(self, decl);
-    case DECL_IMPORT: return emit_decl_import(self, decl);
-    case DECL_LIBRARY: return emit_decl_library(self, decl);
-    case DECL_FOREIGN: return emit_decl_foreign(self, decl);
-    case DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, decl);
-    default:
-        fatal("Unrecognized DeclKind %s", describe_ast_kind(decl->kind));
+        case DECL_VAR:
+            if (!arrlen(self->fn)) return emit_decl_var_global(self, decl);
+            else return emit_decl_var(self, decl);
+        case DECL_VAL: return emit_decl_val(self, decl);
+        case DECL_IMPORT: return emit_decl_import(self, decl);
+        case DECL_LIBRARY: return emit_decl_library(self, decl);
+        case DECL_FOREIGN: return emit_decl_foreign(self, decl);
+        case DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, decl);
+        default:
+            fatal("Unrecognized DeclKind %s", describe_ast_kind(decl->kind));
     }
 }
 
