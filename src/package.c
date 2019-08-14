@@ -191,7 +191,7 @@ PosInfo package_posinfo(Package *package, u32 pos) {
     if (!source) return (PosInfo){0};
     u32 offset = pos - source->start;
     u32 start_of_line = 0;
-    u32 lineno = 1;
+    u32 lineno = 0;
     if (source->line_offsets) {
         for (int i = 0; i < arrlen(source->line_offsets); i++) {
             lineno++;

@@ -1,9 +1,13 @@
+- [ ] Prevent multiple decls with compound, or function literals in the rhs
+- [ ] Always convert to i1 via a comparison and not a truncation.
+- [ ] Assign Op fails for certain types where a coercion occurs on the lhs (version := "1.2.3"; version += 2)
+    - To solve this we need copy(void *ast) so we can copy the lhs and give it an AST of it's own for use as a key in package->operands. 
 - [ ] Make Ty `size` & `align` both bytes and introduce a bitmask of some sort
-- [ ] Error on files over 4GB. This allows us to use a u32 instead of u64
 - [ ] Make (Aggregate|Enum)Item names into Ident's instead of `const char *`
 - [ ] Make parseIdent return an AstNode
 - [ ] `Token start = p->tok; nextToken()` -> `Token start = eatToken()`
 - [ ] Check the defer stack is actually having pops
+- [x] make it so that `emit_expr_*` always returns a loaded value and `emit_expr` handles both coercion and also removing loads so we get addresses (also remove `return_address` member in favor of `is_lvalue` param)
 
 
 TODO's
