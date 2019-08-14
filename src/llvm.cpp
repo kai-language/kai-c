@@ -1288,7 +1288,7 @@ IRValue emit_expr_func(IRContext *self, Expr *expr) {
         fn->setSubprogram(sp);
         arrpush(self->dbg.scopes, sp);
     }
-    
+
     BasicBlock *entry_block = BasicBlock::Create(self->context, "entry", fn);
     BasicBlock *return_block = BasicBlock::Create(self->context, "return", fn);
     {
@@ -1296,18 +1296,18 @@ IRValue emit_expr_func(IRContext *self, Expr *expr) {
         arrpush(self->fn, function);
     }
     IRFunction *function = &arrlast(self->fn);
-    
+
     // Unset the location for the prologue emission (leading instructions with no
     // location in a function are considered part of the prologue and the debugger
     // will run past them when breaking on a function)
     llvm_debug_unset_pos(self);
-    
+
     self->builder.SetInsertPoint(entry_block);
     if (operand.type->tfunc.result != type_void) {
         function->result_value = emit_entry_alloca(
             self, type->getReturnType(), "result", operand.type->tfunc.result->align);
     }
-    
+
     Function::arg_iterator args = fn->arg_begin();
     for (i64 i = 0; i < arrlen(expr->efunc.type->efunctype.params); i++) {
         FuncParam param = expr->efunc.type->efunctype.params[i];
@@ -1318,7 +1318,7 @@ IRValue emit_expr_func(IRContext *self, Expr *expr) {
         AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
         sym->userdata = alloca;
         self->builder.CreateAlignedStore(arg, alloca, sym->type->align);
-        
+
         if (compiler.flags.debug) {
             PosInfo pos = package_posinfo(self->package, param.name->range.start);
             DILocalVariable *var = self->dbg.builder->createParameterVariable(
@@ -1330,21 +1330,21 @@ IRValue emit_expr_func(IRContext *self, Expr *expr) {
         }
     }
     fn->arg_end();
-    
+
     emit_stmt(self, expr->efunc.body);
     arrpop(self->fn);
-    
+
     if (!self->builder.GetInsertBlock()->getTerminator()) {
         self->builder.CreateBr(function->return_block);
     }
-    
+
     // Set insert point to the return block
     self->builder.SetInsertPoint(function->return_block);
     if (function->defer_blocks) {
         function->return_block = BasicBlock::Create(self->context, "return_post_defer", fn);
         self->builder.CreateBr(function->defer_blocks[0]);
     }
-    
+
     for (i64 i = 0; i < arrlen(function->defer_blocks); i++) {
         BasicBlock *block = function->defer_blocks[i];
         self->builder.SetInsertPoint(block);
@@ -1355,7 +1355,7 @@ IRValue emit_expr_func(IRContext *self, Expr *expr) {
         }
     }
     if (function->defer_blocks) self->builder.SetInsertPoint(function->return_block);
-    
+
     if (arrlen(operand.type->tfunc.result->taggregate.fields) == 1) {
         Value *return_value = create_load(self, function->result_value);
         self->builder.CreateRet(return_value);
@@ -1369,22 +1369,22 @@ IRValue emit_expr_func(IRContext *self, Expr *expr) {
         ASSERT(operand.type->tfunc.result->kind == TYPE_VOID);
         self->builder.CreateRetVoid();
     }
-    
+
     // Move the return block to the end, just for readability
     if (compiler.flags.dump_ir || compiler.flags.emit_ir)
         function->return_block->moveAfter(self->builder.GetInsertBlock());
-    
+
     if (compiler.flags.debug) {
         self->dbg.builder->finalizeSubprogram(fn->getSubprogram());
         arrpop(self->dbg.scopes);
     }
-    
-    //    if (verifyFunction(*fn, &errs())) {
-    //        printf("\n====================\n");
-    //        self->module->print(errs(), nullptr);
-    //        ASSERT(false);
-    //    }
-    
+
+//    if (verifyFunction(*fn, &errs())) {
+//        printf("\n====================\n");
+//        self->module->print(errs(), nullptr);
+//        ASSERT(false);
+//    }
+
     return irval(fn);
 }
 
@@ -1489,16 +1489,16 @@ void emit_stmt_assign(IRContext *self, Stmt *stmt) {
                 // create some stack space to land the returned struct onto
                 AllocaInst *result_address = emit_entry_alloca(self, rhs->getType(), nullptr, 0);
                 create_coerced_store(self, rhs, result_address);
-                
+
                 for (i64 result_index = 0; result_index < num_lhs; result_index++) {
                     Expr *lhs_expr = stmt->sassign.lhs[lhs_index++];
                     Value *lhs = emit_expr(self, lhs_expr, LVALUE).val;
                     set_debug_pos(self, stmt->range);
-                    
+
                     Value *addr = self->builder.CreateStructGEP(
                         rhs->getType(), result_address, (u32) result_index);
                     Value *val = create_load(self, addr);
-                    
+
                     create_coerced_store(self, val, lhs);
                 }
             }
@@ -1642,7 +1642,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         create_store(self, zero, index);
         value_sym->userdata = value;
         if (index_sym) index_sym->userdata = index;
-        
+
         Value *aggregate;
         Value *length;
         Operand op = hmget(self->package->operands, stmt->sfor.aggregate);
@@ -1658,21 +1658,21 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         step = BasicBlock::Create(self->context, "for.step", fn->function);
         body = BasicBlock::Create(self->context, "for.body", fn->function);
         post = BasicBlock::Create(self->context, "for.post", fn->function);
-        
+
         self->builder.CreateBr(cond);
         self->builder.SetInsertPoint(cond);
-        
+
         Value *within_bounds = self->builder.CreateICmpSLT(create_load(self, index), length);
         self->builder.CreateCondBr(within_bounds, body, post);
         arrpush(fn->loop_cond_blocks, cond);
         arrpush(fn->post_blocks, post);
-        
+
         self->builder.SetInsertPoint(body);
         Value *elptr = self->builder.CreateGEP(aggregate, {zero, create_load(self, index)});
         create_store(self, create_load(self, elptr), value);
-        
+
         emit_stmt(self, stmt->sfor.body);
-        
+
         b32 has_jump = self->builder.GetInsertBlock()->getTerminator() != NULL;
         if (!has_jump) self->builder.CreateBr(step);
         self->builder.SetInsertPoint(step);
@@ -1823,7 +1823,7 @@ void emit_decl_var(IRContext *self, Decl *decl) {
         Expr *name = decl->dvar.names[index];
         Sym *sym = hmget(self->package->symbols, name);
         if (sym->userdata) return; // Already emitted
-        
+
         Value *rhs = NULL;
         bool rhs_is_alloca = false;
         if (decl->dvar.vals) {
@@ -1832,7 +1832,7 @@ void emit_decl_var(IRContext *self, Decl *decl) {
             IRValue res = emit_expr(self, expr);
             rhs_is_alloca = res.is_temp_alloca;
             rhs = res.val;
-            
+
             if (expr->kind == EXPR_CALL && operand.type->kind == TYPE_STRUCT &&
                 (operand.type->flags&TUPLE)) {
                 while (index < arrlen(decl->dvar.names)) {
@@ -1849,9 +1849,9 @@ void emit_decl_var(IRContext *self, Decl *decl) {
                 return;
             }
         }
-        
+
         Type *type = llvm_type(self, sym->type, true);
-        
+
         Value *alloca;
         if (rhs_is_alloca) {
             alloca = rhs;
@@ -1890,7 +1890,7 @@ void emit_decl_val(IRContext *self, Decl *decl) {
         sym->userdata = value;
         return;
     }
-    
+
     GlobalValue::LinkageTypes linkage = self->fn ?
     GlobalValue::CommonLinkage : GlobalValue::ExternalLinkage;
     GlobalVariable *global = new GlobalVariable(
@@ -1906,35 +1906,35 @@ void emit_decl_foreign(IRContext *self, Decl *decl) {
     Operand operand = hmget(self->package->operands, decl->dforeign.type);
     Sym *sym = hmget(self->package->symbols, decl->dforeign.name);
     set_debug_pos(self, decl->range);
-    
+
     // FIXME: Check for existing decl
-    
+
     Type *type = llvm_type(self, operand.type);
     if (operand.type->kind == TYPE_FUNC) {
-        
-        
-        //    if (FunctionType *fn_ty = dyn_cast<FunctionType>(type)) {
+
+
+//    if (FunctionType *fn_ty = dyn_cast<FunctionType>(type)) {
         FunctionType *fn_ty = (FunctionType *) type->getPointerElementType();
         Function *fn = (Function *) self->module->getOrInsertFunction(sym->external_name, fn_ty);
         fn->setCallingConv(CallingConv::C);
-        
-        //        Function *fn = Function::Create(
-        //            fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
-        // FIXME: Calling convention
-        //        fn->setCallingConv(CallingConv::C);
-        //        if (compiler.flags.debug) {
-        //            DIType *dbg_type = llvm_debug_type(self, operand.type);
-        //            PosInfo pos = package_posinfo(self->package, decl->dforeign.name->range.start);
-        //            DISubprogram *sp = self->dbg.builder->createFunction(
-        //                arrlast(self->dbg.scopes), sym->name, fn->getName(), self->dbg.file, pos.line,
-        //                (DISubroutineType *) dbg_type, pos.line, DINode::DIFlags::FlagZero);
-        //            fn->setSubprogram(sp);
-        //            self->dbg.builder->finalizeSubprogram(sp);
-        //        }
+
+//        Function *fn = Function::Create(
+//            fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
+// FIXME: Calling convention
+//        fn->setCallingConv(CallingConv::C);
+//        if (compiler.flags.debug) {
+//            DIType *dbg_type = llvm_debug_type(self, operand.type);
+//            PosInfo pos = package_posinfo(self->package, decl->dforeign.name->range.start);
+//            DISubprogram *sp = self->dbg.builder->createFunction(
+//                arrlast(self->dbg.scopes), sym->name, fn->getName(), self->dbg.file, pos.line,
+//                (DISubroutineType *) dbg_type, pos.line, DINode::DIFlags::FlagZero);
+//            fn->setSubprogram(sp);
+//            self->dbg.builder->finalizeSubprogram(sp);
+//        }
         sym->userdata = fn;
         return;
     }
-    
+
     Constant *val = self->module->getOrInsertGlobal(sym->external_name ?: sym->name, type);
     GlobalVariable *var = (GlobalVariable *) val;
     var->setExternallyInitialized(true);
@@ -2029,18 +2029,18 @@ static void addDiscriminatorsPass(const PassManagerBuilder &Builder, legacy::Pas
 bool llvm_emit_object(Package *package) {
     TRACE(LLVM);
     IRContext *self = (IRContext *) package->userdata;
-    
+
     char object_name[MAX_PATH];
     package_object_path(package, object_name);
-    
+
     std::error_code ec;
     raw_fd_ostream dest(object_name, ec);
-    
+
     if (ec) {
         fatal("Could not open object file: %s\n", ec.message().c_str());
         return false;
     }
-    
+
     //    if (compiler.flags.dump_ir) {
     //        std::string buf;
     //        raw_string_ostream os(buf);
@@ -2048,16 +2048,16 @@ bool llvm_emit_object(Package *package) {
     //        os.flush();
     //        puts(buf.c_str());
     //    }
-    
+
     PassManagerBuilder *pm_builder = new(std::nothrow) PassManagerBuilder();
     if (pm_builder == nullptr) {
         fatal("memory allocation failure\n");
         return true;
     }
-    
+
     pm_builder->OptLevel = self->target->getOptLevel();
     pm_builder->SizeLevel = compiler.flags.small ? 2 : 0;
-    
+
     pm_builder->DisableTailCalls = compiler.flags.debug;
     pm_builder->DisableUnitAtATime = compiler.flags.debug;
     pm_builder->DisableUnrollLoops = compiler.flags.debug;
@@ -2071,11 +2071,11 @@ bool llvm_emit_object(Package *package) {
     pm_builder->PrepareForLTO = false;
     pm_builder->PrepareForThinLTO = false;
     pm_builder->PerformThinLTO = false;
-    
+
     Triple triple = Triple(self->module->getTargetTriple());
     TargetLibraryInfoImpl tlii(triple);
     pm_builder->LibraryInfo = &tlii;
-    
+
     if (compiler.flags.debug) {
         pm_builder->Inliner = createAlwaysInlinerLegacyPass(false);
     } else {
@@ -2084,13 +2084,13 @@ bool llvm_emit_object(Package *package) {
         pm_builder->Inliner = createFunctionInliningPass(
             pm_builder->OptLevel, pm_builder->SizeLevel, false);
     }
-    
+
     legacy::FunctionPassManager function_pm = legacy::FunctionPassManager(self->module);
     pm_builder->populateFunctionPassManager(function_pm);
-    
+
     legacy::PassManager module_pm;
     TargetMachine::CodeGenFileType file_type = TargetMachine::CGFT_ObjectFile; // TODO: Assembly
-    
+
     if (compiler.flags.disable_all_passes) {
         if (self->target->addPassesToEmitFile(module_pm, dest, nullptr, file_type)) {
             errs() << "TargetMachine cannot emit a file of this type";
@@ -2099,29 +2099,29 @@ bool llvm_emit_object(Package *package) {
         module_pm.run(*self->module);
     } else {
         pm_builder->populateModulePassManager(module_pm);
-        
+
         module_pm.add(createBasicAAWrapperPass());
         module_pm.add(createInstructionCombiningPass());
         module_pm.add(createAggressiveDCEPass());
         module_pm.add(createReassociatePass());
         module_pm.add(createPromoteMemoryToRegisterPass());
-        
+
         if (self->target->addPassesToEmitFile(module_pm, dest, nullptr, file_type)) {
             errs() << "TargetMachine cannot emit a file of this type";
             return false;
         }
-        
+
         // run per function optimization passes
         function_pm.doInitialization();
         for (Function &function : *self->module)
             if (!function.isDeclaration())
                 function_pm.run(function);
         function_pm.doFinalization();
-        
+
         module_pm.run(*self->module);
     }
     dest.flush();
-    
+
     if (compiler.flags.dump_ir) {
         std::string buf;
         raw_string_ostream os(buf);
@@ -2129,7 +2129,7 @@ bool llvm_emit_object(Package *package) {
         os.flush();
         puts(buf.c_str());
     }
-    
+
     if (compiler.flags.emit_ir) {
         std::error_code error_code;
         raw_fd_ostream dest(package->path, error_code);
@@ -2141,11 +2141,11 @@ bool llvm_emit_object(Package *package) {
             return false;
         }
     }
-    
+
     if (true) { // TODO: compiler.flags.timing
         TimerGroup::printAll(errs());
     }
-    
+
     return false; // no error
 }
 
