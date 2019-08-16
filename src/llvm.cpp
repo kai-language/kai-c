@@ -1818,7 +1818,8 @@ void emit_decl_var(IRContext *self, Decl *decl) {
         Sym *sym = hmget(self->package->symbols, name);
         if (sym->userdata) return; // Already emitted
 
-        Value *rhs = NULL;
+        Type *type = llvm_type(self, sym->type, true);
+        Value *rhs = Constant::getNullValue(type);
         bool rhs_is_alloca = false;
         if (decl->dvar.vals) {
             Expr *expr = decl->dvar.vals[index];
@@ -1844,27 +1845,23 @@ void emit_decl_var(IRContext *self, Decl *decl) {
             }
         }
 
-        Type *type = llvm_type(self, sym->type, true);
-
-        Value *alloca;
         if (rhs_is_alloca) {
-            alloca = rhs;
+            sym->userdata = rhs;
         } else {
-            // FIXME: Alloca can't happen at global scope instead use a global variable and add
-            //  check that we only initialize with global variables.
             if (self->fn) {
-                alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
-                if (rhs) create_coerced_store(self, rhs, alloca);
+                AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
+                create_coerced_store(self, rhs, alloca);
+                sym->userdata = alloca;
             } else {
+                ASSERT(isa<Constant>(rhs));
                 GlobalVariable *global = new GlobalVariable(
-                    *self->module, type, false, GlobalValue::ExternalLinkage, (Constant *)rhs,
+                    *self->module, type, false, GlobalValue::ExternalLinkage, (Constant *) rhs,
                     sym->external_name ?: sym->name);
                 global->setAlignment(sym->type->align);
                 global->setExternallyInitialized(false);
-                alloca = global;
+                sym->userdata = global;
             }
         }
-        sym->userdata = alloca;
         set_debug_pos(self, name->range);
         if (compiler.flags.debug) declare_auto_variable(self, sym);
     }
