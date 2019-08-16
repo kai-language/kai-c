@@ -1,4 +1,9 @@
 kai
+default.profraw
+trace.json
+chrome_trace.json
+a.out
+tags
 stream.todo.md
 *.o
 out_*
