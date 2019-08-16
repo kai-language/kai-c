@@ -1,0 +1,10 @@
+testArray := [3]i32 { 1, 2, 3 }
+
+test :: fn(b: i32) -> void {
+    a := [..]i32 { 0, 1, 2, 3}
+}
+
+main :: fn() -> void {
+    a := 11
+    b := a + 11
+}
