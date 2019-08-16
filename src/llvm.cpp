@@ -130,6 +130,8 @@ struct IRContext {
     BuiltinTypes ty;
     BuiltinSymbols sym;
 
+    Range last_debug_range;
+
     IRContext(IRContext *prev, Package *new_package) :
         context(prev->context),
         data_layout(prev->data_layout),
@@ -277,6 +279,9 @@ void set_debug_pos(IRContext *self, Range range) {
     TRACE(EMITTING);
     if (!compiler.flags.debug) return;
     PosInfo pos = package_posinfo(self->package, range.start);
+    if (range.start >= self->last_debug_range.start && range.end <= self->last_debug_range.end)
+        return;
+    self->last_debug_range = range;
     if (pos.source != self->dbg.source_file) {
         DIFile *file = self->dbg.builder->createFile(self->package->path, pos.source->filename);
         arrsetlen(self->dbg.scopes, 1); // TODO: Do we need to preserve the ordering?
@@ -745,7 +750,7 @@ start:
                 goto start;
             }
             if (isa<FunctionType>(val_ty)) return val;
-            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
+//            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
             // FIXME: IF isa<ArrayType> What do?
             return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
         }
@@ -846,7 +851,6 @@ IRValue emit_expr_nil(IRContext *self, Expr *expr) {
     TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
-    set_debug_pos(self, expr->range);
     return irval(ConstantPointerNull::get((PointerType *) type));
 }
 
@@ -854,7 +858,6 @@ IRValue emit_expr_int(IRContext *self, Expr *expr) {
     TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     Type *type = llvm_type(self, operand.type);
-    set_debug_pos(self, expr->range);
     if (operand.type->kind == TYPE_FLOAT) {
         return irval(ConstantFP::get(type, (f64) operand.val.u));
     }
@@ -912,7 +915,7 @@ IRValue emit_expr_field(IRContext *self, Expr *expr) {
     }
     switch (operand.type->kind) {
         case TYPE_STRUCT:
-            break;
+            fatal("Unimplemented case in %s", __FUNCTION__);
         case TYPE_VECTOR: {
             Value *agg = emit_expr(self, expr->efield.expr).val;
             std::vector<u32> indices;
@@ -1124,7 +1127,6 @@ IRValue emit_expr_unary(IRContext *self, Expr *expr) {
     TRACE(EMITTING);
     Operand operand = hmget(self->package->operands, expr);
     Value *val = emit_expr(self, expr->eunary, expr->flags == OP_AND).val;
-    set_debug_pos(self, expr->range);
     switch ((Op) expr->flags) {
         case OP_ADD:
         case OP_AND:
@@ -1147,7 +1149,6 @@ IRValue emit_expr_binary(IRContext *self, Expr *expr) {
     Type *type = llvm_type(self, operand.type);
     Value *lhs = emit_expr(self, expr->ebinary.elhs).val;
     Value *rhs = emit_expr(self, expr->ebinary.erhs).val;
-    set_debug_pos(self, expr->range);
     IRBuilder<> b = self->builder;
     switch (expr->flags) {
         case OP_ADD: return irval(is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs)); // FIXME: Pointers?
@@ -1204,6 +1205,7 @@ IRValue emit_expr_call(IRContext *self, Expr *expr) {
     for (i64 i = 0; i < arrlen(expr->ecall.args); i++) {
         CallArg arg = expr->ecall.args[i];
         Operand arg_operand = hmget(self->package->operands, arg.expr);
+        set_debug_pos(self, expr->range);
         Value *val = emit_expr(self, arg.expr).val;
         bool last_arg = i - 1 == arrlen(operand.type->tfunc.params);
         if (is_cvargs && last_arg) { // C ABI rules (TODO: Apply to all parameters for c calls)
@@ -1473,12 +1475,12 @@ void emit_stmt_assign(IRContext *self, Stmt *stmt) {
                 for (i64 result_index = 0; result_index < num_lhs; result_index++) {
                     Expr *lhs_expr = stmt->sassign.lhs[lhs_index++];
                     Value *lhs = emit_expr(self, lhs_expr, LVALUE).val;
-                    set_debug_pos(self, stmt->range);
 
                     Value *addr = self->builder.CreateStructGEP(
                         rhs->getType(), result_address, (u32) result_index);
                     Value *val = create_load(self, addr);
 
+                    set_debug_pos(self, stmt->range);
                     create_coerced_store(self, val, lhs);
                 }
             }
@@ -1642,6 +1644,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         self->builder.CreateBr(cond);
         self->builder.SetInsertPoint(cond);
 
+        set_debug_pos(self, stmt->sfor.aggregate->range);
         Value *within_bounds = self->builder.CreateICmpSLT(create_load(self, index), length);
         self->builder.CreateCondBr(within_bounds, body, post);
         arrpush(fn->loop_cond_blocks, cond);
@@ -1649,6 +1652,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
 
         self->builder.SetInsertPoint(body);
         Value *elptr = self->builder.CreateGEP(aggregate, {zero, create_load(self, index)});
+        set_debug_pos(self, stmt->sfor.value_name->range);
         create_store(self, create_load(self, elptr), value);
 
         emit_stmt(self, stmt->sfor.body);
@@ -1657,6 +1661,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         if (!has_jump) self->builder.CreateBr(step);
         self->builder.SetInsertPoint(step);
         Value *index_incr = self->builder.CreateAdd(create_load(self, index), one);
+        if (stmt->sfor.index_name) set_debug_pos(self, stmt->sfor.index_name->range);
         create_store(self, index_incr, index);
         self->builder.CreateBr(cond);
         self->builder.SetInsertPoint(post);
@@ -1677,6 +1682,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
         post = BasicBlock::Create(self->context, "for.post", fn->function);
         self->builder.CreateBr(cond ?: body);
         self->builder.SetInsertPoint(cond);
+        set_debug_pos(self, stmt->sfor.cond->range);
         Value *cond_val = emit_expr(self, stmt->sfor.cond).val;
         self->builder.CreateCondBr(cond_val, body, post);
     }
@@ -1688,6 +1694,7 @@ void emit_stmt_for(IRContext *self, Stmt *stmt) {
     if (stmt->sfor.step) { // for init; cond; step { ... }
         if (!has_jump) self->builder.CreateBr(step);
         self->builder.SetInsertPoint(step);
+        set_debug_pos(self, stmt->sfor.step->range);
         emit_stmt(self, stmt->sfor.step);
         self->builder.CreateBr(cond);
     } else if (cond) { // for cond { ... }
@@ -1723,6 +1730,7 @@ void emit_stmt_switch(IRContext *self, Stmt *stmt) {
             case_blocks.push_back(then);
         }
     }
+    set_debug_pos(self, stmt->sswitch.subject->range);
     Value *value = emit_expr(self, stmt->sswitch.subject).val;
     std::vector<std::vector<Value *>> matches;
     for (i64 i = 0; i < num_cases; i++) {
@@ -1734,6 +1742,7 @@ void emit_stmt_switch(IRContext *self, Stmt *stmt) {
         if (num_matches) {
             std::vector<Value *> vals;
             for (i64 match_index = 0; match_index < num_matches; match_index++) {
+                set_debug_pos(self, scase.matches[match_index]->range);
                 Value *val = emit_expr(self, scase.matches[match_index]).val;
                 vals.push_back(val);
             }
@@ -1809,6 +1818,7 @@ void emit_decl_var(IRContext *self, Decl *decl) {
         if (decl->dvar.vals) {
             Expr *expr = decl->dvar.vals[index];
             Operand operand = hmget(self->package->operands, expr);
+            set_debug_pos(self, decl->range);
             IRValue res = emit_expr(self, expr);
             rhs_is_alloca = res.is_temp_alloca;
             rhs = res.val;
@@ -1821,7 +1831,6 @@ void emit_decl_var(IRContext *self, Decl *decl) {
                     Type *type = llvm_type(self, sym->type);
                     AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
                     sym->userdata = alloca;
-                    set_debug_pos(self, name->range);
                     if (compiler.flags.debug) declare_auto_variable(self, sym);
                     Value *result = self->builder.CreateExtractValue(rhs, {index++});
                     create_coerced_store(self, result, alloca);
@@ -1838,10 +1847,10 @@ void emit_decl_var(IRContext *self, Decl *decl) {
             // FIXME: Alloca can't happen at global scope instead use a global variable and add
             //  check that we only initialize with global variables.
             alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
+            set_debug_pos(self, decl->range);
             if (rhs) create_coerced_store(self, rhs, alloca);
         }
         sym->userdata = alloca;
-        set_debug_pos(self, name->range);
         if (compiler.flags.debug) declare_auto_variable(self, sym);
     }
 }
@@ -1881,9 +1890,6 @@ void emit_decl_foreign(IRContext *self, Decl *decl) {
 
     Type *type = llvm_type(self, operand.type);
     if (operand.type->kind == TYPE_FUNC) {
-
-
-//    if (FunctionType *fn_ty = dyn_cast<FunctionType>(type)) {
         FunctionType *fn_ty = (FunctionType *) type->getPointerElementType();
         Function *fn = (Function *) self->module->getOrInsertFunction(sym->external_name, fn_ty);
         fn->setCallingConv(CallingConv::C);

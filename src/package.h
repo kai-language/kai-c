@@ -25,6 +25,7 @@ struct Source {
     u32 len;
 
     u32 *line_offsets; // arr
+    u32 *most_recent_line_offset;
 };
 
 typedef struct PosInfo PosInfo;
@@ -83,6 +84,8 @@ struct Package {
     SourceNote *notes;   // arr
 
     void *userdata;
+
+    Source *most_recent_source;
 };
 
 typedef struct PackageMapEntry PackageMapEntry;
