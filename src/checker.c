@@ -457,6 +457,7 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
         case TYPE_UNION:
         case TYPE_STRUCT: {
             u32 index = 0;
+            // TODO: Ensure each index is only set once
             for (int i = 0; i < arrlen(expr->ecompound.fields); i++) {
                 CompoundField field = expr->ecompound.fields[i];
                 if (field.kind == FIELD_INDEX) {
@@ -489,6 +490,7 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
             Ty *expected_type = type ? type->tarray.eltype : NULL;
             u32 index = 0;
             u32 max_index = 0;
+            // TODO: Ensure each index is only set once
             for (u32 i = 0; i < arrlen(expr->ecompound.fields); i++) {
                 CompoundField field = expr->ecompound.fields[i];
                 if (field.kind == FIELD_NAME) {
@@ -507,7 +509,7 @@ Operand check_expr_compound(Checker *self, Expr *expr, Ty *wanted) {
                     index = (u32) op.val.i;
                 }
                 if (type && type->tarray.length && index >= type->tarray.length) {
-					error(self, (field.key ?: field.val)->range,
+                    error(self, (field.key ?: field.val)->range,
                           "Array index %lu is beyond the max index of %lu for type %s",
                           index, type->tarray.length, tyname(type));
                 }

@@ -132,9 +132,9 @@ struct IRContext {
     BuiltinSymbols sym;
 
     IRContext(IRContext *prev, Package *new_package) :
-    context(prev->context),
-    data_layout(prev->data_layout),
-    builder(prev->context)
+        context(prev->context),
+        data_layout(prev->data_layout),
+        builder(prev->context)
     {
         package = new_package;
         module = prev->module;
@@ -149,7 +149,7 @@ struct IRContext {
     }
 
     IRContext(Package *package, TargetMachine *tm, DataLayout dl, LLVMContext &context) :
-    context(context), data_layout(dl), builder(context)
+        context(context), data_layout(dl), builder(context)
     {
         this->package = package;
         module = new Module(package->path, context);
@@ -746,9 +746,7 @@ start:
                 val = self->builder.CreatePtrToInt(val, self->ty.intptr);
                 goto start;
             }
-
-            if (isa<FunctionType>(val_ty))
-                return val;
+            if (isa<FunctionType>(val_ty)) return val;
 
             // FIXME: IF isa<ArrayType> What do?
             return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
@@ -1279,7 +1277,7 @@ IRValue emit_expr_func(IRContext *self, Expr *expr) {
         DIType *dbg_type = llvm_debug_type(self, operand.type, true);
         PosInfo pos = package_posinfo(self->package, expr->range.start);
         DINode::DIFlags flags = strcmp(name, "main") == 0 ?
-        DISubprogram::DIFlags::FlagMainSubprogram : DINode::DIFlags::FlagZero;
+            DISubprogram::DIFlags::FlagMainSubprogram : DINode::DIFlags::FlagZero;
         DISubprogram *sp = self->dbg.builder->createFunction(
             arrlast(self->dbg.scopes), name, fn->getName(), self->dbg.file, pos.line,
             (DISubroutineType *) dbg_type, pos.line, flags,
@@ -1440,10 +1438,7 @@ IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
         default:
             fatal("Unrecognized ExprKind %s", describe_ast_kind(expr->kind));
     }
-    
-    if (is_lvalue)
-        val.val = remove_load(self, val.val);
-    
+    if (is_lvalue) val.val = remove_load(self, val.val);
     if (is_lvalue && !isa<PointerType>(val.val->getType())) {
         // make the val into an lvalue using a temp alloca
         u32 alignment = self->data_layout.getPrefTypeAlignment(val.val->getType());
