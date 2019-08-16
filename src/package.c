@@ -176,6 +176,9 @@ void package_posinfo_online(PosInfo *info, u32 offset) {
 
 Source *package_source(Package *package, u32 pos) {
     TRACE(LEXING);
+    Source *last_src = package->most_recent_source;
+    if (last_src && last_src->start <= pos && pos < (last_src->start + last_src->len))
+        return last_src;
     Source *source;
     for (int i = 0; i < arrlen(package->sources); i++) {
         source = &package->sources[i];
@@ -189,30 +192,38 @@ PosInfo package_posinfo(Package *package, u32 pos) {
     TRACE(LEXING);
     Source *source = package_source(package, pos);
     if (!source) return (PosInfo){0};
-    u32 offset = pos - source->start;
-    u32 start_of_line = 0;
-    u32 lineno = 0;
-    if (source->line_offsets) {
-        for (int i = 0; i < arrlen(source->line_offsets); i++) {
-            lineno++;
-            start_of_line = source->line_offsets[i];
-            if (start_of_line >= offset) {
-                start_of_line = source->line_offsets[i - 1];  // FIXME: Results in oob on first char error.
+
+    u32 *start_of_line = NULL;
+    u32 *ptr = source->most_recent_line_offset ?: source->line_offsets;
+    if (ptr > source->line_offsets && pos < *ptr) {
+        for (; ptr >= source->line_offsets; ptr--) { // Backward search
+            if (source->start + *ptr <= pos) {
+                start_of_line = ptr + 1;
+                break;
+            }
+        }
+    } else {
+        u32 *end = &arrlast(source->line_offsets);
+        for (; ptr <= end; ptr++) {
+            if (source->start + *ptr >= pos) {
+                start_of_line = ptr - 1;
                 break;
             }
         }
     }
+    ASSERT(start_of_line);
+    ASSERT(start_of_line >= source->line_offsets);
+    ASSERT(start_of_line <= &arrlast(source->line_offsets));
+    source->most_recent_line_offset = start_of_line;
+    u32 line = (u32) (source->most_recent_line_offset - source->line_offsets) + 2;
     Lexer lexer;
-    PosInfo info = {source, .line = lineno};
+    PosInfo info = {source, .line = line};
     lexer_init(&lexer, source->code);
-    lexer.str += offset;
+    lexer.str += pos - source->start;
     lexer.client.data = &info;
     lexer.client.online = (void *) package_posinfo_online;
     lexer_next_token(&lexer);
-//    while (lexer.tok.offset_start <= offset) lexer_next_token(&lexer);
-//    ASSERT(lexer.tok.offset_start == offset);
-//    u32 start_of_line = arrlast(source->line_offsets);
-    info.column = lexer.tok.offset_start - start_of_line;
+    info.column = lexer.tok.offset_start - *start_of_line;
     info.offset = lexer.tok.offset_start;
     return info;
 }
