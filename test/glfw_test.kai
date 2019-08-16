@@ -1,11 +1,94 @@
 
-#import "opengl"
+#import "opengl" gl
 #import "glfw"
 #import "libc"
+#import "math"
 
 panic :: fn(msg: *u8) -> void {
     libc.printf("%s", msg)
     libc.exit(1)
+}
+
+loadShaders :: fn() -> u32 {
+    vertex_shader_source := `
+        #version 330 core
+        layout(location = 0) in vec3 vertexPosition;
+        uniform mat4 MVP;
+        out vec3 pos;
+        void main() {
+            gl_Position = MVP * vec4(vertexPosition, 1.0);
+            pos = vertexPosition.xyz;
+        }
+    `
+    fragment_shader_source := `
+        #version 330 core
+        in vec3 pos;
+        out vec4 color;
+        uniform float time;
+        void main() {
+            color = vec4(pos.xy, sin(2.0 * 3.14159 * 2 * time), 1.0);
+        }
+    `
+
+    vertex_shader_length := i32(libc.strlen(vertex_shader_source))
+    fragment_shader_length := i32(libc.strlen(fragment_shader_source))
+
+    vertex_shader_id := gl.CreateShader(gl.VERTEX_SHADER)
+    fragment_shader_id := gl.CreateShader(gl.FRAGMENT_SHADER)
+
+    gl.ShaderSource(vertex_shader_id, 1, &vertex_shader_source, &vertex_shader_length)
+    gl.ShaderSource(fragment_shader_id, 1, &fragment_shader_source, &fragment_shader_length)
+
+    gl.CompileShader(vertex_shader_id)
+    gl.CompileShader(fragment_shader_id)
+
+    program := gl.CreateProgram()
+    gl.AttachShader(program, vertex_shader_id)
+    gl.AttachShader(program, fragment_shader_id)
+    gl.LinkProgram(program)
+
+    gl.DeleteShader(vertex_shader_id)
+    gl.DeleteShader(fragment_shader_id)
+
+    return program
+}
+
+createBuffers :: fn() -> (u32, u32, u32) {
+    vao: u32
+    gl.GenVertexArrays(1, &vao)
+    gl.BindVertexArray(vao)
+
+    // a 2x2x2 cube, using triangle strips and indices
+    cubeVertices := [..]f32 {
+        -1.0, -1.0,  1.0,
+         1.0, -1.0,  1.0,
+        -1.0,  1.0,  1.0,
+         1.0,  1.0,  1.0,
+        -1.0, -1.0, -1.0,
+         1.0, -1.0, -1.0,
+        -1.0,  1.0, -1.0,
+         1.0,  1.0, -1.0,
+    }
+
+    cubeIndices := [..]u16{
+        // TRIANGLE_STRIP, 14 indices = 12 triangles
+        0, 1, 2, 3, 7, 1, 5, 4, 7, 6, 2, 4, 0, 1,
+    }
+
+    vbo: u32
+    gl.GenBuffers(1, &vbo)
+    gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
+    gl.BufferData(gl.ARRAY_BUFFER, 96, &cubeVertices[0], gl.STATIC_DRAW)
+
+    gl.EnableVertexAttribArray(0)
+    gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 0, nil)
+
+    ebo: u32
+    gl.GenBuffers(1, &ebo)
+    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo)
+    gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, 28, &cubeIndices[0], gl.STATIC_DRAW)
+
+    return vao, vbo, ebo
 }
 
 main :: fn() -> void {
@@ -13,15 +96,55 @@ main :: fn() -> void {
     if !window panic("Failed to create window")
     defer glfw.Terminate()
 
-    opengl.init(glfw.GetProcAddress)
+    gl.init(glfw.GetProcAddress)
 
-    err := opengl.GetError()
-    if err != opengl.NO_ERROR panic("OpenGL encountered an error during init")
+    err := gl.GetError()
+    if err != gl.NO_ERROR panic("OpenGL encountered an error during init")
+
+    program := loadShaders()
+
+    vao, vbo, ebo := createBuffers()
+
+    // timings
+    tPrev := glfw.GetTime()
+    frame := 0
+
+    res := [2]f32{1280, 720}
+
+    p := math.perspective(0.785, 1.77, 0.1, 100.0)
+
+    pos := math.Vec3 { 4, 3, 3 }
+    lookPos := math.Vec3 { 0, 0, 0 }
+    up := math.Vec3 { 0, 1, 0 }
+
+    v := math.look_at(pos, lookPos, up)
+
+    m := math.identity_mat()
 
     for !glfw.WindowShouldClose(window) {
+
+        tNow := glfw.GetTime()
+        dt := cast(f32) (tNow - tPrev)
+        tPrev = tNow
+
         glfw.PollEvents()
+
         if glfw.GetKey(window, glfw.KEY_ESCAPE) break
-        opengl.Clear(opengl.COLOR_BUFFER_BIT | opengl.DEPTH_BUFFER_BIT)
+
+        MV  := math.mul(v, m)
+        MVP := math.mul(p, MV)
+
+        // Drawing
+        gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+        gl.UseProgram(program)
+        gl.UniformMatrix4fv(gl.GetUniformLocation(program, "MVP"), 1, gl.FALSE, &MVP[0][0])
+        gl.Uniform1f(gl.GetUniformLocation(program, "time"), cast(f32) glfw.GetTime())
+        //gl.Uniform2f(gl.GetUniformLocation(program, "resolution"), 1280, 720)
+
+        gl.BindVertexArray(vao)
+        gl.DrawElements(gl.TRIANGLE_STRIP, 14, gl.UNSIGNED_SHORT, nil)
+
         glfw.SwapBuffers(window)
     }
 }
