@@ -1,48 +1,49 @@
 
-typedef struct Intern Intern;
-struct Intern {
-    Intern *next;
-    size_t len;
-    char data[];
-};
+#include "all.h"
+#include "string.h"
+#include "arena.h"
+#include "package.h"
+#include "queue.h"
+#include "compiler.h"
 
-Arena internArena;
-Map interns;
+const char *intern_in;
+const char *intern_ptr;
+const char *intern_len;
+const char *intern_cap;
 
-const char *StrInternRange(const char *start, const char *end) {
+// If end is NULL strlen will be called on start
+const char *str_intern_range(const char *start, const char *end) {
+    TRACE(INTERN);
+    ASSERT(end - start < UINT32_MAX);
     size_t len = end - start;
-    u64 hash = HashBytes(start, len);
-    u64 key = hash ? hash : 1; // 0 is a sentinal
-    Intern *intern = MapGetU64(&interns, key);
-    for (Intern *it = intern; it; it = it->next) {
-        if (it->len == len && strncmp(it->data, start, len) == 0) {
-            return it->data;
-        }
-    }
-    Intern *newIntern = ArenaAlloc(&internArena, offsetof(Intern, data) + len + 1);
-    newIntern->len = len;
-    newIntern->next = intern;
-    ASSERT(intern != newIntern);
-    memcpy(newIntern->data, start, len);
-    newIntern->data[len] = 0; // Nul terminate
-    MapSet(&interns, (void*) key, (void*) newIntern);
-    return newIntern->data;
+    size_t hash = stbds_hash_bytes((void *) start, len, 0);
+
+    InternedString intern = hmgets(compiler.interns, hash);
+    if (intern.len) return intern.value;
+    intern.value = arena_alloc(&compiler.strings, len + 1);
+    memcpy(intern.value, start, len);
+    intern.value[len] = 0;
+    intern.key = hash;
+    intern.len = (u32) len;
+    stbds_hmputs(compiler.interns, intern);
+    COUNTER1(INTERN, "num_interns", INT("num", (int) hmlen(compiler.interns)));
+    return intern.value;
 }
 
-const char *StrIntern(const char *str) {
-    return StrInternRange(str, str + strlen(str));
+const char *str_intern(const char *str) {
+    return str_intern_range(str, str + strlen(str));
 }
 
-size_t StrInternLen(const char *str) {
-    if (!str) return 0;
-    
-    Intern *intern = (Intern*) (str - offsetof(Intern, data));
-    return intern->len;
+const char *str_join(const char *a, const char *b) {
+    char mem[4 * 1024];
+    strcpy(mem, a);
+    strcat(mem, b);
+    return str_intern(mem);
 }
 
 #if TEST
 void test_stringInterning() {
-    char *mem = (char*) Alloc(DefaultAllocator, MB(4));
+    char mem[4 * 1024];
 
 #define ALPHA "alpha"
 #define BETA "beta"
@@ -51,68 +52,25 @@ void test_stringInterning() {
 
     ASSERT(strncmp(ALPHA, mem, sizeof(ALPHA)) == 0);
 
-    const char *stored = StrIntern(ALPHA);
+    const char *stored = str_intern(ALPHA);
     ASSERT(strncmp(stored, mem, sizeof(ALPHA)) == 0);
 
     // Push ourselves over allocated space so we allocate a new block
-    StrInternRange(mem + MB(1), mem + MB(2));
-    ASSERT(ArrayLen(internArena.blocks) > 1);
 
-    const char *retrieved = StrIntern(ALPHA);
+    const char *retrieved = str_intern(ALPHA);
     ASSERT(stored == retrieved);
 
-    stored = StrIntern(BETA);
-    retrieved = StrIntern(BETA);
+    stored = str_intern(BETA);
+    retrieved = str_intern(BETA);
     ASSERT(stored == retrieved);
 
     char stackAlpha[] = ALPHA;
-    ASSERT(StrIntern(ALPHA) == StrIntern(stackAlpha));
+    ASSERT(str_intern(ALPHA) == str_intern(stackAlpha));
 
     char stackBeta[] = BETA;
-    ASSERT(StrIntern(BETA) == StrIntern(stackBeta));
+    ASSERT(str_intern(BETA) == str_intern(stackBeta));
 
 #undef ALPHA
 #undef BETA
 }
 #endif
-
-enum StringEscapeError {
-    SEE_Error,
-    SEE_NoAllocations,
-    SEE_AllocatedMem
-};
-
-/*
- // TODO(Brett): custom allocator
- StringEscapeError EscapeString(String *str) {
- String s = *str;
-
- if (s.len < 2) {
- return SEE_Error;
- }
-
- u8 quote = s[0];
- if (s[s.len-1] != quote && quote != '"') {
- return SEE_Error;
- }
-
- s = Slice(s, 1, s.len - 1);
-
- b32 requiresEscape = false;
- for (u32 i = 0; i < s.len; i += 1) {
- if (s[i] == '\\') {
- requiresEscape = true;
- break;
- }
- }
-
- if (!requiresEscape) {
- *str = s;
- return SEE_NoAllocations;
- }
-
- // TODO(Brett): actually escape string
- *str = s;
- return SEE_AllocatedMem;
- }
- */

@@ -1,99 +1,109 @@
-#define TOKEN_KINDS \
-    FOR_EACH(Eof, "EOF") \
-    FOR_EACH(Comment, "comment") \
-    FOR_EACH(Ident, "identifier") \
-    FOR_EACH(Directive, "directive") \
-    FOR_EACH(Int, "int") \
-    FOR_EACH(Float, "float") \
-    FOR_EACH(String, "string") \
-    FOR_EACH(Add, "+") \
-    FOR_EACH(Sub, "-") \
-    FOR_EACH(Mul, "*") \
-    FOR_EACH(Div, "/") \
-    FOR_EACH(Rem, "%") \
-    FOR_EACH(And, "&") \
-    FOR_EACH(Or, "|") \
-    FOR_EACH(Xor, "^") \
-    FOR_EACH(Shl, "<<") \
-    FOR_EACH(Shr, ">>") \
-    FOR_EACH(AddAssign, "+=") \
-    FOR_EACH(SubAssign, "-=") \
-    FOR_EACH(MulAssign, "*=") \
-    FOR_EACH(DivAssign, "/=") \
-    FOR_EACH(RemAssign, "%=") \
-    FOR_EACH(AndAssign, "&=") \
-    FOR_EACH(OrAssign, "|=") \
-    FOR_EACH(XorAssign, "^=") \
-    FOR_EACH(ShlAssign, "<<=") \
-    FOR_EACH(ShrAssign, ">>=") \
-    FOR_EACH(Land, "&&") \
-    FOR_EACH(Lor, "||") \
-    FOR_EACH(Lss, "<") \
-    FOR_EACH(Gtr, ">") \
-    FOR_EACH(Not, "!") \
-    FOR_EACH(BNot, "~") \
-    FOR_EACH(Eql, "==") \
-    FOR_EACH(Neq, "!=") \
-    FOR_EACH(Leq, "<=") \
-    FOR_EACH(Geq, ">=") \
-    FOR_EACH(Assign, "=") \
-    FOR_EACH(Ellipsis, "..") \
-    FOR_EACH(Dollar, "$") \
-    FOR_EACH(Question, "?") \
-    FOR_EACH(RetArrow, "->") \
-    FOR_EACH(Lparen, "(") \
-    FOR_EACH(Lbrack, "[") \
-    FOR_EACH(Lbrace, "{") \
-    FOR_EACH(Rparen, ")") \
-    FOR_EACH(Rbrack, "]") \
-    FOR_EACH(Rbrace, "}") \
-    FOR_EACH(Comma, ",") \
-    FOR_EACH(Dot, ".") \
-    FOR_EACH(Colon, ":") \
-    FOR_EACH(Terminator, ";") \
-    FOR_EACH(Keyword, "")
+#pragma once
 
-typedef u8 TokenKind;
-enum Enum_TokenKind {
-#define FOR_EACH(e, s) TK_##e,
-    TOKEN_KINDS
-#undef FOR_EACH
-    NUM_TOKEN_KINDS,
+// Requires nothing
+
+typedef enum TokenKind TokenKind;
+enum TokenKind {
+    TK_Invalid   = 0,
+    TK_Eof       = 127,
+    TK_Name     = 'n',
+    TK_Keyword   = 'k',
+    TK_Directive = '#',
+    TK_Int       = 'i',
+    TK_Float     = 'f',
+    TK_String    = 's',
+    TK_Ellipsis  = 'e',
+    TK_RetArrow  = 'r',
+    TK_Comment   = 10,
+
+    TK_Add        = '+',
+    TK_Sub        = '-',
+    TK_Mul        = '*',
+    TK_Div        = '/',
+    TK_Rem        = '%',
+    TK_And        = '&',
+    TK_Or         = '|',
+    TK_Xor        = '^',
+    TK_Shl        = '_',
+    TK_Shr        = '`',
+    TK_Not        = '!',
+    TK_BNot       = '~',
+    TK_Assign     = '=',
+    TK_Dollar     = '$',
+    TK_Question   = '?',
+    TK_Lparen     = '(',
+    TK_Lbrack     = '[',
+    TK_Lbrace     = '{',
+    TK_Rparen     = ')',
+    TK_Rbrack     = ']',
+    TK_Rbrace     = '}',
+    TK_Comma      = ',',
+    TK_Dot        = '.',
+    TK_Colon      = ':',
+    TK_Terminator = ';',
+
+    TK_Land      = 'a',
+    TK_Lor       = 'o',
+    TK_Lss       = '<',
+    TK_Gtr       = '>',
+    TK_Eql       = TK_Assign | 0x80,
+    TK_Neq       = TK_Not    | 0x80,
+    TK_Leq       = TK_Lss    | 0x80,
+    TK_Geq       = TK_Gtr    | 0x80,
+
+    TK_AddAssign = TK_Add    | 0x80,
+    TK_SubAssign = TK_Sub    | 0x80,
+    TK_MulAssign = TK_Mul    | 0x80,
+    TK_DivAssign = TK_Div    | 0x80,
+    TK_RemAssign = TK_Rem    | 0x80,
+    TK_AndAssign = TK_And    | 0x80,
+    TK_OrAssign  = TK_Or     | 0x80,
+    TK_XorAssign = TK_Xor    | 0x80,
+    TK_ShlAssign = TK_Shl    | 0x80,
+    TK_ShrAssign = TK_Shr    | 0x80,
 };
-
-STATIC_ASSERT(NUM_TOKEN_KINDS <= UINT8_MAX, "enum values overflow storage type");
-
-#define TokenAssignOffset(Kind) Kind - (TK_AddAssign - TK_Add)
 
 typedef struct Token Token;
 struct Token {
     TokenKind kind;
-    const char *start;
-    const char *end;
-    Position pos;
-    union val {
-        unsigned long long i;
-        double f;
-        const char *s;
-        const char *ident;
-    } val;
+    u32 offset_start;
+    u32 offset_end;
+    union {
+        const char *tname;
+        const char *tstr;
+        u64 tint;
+        f64 tfloat;
+    };
+};
+
+typedef const char *(*OnStrFunc)  (void *userdata, Token *tok, const char *str, u32 len, bool is_temp);
+typedef const char *(*OnNameFunc) (void *userdata, Token *tok, const char *str, u32 len);
+typedef void  (*OnLineFunc)    (void *userdata, u32 offset);
+typedef void  (*OnMsgFunc)     (void *userdata, u32 offset, const char *str, u32 len);
+typedef void  (*OnCommentFunc) (void *userdata, u32 offset, const char *str, u32 len);
+
+typedef struct LexerClient LexerClient;
+struct LexerClient {
+    void *data;
+    OnLineFunc    online;
+    OnStrFunc     onstr;
+    OnNameFunc    onname;
+    OnMsgFunc     onmsg;
+    OnCommentFunc oncomment;
 };
 
 typedef struct Lexer Lexer;
 struct Lexer {
-    const char *stream;
-    const char *startOfLine;
-    const char *startOfFile;
+    const char *str;
+    const char *start;
 
-    Package *package;
+    Token tok;
+    char *string_temp_buffer;
 
-    Position pos;
-
-    b8 insertSemi;
-    b8 insertSemiBeforeLBrace;
+    LexerClient client;
 };
 
-const char *DescribeTokenKind(TokenKind tk);
-const char *DescribeToken(Token tok);
-
-extern const char *internCallConv_C;
+void lexer_init(Lexer *self, const char *data);
+Token lexer_next_token(Lexer *self);
+const char *token_name(TokenKind kind);
+const char *token_info(Token tok);

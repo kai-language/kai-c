@@ -1,12 +1,44 @@
 
-add :: fn(x: i32, y: i32) -> i32 {
-    z := x + y
-    z = z + 5
-    return z
+#library "libc"
+#foreign libc {
+    sscanf :: fn(buf: *u8, format: *u8, args: any.. #cvargs) -> i32
+    strlen :: fn(*u8) -> i64
+    strncmp :: fn(lhs, rhs: *u8, count: i64) -> i32
 }
 
+Mat4 :: [4][4]f32
 
 main :: fn() -> i32 {
-    return add(5, 8)
+    perspective(1, 2, 3, 4)
+    findVersion()
+    return 0
 }
+
+findVersion :: fn() -> (major: i32, minor: i32) {
+    major, minor: i32
+
+    version : *u8 = "OpenGL ES 4.4"
+    if version == nil return 0, 0
+
+    prefixes := { "OpenGL ES-CM ", "OpenGL ES-CL ", "OpenGL ES " }
+    return 1, 2
+}
+
+perspective :: fn(fovy, aspect, near, far: f32) -> Mat4 {
+    m := Mat4 {
+        {1, 2, 3, 4},
+        {0, 0, 0, 0},
+        {0, 0, 0, 1},
+        {0, 0, 0, 0}
+    }
+    tan_half_fovy := (0.5 * fovy)
+
+    m[0][0] = 1.0 / (aspect * tan_half_fovy)
+    m[1][1] = 1.0 / (tan_half_fovy)
+    m[2][2] = -(far + near) / (far - near)
+    m[2][3] = -1.0
+    m[3][2] = -2.0 * far * near / (far - near)
+    return m
+}
+
 

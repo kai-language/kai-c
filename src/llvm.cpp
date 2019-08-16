@@ -1,19 +1,16 @@
-#include "common.h"
-#include "symbols.h"
-#include "compiler.h"
-#include "flags.h"
-#include "lexer.h"
+
+#include "all.h" // stb_ds needs to be imported as C++
+extern "C" {
+#include "arena.h"
+#include "package.h"
+#include "checker.h"
 #include "ast.h"
 #include "types.h"
-#include "checker.h"
-#include "llvm.h"
-
-// Save our definition of DEBUG and undefine it to avoid conflict with LLVM's
-// definition
-#ifdef DEBUG
-#define KAI_DEBUG DEBUG
-#undef DEBUG
-#endif
+#include "queue.h"
+#include "package.h"
+#include "compiler.h"
+}
+#include "llvm.hpp"
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
@@ -31,1798 +28,184 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/DIBuilder.h>
-
-#include "llvm/IR/LegacyPassManager.h"
-
-#include <llvm/Support/FileSystem.h>
-#include <llvm/Support/Host.h>
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/TargetRegistry.h>
-#include <llvm/Support/TargetSelect.h>
-
+#include <llvm/IR/LegacyPassManager.h>
 
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
+#include <llvm/Support/Timer.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/TargetRegistry.h>
+#include <llvm/Analysis/TargetLibraryInfo.h>
+#include <llvm/Transforms/IPO.h>
+#include <llvm/Transforms/IPO/AlwaysInliner.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
+#include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Utils.h>
+#include <llvm/LinkAllPasses.h>
+
 
 #pragma clang diagnostic pop
 
-// Undefine LLVM's definition of DEBUG and restore our definition (if any)
-#undef DEBUG
-#ifdef KAI_DEBUG
-#define DEBUG KAI_DEBUG
-#endif
+using namespace llvm;
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wswitch"
-
-typedef struct DebugTypes {
-    llvm::DIType *i8;
-    llvm::DIType *i16;
-    llvm::DIType *i32;
-    llvm::DIType *i64;
-
-    llvm::DIType *u8;
-    llvm::DIType *u16;
-    llvm::DIType *u32;
-    llvm::DIType *u64;
-
-    llvm::DIType *f32;
-    llvm::DIType *f64;
-} DebugTypes;
-
-typedef struct Debug {
-    llvm::DIBuilder *builder;
-    llvm::DICompileUnit *unit;
-    llvm::DIFile *file;
-    DebugTypes types;
-    llvm::DIScope *scope;
-} Debug;
-
-typedef struct Context Context;
-struct Context {
-    DynamicArray(CheckerInfo) checkerInfo;
-    llvm::Module *m;
-    llvm::TargetMachine *targetMachine;
-    llvm::DataLayout dataLayout;
-    llvm::IRBuilder<> b;
-
-    llvm::Function *fn;
-
-    llvm::BasicBlock *retBlock;
-    llvm::Value *retValue;
-    bool returnAddress;
-
-    Debug d;
-    Arena arena;
-
-    std::vector<llvm::BasicBlock *> deferStack;
+struct IRValue {
+    Value *val;
+    bool is_temp_alloca;
 };
 
-typedef struct BackendStructUserdata BackendStructUserdata;
-struct BackendStructUserdata {
-    llvm::StructType *type;
-    llvm::DIType *debugType;
+struct DebugContext {
+    DIType *i8;
+    DIType *i16;
+    DIType *i32;
+    DIType *i64;
+    DIType *u8;
+    DIType *u16;
+    DIType *u32;
+    DIType *u64;
+    DIType *f32;
+    DIType *f64;
+    DIFile *file;
+    DIScope **scopes; // arr
+    DIBuilder *builder;
+    DICompileUnit *unit;
+    Source *source_file;
 };
 
-void clearDebugPos(Context *ctx);
-void debugPos(Context *ctx, SourceRange pos);
-b32 emitObjectFile(Package *p, char *name, Context *ctx);
-llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType = nullptr);
-llvm::Value *emitExprBinary(Context *ctx, Expr *expr);
-llvm::Value *emitExprUnary(Context *ctx, Expr *expr);
-llvm::Value *emitExprSubscript(Context *ctx, Expr *expr);
-void emitStmt(Context *ctx, Stmt *stmt);
-void emitStmtBlock(Context *ctx, Stmt *stmt);
+struct BuiltinTypes {
+    IntegerType *i1;
+    union {
+        IntegerType *i8;
+        IntegerType *u8;
+    };
+    union {
+        IntegerType *i16;
+        IntegerType *u16;
+    };
+    union {
+        IntegerType *i32;
+        IntegerType *u32;
+    };
+    union {
+        IntegerType *i64;
+        IntegerType *u64;
+    };
+    Type *f32;
+    Type *f64;
+    Type *void_;
+    IntegerType *intptr;
+    PointerType *rawptr;
+};
 
-llvm::Type *canonicalize(Context *ctx, Type *type) {
-    switch (type->kind) {
-        case TypeKind_Tuple:
-            // TODO: Should they?
-            PANIC("Tuples are a checker thing, they should not make their way into the backend, unless they do?");
-            if (!type->Tuple.numTypes) {
-                return llvm::Type::getVoidTy(ctx->m->getContext());
-            }
-            UNIMPLEMENTED(); // Multiple returns
-        case TypeKind_Int:
-            return llvm::IntegerType::get(ctx->m->getContext(), type->Width);
+struct BuiltinSymbols {
+    Value *True;
+    Value *False;
+};
 
-        case TypeKind_Float: {
-            if (type->Width == 32) {
-                return llvm::Type::getFloatTy(ctx->m->getContext());
-            } else if (type->Width == 64) {
-                return llvm::Type::getDoubleTy(ctx->m->getContext());
-            } else {
-                ASSERT(false);
-            }
-        } break;
+struct IRFunction {
+    Function *function;
+    BasicBlock *entry_block;
+    BasicBlock *return_block;
+    AllocaInst *last_entry_alloca;
+    AllocaInst *result_value;
 
-        case TypeKind_Array: {
-            return llvm::ArrayType::get(canonicalize(ctx, type->Array.elementType), type->Array.length);
-        } break;
+    BasicBlock **defer_blocks;
+    BasicBlock **loop_cond_blocks; // for, continue
+    BasicBlock **post_blocks; // for & switch, breaks
+    BasicBlock **next_cases; // switch, fallthroughs
+};
 
-        case TypeKind_Pointer: {
-            return llvm::PointerType::get(canonicalize(ctx, type->Pointer.pointeeType), 0);
-        } break;
+struct IRContext {
+    Package *package;
+    LLVMContext &context;
+    Module *module;
+    TargetMachine *target;
+    DataLayout data_layout;
+    IRBuilder<> builder;
 
-        case TypeKind_Function: {
-            std::vector<llvm::Type *> params;
-            for (u32 i = 0; i < type->Function.numParams; i++) {
-                Type *paramType = type->Function.params[i];
-                if (paramType->Flags & TypeFlag_CVargs) break;
-                llvm::Type *irParamType = canonicalize(ctx, paramType);
-                params.push_back(irParamType);
-            }
+    DebugContext dbg;
 
-            llvm::Type *returnType;
-            if (type->Function.numResults == 0) {
-                returnType = llvm::Type::getVoidTy(ctx->m->getContext());
-            } else if (type->Function.numResults == 1) {
-                returnType = canonicalize(ctx, type->Function.results[0]);
-            } else {
-                std::vector<llvm::Type *> elements;
-                for (u32 i = 0; i < type->Function.numResults; i++) {
-                    llvm::Type *ty = canonicalize(ctx, type->Function.results[i]);
-                    elements.push_back(ty);
-                }
+    IRFunction *fn; // arr
+    Sym **symbols; // arr
 
-                returnType = llvm::StructType::create(ctx->m->getContext(), elements);
-            }
+    BuiltinTypes ty;
+    BuiltinSymbols sym;
 
-            // TODO: Kai vargs
-            return llvm::FunctionType::get(returnType, params, (type->Function.Flags & TypeFlag_CVargs) != 0);
-        } break;
+    Range last_debug_range;
 
-        case TypeKind_Struct: {
-            if (type->Symbol && type->Symbol->backendUserdata) {
-                BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
-                return userdata->type;
-            } else if (type->Symbol->decl) {
-                // TODO: When we support importing symbols into other scopes we will need to do a context switch
-                emitStmt(ctx, (Stmt *) type->Symbol->decl);
-                BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
-                return userdata->type;
-            }
-
-            ASSERT_MSG(!type->Symbol, "Only unnamed structures should get to here");
-            std::vector<llvm::Type *> elements;
-            for (u32 i = 0; i < type->Struct.numMembers; i++) {
-                llvm::Type *ty = canonicalize(ctx, type->Struct.members[i].type);
-                elements.push_back(ty);
-            }
-
-            llvm::StructType *ty = llvm::StructType::create(ctx->m->getContext(), elements);
-            if (type->Symbol) {
-                ty->setName(type->Symbol->name);
-
-                // NOTE: emitExprTypeStruct will update this with debug info later if needed.
-
-                BackendStructUserdata *userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
-                userdata->type = ty;
-                userdata->debugType = NULL;
-                type->Symbol->backendUserdata = userdata;
-            }
-
-            return ty;
-        } break;
+    IRContext(IRContext *prev, Package *new_package) :
+        context(prev->context),
+        data_layout(prev->data_layout),
+        builder(prev->context)
+    {
+        package = new_package;
+        module = prev->module;
+        target = prev->target;
+        ty = prev->ty;
+        sym = prev->sym;
+        dbg = prev->dbg;
+        dbg.scopes = NULL;
+        fn = NULL;
+        symbols = NULL;
+        arrpush(dbg.scopes, prev->dbg.unit); // Everything in 1 CU
     }
 
-    ASSERT_MSG_VA(false, "Unable to canonicalize type %s", DescribeType(type));
-    return NULL;
-}
+    IRContext(Package *package, TargetMachine *tm, DataLayout dl, LLVMContext &context) :
+        context(context), data_layout(dl), builder(context)
+    {
+        this->package = package;
+        module = new Module(package->path, context);
+        target = tm;
+        data_layout = dl;
+        dbg.builder = new DIBuilder(*module);
+        symbols = NULL;
+        fn = NULL;
+        {
+            using namespace dwarf;
+            dbg.i8  = dbg.builder->createBasicType("i8",   8, DW_ATE_signed);
+            dbg.i16 = dbg.builder->createBasicType("i16", 16, DW_ATE_signed);
+            dbg.i32 = dbg.builder->createBasicType("i32", 32, DW_ATE_signed);
+            dbg.i64 = dbg.builder->createBasicType("i64", 64, DW_ATE_signed);
+            dbg.u8  = dbg.builder->createBasicType("u8",   8, DW_ATE_unsigned);
+            dbg.u16 = dbg.builder->createBasicType("u16", 16, DW_ATE_unsigned);
+            dbg.u32 = dbg.builder->createBasicType("u32", 32, DW_ATE_unsigned);
+            dbg.u64 = dbg.builder->createBasicType("u64", 64, DW_ATE_unsigned);
+            dbg.f32 = dbg.builder->createBasicType("f32", 32, DW_ATE_float);
+            dbg.f64 = dbg.builder->createBasicType("f64", 64, DW_ATE_float);
+            dbg.scopes = NULL;
 
-llvm::DIType *debugCanonicalize(Context *ctx, Type *type) {
-    DebugTypes types = ctx->d.types;
+            DIFile *package_file = dbg.builder->createFile(package->sources->filename, package->path);
 
-    if (type->kind == TypeKind_Int) {
-        switch (type->Width) {
-        case 8:  return type->Flags & TypeFlag_Signed ? types.i8  : types.u8;
-        case 16: return type->Flags & TypeFlag_Signed ? types.i16 : types.u16;
-        case 32: return type->Flags & TypeFlag_Signed ? types.i32 : types.u32;
-        case 64: return type->Flags & TypeFlag_Signed ? types.i64 : types.u64;
-        }
-    }
+            dbg.unit = dbg.builder->createCompileUnit(
+                DW_LANG_C, package_file, "Kai",
+                /*isOptimized*/ false, /*flags*/ "", /*RuntimeVersion*/ 0);
+            arrpush(dbg.scopes, dbg.unit);
 
-    if (type->kind == TypeKind_Float) {
-        return type->Width == 32 ? types.f32 : types.f64;
-    }
-
-    if (type->kind == TypeKind_Tuple && !type->Tuple.numTypes) {
-        return NULL;
-    }
-
-    if (type->kind == TypeKind_Pointer) {
-        return ctx->d.builder->createPointerType(
-            debugCanonicalize(ctx, type->Pointer.pointeeType),
-            ctx->m->getDataLayout().getPointerSize()
-        );
-    }
-
-    if (type->kind == TypeKind_Array) {
-        std::vector<llvm::Metadata *> subscripts;
-        Type *elementType = type;
-        while (elementType->kind == TypeKind_Array) {
-            subscripts.push_back(ctx->d.builder->getOrCreateSubrange(0, type->Array.length));
-            elementType = elementType->Array.elementType;
+            ty.i1  = IntegerType::getInt1Ty(context);
+            ty.i8  = IntegerType::get(context, 8);
+            ty.u8  = IntegerType::get(context, 8);
+            ty.i16 = IntegerType::get(context, 16);
+            ty.u16 = IntegerType::get(context, 16);
+            ty.i32 = IntegerType::get(context, 32);
+            ty.u32 = IntegerType::get(context, 32);
+            ty.i64 = IntegerType::get(context, 64);
+            ty.u64 = IntegerType::get(context, 64);
+            ty.f32 = Type::getFloatTy(context);
+            ty.f64 = Type::getDoubleTy(context);
+            ty.void_ = Type::getVoidTy(context);
+            ty.intptr = IntegerType::get(context, target->getPointerSizeInBits(0));
+            ty.rawptr = PointerType::get(ty.u8, 0);
         }
 
-        llvm::DINodeArray subscriptsArray = ctx->d.builder->getOrCreateArray(subscripts);
-        return ctx->d.builder->createArrayType(type->Width, type->Align, debugCanonicalize(ctx, elementType), subscriptsArray);
+        sym.True  = ConstantInt::getTrue(context);
+        sym.False = ConstantInt::getFalse(context);
     }
+};
 
-    if (type->kind == TypeKind_Function) {
-        // NOTE: Clang just uses a derived type that is a pointer
-        // !44 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !9, size: 64)
-        std::vector<llvm::Metadata *> parameterTypes;
-        for (u32 i = 0; i < type->Function.numParams; i++) {
-            llvm::DIType *ty = debugCanonicalize(ctx, type->Function.params[i]);
-            parameterTypes.push_back(ty);
-        }
+#define bitstobytes(bits) ((bits) + 7) / 8
 
-        auto pTypes = ctx->d.builder->getOrCreateTypeArray(parameterTypes);
-        return ctx->d.builder->createSubroutineType(pTypes);
-    }
-
-    if (type->kind == TypeKind_Struct) {
-        if (type->Symbol && type->Symbol->backendUserdata) {
-            BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
-            if (userdata->debugType) return userdata->debugType;
-        }
-
-        std::vector<llvm::Metadata *> elementTypes;
-        for (u32 i = 0; i < type->Struct.numMembers; i++) {
-            TypeField it = type->Struct.members[i];
-            llvm::DIType *dtype = debugCanonicalize(ctx, it.type);
-
-            auto member = ctx->d.builder->createMemberType(
-                ctx->d.scope,
-                it.name,
-                ctx->d.file,
-                0, // TODO: LineNo for struct members
-                it.type->Width,
-                it.type->Align,
-                it.offset,
-                llvm::DINode::DIFlags::FlagZero,
-                dtype
-            );
-
-            elementTypes.push_back(member);
-        }
-
-        auto elements = ctx->d.builder->getOrCreateArray(elementTypes);
-        return ctx->d.builder->createStructType(
-            ctx->d.scope,
-            type->Symbol->name,
-            ctx->d.file,
-            type->Symbol->decl->pos.line,
-            type->Width,
-            type->Align,
-            llvm::DINode::DIFlags::FlagZero,
-            NULL, // DerivedFrom
-            elements
-        );
-    }
-
-    ASSERT(false);
-    return NULL;
-}
-
-void initDebugTypes(llvm::DIBuilder *b, DebugTypes *types) {
-    using namespace llvm::dwarf;
-
-    types->i8  = b->createBasicType("i8",   8, DW_ATE_signed_char);
-    types->i16 = b->createBasicType("i16", 16, DW_ATE_signed);
-    types->i32 = b->createBasicType("i32", 32, DW_ATE_signed);
-    types->i64 = b->createBasicType("i64", 64, DW_ATE_signed);
-
-    types->u8  = b->createBasicType("u8",   8, DW_ATE_unsigned_char);
-    types->u16 = b->createBasicType("u16", 16, DW_ATE_unsigned);
-    types->u32 = b->createBasicType("u32", 32, DW_ATE_unsigned);
-    types->u64 = b->createBasicType("u64", 64, DW_ATE_unsigned);
-
-    types->f32 = b->createBasicType("f32", 32, DW_ATE_float);
-    types->f64 = b->createBasicType("f64", 64, DW_ATE_float);
-}
-
-llvm::DIFile *setDebugInfoForPackage(llvm::DIBuilder *b, Package *import) {
-    if (FlagDebug && !import->backendUserdata) {
-        char directory[MAX_PATH];
-        strcpy(directory, import->fullpath);
-        char *filename = strrchr(directory, '/');
-        *(filename++) = '\0';
-
-        llvm::DIFile *file = b->createFile(filename, directory);
-        import->backendUserdata = file;
-        return file;
-    }
-    return NULL;
-}
-
-void setCallingConvention(llvm::Function *fn, const char *name) {
-    if (name == internCallConv_C) {
-        fn->setCallingConv(llvm::CallingConv::C);
-    }
-}
-
-llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Type *type, const char *name) {
-    llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
-    llvm::AllocaInst *alloca = b.CreateAlloca(canonicalize(ctx, type), 0, name);
-    alloca->setAlignment(BytesFromBits(type->Align));
-    return alloca;
-}
-
-llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, Symbol *sym) {
-    auto type = canonicalize(ctx, sym->type);
-    llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
-    auto alloca = b.CreateAlloca(type, 0, sym->name);
-    alloca->setAlignment(BytesFromBits(sym->type->Align));
-    return alloca;
-}
-
-llvm::AllocaInst *createEntryBlockAlloca(Context *ctx, llvm::Type *type, const char *name) {
-    llvm::IRBuilder<> b(&ctx->fn->getEntryBlock(), ctx->fn->getEntryBlock().begin());
-    llvm::AllocaInst *alloca = b.CreateAlloca(type, 0, name);
-    return alloca;
-}
-
-llvm::Value *createVariable(Symbol *symbol, SourceRange pos, Context *ctx) {
-    ASSERT(symbol->kind == SymbolKind_Variable);
-
-    if (symbol->flags & SymbolFlag_Global) {
-        llvm::GlobalVariable *global = new llvm::GlobalVariable(
-            *ctx->m,
-            canonicalize(ctx, symbol->type),
-            false, // IsConstant
-            llvm::GlobalValue::ExternalLinkage,
-            NULL,  // Initializer
-            symbol->name
-        );
-        global->setAlignment(BytesFromBits(symbol->type->Align));
-        symbol->backendUserdata = global;
-
-        if (FlagDebug) {
-            ctx->d.builder->createGlobalVariableExpression(
-                ctx->d.scope,
-                symbol->name, // Name
-                symbol->name, // LinkageName
-                ctx->d.file,
-                pos.line,
-                debugCanonicalize(ctx, symbol->type),
-                false,        // isLocalToUnit
-                nullptr,      // Expr
-                nullptr,      // Decl
-                symbol->type->Align
-            );
-        }
-        return global;
-    } else {
-        llvm::AllocaInst *alloca = createEntryBlockAlloca(ctx, symbol);
-        symbol->backendUserdata = alloca;
-
-        if (FlagDebug) {
-            auto d = ctx->d.builder->createAutoVariable(
-                ctx->d.scope,
-                symbol->name,
-                ctx->d.file,
-                pos.line,
-                debugCanonicalize(ctx, symbol->type)
-            );
-
-            ctx->d.builder->insertDeclare(
-                alloca,
-                d,
-                ctx->d.builder->createExpression(),
-                llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope),
-                ctx->b.GetInsertBlock()
-            );
-        }
-        return alloca;
-    }
-}
-
-void setVariableInitializer(Symbol *symbol, Context *ctx, llvm::Value *value) {
-
-    if (symbol->flags & SymbolFlag_Global) {
-        ASSERT(llvm::isa<llvm::GlobalVariable>((llvm::Value *) symbol->backendUserdata));
-        llvm::GlobalVariable *global = (llvm::GlobalVariable *) symbol->backendUserdata;
-
-        if (llvm::Constant *constant = llvm::dyn_cast<llvm::Constant>(value)) {
-            global->setInitializer(constant);
-        } else if (llvm::LoadInst *inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
-
-            // This handles a file scope variables refering to one another where the initializer is a constant
-
-            // FIXME: Is there some cleaner way to achieve this? This is probably one of the worst ways to do this.
-            //  It could be much better to have in the context a flag that says, *if* a global is encountered then
-            //  return *that* do not load it. Some sort of returnAddressIfGlobal ... also gross.
-            // -vdka September 2018
-
-            llvm::Value *loaded = inst->getPointerOperand();
-            if (llvm::GlobalVariable *other = llvm::dyn_cast<llvm::GlobalVariable>(loaded)) {
-
-                inst->removeFromParent();
-                inst->deleteValue();
-
-                global->setInitializer(other->getInitializer());
-            } else {
-                PANIC("Attempt to set global variable from non global variable. Should not pass checking!");
-            }
-
-        } else {
-            global->setExternallyInitialized(true);
-            // TODO: Add initializer to some sort of premain?
-            // -vdka September 2018
-            UNIMPLEMENTED();
-        }
-    } else {
-        ctx->b.CreateAlignedStore(value, (llvm::Value *) symbol->backendUserdata, BytesFromBits(symbol->type->Align));
-    }
-}
-
-llvm::Value *coerceValue(Context *ctx, Conversion conversion, llvm::Value *value, llvm::Type *target) {
-    ASSERT(target);
-    ASSERT(value);
-    switch (conversion & ConversionKind_Mask) {
-        case ConversionKind_None:
-            return value;
-
-        case ConversionKind_Same: {
-            bool extend = conversion & ConversionFlag_Extend;
-            if (conversion & ConversionFlag_Float) {
-                return extend ? ctx->b.CreateFPExt(value, target) : ctx->b.CreateFPTrunc(value, target);
-            }
-            if (extend) {
-                bool isSigned = conversion & ConversionFlag_Signed;
-                return isSigned ? ctx->b.CreateSExt(value, target) : ctx->b.CreateZExt(value, target);
-            } else {
-                return ctx->b.CreateTrunc(value, target);
-            }
-        }
-
-        case ConversionKind_FtoI:
-            if (conversion & ConversionFlag_Extend) {
-                return ctx->b.CreateFPExt(value, target);
-            } else {
-                return ctx->b.CreateFPTrunc(value, target);
-            }
-
-        case ConversionKind_ItoF:
-            if (conversion & ConversionFlag_Extend) {
-                bool isSigned = conversion & ConversionFlag_Signed;
-                return isSigned ? ctx->b.CreateSExt(value, target) : ctx->b.CreateZExt(value, target);
-            } else {
-                return ctx->b.CreateTrunc(value, target);
-            }
-
-        case ConversionKind_PtoI:
-            return ctx->b.CreatePtrToInt(value, target);
-
-        case ConversionKind_ItoP:
-            return ctx->b.CreateIntToPtr(value, target);
-
-        case ConversionKind_Bool:
-            if (conversion & ConversionFlag_Float) {
-                return ctx->b.CreateFCmpONE(value, llvm::ConstantFP::get(value->getType(), 0));
-            } else if (value->getType()->isPointerTy()) {
-                auto intptr = ctx->m->getDataLayout().getIntPtrType(ctx->m->getContext());
-                value = ctx->b.CreatePtrToInt(value, intptr);
-                return ctx->b.CreateICmpNE(value, llvm::ConstantInt::get(intptr, 0));
-            } else {
-                ASSERT(value->getType()->isIntegerTy());
-                return ctx->b.CreateICmpNE(value, llvm::ConstantInt::get(value->getType(), 0));
-            }
-
-        case ConversionKind_Any:
-            // TODO: Implement conversion to Any type
-            UNIMPLEMENTED();
-            return NULL;
-
-        case ConversionKind_Tuple:
-            return value;
-
-        default:
-            UNIMPLEMENTED();
-            return value;
-    }
-}
-
-llvm::Value *emitExprIdent(Context *ctx, Expr *expr) {
-    CheckerInfo info = ctx->checkerInfo[expr->id];
-    Symbol *symbol = info.Ident.symbol;
-    if (!symbol->backendUserdata) {
-
-        // TODO: Switch to the symbol's package (only relevant when a symbol can be imported) into another scope
-        emitStmt(ctx, (Stmt *) symbol->decl);
-        ASSERT(symbol->backendUserdata);
-    }
-
-    llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
-    if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
-        value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
-    }
-    return value;
-}
-
-llvm::Value *emitExprCall(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_Call);
-    auto fnType = TypeFromCheckerInfo(ctx->checkerInfo[expr->Call.expr->id]);
-
-    std::vector<llvm::Value *> args;
-
-    size_t numArgs = ArrayLen(expr->Call.args);
-    for (size_t i = 0; i < numArgs; i++) {
-        KeyValue arg = expr->Call.args[i];
-
-        Type *argType = TypeFromCheckerInfo(ctx->checkerInfo[arg.value->id]);
-        llvm::Type *irArgType = canonicalize(ctx, argType);
-        if (fnType->Flags & TypeFlag_CVargs) {
-            irArgType = nullptr;
-        }
-        llvm::Value *irArg = emitExpr(ctx, expr->Call.args[i].value, irArgType);
-
-        if (fnType->Flags == TypeFlag_CVargs && (i - 1 >= fnType->Function.numParams)) {
-            // Apply C ABI rules at least for C style variadic parameters
-
-            // TODO: We need to work out how to apply calling conventions across the board for functions!
-            // -vdka September 2018
-            if (IsInteger(argType) && argType->Width < 32) {
-                // C ABI requires promoting integers to at least 32 bits
-                irArg = coerceValue(ctx, ConversionKind_Same, irArg, llvm::Type::getInt32Ty(ctx->m->getContext()));
-            } else if (IsFloat(argType) && argType->Width < 64) {
-                // C ABI requires promoting floats to doubles
-                irArg = coerceValue(ctx, ConversionKind_Same, irArg, llvm::Type::getDoubleTy(ctx->m->getContext()));
-            }
-        }
-
-        args.push_back(irArg);
-    }
-    auto irFunc = emitExpr(ctx, expr->Call.expr);
-    debugPos(ctx, expr->Call.pos);
-    return ctx->b.CreateCall(irFunc, args);
-}
-
-llvm::Value *emitExprLitCompound(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_LitCompound);
-    CheckerInfo_BasicExpr info = ctx->checkerInfo[expr->id].BasicExpr;
-
-    switch (info.type->kind) {
-        case TypeKind_Struct: {
-            llvm::StructType *type = (llvm::StructType *) canonicalize(ctx, info.type);
-
-            // FIXME: Determine if, like C, all uninitialized Struct members are zero'd or left undefined
-            llvm::Value *agg = llvm::UndefValue::get(type);
-            size_t numElements = ArrayLen(expr->LitCompound.elements);
-            for (size_t idx = 0; idx < numElements; idx++) {
-                KeyValue kv = expr->LitCompound.elements[idx];
-                TypeField *field = (TypeField *) kv.info;
-                u64 index = (field - &info.type->Struct.members[0]);
-                llvm::Value *val = emitExpr(ctx, kv.value);
-
-                agg = ctx->b.CreateInsertValue(agg, val, (u32) index);
-            }
-
-            if (ctx->returnAddress) UNIMPLEMENTED();
-            return agg;
-        };
-
-        case TypeKind_Array: {
-            llvm::Type *elementType = canonicalize(ctx, info.type->Array.elementType);
-            llvm::Type *irType = canonicalize(ctx, info.type);
-
-            llvm::Value *value;
-            if (!expr->LitCompound.elements) {
-                value = llvm::Constant::getNullValue(irType);
-            } else {
-                // FIXME: Determine if, like C all uninitialized Array members are zero'd or left undefined
-                value = llvm::UndefValue::get(irType);
-                size_t numElements = ArrayLen(expr->LitCompound.elements);
-                for (size_t idx = 0; idx < numElements; idx++) {
-                    KeyValue kv = expr->LitCompound.elements[idx];
-                    // For both Array and Slice type Compound Literals the info on KeyValue is the constant index
-                    u64 targetIndex = (u64) kv.info;
-                    llvm::Value *el = emitExpr(ctx, kv.value, elementType);
-                    value = ctx->b.CreateInsertValue(value, el, (u32) targetIndex);
-                }
-            }
-
-            if (ctx->returnAddress) UNIMPLEMENTED();
-            return value;
-        }
-
-        case TypeKind_Union: case TypeKind_Enum: case TypeKind_Slice:
-            UNIMPLEMENTED();
-            break;
-    }
-
-    ASSERT(false);
-    return NULL;
-}
-
-llvm::Value *emitExprSelector(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_Selector);
-    CheckerInfo_Selector info = ctx->checkerInfo[expr->id].Selector;
-
-    switch (info.kind) {
-        case SelectorKind_None: {
-            UNIMPLEMENTED();
-            break;
-        }
-
-        case SelectorKind_Struct: {
-            bool previousReturnAddress = ctx->returnAddress;
-            ctx->returnAddress = true;
-            llvm::Value *value = emitExpr(ctx, expr->Selector.expr);
-            ctx->returnAddress = previousReturnAddress;
-
-            llvm::Type *indexType = llvm::IntegerType::get(ctx->m->getContext(), 32);
-            llvm::Value *idxs[2] = {
-                llvm::ConstantInt::get(indexType, 0),
-                llvm::ConstantInt::get(indexType, info.value.Struct.index),
-            };
-
-            llvm::ArrayRef<llvm::Value *> idxList = llvm::ArrayRef<llvm::Value *>(idxs, 2);
-            llvm::Value *addr = ctx->b.CreateGEP(value, idxList);
-
-            if (ctx->returnAddress) return addr;
-            return ctx->b.CreateAlignedLoad(addr, BytesFromBits(info.value.Struct.index));
-        }
-
-        case SelectorKind_Import: {
-            Symbol *symbol = info.value.Import.symbol;
-            if (!symbol->backendUserdata) {
-                CheckerInfo *prevCheckerInfo = ctx->checkerInfo;
-                ctx->checkerInfo = info.value.Import.package->checkerInfo;
-
-                llvm::DIFile *file = (llvm::DIFile *) info.value.Import.package->backendUserdata;
-                Debug debug = {ctx->d.builder, ctx->d.unit, file, ctx->d.types, file};
-
-                llvm::IRBuilder<> b(ctx->m->getContext());
-                Context declContext = {
-                    .checkerInfo = info.value.Import.package->checkerInfo,
-                    .m = ctx->m,
-                    .targetMachine = ctx->targetMachine,
-                    .dataLayout = ctx->dataLayout,
-                    .b = b,
-                    .fn = nullptr,
-                    .d = debug,
-                };
-
-                emitStmt(&declContext, (Stmt *) symbol->decl);
-                ASSERT(symbol->backendUserdata);
-
-                ctx->checkerInfo = prevCheckerInfo;
-            }
-
-            llvm::Value *value = (llvm::Value *) symbol->backendUserdata;
-            if (symbol->kind == SymbolKind_Variable && !ctx->returnAddress) {
-                value = ctx->b.CreateAlignedLoad(value, BytesFromBits(symbol->type->Align));
-            }
-            return value;
-        }
-    }
-
-    ASSERT(false);
-    return NULL;
-}
-
-llvm::Value *emitExpr(Context *ctx, Expr *expr, llvm::Type *desiredType) {
-    debugPos(ctx, expr->pos);
-
-    llvm::Value *value = NULL;
-    switch (expr->kind) {
-        case ExprKind_LitInt: {
-            Expr_LitInt lit = expr->LitInt;
-            CheckerInfo info = ctx->checkerInfo[expr->id];
-            Type *type = info.BasicExpr.type;
-            if (type->kind == TypeKind_Float) {
-                value = llvm::ConstantFP::get(canonicalize(ctx, type), lit.val);
-            } else {
-                value = llvm::ConstantInt::get(canonicalize(ctx, type), lit.val, type->Flags & TypeFlag_Signed);
-            }
-            break;
-        }
-
-        case ExprKind_LitFloat: {
-            Expr_LitFloat lit = expr->LitFloat;
-            CheckerInfo info = ctx->checkerInfo[expr->id];
-            Type *type = info.BasicExpr.type;
-            value = llvm::ConstantFP::get(canonicalize(ctx, type), lit.val);
-            break;
-        }
-
-        case ExprKind_LitNil: {
-            CheckerInfo info = ctx->checkerInfo[expr->id];
-            Type *type = info.BasicExpr.type;
-            value = llvm::ConstantPointerNull::get((llvm::PointerType *) canonicalize(ctx, type));
-            break;
-        }
-
-        case ExprKind_LitString:{
-            value = ctx->b.CreateGlobalStringPtr(expr->LitString.val);
-            // TODO: @Strings
-            break;
-        }
-
-        case ExprKind_Ident: {
-            value = emitExprIdent(ctx, expr);
-            break;
-        }
-
-        case ExprKind_LitCompound: {
-            value = emitExprLitCompound(ctx, expr);
-            break;
-        }
-
-        case ExprKind_Selector:
-            value = emitExprSelector(ctx, expr);
-            break;
-
-        case ExprKind_Unary:
-            value = emitExprUnary(ctx, expr);
-            break;
-
-        case ExprKind_Binary:
-            value = emitExprBinary(ctx, expr);
-            break;
-
-        case ExprKind_Subscript:
-            value = emitExprSubscript(ctx, expr);
-            break;
-
-        case ExprKind_Call:
-            value = emitExprCall(ctx, expr);
-            break;
-    }
-
-    if (ctx->checkerInfo[expr->id].coerce != ConversionKind_None && desiredType) {
-        // If desired type is NULL and coerce is not then it maybe because we are emitting the lhs of a expr
-        value = coerceValue(ctx, ctx->checkerInfo[expr->id].coerce, value, desiredType);
-    }
-
-    return value;
-}
-
-llvm::Value *emitExprUnary(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_Unary);
-    Expr_Unary unary = expr->Unary;
-    
-    llvm::Value *val;
-    if (unary.op == TK_And) {
-        bool previousReturnAddress = ctx->returnAddress;
-        ctx->returnAddress = true;
-        val = emitExpr(ctx, unary.expr);
-        ctx->returnAddress = previousReturnAddress;
-    } else {
-        val = emitExpr(ctx, unary.expr);
-    }
-
-    debugPos(ctx, expr->Unary.pos);
-    switch (unary.op) {
-        case TK_Add:
-        case TK_And:
-            return val;
-        case TK_Sub:
-            return ctx->b.CreateNeg(val);
-        case TK_Not:
-        case TK_BNot:
-            return ctx->b.CreateNot(val);
-
-        case TK_Lss: {
-            if (ctx->returnAddress)
-                return val;
-
-            return ctx->b.CreateAlignedLoad(val, BytesFromBits(ctx->checkerInfo[expr->id].BasicExpr.type->Align));
-        };
-    }
-
-    ASSERT(false);
-    return NULL;
-}
-
-llvm::Value *emitExprBinary(Context *ctx, Expr *expr) {
-    Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->Binary.lhs->id]);
-    auto ty = canonicalize(ctx, type);
-    b32 isInt = IsInteger(type);
-
-    llvm::Value *lhs, *rhs;
-    lhs = emitExpr(ctx, expr->Binary.lhs, /*desiredType:*/ ty);
-    rhs = emitExpr(ctx, expr->Binary.rhs, /*desiredType:*/ ty);
-
-    // FIXME: 
-//    debugPos(ctx, expr->Binary.op.pos);
-    switch (expr->Binary.op.kind) {
-        case TK_Add:
-            return isInt ? ctx->b.CreateAdd(lhs, rhs) : ctx->b.CreateFAdd(lhs, rhs);
-        case TK_Sub:
-            return isInt ? ctx->b.CreateSub(lhs, rhs) : ctx->b.CreateFSub(lhs, rhs);
-        case TK_Mul:
-            return isInt ? ctx->b.CreateMul(lhs, rhs) : ctx->b.CreateFMul(lhs, rhs);
-
-        case TK_And:
-            return ctx->b.CreateAnd(lhs, rhs);
-        case TK_Or:
-            return ctx->b.CreateOr(lhs, rhs);
-        case TK_Xor:
-            return ctx->b.CreateXor(lhs, rhs);
-
-        case TK_Div: {
-            if (isInt) {
-                return IsSigned(type) ? ctx->b.CreateSDiv(lhs, rhs) : ctx->b.CreateUDiv(lhs, rhs);
-            } else {
-                return ctx->b.CreateFDiv(lhs, rhs);
-            }
-        };
-
-        case TK_Rem: {
-            if (isInt) {
-                return IsSigned(type) ? ctx->b.CreateSRem(lhs, rhs) : ctx->b.CreateSRem(lhs, rhs);
-            } else {
-                return ctx->b.CreateFRem(lhs, rhs);
-            }
-        };
-
-        case TK_Land: {
-            llvm::Value *x = ctx->b.CreateAnd(lhs, rhs);
-            return ctx->b.CreateTruncOrBitCast(x, canonicalize(ctx, BoolType));
-        };
-
-        case TK_Lor: {
-            llvm::Value *x = ctx->b.CreateOr(lhs, rhs);
-            return ctx->b.CreateTruncOrBitCast(x, canonicalize(ctx, BoolType));
-        };
-
-        case TK_Shl: {
-            return ctx->b.CreateShl(lhs, rhs);
-        };
-
-        case TK_Shr: {
-            return IsSigned(type) ? ctx->b.CreateAShr(lhs, rhs) : ctx->b.CreateLShr(lhs, rhs);
-        };
-
-        case TK_Lss: {
-            if (isInt) {
-                return IsSigned(type) ? ctx->b.CreateICmpSLT(lhs, rhs) : ctx->b.CreateICmpULT(lhs, rhs);
-            } else {
-                return ctx->b.CreateFCmpOLT(lhs, rhs);
-            }
-        };
-
-        case TK_Gtr: {
-            if (isInt) {
-                return IsSigned(type) ? ctx->b.CreateICmpSGT(lhs, rhs) : ctx->b.CreateICmpUGT(lhs, rhs);
-            } else {
-                return ctx->b.CreateFCmpOGT(lhs, rhs);
-            }
-        };
-
-        case TK_Leq: {
-            if (isInt) {
-                return IsSigned(type) ? ctx->b.CreateICmpSLE(lhs, rhs) : ctx->b.CreateICmpULE(lhs, rhs);
-            } else {
-                return ctx->b.CreateFCmpOLE(lhs, rhs);
-            }
-        };
-
-        case TK_Geq: {
-            if (isInt) {
-                return IsSigned(type) ? ctx->b.CreateICmpSGE(lhs, rhs) : ctx->b.CreateICmpUGE(lhs, rhs);
-            } else {
-                return ctx->b.CreateFCmpOGE(lhs, rhs);
-            }
-        };
-
-        case TK_Eql: {
-            return isInt ? ctx->b.CreateICmpEQ(lhs, rhs) : ctx->b.CreateFCmpOEQ(lhs, rhs);
-        };
-
-        case TK_Neq: {
-            return isInt ? ctx->b.CreateICmpNE(lhs, rhs) : ctx->b.CreateFCmpONE(lhs, rhs);
-        };
-    }
-
-    ASSERT(false);
-    return NULL;
-}
-
-llvm::Value *emitExprSubscript(Context *ctx, Expr *expr) {
-    CheckerInfo recvInfo = ctx->checkerInfo[expr->Subscript.expr->id];
-    CheckerInfo indexInfo = ctx->checkerInfo[expr->Subscript.index->id];
-    llvm::Value *aggregate;
-
-    std::vector<llvm::Value *> indicies;
-
-    llvm::Value *index = emitExpr(ctx, expr->Subscript.index);
-    Type *indexType = TypeFromCheckerInfo(indexInfo);
-
-    // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
-    // of an unsigned integer would get wrapped and become negative. We can
-    // prevent this by ZExt-ing the index
-    if (indexType->Width < 64 && !IsSigned(indexType)) {
-        index = ctx->b.CreateZExt(index, canonicalize(ctx, I64Type));
-    }
-
-    Type *recvType = TypeFromCheckerInfo(recvInfo);
-    Type *resultType;
-    switch (recvType->kind) {
-    case TypeKind_Array: {
-        bool previousReturnAddress = ctx->returnAddress;
-        ctx->returnAddress = true;
-        aggregate = emitExpr(ctx, expr->Subscript.expr);
-        ctx->returnAddress = previousReturnAddress;
-        indicies.push_back(llvm::ConstantInt::get(canonicalize(ctx, I64Type), 0));
-        indicies.push_back(index);
-        resultType = TypeFromCheckerInfo(recvInfo)->Array.elementType;
-    } break;
-
-    case TypeKind_Slice: {
-        bool previousReturnAddress = ctx->returnAddress;
-        ctx->returnAddress = true;
-        llvm::Value *structPtr = emitExpr(ctx, expr->Subscript.expr);
-        ctx->returnAddress = previousReturnAddress;
-        llvm::Value *arrayPtr = ctx->b.CreateStructGEP(NULL, structPtr, 0);
-        aggregate = ctx->b.CreateAlignedLoad(arrayPtr, ctx->targetMachine->getPointerSize());
-        indicies.push_back(index);
-        resultType = TypeFromCheckerInfo(recvInfo)->Slice.elementType;
-    } break;
-
-    case TypeKind_Pointer: {
-        aggregate = emitExpr(ctx, expr->Subscript.expr);
-        indicies.push_back(index);
-        resultType = TypeFromCheckerInfo(recvInfo)->Pointer.pointeeType;
-    } break;
-
-    default:
-        ASSERT(false);
-        return NULL;
-    }
-
-    llvm::Value *val = ctx->b.CreateInBoundsGEP(aggregate, indicies);
-    if (ctx->returnAddress) {
-        return val;
-    }
-    
-    return ctx->b.CreateAlignedLoad(val, BytesFromBits(resultType->Align));
-}
-
-llvm::Function *emitExprLitFunction(Context *ctx, Expr *expr, llvm::Function *fn = nullptr) {
-    CheckerInfo info = ctx->checkerInfo[expr->id];
-    debugPos(ctx, expr->pos);
-
-    if (!fn) {
-        llvm::FunctionType *type = (llvm::FunctionType *) canonicalize(ctx, info.BasicExpr.type);
-        fn = llvm::Function::Create(type, llvm::Function::LinkageTypes::ExternalLinkage, llvm::StringRef(), ctx->m);
-    }
-
-    // TODO: Set calling convention
-    llvm::BasicBlock *entry = llvm::BasicBlock::Create(ctx->m->getContext(), "entry", fn);
-    ctx->b.SetInsertPoint(entry);
-
-    llvm::Function *prevFunction = ctx->fn;
-    ctx->fn = fn;
-    if (FlagDebug) {
-
-        auto dbgType = (llvm::DISubroutineType *)debugCanonicalize(ctx, info.BasicExpr.type);
-
-        // TODO: Set isOptimized in a logical way
-        // TODO: Set isLocalToUnit (if a function is declared in a function scope)
-        llvm::DISubprogram *sub = ctx->d.builder->createFunction(
-            ctx->d.file,
-            fn->getName(),      // Name (will be set correctly by the caller) (TODO)
-            fn->getName(),      // LinkageName
-            ctx->d.file,
-            expr->pos.line,
-            dbgType,
-            false,              // isLocalToUnit
-            true,               // isDefinition
-            expr->LitFunction.body->pos.line,
-            llvm::DINode::FlagPrototyped,
-            false               // isOptimized (TODO)
-        );
-        fn->setSubprogram(sub);
-
-        ctx->d.scope = sub;
-    }
-
-    // Unset the location for the prologue emission (leading instructions with no
-    // location in a function are considered part of the prologue and the debugger
-    // will run past them when breaking on a function)
-    clearDebugPos(ctx);
-
-    llvm::Function::arg_iterator args = fn->arg_begin();
-
-    size_t numParams = ArrayLen(expr->LitFunction.type->TypeFunction.params);
-    for (size_t idx = 0; idx < numParams; idx++) {
-        KeyValue param = expr->LitFunction.type->TypeFunction.params[idx];
-        // TODO: Support unnamed parameters ($0, $1, $2)
-        CheckerInfo paramInfo = ctx->checkerInfo[param.key->id];
-        llvm::Argument *arg = args++;
-        arg->setName(paramInfo.Ident.symbol->name);
-        auto storage = createEntryBlockAlloca(ctx, paramInfo.Ident.symbol);
-        paramInfo.Ident.symbol->backendUserdata = storage;
-        ctx->b.CreateAlignedStore(arg, storage, BytesFromBits(paramInfo.Ident.symbol->type->Align));
-
-        if (FlagDebug) {
-            auto dbg = ctx->d.builder->createParameterVariable(
-                ctx->d.scope,
-                paramInfo.Ident.symbol->name,
-                (u32) idx,
-                ctx->d.file,
-                param.pos.line,
-                debugCanonicalize(ctx, paramInfo.Ident.symbol->type),
-                true
-            );
-            ctx->d.builder->insertDeclare(
-                storage,
-                dbg,
-                ctx->d.builder->createExpression(),
-                llvm::DebugLoc::get(param.pos.line, param.pos.column, ctx->d.scope),
-                ctx->b.GetInsertBlock()
-            );
-        }
-    }
-    fn->arg_end();
-
-    // FIXME: In order to support nested functions we must restore retBlock, deferStack, retValue ...
-
-    // Setup return block
-
-    ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return", fn);
-
-    if (info.BasicExpr.type->Function.numResults) {
-        llvm::IRBuilder<> b(entry, entry->begin());
-        llvm::AllocaInst *alloca = b.CreateAlloca(fn->getReturnType(), 0, "result");
-        if (info.BasicExpr.type->Function.numResults == 1) {
-            alloca->setAlignment(BytesFromBits(info.BasicExpr.type->Function.results[0]->Align));
-        }
-        ctx->retValue = alloca;
-    }
-
-    emitStmtBlock(ctx, expr->LitFunction.body);
-
-    if (!ctx->b.GetInsertBlock()->getTerminator()) {
-        ctx->b.CreateBr(ctx->retBlock);
-    }
-
-    // Set insert point to the return block
-    ctx->b.SetInsertPoint(ctx->retBlock);
-    if (!ctx->deferStack.empty()) {
-        ctx->retBlock = llvm::BasicBlock::Create(ctx->m->getContext(), "return_post_defer", fn);
-        ctx->b.CreateBr(ctx->deferStack[0]);
-    }
-
-    for (size_t i = 0; i < ctx->deferStack.size(); i++) {
-        printf("%zu\n", ctx->deferStack.size());
-        llvm::BasicBlock *block = ctx->deferStack[i];
-        ctx->b.SetInsertPoint(block);
-        if (i < ctx->deferStack.size() - 1) {
-            ctx->b.CreateBr(ctx->deferStack[i + 1]);
-        } else {
-            ctx->b.CreateBr(ctx->retBlock);
-        }
-    }
-
-    if (!ctx->deferStack.empty()) {
-        ctx->b.SetInsertPoint(ctx->retBlock);
-    }
-
-    if (info.BasicExpr.type->Function.numResults == 1) {
-        Type *retType = info.BasicExpr.type->Function.results[0];
-        auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, BytesFromBits(retType->Align));
-        ctx->b.CreateRet(retValue);
-    } else if (info.BasicExpr.type->Function.numResults) {
-        llvm::StructType *retType = llvm::dyn_cast<llvm::StructType>(fn->getReturnType());
-        ASSERT_MSG(retType, "Expect a function with multiple returns to have a struct return type");
-        auto retValue = ctx->b.CreateAlignedLoad(ctx->retValue, ctx->dataLayout.getStructLayout(retType)->getAlignment());
-        ctx->b.CreateRet(retValue);
-    } else {
-        ctx->b.CreateRetVoid();
-    }
-
-    // FIXME: Return to previous scope
-    ctx->d.scope = ctx->d.file;
-
-    // Move the return block to the end, just for readability
-    ctx->retBlock->moveAfter(ctx->b.GetInsertBlock());
-
-    if (FlagDebug) {
-        ctx->d.builder->finalizeSubprogram(fn->getSubprogram());
-    }
-    ctx->fn = prevFunction;
-
-#if DEBUG
-    if (llvm::verifyFunction(*fn, &llvm::errs())) {
-        ctx->m->print(llvm::errs(), nullptr);
-        ASSERT(false);
-    }
-#endif
-
-    return fn;
-}
-
-llvm::StructType *emitExprTypeStruct(Context *ctx, Expr *expr) {
-    ASSERT(expr->kind == ExprKind_TypeStruct);
-
-    Type *type = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
-
-    if (type->Symbol->backendUserdata && !FlagDebug) {
-        BackendStructUserdata *userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
-        return userdata->type;
-    }
-
-    std::vector<llvm::Type *> elementTypes;
-    std::vector<llvm::Metadata *> debugMembers;
-
-    u32 index = 0;
-    for (size_t i = 0; i < ArrayLen(expr->TypeStruct.items); i++) {
-        AggregateItem item = expr->TypeStruct.items[i];
-        Type *fieldType = type->Struct.members[index].type;
-
-        llvm::Type *ty = canonicalize(ctx, fieldType);
-        llvm::DIType *dty = debugCanonicalize(ctx, fieldType);
-        for (size_t j = 0; j < ArrayLen(item.names); j++) {
-            if (FlagDebug) {
-            llvm::DIDerivedType *member = ctx->d.builder->createMemberType(
-                ctx->d.scope,
-                item.names[j],
-                ctx->d.file,
-                item.pos.line,
-                fieldType->Width,
-                fieldType->Align,
-                type->Struct.members[index].offset,
-                llvm::DINode::DIFlags::FlagZero,
-                dty
-            );
-
-            debugMembers.push_back(member);
-            }
-            elementTypes.push_back(ty);
-
-            index += 1;
-        }
-    }
-
-    llvm::StructType *ty;
-    if (type->Symbol->backendUserdata) {
-        ty = (llvm::StructType *) type->Symbol->backendUserdata;
-    } else {
-        ty = llvm::StructType::create(ctx->m->getContext(), elementTypes);
-    }
-    llvm::DICompositeType *debugType;
-    if (FlagDebug) {
-        debugType = ctx->d.builder->createStructType(
-        ctx->d.scope,
-        type->Symbol->name,
-        ctx->d.file,
-        type->Symbol->decl->pos.line,
-        type->Width,
-        type->Align,
-        llvm::DINode::DIFlags::FlagZero,
-        NULL, // DerivedFrom
-        ctx->d.builder->getOrCreateArray(debugMembers)
-    );
-    }
-
-    if (type->Symbol) {
-        ty->setName(type->Symbol->name);
-
-        BackendStructUserdata *userdata;
-        if (type->Symbol->backendUserdata) {
-            userdata = (BackendStructUserdata *) type->Symbol->backendUserdata;
-            ASSERT_MSG(!userdata->debugType, "debugType is only set here, which means this run twice");
-        } else {
-            userdata = (BackendStructUserdata *) ArenaAlloc(&ctx->arena, sizeof(BackendStructUserdata));
-            userdata->type = ty;
-            type->Symbol->backendUserdata = userdata;
-        }
-        if (FlagDebug) {
-            userdata->debugType = debugType;
-        }
-    }
-
-#if DEBUG
-    // Checks the frontend layout matches the llvm backend
-    const llvm::StructLayout *layout = ctx->dataLayout.getStructLayout(ty);
-    for (u32 i = 0; i < type->Struct.numMembers; i++) {
-        ASSERT(layout->getElementOffsetInBits(i) == type->Struct.members[i].offset);
-        ASSERT(layout->getSizeInBits() == type->Width);
-        ASSERT(layout->getAlignment() == type->Align / 8);
-    }
-#endif
-
-    return ty;
-}
-
-void emitDeclConstant(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_Constant);
-    CheckerInfo info = ctx->checkerInfo[decl->id];
-    Symbol *symbol = info.Constant.symbol;
-
-    // TODO: CreateLifetimeStart for this symbol (if applicable)
-
-    debugPos(ctx, decl->pos);
-    if (symbol->type->kind == TypeKind_Function && decl->Constant.values[0]->kind == ExprKind_LitFunction) {
-
-        CheckerInfo info = ctx->checkerInfo[decl->Constant.values[0]->id];
-
-        const char *name = symbol->externalName ? symbol->externalName : symbol->name;
-        auto type = (llvm::FunctionType *) canonicalize(ctx, info.BasicExpr.type);
-        auto fn = llvm::Function::Create(type, llvm::Function::LinkageTypes::ExternalLinkage, name, ctx->m);
-        symbol->backendUserdata = fn;
-        ctx->fn = fn;
-
-        // FIXME: We need to start using external name correctly, it should be always set
-
-        emitExprLitFunction(ctx, decl->Constant.values[0], fn);
-        // FIXME: we need to set the debug info subprogram's actual name. Right now it will be set to the mangled name.
-        // The reason we didn't do this initially is that there is no setName on DISubprogram. We will maybe need to
-        //  provide the non mangled name directly to emitExprLitFunction :/
-
-        return;
-    }
-
-    switch (decl->Constant.values[0]->kind) {
-        case ExprKind_TypeStruct: {
-            emitExprTypeStruct(ctx, decl->Constant.values[0]);
-            break;
-        }
-
-        default: {
-            llvm::Type *type = canonicalize(ctx, symbol->type);
-            
-            llvm::Value *value = emitExpr(ctx, decl->Constant.values[0]);
-
-            llvm::GlobalVariable *global = new llvm::GlobalVariable(
-                *ctx->m,
-                type,
-                true, // IsConstant
-                symbol->flags & SymbolFlag_Global ?
-                    llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::CommonLinkage,
-                (llvm::Constant *) value, // Initializer
-                symbol->name
-            );
-
-            symbol->backendUserdata = global;
-            break;
-        }
-    }
-}
-
-void emitDeclVariable(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_Variable);
-
-    // TODO: CreateLifetimeStart for this symbol
-    CheckerInfo info = ctx->checkerInfo[decl->id];
-    Symbol **symbols = info.Variable.symbols;
-    Decl_Variable var = decl->Variable;
-
-    bool prevReturnAddress = ctx->returnAddress;
-    ctx->returnAddress = false;
-
-    size_t numLhs = ArrayLen(var.names);
-    size_t rhsIndex = 0;
-    for (size_t lhsIndex = 0; lhsIndex < numLhs;) {
-        Expr *expr = var.values[rhsIndex++];
-        llvm::Value *rhs = emitExpr(ctx, expr);
-
-        Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
-        if (expr->kind == ExprKind_Call) {
-            Conversion *conversions = ctx->checkerInfo[decl->id].Variable.conversions;
-
-            size_t numValues = exprType->Tuple.numTypes;
-            debugPos(ctx, var.names[lhsIndex]->pos);
-
-            if (numValues == 1) {
-                Symbol *symbol = symbols[lhsIndex];
-                llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->pos, ctx);
-
-                // Conversions of tuples like this are stored on the lhs
-                if (conversions[lhsIndex] != ConversionKind_None) {
-                    ASSERT(lhs->getType()->isPointerTy());
-                    rhs = coerceValue(ctx, conversions[lhsIndex], rhs, lhs->getType()->getPointerElementType());
-                }
-
-                setVariableInitializer(symbol, ctx, rhs);
-                lhsIndex += 1;
-            } else {
-                // FIXME: Globals are not handled here at all
-                // -vdka September 2018
-                ASSERT_MSG(decl->owningScope != decl->owningPackage->scope, "Multiple Global variable declarations from calls unimplemented");
-                llvm::Value *resultAddress = createEntryBlockAlloca(ctx, rhs->getType(), "");
-                ctx->b.CreateStore(rhs, resultAddress);
-
-                for (size_t resultIndex = 0; resultIndex < numValues; resultIndex++) {
-                    Symbol *symbol = symbols[lhsIndex];
-                    llvm::Value *lhs = createVariable(symbol, var.names[lhsIndex]->pos, ctx);
-
-                    llvm::Value *addr = ctx->b.CreateStructGEP(rhs->getType(), resultAddress, (u32) resultIndex);
-                    llvm::Value *val = ctx->b.CreateLoad(addr);
-
-                    // Conversions of tuples like this are stored on the lhs
-                    if (conversions[lhsIndex] != ConversionKind_None) {
-                        ASSERT(lhs->getType()->isPointerTy());
-                        val = coerceValue(ctx, conversions[lhsIndex], val, lhs->getType()->getPointerElementType());
-                    }
-
-                    ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(symbol->type->Align));
-                    lhsIndex += 1;
-                }
-            }
-        } else {
-            Symbol *symbol = symbols[lhsIndex];
-            createVariable(symbol, var.names[lhsIndex]->pos, ctx);
-            debugPos(ctx, decl->pos);
-            setVariableInitializer(symbol, ctx, rhs);
-            lhsIndex += 1;
-        }
-    }
-    ctx->returnAddress = prevReturnAddress;
-}
-
-void emitDeclForeign(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_Foreign);
-    CheckerInfo info = ctx->checkerInfo[decl->id];
-
-    debugPos(ctx, decl->pos);
-    llvm::Type *type = canonicalize(ctx, info.Foreign.symbol->type);
-
-    switch (info.Foreign.symbol->type->kind) {
-        case TypeKind_Function: {
-            llvm::Function *fn = llvm::Function::Create(
-                (llvm::FunctionType *) type,
-                llvm::Function::LinkageTypes::ExternalLinkage,
-                info.Foreign.symbol->externalName,
-                ctx->m
-            );
-            setCallingConvention(fn, decl->Foreign.callingConvention);
-            info.Foreign.symbol->backendUserdata = fn;
-            break;
-        }
-
-        default: {
-            llvm::Constant *val = ctx->m->getOrInsertGlobal(info.Foreign.symbol->externalName, type);
-            llvm::GlobalVariable *global = (llvm::GlobalVariable *) val;
-            global->setExternallyInitialized(true);
-            info.Foreign.symbol->backendUserdata = global;
-            global->setConstant(decl->Foreign.isConstant);
-        }
-    }
-}
-
-void emitDeclForeignBlock(Context *ctx, Decl *decl) {
-    ASSERT(decl->kind == DeclKind_ForeignBlock);
-
-    size_t len = ArrayLen(decl->ForeignBlock.members);
-    for (size_t i = 0; i < len; i++) {
-        Decl_ForeignBlockMember it = decl->ForeignBlock.members[i];
-        debugPos(ctx, it.pos);
-        llvm::Type *type = canonicalize(ctx, it.symbol->type);
-
-        switch (it.symbol->type->kind) {
-            case TypeKind_Function: {
-                llvm::Function *fn = llvm::Function::Create(
-                    (llvm::FunctionType *) type,
-                    llvm::Function::LinkageTypes::ExternalLinkage,
-                    it.symbol->externalName,
-                    ctx->m
-                );
-                setCallingConvention(fn, decl->Foreign.callingConvention);
-                it.symbol->backendUserdata = fn;
-                break;
-            }
-
-            default: {
-                auto global = (llvm::GlobalVariable *) ctx->m->getOrInsertGlobal(it.symbol->externalName, type);
-                global->setExternallyInitialized(true);
-                it.symbol->backendUserdata = global;
-                global->setConstant(it.isConstant);
-            }
-        }
-    }
-}
-
-void emitStmtLabel(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Label);
-    CheckerInfo_Label info = ctx->checkerInfo[stmt->id].Label;
-    auto block = llvm::BasicBlock::Create(ctx->m->getContext(), info.symbol->name, ctx->fn);
-    ctx->b.SetInsertPoint(block);
-    info.symbol->backendUserdata = block;
-}
-
-void emitStmtAssign(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Assign);
-    Stmt_Assign assign = stmt->Assign;
-
-    size_t numLhs = ArrayLen(assign.lhs);
-    size_t rhsIndex = 0;
-    for (size_t lhsIndex = 0; lhsIndex < numLhs;) {
-        Expr *expr = assign.rhs[rhsIndex++];
-        llvm::Value *rhs = emitExpr(ctx, expr);
-
-        Type *exprType = TypeFromCheckerInfo(ctx->checkerInfo[expr->id]);
-        if (expr->kind == ExprKind_Call) {
-            size_t numValues = exprType->Tuple.numTypes;
-            if (numValues == 1) {
-                ctx->returnAddress = true;
-                llvm::Value *lhs = emitExpr(ctx, assign.lhs[lhsIndex++]);
-                ctx->returnAddress = false;
-                debugPos(ctx, assign.pos);
-                ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(exprType->Tuple.types[0]->Align));
-            } else {
-                // create some stack space to land the returned struct onto
-                llvm::Value *resultAddress = createEntryBlockAlloca(ctx, rhs->getType(), "");
-                ctx->b.CreateStore(rhs, resultAddress);
-
-                for (size_t resultIndex = 0; resultIndex < numValues; resultIndex++) {
-                    Expr *lhsExpr = assign.lhs[lhsIndex++];
-                    ctx->returnAddress = true;
-                    llvm::Value *lhs = emitExpr(ctx, lhsExpr);
-                    ctx->returnAddress = false;
-                    debugPos(ctx, assign.pos);
-
-                    llvm::Value *addr = ctx->b.CreateStructGEP(rhs->getType(), resultAddress, (u32) resultIndex);
-                    llvm::Value *val = ctx->b.CreateLoad(addr);
-
-                    CheckerInfo lhsInfo = ctx->checkerInfo[lhsExpr->id];
-                    // Conversions of tuples like this are stored on the lhs
-                    if (lhsInfo.coerce != ConversionKind_None) {
-                        ASSERT(lhs->getType()->isPointerTy());
-                        val = coerceValue(ctx, lhsInfo.coerce, val, lhs->getType()->getPointerElementType());
-                    }
-
-                    ctx->b.CreateAlignedStore(val, lhs, BytesFromBits(TypeFromCheckerInfo(lhsInfo)->Align));
-                }
-            }
-        } else {
-            Expr *lhsExpr = assign.lhs[lhsIndex++];
-            ctx->returnAddress = true;
-            llvm::Value *lhs = emitExpr(ctx, lhsExpr);
-            ctx->returnAddress = false;
-            Type *type = TypeFromCheckerInfo(ctx->checkerInfo[lhsExpr->id]);
-            debugPos(ctx, assign.pos);
-            ctx->b.CreateAlignedStore(rhs, lhs, BytesFromBits(type->Align));
-        }
-    }
-}
-
-void emitStmtIf(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_If);
-    auto pass = llvm::BasicBlock::Create(ctx->m->getContext(), "if.pass", ctx->fn);
-    auto fail = stmt->If.fail ? llvm::BasicBlock::Create(ctx->m->getContext(), "if.fail", ctx->fn) : nullptr;
-    auto post = llvm::BasicBlock::Create(ctx->m->getContext(), "if.post", ctx->fn);
-
-    auto cond = emitExpr(ctx, stmt->If.cond, llvm::IntegerType::get(ctx->m->getContext(), 1));
-    debugPos(ctx, stmt->If.pos);
-    ctx->b.CreateCondBr(cond, pass, fail ? fail : post);
-
-    ctx->b.SetInsertPoint(pass);
-    emitStmt(ctx, stmt->If.pass);
-    if (!pass->getTerminator()) ctx->b.CreateBr(post);
-
-    if (stmt->If.fail) {
-        ctx->b.SetInsertPoint(fail);
-        emitStmt(ctx, stmt->If.fail);
-        if (!fail->getTerminator()) ctx->b.CreateBr(post);
-    }
-    ctx->b.SetInsertPoint(post);
-}
-
-void emitStmtReturn(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Return);
-
-    size_t numReturns = ArrayLen(stmt->Return.exprs);
-
-    std::vector<llvm::Value *> values;
-    for (size_t i = 0; i < numReturns; i++) {
-        Expr *it = stmt->Return.exprs[i];
-        llvm::Type *desiredType = ctx->fn->getReturnType();
-        if (numReturns > 1) {
-            llvm::StructType *type = llvm::dyn_cast<llvm::StructType>(ctx->fn->getReturnType());
-            ASSERT_MSG(type, "Expected the context struct type for function with multiple return vals");
-            desiredType = type->getElementType((u32) i);
-        }
-        auto value = emitExpr(ctx, it, desiredType);
-        values.push_back(value);
-    }
-    clearDebugPos(ctx);
-    if (values.size() > 1) {
-        for (u32 idx = 0; idx < values.size(); idx++) {
-            llvm::Value *elPtr = ctx->b.CreateStructGEP(ctx->fn->getReturnType(), ctx->retValue, idx);
-            ctx->b.CreateStore(values[idx], elPtr);
-        }
-    } else if (values.size() == 1) {
-        ctx->b.CreateStore(values[0], ctx->retValue);
-    }
-    debugPos(ctx, stmt->pos);
-    ctx->b.CreateBr(ctx->retBlock);
-}
-
-void emitStmtDefer(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Defer);
-
-    llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "defer", ctx->fn);
-    ctx->deferStack.push_back(block);
-
-    llvm::BasicBlock *prevBlock = ctx->b.GetInsertBlock();
-    ctx->b.SetInsertPoint(block);
-
-    emitStmt(ctx, stmt->Defer.stmt);
-    ctx->b.SetInsertPoint(prevBlock);
-}
-
-void emitStmtFor(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_For);
-
-    Stmt_For fore = stmt->For;
-
-    llvm::Function *currentFunc = ctx->b.GetInsertBlock()->getParent();
-    llvm::BasicBlock *body, *post, *cond, *step;
-    body = post = cond = step = NULL;
-
-    llvm::DIScope *oldScope = NULL;
-    if (FlagDebug) {
-        oldScope = ctx->d.scope;
-        ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, stmt->pos.line, stmt->pos.column);
-    }
-
-    if (fore.init) {
-        debugPos(ctx, fore.init->pos);
-        emitStmt(ctx, fore.init);
-    }
-
-    if (fore.cond) {
-        cond = llvm::BasicBlock::Create(ctx->m->getContext(), "for.cond", currentFunc);
-        if (fore.step) {
-            step = llvm::BasicBlock::Create(ctx->m->getContext(), "for.step", currentFunc);
-        }
-
-        body = llvm::BasicBlock::Create(ctx->m->getContext(), "for.body", currentFunc);
-        post = llvm::BasicBlock::Create(ctx->m->getContext(), "for.post", currentFunc);
-
-        ctx->b.CreateBr(cond);
-        ctx->b.SetInsertPoint(cond);
-
-        llvm::Value *condVal = emitExpr(ctx, fore.cond);
-        condVal = ctx->b.CreateTruncOrBitCast(condVal, llvm::IntegerType::get(ctx->m->getContext(), 1));
-        ctx->b.CreateCondBr(condVal, body, post);
-    } else {
-        if (fore.step) {
-            step = llvm::BasicBlock::Create(ctx->m->getContext(), "for.step", currentFunc);
-        }
-
-        body = llvm::BasicBlock::Create(ctx->m->getContext(), "for.body", currentFunc);
-        post = llvm::BasicBlock::Create(ctx->m->getContext(), "for.post", currentFunc);
-
-        ctx->b.CreateBr(body);
-    }
-
-    { // Body
-        ctx->b.SetInsertPoint(body);
-
-        llvm::DIScope *oldScope = NULL;
-        if (FlagDebug) {
-            oldScope = ctx->d.scope;
-            ctx->d.scope = ctx->d.builder->createLexicalBlock(oldScope, ctx->d.file, fore.body->pos.line, fore.body->pos.column);
-        }
-
-        emitStmtBlock(ctx, fore.body);
-
-        if (FlagDebug) {
-            ctx->d.scope = oldScope;
-        }
-    }
-
-    b32 hasJump = ctx->b.GetInsertBlock()->getTerminator() != NULL;
-    if (fore.step) {
-        if (!hasJump) {
-            ctx->b.CreateBr(step);
-        }
-
-        ctx->b.SetInsertPoint(step);
-        emitStmt(ctx, fore.step);
-        ctx->b.CreateBr(cond);
-    } else if (cond) {
-        // `for x < 5 { /* ... */ }` || `for i := 1; x < 5; { /* ... */ }`
-        if (!hasJump) {
-            ctx->b.CreateBr(cond);
-        }
-    } else {
-         // `for { /* ... */ }`
-        if (!hasJump) {
-            ctx->b.CreateBr(body);
-        }
-    }
-
-    ctx->b.SetInsertPoint(post);
-
-    if (FlagDebug) {
-        ctx->d.scope = oldScope;
-    }
-}
-
-void emitStmtBlock(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Block);
-
-    size_t numStmts = ArrayLen(stmt->Block.stmts);
-    for (size_t idx = 0; idx < numStmts; idx++) {
-        emitStmt(ctx, stmt->Block.stmts[idx]);
-    }
-}
-
-void emitStmtSwitch(Context *ctx, Stmt *stmt) {
-    ASSERT(stmt->kind == StmtKind_Switch);
-    Stmt_Switch swt = stmt->Switch;
-
-    CheckerInfo_Switch info = ctx->checkerInfo[stmt->id].Switch;
-
-    if (!swt.match) {
-        UNIMPLEMENTED(); // TODO: Boolean-esque switch
-    }
-
-    llvm::BasicBlock *currentBlock = ctx->b.GetInsertBlock();
-    llvm::Function   *currentFunc = currentBlock->getParent();
-
-    llvm::BasicBlock *post = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.post", currentFunc);
-    info.breakTarget->backendUserdata = post;
-    llvm::BasicBlock *defaultBlock = NULL;
-
-    size_t numCases = ArrayLen(swt.cases);
-    std::vector<llvm::BasicBlock *> thenBlocks;
-    for (size_t i = 0; i < numCases; i++) {
-        Stmt *c = swt.cases[i];
-        if (ArrayLen(c->SwitchCase.matches)) {
-            llvm::BasicBlock *then = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.then.case", currentFunc); // TODO: number cases
-            thenBlocks.push_back(then);
-        } else {
-            llvm::BasicBlock *then = llvm::BasicBlock::Create(ctx->m->getContext(), "switch.default", currentFunc);
-            defaultBlock = then;
-            thenBlocks.push_back(then);
-        }
-    }
-
-    llvm::Value *value;
-    llvm::Value *tag = NULL;
-
-    if (swt.match) {
-        value = emitExpr(ctx, swt.match);
-    } else {
-        value = llvm::ConstantInt::get(canonicalize(ctx, BoolType), 1);
-    }
-
-    std::vector<std::vector<llvm::Value *>> matches;
-    for (size_t idxCase = 0; idxCase < numCases; idxCase++) {
-        Stmt_SwitchCase c = swt.cases[idxCase]->SwitchCase;
-        if (idxCase+1 < numCases) {
-            CheckerInfo_Case nextCase = ctx->checkerInfo[swt.cases[idxCase+1]->id].Case;
-            nextCase.fallthroughTarget->backendUserdata = thenBlocks[idxCase+1];;
-        }
-
-        llvm::BasicBlock *thenBlock = thenBlocks[idxCase];
-        ctx->b.SetInsertPoint(thenBlock);
-
-        // TODO: unions and any support
-        size_t numMatches = ArrayLen(c.matches);
-        if (numMatches) {
-            std::vector<llvm::Value *> vals;
-            for (size_t idxMatch = 0; idxMatch < numMatches; idxMatch++) {
-                llvm::Value *val = emitExpr(ctx, c.matches[idxMatch]);
-                vals.push_back(val);
-            }
-
-            matches.push_back(vals);
-        }
-
-        emitStmtBlock(ctx, c.body);
-
-        b32 hasTerm = ctx->b.GetInsertBlock()->getTerminator() != NULL;
-        if (!hasTerm) {
-            ctx->b.CreateBr(post);
-        }
-        ctx->b.SetInsertPoint(currentBlock);
-    }
-
-    llvm::SwitchInst *swtch = ctx->b.CreateSwitch(
-        tag ? tag : value,
-        defaultBlock ? defaultBlock : post,
-        (u32)thenBlocks.size()
-    );
-
-    size_t count = MIN(matches.size(), thenBlocks.size());
-    for (size_t i = 0; i < count; i += 1) {
-        llvm::BasicBlock *block = thenBlocks[i];
-
-        for (size_t j = 0; j < matches[i].size(); j += 1) {
-            swtch->addCase((llvm::ConstantInt *)matches[i][j], block);
-        }
-    }
-
-    ctx->b.SetInsertPoint(post);
-}
-
-void emitStmt(Context *ctx, Stmt *stmt) {
-    if (stmt->kind > _StmtExprKind_Start && stmt->kind < _StmtExprKind_End) {
-        emitExpr(ctx, (Expr *) stmt);
-        return;
-    }
-
-    switch (stmt->kind) {
-        case StmtDeclKind_Constant:
-            emitDeclConstant(ctx, (Decl *) stmt);
-            break;
-
-        case StmtDeclKind_Variable:
-            emitDeclVariable(ctx, (Decl *) stmt);
-            break;
-
-        case StmtDeclKind_Foreign:
-            emitDeclForeign(ctx, (Decl *) stmt);
-            break;
-
-        case StmtDeclKind_ForeignBlock:
-            emitDeclForeignBlock(ctx, (Decl *) stmt);
-            break;
-
-        case StmtDeclKind_Import:
-            setDebugInfoForPackage(ctx->d.builder, (Package *) stmt->Import.symbol->backendUserdata);
-            break;
-
-        case StmtKind_Label:
-            emitStmtLabel(ctx, stmt);
-            break;
-
-        case StmtKind_Assign:
-            emitStmtAssign(ctx, stmt);
-            break;
-
-        case StmtKind_If:
-            emitStmtIf(ctx, stmt);
-            break;
-
-        case StmtKind_Return:
-            emitStmtReturn(ctx, stmt);
-            break;
-
-        case StmtKind_Defer:
-            emitStmtDefer(ctx, stmt);
-            break;
-        
-        case StmtKind_Block: {
-            ASSERT_MSG(ctx->fn, "We should be in a function if we are emitting a lone block");
-            llvm::BasicBlock *block = llvm::BasicBlock::Create(ctx->m->getContext(), "", ctx->fn);
-            ctx->b.CreateBr(block);
-            ctx->b.SetInsertPoint(block);
-            emitStmtBlock(ctx, stmt);
-            break;
-        }
-
-        case StmtKind_For:
-            emitStmtFor(ctx, stmt);
-            break;
-
-        case StmtKind_ForIn:
-            UNIMPLEMENTED();
-            break;
-        
-        case StmtKind_Switch:
-            emitStmtSwitch(ctx, stmt);
-            break;
-
-        case StmtKind_Goto: {
-            CheckerInfo_Goto info = ctx->checkerInfo[stmt->id].Goto;
-            if (!info.target) {
-                UNIMPLEMENTED();
-            }
-
-            ASSERT(info.target->backendUserdata);
-            ctx->b.CreateBr((llvm::BasicBlock *)info.target->backendUserdata);
-        } break;
-
-        default:
-            ASSERT(false);
-    }
-}
-
-void setupTargetInfo() {
-    static b32 init = false;
-    if (init) return;
+void setupTarget() {
+    static b32 initialized = false;
+    if (initialized) return;
 
     // TODO: Initialize only for the targets we are outputting.
     LLVMInitializeX86Target();
@@ -1830,207 +213,1966 @@ void setupTargetInfo() {
     LLVMInitializeX86AsmParser();
     LLVMInitializeX86TargetInfo();
     LLVMInitializeX86AsmPrinter();
-
-    init = true;
+    initialized = true;
 }
 
-b32 CodegenLLVM(Package *p) {
-    llvm::LLVMContext context;
-    llvm::Module *module = new llvm::Module(p->path, context);
+IRContext *llvm_create_context(Package *pkg) {
+    LLVMContext *context = new LLVMContext();
 
-    setupTargetInfo();
+    setupTarget();
 
     std::string error;
-    llvm::Triple triple = llvm::Triple(llvm::sys::getDefaultTargetTriple());
-    if (triple.getOS() == llvm::Triple::Darwin) {
-        triple.setOS(llvm::Triple::MacOSX);
-    }
+    Triple triple = Triple(sys::getDefaultTargetTriple());
+    if (triple.getOS() == Triple::Darwin) triple.setOS(Triple::MacOSX);
 
-    auto target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
+    auto target = TargetRegistry::lookupTarget(triple.str(), error);
     if (!target) {
-        llvm::errs() << error;
-        return 1;
+        errs() << error;
+        return nullptr;
     }
 
-    if (FlagVerbose) printf("Target: %s\n", triple.str().c_str());
+    verbose("Target: %s\n", triple.str().c_str());
 
     const char *cpu = "generic";
     const char *features = "";
 
-    llvm::TargetOptions opt;
-    llvm::TargetMachine *targetMachine = target->createTargetMachine(triple.str(), cpu, features, opt, llvm::None);
+    TargetOptions opt;
+    TargetMachine *tm = target->createTargetMachine(triple.str(), cpu, features, opt, None);
 
     // TODO: Only on unoptimized builds
-    targetMachine->setO0WantsFastISel(true);
+    tm->setO0WantsFastISel(true);
 
-    llvm::DataLayout dataLayout = targetMachine->createDataLayout();
+    DataLayout dl = tm->createDataLayout();
 
-    // TODO: Handle targets correctly by using TargetOs & TargetArch globals
-    module->setTargetTriple(triple.str());
-    module->setDataLayout(dataLayout);
-    module->getOrInsertModuleFlagsMetadata();
-    module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
-    module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
+    IRContext *self = new IRContext(pkg, tm, dl, *context);
+
+    self->module->setTargetTriple(triple.str());
+    self->module->setDataLayout(dl);
+    self->module->getOrInsertModuleFlagsMetadata();
+    self->module->addModuleFlag(Module::Warning, "Debug Info Version", DEBUG_METADATA_VERSION);
+    if (Triple(sys::getProcessTriple()).isOSDarwin())
+        self->module->addModuleFlag(Module::Warning, "Dwarf Version", 2);
     // See https://llvm.org/docs/LangRef.html#c-type-width-module-flags-metadata
-    module->addModuleFlag(llvm::Module::Warning, "short_enum", 1);
-    // TODO: Include details about the kai compiler version in the module metadata. clang has the following:
-    /*
-     !llvm.ident = !{!1}
-     !1 = !{!"clang version 6.0.0 (tags/RELEASE_600/final)"}
+    self->module->addModuleFlag(Module::Warning, "short_enum", 1);
+    // TODO: Include details about the kai compiler version in the module metadata. eg:
+    /*  !llvm.ident = !{!1}
+     *  !1 = !{!"clang version 6.0.0 (tags/RELEASE_600/final)"}
      */
 
-    Debug debug;
-    if (FlagDebug) {
-        llvm::DIBuilder *builder = new llvm::DIBuilder(*module);
+    return self;
+}
 
-        llvm::DIFile *file = setDebugInfoForPackage(builder, p);
-
-        // TODO: Set isOptimized in a logical way
-        // TODO: Set RuntimeVersion in some logical way
-        llvm::DICompileUnit *unit = builder->createCompileUnit(
-            llvm::dwarf::DW_LANG_C,
-            file,
-            "Kai programming language",
-            false,  // isOptimized
-            "",
-            0       // RuntimeVersion
-        );
-
-        DebugTypes types;
-        initDebugTypes(builder, &types);
-
-        debug = {builder, unit, file, types, unit};
+Type *llvm_float(IRContext *c, u64 bits) {
+    switch (bits) {
+        case 16:  return Type::getHalfTy(c->context);
+        case 32:  return Type::getFloatTy(c->context);
+        case 64:  return Type::getDoubleTy(c->context);
+        case 80:  return Type::getX86_FP80Ty(c->context);
+        case 128: return Type::getFP128Ty(c->context);
+        default:  fatal("Unsupported float size in backend");
     }
+}
 
-    llvm::IRBuilder<> b(context);
-    Context ctx = {
-        .checkerInfo = p->checkerInfo,
-        .m = module,
-        .targetMachine = targetMachine,
-        .dataLayout = dataLayout,
-        .b = b,
-        .fn = nullptr,
-        .d = debug,
-    };
+// MARK: - debug
 
-    // TODO: Figure out where and how we want to handle these
-    TrueSymbol->backendUserdata = llvm::ConstantInt::get(canonicalize(&ctx, BoolType), 1);
-    FalseSymbol->backendUserdata = llvm::ConstantInt::get(canonicalize(&ctx, BoolType), 0);
-
-    // NOTE: Unset the location for the prologue emission (leading instructions
-    // with nolocation in a function are considered part of the prologue and the
-    // debugger will run past them when breaking on a function)
-    SourceRange pos = {.line = 1};
-    debugPos(&ctx, pos);
-
-    size_t numStmts = ArrayLen(p->stmts);
-    for (size_t i = 0; i < numStmts; i++) {
-        emitStmt(&ctx, p->stmts[i]);
+void set_debug_pos(IRContext *self, Range range) {
+    TRACE(EMITTING);
+    if (!compiler.flags.debug) return;
+    PosInfo pos = package_posinfo(self->package, range.start);
+    if (range.start >= self->last_debug_range.start && range.end <= self->last_debug_range.end)
+        return;
+    self->last_debug_range = range;
+    if (pos.source != self->dbg.source_file) {
+        DIFile *file = self->dbg.builder->createFile(self->package->path, pos.source->filename);
+        arrsetlen(self->dbg.scopes, 1); // TODO: Do we need to preserve the ordering?
+        arrpush(self->dbg.scopes, file);
     }
+    DebugLoc loc = DebugLoc::get(pos.line, pos.column, arrlast(self->dbg.scopes));
+    self->builder.SetCurrentDebugLocation(loc);
+}
 
-    if (FlagDebug) ctx.d.builder->finalize();
+void llvm_debug_unset_pos(IRContext *c) {
+    if (!compiler.flags.debug) return;
+    DebugLoc loc = DebugLoc();
+    c->builder.SetCurrentDebugLocation(loc);
+}
 
-#if DEBUG
-    if (llvm::verifyModule(*module, &llvm::errs())) {
-        module->print(llvm::errs(), nullptr);
+bool llvm_validate(IRContext *context) {
+    TRACE(EMITTING);
+    bool broken = verifyModule(*context->module);
+    if (broken) {
+        context->module->print(errs(), nullptr);
         ASSERT(false);
     }
-#endif
+    return broken;
+}
 
-    if (FlagDumpIR) {
-        module->print(llvm::outs(), nullptr);
-        return 0;
-    } else {
-        char path[MAX_PATH];
-        strcpy(path, p->path);
-        char *filename = strrchr(path, '/');
-        *(filename++) = '\0';
-        return emitObjectFile(p, filename, &ctx);
+Type *llvm_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false) {
+    TRACE(EMITTING);
+    if (type->sym && type->sym->userdata) return (Type *) type->sym->userdata;
+    switch (type->kind) {
+        case TYPE_INVALID:
+        case TYPE_COMPLETING: fatal("Invalid type in backend");
+        case TYPE_VOID:       return c->ty.void_;
+        case TYPE_BOOL:       return IntegerType::get(c->context, 1);
+        case TYPE_ENUM:    // fallthrough
+        case TYPE_INT:        return IntegerType::get(c->context, type->size * 8);
+        case TYPE_FLOAT:      return llvm_float(c, type->size * 8);
+        case TYPE_PTR:        return PointerType::get(llvm_type(c, type->tptr.base), 0);
+        case TYPE_FUNC: {
+            std::vector<Type *> params;
+            i64 num_params = arrlen(type->tfunc.params);
+            if (type->flags&FUNC_CVARGS) num_params -= 1;
+            for (i64 i = 0; i < num_params; i++) {
+                Type *param = llvm_type(c, type->tfunc.params[i]);
+                params.push_back(param);
+            }
+            Type *result;
+            if (type->tfunc.result->kind == TYPE_VOID) {
+                result = c->ty.void_;
+            } else if (arrlen(type->tfunc.result->taggregate.fields) == 1) {
+                result = llvm_type(c, type->tfunc.result->taggregate.fields->type);
+            } else {
+                result = llvm_type(c, type->tfunc.result);
+            }
+            Type *fn = FunctionType::get(result, params, type->flags&FUNC_CVARGS);
+            if (do_not_hide_behind_pointer) return fn;
+            return PointerType::get(fn, 0);
+        }
+        case TYPE_VECTOR: {
+            Type *base = llvm_type(c, type->tvector.eltype);
+            Type *ty = VectorType::get(base, (u32) type->tvector.length);
+            return ty;
+        }
+        case TYPE_ARRAY: {
+            Type *base = llvm_type(c, type->tarray.eltype);
+            Type *ty = ArrayType::get(base, type->tarray.length);
+            return ty;
+        }
+        case TYPE_SLICE: {
+            if (type == type_string) return c->ty.rawptr; // FIXME: Temp hack while we don't have slices
+            fatal("Unimplemented slice type");
+        }
+        case TYPE_STRUCT: {
+            if (type->flags&OPAQUE) {
+                ASSERT(type->sym); // TODO: Frontend check? Opaque can only be named?
+                const char *name = type->sym->external_name ?: type->sym->name;
+                StructType *ty = StructType::create(c->context, name);
+                type->sym->userdata = ty;
+                return ty;
+            }
+            std::vector<Type *> elements;
+            for (int i = 0; i < arrlen(type->taggregate.fields); i++) {
+                Type *element = llvm_type(c, type->taggregate.fields[i].type);
+                elements.push_back(element);
+            }
+            if (type->sym) {
+                const char *name = type->sym->external_name ?: type->sym->name;
+                StructType *ty = StructType::create(c->context, elements, name);
+                if (type->sym) type->sym->userdata = ty;
+                return ty;
+            }
+            return StructType::get(c->context, elements);
+        }
+        case TYPE_UNION: {
+            Type *data = IntegerType::get(c->context, type->size * 8);
+            Type **elements = NULL;
+            arrput(elements, data);
+            ArrayRef<Type *> ref = ArrayRef<Type *>((Type **) elements, arrlen(elements));
+            StructType *type = StructType::get(c->context, ref);
+            arrfree(elements);
+            return type;
+        }
+        case TYPE_ANY: fatal("Unimplemented any type");
+        default:
+            fatal("Unhandled type");
     }
 }
 
+DIType *llvm_debug_type(IRContext *c, Ty *type, bool do_not_hide_behind_pointer = false) {
+    TRACE(EMITTING);
+    using namespace dwarf;
+    switch (type->kind) {
+        case TYPE_INVALID:
+        case TYPE_COMPLETING:
+        case TYPE_VOID:
+            return NULL;
+        case TYPE_BOOL: fatal("unimp");
+        case TYPE_ENUM: fatal("unimp");
+        case TYPE_INT: {
+            bool is_signed = (type->flags&SIGNED) != 0;
+            switch (type->size) {
+                case 1:  return is_signed ? c->dbg.i8  : c->dbg.u8;
+                case 2: return is_signed ? c->dbg.i16 : c->dbg.u16;
+                case 4: return is_signed ? c->dbg.i32 : c->dbg.u32;
+                case 8: return is_signed ? c->dbg.i64 : c->dbg.u64;
+                default:
+                    char name[1024] = {0};
+                    snprintf(name, sizeof name, "%c%u", is_signed ? 'i' : 'u', type->size * 8);
+                    return c->dbg.builder->createBasicType(
+                        name, type->size * 8, is_signed ? DW_ATE_signed : DW_ATE_unsigned);
+            }
+        }
+        case TYPE_FLOAT:
+            switch (type->size) {
+                case 4: return c->dbg.f32;
+                case 8: return c->dbg.f64;
+                default:
+                    char name[1024] = {0};
+                    snprintf(name, sizeof name, "f%u", type->size * 8);
+                    return c->dbg.builder->createBasicType(name, type->size * 8, DW_ATE_float);
+            }
+        ptr:
+        case TYPE_PTR: {
+            DIType *pointee = llvm_debug_type(c, type->tptr.base);
+            return c->dbg.builder->createPointerType(pointee, c->data_layout.getPointerSizeInBits());
+        }
+        case TYPE_FUNC: {
+            std::vector<Metadata *> params;
+            i64 num_params = arrlen(type->tfunc.params);
+            if (type->flags&FUNC_CVARGS) num_params -= 1;
+            for (i64 i = 0; i < num_params; i++) {
+                DIType *param = llvm_debug_type(c, type->tfunc.params[i]);
+                params.push_back(param);
+            }
+            // TODO: Result types are currently useless ... how can we incorperate them?
+//            DIType *result;
+//            if (type->tfunc.result->kind == TYPE_VOID) {
+//                result = NULL; // Void type?
+//            } else if (arrlen(type->tfunc.result->taggregate.fields) == 1) {
+//                result = llvm_debug_type(c, type->tfunc.result->taggregate.fields->type);
+//            } else {
+//                result = llvm_debug_type(c, type->tfunc.result);
+//            }
+            if (type->flags&FUNC_CVARGS)
+                params.push_back(c->dbg.builder->createUnspecifiedParameter());
+            DITypeRefArray p_types = c->dbg.builder->getOrCreateTypeArray(params);
+            DINode::DIFlags flags = DINode::DIFlags::FlagZero;
+            unsigned call_conv = 0; // FIXME: Calling convention
+            DIType *type = c->dbg.builder->createSubroutineType(p_types, flags, call_conv);
+            if (do_not_hide_behind_pointer) return type;
+            return c->dbg.builder->createPointerType(type, c->data_layout.getPointerSizeInBits());
+        }
+        case TYPE_VECTOR: // fallthrough
+        case TYPE_ARRAY: {
+            std::vector<llvm::Metadata *> subscripts;
+            Ty *eltype = type;
+            while (eltype->kind == TYPE_ARRAY || eltype->kind == TYPE_VECTOR) {
+                // NOTE: That 0 is probably wrong
+                subscripts.push_back(c->dbg.builder->getOrCreateSubrange(0, eltype->tarray.length));
+                eltype = eltype->tarray.eltype;
+            }
+            Type *irtype = llvm_type(c, type);
+            u64 size = c->data_layout.getTypeSizeInBits(irtype);
+            u32 align = c->data_layout.getPrefTypeAlignment(irtype) * 8;
+            DIType *deltype = llvm_debug_type(c, type->tarray.eltype);
+            DINodeArray arr = c->dbg.builder->getOrCreateArray(subscripts);
+            if (type->kind == TYPE_VECTOR)
+                return c->dbg.builder->createVectorType(size, align, deltype, arr);
+            return c->dbg.builder->createArrayType(size, align, deltype, arr);
+        }
+        case TYPE_SLICE: {
+            if (type == type_string) goto ptr; // FIXME: Temp hack while we don't have slices
+            fatal("Unimplemented slice type");
+        }
+        case TYPE_STRUCT: {
+            if (type->flags&OPAQUE) {
+                PosInfo pos = package_posinfo(c->package, type->sym->decl->range.start);
+                DIType *dtype = c->dbg.builder->createForwardDecl(
+                    DW_TAG_structure_type, type->sym->external_name ?: type->sym->name,
+                    c->dbg.file, c->dbg.file, pos.line); // NOTE: scopes being set correctly crashes
+                return dtype;
+            }
+            std::vector<Metadata *> members;
+            for (u32 i = 0; i < arrlen(type->taggregate.fields); i++) {
+                TyField field = type->taggregate.fields[i];
+                DIType *dtype = llvm_debug_type(c, field.type);
+                DIDerivedType *member = c->dbg.builder->createMemberType(
+                    arrlast(c->dbg.scopes), field.name, c->dbg.file, 0,
+                    field.type->size * 8, field.type->align * 8, field.offset * 8,
+                    DINode::DIFlags::FlagZero, dtype);
+                members.push_back(member);
+            }
+            DINodeArray members_arr = c->dbg.builder->getOrCreateArray(members);
+            PosInfo pos = package_posinfo(c->package, type->sym->decl->range.start);
+            DIType *dtype = c->dbg.builder->createStructType(
+                arrlast(c->dbg.scopes), type->sym->external_name ?: type->sym->name,
+                c->dbg.file, pos.line, type->size * 8, type->align * 8,
+                DINode::DIFlags::FlagZero, NULL, members_arr);
+            return dtype;
+        }
 
-b32 emitObjectFile(Package *p, char *name, Context *ctx) {
-    char *objectName = KaiToObjectExtension(name);
+        case TYPE_UNION:  fatal("unimp");
+        case TYPE_ANY:    fatal("unimp");
+        default:
+            fatal("Unhandled type");
+    }
+// TODO: Can we use this for type aliasing Type :: u8
+// DIType *dtype = c->dbg.builder->createTypedef(
+//     base, type->sym->external_name ?: type->sym->name,
+//     c->dbg.file, pos.line, arrlast(c->dbg.scopes));
+}
+
+AllocaInst *emit_entry_alloca(IRContext *self, Type *type, const char *name, u32 alignment_bytes) {
+    TRACE(EMITTING);
+    IRFunction *fn = &arrlast(self->fn);
+    IRBuilder<> b(fn->entry_block);
+    if (fn->last_entry_alloca) {
+        if (Instruction *next = fn->last_entry_alloca->getNextNode())
+            b.SetInsertPoint(next);
+    } else {
+        b.SetInsertPoint(fn->entry_block, fn->entry_block->begin());
+        fn->entry_block->end();
+    }
+    AllocaInst *alloca = b.CreateAlloca(type, 0, name ?: "");
+    fn->last_entry_alloca = alloca;
+    if (alignment_bytes) alloca->setAlignment(alignment_bytes);
+    return alloca;
+}
+
+// MARK: - conversions
+
+Value *enter_struct_pointer_for_coerced_access(
+    IRContext *self, Value *src_ptr, StructType *src_struct_type, u64 dst_size)
+{
+    // We can't dive into a zero-element struct.
+    if (src_struct_type->getNumElements() == 0) return src_ptr;
+
+    Type *first_el = src_struct_type->getElementType(0);
+
+    // If the first elt is at least as large as what we're looking for, or if the
+    // first element is the same size as the whole struct, we can enter it. The
+    // comparison must be made on the store size and not the alloca size. Using
+    // the alloca size may overstate the size of the load.
+    uint64_t first_el_size = self->data_layout.getTypeStoreSize(first_el);
+    if (first_el_size < dst_size &&
+        first_el_size < self->data_layout.getTypeStoreSize(src_struct_type))
+        return src_ptr;
+
+    // GEP into the first element.
+    src_ptr = self->builder.CreateStructGEP(src_ptr, 0, "coerce.dive");
+
+    // If the first element is a struct, recurse.
+    Type *src_ty = src_ptr->getType()->getPointerElementType();
+    if (StructType *src_struct_type = dyn_cast<StructType>(src_ty))
+        return enter_struct_pointer_for_coerced_access(self, src_ptr, src_struct_type, dst_size);
+
+    return src_ptr;
+}
+
+Value *coerce_int_or_ptr(IRContext *self, Value *val, Type *ty) {
+    if (val->getType() == ty) return val;
+
+    if (isa<PointerType>(val->getType())) {
+        if (isa<PointerType>(ty)) return self->builder.CreateBitCast(val, ty, "coerce.val");
+        val = self->builder.CreatePtrToInt(val, self->ty.intptr, "coerce.val.pi");
+    }
+    Type *dest_int_ty = ty;
+    if (isa<PointerType>(dest_int_ty))
+        dest_int_ty = self->ty.intptr;
+
+    if (val->getType() != dest_int_ty) {
+        DataLayout dl = self->data_layout;
+        if (dl.isBigEndian()) {
+            // Preserve the high bits on big-endian targets.
+            // That is what memory coercion does.
+            uint64_t src_size = dl.getTypeSizeInBits(val->getType());
+            uint64_t dst_size = dl.getTypeSizeInBits(dest_int_ty);
+
+            if (src_size > dst_size) {
+                val = self->builder.CreateLShr(val, src_size - dst_size, "coerce.highbits");
+                val = self->builder.CreateTrunc(val, dest_int_ty, "coerce.val.ii");
+            } else {
+                val = self->builder.CreateZExt(val, dest_int_ty, "coerce.val.ii");
+                val = self->builder.CreateShl(val, dst_size - src_size, "coerce.highbits");
+            }
+        } else {
+            // Little-endian targets preserve the low bits. No shifts required.
+            val = self->builder.CreateIntCast(val, dest_int_ty, false, "coerce.val.ii");
+        }
+    }
+
+    if (isa<PointerType>(ty)) val = self->builder.CreateIntToPtr(val, ty, "coerce.val.ip");
+    return val;
+}
+
+void emit_agg_store(IRContext *self, Value *val, Value *dst) {
+    // Prefer scalar stores to first-class aggregate stores
+    if (StructType *sty = dyn_cast<StructType>(val->getType())) {
+        for (unsigned i = 0, e = sty->getNumElements(); i != e; i++) {
+            Value *elptr = self->builder.CreateStructGEP(dst, i);
+            Value *el = self->builder.CreateExtractValue(val, i);
+
+            Type *target_type = elptr->getType()->getPointerElementType();
+            u32 align = self->data_layout.getPrefTypeAlignment(target_type);
+            self->builder.CreateAlignedStore(el, elptr, align);
+        }
+    } else {
+        Type *target_type = dst->getType()->getPointerElementType();
+        u32 align = self->data_layout.getPrefTypeAlignment(target_type);
+        self->builder.CreateAlignedStore(val, dst, align);
+    }
+}
+
+Value *create_element_bitcast(IRContext *self, Value *addr, Type *ty) {
+    unsigned addrspace = addr->getType()->getPointerAddressSpace();
+    Type *ptr_ty = ty->getPointerTo(addrspace);
+    return self->builder.CreateBitCast(addr, ptr_ty);
+}
+
+void create_store(IRContext *self, Value *src, Value *dst) {
+    TRACE(EMITTING);
+    Type *src_ty = src->getType();
+    Type *dst_ty = dst->getType()->getPointerElementType();
+    ASSERT(src_ty == dst_ty);
+    u32 align = self->data_layout.getPrefTypeAlignment(dst_ty);
+    self->builder.CreateAlignedStore(src, dst, align);
+}
+
+Value *create_load(IRContext *self, Value *val) {
+    TRACE(EMITTING);
+    Type *ty = val->getType()->getPointerElementType();
+    u32 align = self->data_layout.getPrefTypeAlignment(ty);
+    return self->builder.CreateAlignedLoad(ty, val, align);
+}
+
+Value *remove_load(IRContext *self, Value *val) {
+    TRACE(EMITTING);
+    if (LoadInst *load = dyn_cast<LoadInst>(val)) {
+        val = load->getPointerOperand();
+        load->eraseFromParent();
+    }
+    return val;
+}
+
+void create_coerced_store(IRContext *self, Value *src, Value *dst) {
+    TRACE(EMITTING);
+    Type *src_ty = src->getType();
+    Type *dst_ty = dst->getType()->getPointerElementType();
+    if (src_ty == dst_ty) {
+        u32 align = self->data_layout.getPrefTypeAlignment(dst_ty);
+        self->builder.CreateAlignedStore(src, dst, align);
+        return;
+    }
+
+    u32 src_align = self->data_layout.getPrefTypeAlignment(dst_ty);
+    u64 src_size = self->data_layout.getTypeAllocSize(src_ty);
+
+    if (StructType *dst_struct_ty = dyn_cast<StructType>(dst_ty)) {
+        dst = enter_struct_pointer_for_coerced_access(self, dst, dst_struct_ty, src_size);
+        dst_ty = dst->getType()->getPointerElementType();
+    }
+
+    // If the src and dst are int or ptr types, ext or trunc to desired
+    if ((isa<IntegerType>(src_ty) || isa<PointerType>(src_ty)) &&
+        (isa<IntegerType>(dst_ty) || isa<PointerType>(dst_ty))) {
+        src = coerce_int_or_ptr(self, src, dst_ty);
+        u32 dst_align = self->data_layout.getPrefTypeAlignment(dst_ty);
+        self->builder.CreateAlignedStore(src, dst, dst_align);
+        return;
+    }
+
+    u64 dst_size = self->data_layout.getTypeAllocSize(dst_ty);
+
+    // If store is legal, just bitcast the src pointer
+    if (src_size <= dst_size) {
+        dst = create_element_bitcast(self, dst, src_ty);
+        emit_agg_store(self, src, dst);
+    } else {
+        // do coercion through memory
+        AllocaInst *tmp = emit_entry_alloca(self, src_ty, "coerce.alloca", src_align);
+        self->builder.CreateAlignedStore(src, tmp, src_align);
+
+        Value *src_casted = create_element_bitcast(self, tmp, self->ty.i8);
+        Value *dst_casted = create_element_bitcast(self, dst, self->ty.i8);
+        u32 dst_align = self->data_layout.getPrefTypeAlignment(dst_ty);
+        self->builder.CreateMemCpy(dst_casted, dst_align, src_casted, src_align, dst_size);
+    }
+}
+
+Value *create_coerce(IRContext *self, Value *val, Expr *expr, bool is_lvalue = false) {
+    TRACE(EMITTING);
+    Ty *dst = hmget(self->package->operands, expr).type;
+    if (dst == type_cvarg) return val; // FIXME: C Varg rules
+    Type *dst_ty = llvm_type(self, dst);
+start:
+    Type *val_ty = val->getType();
+    if (val_ty == dst_ty) return val;
+    if (is_lvalue && val_ty->getPointerElementType() == dst_ty) return val;
+    switch (val_ty->getTypeID()) {
+        case Type::VoidTyID: return val;
+        case Type::HalfTyID:
+        case Type::FloatTyID:
+        case Type::DoubleTyID:
+        case Type::X86_FP80TyID:
+        case Type::FP128TyID:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return val;
+                }
+                case Type::IntegerTyID: {
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return val;
+                }
+                default:
+                    break;
+            }
+            break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
+            if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
+            return self->builder.CreateZExtOrTrunc(val, dst_ty);
+        }
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
+            return val;
+        }
+        case Type::StructTyID: return val;
+        case Type::ArrayTyID: return val;
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+            }
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+            if (isa<FunctionType>(val_ty)) return val;
+//            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
+            // FIXME: IF isa<ArrayType> What do?
+            return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
+        }
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
+    }
+    return val;
+}
+
+Value *create_cast(IRContext *self, Value *val, Expr *expr, bool is_lvalue = false) {
+    TRACE(EMITTING);
+    Ty *dst = hmget(self->package->operands, expr).type;
+    if (dst == type_cvarg) return val; // FIXME: C Varg rules
+    Type *dst_ty = llvm_type(self, dst);
+start:
+    Type *val_ty = val->getType();
+    if (val_ty == dst_ty) return val;
+    if (is_lvalue && val_ty->getPointerElementType() == dst_ty) return val;
+    switch (val_ty->getTypeID()) {
+        case Type::VoidTyID: return val;
+        case Type::HalfTyID:
+        case Type::FloatTyID:
+        case Type::DoubleTyID:
+        case Type::X86_FP80TyID:
+        case Type::FP128TyID:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return val;
+                }
+                case Type::IntegerTyID: { // TODO: Coercion rules shouldn't allow ftoi
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return val;
+                }
+                default:
+                    break;
+            }
+            break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return self->builder.CreateSExtOrTrunc(val, dst_ty);
+            if (isa<PointerType>(dst_ty)) return val = self->builder.CreateIntToPtr(val, dst_ty);
+            return self->builder.CreateZExtOrTrunc(val, dst_ty);
+        }
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty)) return self->builder.CreateBitOrPointerCast(val, dst_ty);
+            return val;
+        }
+        case Type::StructTyID: return val;
+        case Type::ArrayTyID: return val;
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty));
+            }
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+            if (isa<FunctionType>(val_ty)) return val;
+            if (val_ty->getPointerElementType() == dst_ty) return create_load(self, val); // FIXME: Do not do this....
+            // FIXME: IF isa<ArrayType> What do?
+            return self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty);
+        }
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
+    }
+    return val;
+}
+
+// MARK: - IRValue returns
+IRValue irval(Value *value, bool is_temp_alloca = false) {
+    return {value, is_temp_alloca};
+}
+
+// MARK: - Emission
+
+IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue = false);
+void emit_decl(IRContext *self, Decl *decl);
+void emit_stmt(IRContext *self, Stmt *stmt);
+
+IRValue emit_expr_nil(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr);
+    Type *type = llvm_type(self, operand.type);
+    return irval(ConstantPointerNull::get((PointerType *) type));
+}
+
+IRValue emit_expr_int(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr);
+    Type *type = llvm_type(self, operand.type);
+    if (operand.type->kind == TYPE_FLOAT) {
+        return irval(ConstantFP::get(type, (f64) operand.val.u));
+    }
+    return irval(ConstantInt::get(type, operand.val.u, is_signed(operand.type)));
+}
+
+IRValue emit_expr_float(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr);
+    Type *type = llvm_type(self, operand.type);
+    return irval(ConstantFP::get(type, operand.val.f));
+}
+
+IRValue emit_expr_str(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    StringRef ref = StringRef(expr->estr.str, expr->estr.len);
+    return irval(self->builder.CreateGlobalStringPtr(ref));
+}
+
+IRValue emit_sym(IRContext *self, Package *package, Sym *sym) {
+    TRACE(EMITTING);
+    IRContext ctx(self, package);
+    ctx.dbg.source_file = package_posinfo(package, sym->decl->range.start).source;
+    if (compiler.flags.debug) {
+        arrpush(ctx.dbg.scopes, self->dbg.unit);
+        ctx.dbg.file = ctx.dbg.builder->createFile(ctx.dbg.source_file->filename, package->path);
+        arrpush(ctx.dbg.scopes, ctx.dbg.file);
+    }
+    emit_decl(&ctx, sym->decl);
+    ASSERT(sym->userdata);
+    return irval((Value *) sym->userdata);
+}
+
+IRValue emit_expr_name(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Sym *sym = hmget(self->package->symbols, expr);
+    if (!sym->userdata) {
+        emit_sym(self, self->package, sym);
+        ASSERT(sym->userdata);
+    }
+    if (isa<Function>((Value *) sym->userdata)) return irval((Value *) sym->userdata);
+    return irval(create_load(self, (Value *) sym->userdata));
+}
+
+IRValue emit_expr_field(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr->efield.expr);
+    if (operand.flags&PACKAGE) { // operand.val is a pointer to the package Symbol
+        Sym *package_sym = (Sym *) operand.val.p;
+        Sym *sym = hmget(self->package->symbols, expr->efield.name);
+        if (!sym->userdata)
+            emit_sym(self, package_sym->package, sym);
+        if (isa<Function>((Value *) sym->userdata)) return irval((Value *) sym->userdata);
+        return irval(create_load(self, (Value *) sym->userdata));
+    }
+    switch (operand.type->kind) {
+        case TYPE_STRUCT:
+            fatal("Unimplemented case in %s", __FUNCTION__);
+        case TYPE_VECTOR: {
+            Value *agg = emit_expr(self, expr->efield.expr).val;
+            std::vector<u32> indices;
+            const char *ch = expr->efield.name->ename;
+            for (; *ch; ch++) {
+                switch (*ch) {
+                    case 'x': case 'r':
+                        indices.push_back(0);
+                        break;
+                    case 'y': case 'g':
+                        indices.push_back(1);
+                        break;
+                    case 'z': case 'b':
+                        indices.push_back(2);
+                        break;
+                    case 'w': case 'a':
+                        indices.push_back(3);
+                        break;
+                    default:
+                        fatal("Unimplemented case within %s", __FUNCTION__);
+                }
+            }
+            if (indices.size() == 1) {
+                return irval(self->builder.CreateExtractElement(agg, indices[0]));
+            } else {
+                Value *v2 = UndefValue::get(agg->getType());
+                return irval(self->builder.CreateShuffleVector(agg, v2, indices));
+            }
+        }
+        default:
+            fatal("Unhandled field base kind");
+    }
+}
+
+IRValue emit_expr_compound(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr);
+    switch (operand.type->kind) {
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            fatal("Unimplemented");
+        case TYPE_VECTOR: {
+            VectorType *type = (VectorType *) llvm_type(self, operand.type);
+            Value *agg = Constant::getNullValue(type);
+            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                Value *val = emit_expr(self, expr->ecompound.fields[i].val).val;
+                agg = self->builder.CreateInsertElement(agg, val, i);
+            }
+            return irval(agg);
+        }
+        case TYPE_ARRAY: {
+            Type *eltype = llvm_type(self, operand.type->tarray.eltype);
+            ArrayType *type = (ArrayType *) llvm_type(self, operand.type);
+            Value *agg = Constant::getNullValue(type);
+            u32 index = 0;
+            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                Value *val = emit_expr(self, expr->ecompound.fields[i].val).val;
+                if (expr->ecompound.fields[i].key) {
+                    Operand op = hmget(self->package->operands, expr->ecompound.fields[i].key);
+                    index = (u32) op.val.u;
+                }
+                agg = self->builder.CreateInsertValue(agg, val, index);
+                index++;
+            }
+            return irval(agg);
+
+
+            Value *value;
+            if (!expr->ecompound.fields) return irval(value);
+            bool is_all_members_constant = true;
+            std::vector<Value *> values;
+            std::vector<Constant *> constants;
+            for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                Value *el = emit_expr(self, expr->ecompound.fields[i].val).val;
+                is_all_members_constant |= isa<Constant>(el);
+                if (Constant *constant = dyn_cast<Constant>(el)) {
+                    constants.push_back(constant);
+                } else {
+                    Constant *null = Constant::getNullValue(eltype);
+                    constants.push_back(null);
+                }
+                values.push_back(el);
+            }
+            u32 alignment = self->data_layout.getPrefTypeAlignment(type);
+            // FIXME: can't do this if we aren't in a function.
+            Constant *constant =  ConstantArray::get(type, constants);
+            return irval(constant);
+            
+            if (constant->isZeroValue()) {
+                GlobalVariable *global = new GlobalVariable(
+                    *self->module, type, true, GlobalValue::PrivateLinkage, constant,
+                    "compound.lit");
+                return irval(global);
+            }
+
+            AllocaInst *alloca = emit_entry_alloca(self, type, "compound.lit", alignment);
+            if (is_all_members_constant) {
+                for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                    CompoundField field = expr->ecompound.fields[i];
+                    u64 target_index = hmget(self->package->operands, field.key).val.u;
+                    value = self->builder.CreateInsertValue(value, values[i], {(u32) target_index});
+                }
+                if (isa<Constant>(value)) {
+                    GlobalVariable *global = new GlobalVariable(
+                        *self->module, type, true, GlobalValue::PrivateLinkage, (Constant *)value,
+                        "compound.lit");
+                    self->builder.CreateMemCpy(
+                        alloca, alignment, global, global->getAlignment(),
+                        type->getPrimitiveSizeInBits() / 8);
+                    value = alloca;
+                } else {
+//                    create_store(self, value, alloca);
+                }
+            } else {
+                for (i64 i = 0; i < arrlen(expr->ecompound.fields); i++) {
+                    CompoundField field = expr->ecompound.fields[i];
+                    u64 target_index = hmget(self->package->operands, field.key).val.u;
+                    value = self->builder.CreateInsertValue(
+                        alloca, values[i], {0, (u32) target_index});
+                }
+            }
+            return irval(alloca);
+        }
+        case TYPE_SLICE:
+        default:
+            fatal("Unimplmented");
+    }
+}
+
+IRValue emit_expr_cast(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Ty *dst = hmget(self->package->operands, expr->ecast.type).type;
+    Type *dst_ty = llvm_type(self, dst);
+    Value *val = emit_expr(self, expr->ecast.expr).val;
+start:
+    Type *val_ty = val->getType();
+    if (val_ty == dst_ty) return irval(val);
+    switch (val_ty->getTypeID()) {
+        case Type::VoidTyID: return irval(val);
+        case Type::HalfTyID:
+        case Type::FloatTyID:
+        case Type::DoubleTyID:
+        case Type::X86_FP80TyID:
+        case Type::FP128TyID:
+        case Type::PPC_FP128TyID:
+            switch (dst_ty->getTypeID()) {
+                case Type::HalfTyID:
+                case Type::FloatTyID:
+                case Type::DoubleTyID:
+                case Type::X86_FP80TyID:
+                case Type::FP128TyID:
+                case Type::PPC_FP128TyID: {
+                    u64 src_size = val_ty->getPrimitiveSizeInBits();
+                    u64 dst_size = dst_ty->getPrimitiveSizeInBits();
+                    if (src_size < dst_size)      val = self->builder.CreateFPExt(val, dst_ty);
+                    else if (src_size > dst_size) val = self->builder.CreateFPTrunc(val, dst_ty);
+                    return irval(val);
+                }
+                case Type::IntegerTyID: {
+                    if (is_signed(dst)) val = self->builder.CreateFPToSI(val, dst_ty);
+                    else                val = self->builder.CreateFPToUI(val, dst_ty);
+                    return irval(val);
+                }
+                default:
+                    break;
+            }
+            break;
+        case Type::IntegerTyID: { // Coercions from signed to unsigned is disallowed
+            if (is_signed(dst)) return irval(self->builder.CreateSExtOrTrunc(val, dst_ty));
+            if (isa<PointerType>(dst_ty)) return irval(self->builder.CreateIntToPtr(val, dst_ty));
+            return irval(self->builder.CreateZExtOrTrunc(val, dst_ty));
+        }
+        case Type::FunctionTyID: {
+            if (isa<PointerType>(dst_ty))
+                return irval(self->builder.CreateBitOrPointerCast(val, dst_ty));
+            return irval(val);
+        }
+        case Type::StructTyID: return irval(val);
+        case Type::ArrayTyID: return irval(val);
+        case Type::PointerTyID: {
+            if (isa<IntegerType>(dst_ty) && dst_ty->getPrimitiveSizeInBits() == 1) {
+                PointerType *src_ty = (PointerType *) val->getType();
+                return irval(self->builder.CreateICmpNE(val, ConstantPointerNull::get(src_ty)));
+            }
+            if (isa<IntegerType>(dst_ty)) {
+                val = self->builder.CreatePtrToInt(val, self->ty.intptr);
+                goto start;
+            }
+            if (isa<FunctionType>(val_ty)) return irval(val);
+            if (val_ty->getPointerElementType() == dst_ty) return irval(create_load(self, val)); // FIXME: Do not do this....
+            // FIXME: IF isa<ArrayType> What do?
+            return irval(self->builder.CreatePointerBitCastOrAddrSpaceCast(val, dst_ty));
+        }
+        case Type::VectorTyID:
+        case Type::LabelTyID:
+        case Type::MetadataTyID:
+        case Type::X86_MMXTyID:
+        case Type::TokenTyID: fatal("Unsupported type in IR");
+    }
+    return irval(val);
+}
+
+IRValue emit_expr_paren(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    return emit_expr(self, expr->eparen);
+}
+
+IRValue emit_expr_unary(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr);
+    Value *val = emit_expr(self, expr->eunary, expr->flags == OP_AND).val;
+    switch ((Op) expr->flags) {
+        case OP_ADD:
+        case OP_AND:
+            return irval(val);
+        case OP_SUB:
+            if (operand.type->kind == TYPE_FLOAT) return irval(self->builder.CreateFNeg(val));
+            else                                  return irval(self->builder.CreateNeg(val));
+        case OP_NOT: // fallthrough
+        case OP_BNOT: return irval(self->builder.CreateNot(val));
+        case OP_LSS:  return irval(create_load(self, val));
+        default:
+            fatal("Unhandled unary op case %d", expr->flags);
+    }
+}
+
+IRValue emit_expr_binary(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr);
+    bool is_int = is_integer(operand.type) || is_ptr(operand.type);
+    Type *type = llvm_type(self, operand.type);
+    Value *lhs = emit_expr(self, expr->ebinary.elhs).val;
+    Value *rhs = emit_expr(self, expr->ebinary.erhs).val;
+    IRBuilder<> b = self->builder;
+    switch (expr->flags) {
+        case OP_ADD: return irval(is_int ? b.CreateAdd(lhs, rhs) : b.CreateFAdd(lhs, rhs)); // FIXME: Pointers?
+        case OP_SUB: return irval(is_int ? b.CreateSub(lhs, rhs) : b.CreateFSub(lhs, rhs)); // FIXME: Pointers?
+        case OP_MUL: return irval(is_int ? b.CreateMul(lhs, rhs) : b.CreateFMul(lhs, rhs));
+        case OP_DIV:
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
+        case OP_REM:
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateSDiv(lhs, rhs) : b.CreateUDiv(lhs, rhs) : b.CreateFDiv(lhs, rhs));
+        case OP_AND: return irval(b.CreateAnd(lhs, rhs));
+        case OP_OR:  return irval(b.CreateOr (lhs, rhs));
+        case OP_XOR: return irval(b.CreateXor(lhs, rhs));
+        case OP_LOR: return irval(b.CreateTruncOrBitCast(b.CreateOr(lhs, rhs), type));
+        case OP_LAND: return irval(b.CreateTruncOrBitCast(b.CreateAnd(lhs, rhs), type));
+        case OP_SHR:
+            return irval(is_signed(operand.type) ? b.CreateAShr(lhs, rhs) : b.CreateLShr(lhs, rhs));
+        case OP_SHL: return irval(b.CreateShl(lhs, rhs));
+        case OP_LSS: // FIXME: Pointers?
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs) : b.CreateFCmpOLT(lhs, rhs));
+        case OP_LEQ:
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSLE(lhs, rhs) : b.CreateICmpULE(lhs, rhs) : b.CreateFCmpOLE(lhs, rhs));
+        case OP_GTR:
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs) : b.CreateFCmpOGT(lhs, rhs));
+        case OP_GEQ:
+            return irval(is_int ? is_signed(operand.type) ?
+                b.CreateICmpSGE(lhs, rhs) : b.CreateICmpUGE(lhs, rhs) : b.CreateFCmpOGE(lhs, rhs));
+        case OP_EQL: return irval(is_int ? b.CreateICmpEQ(lhs, rhs) : b.CreateFCmpOEQ(lhs, rhs));
+        case OP_NEQ: return irval(is_int ? b.CreateICmpNE(lhs, rhs) : b.CreateFCmpONE(lhs, rhs));
+        default:
+            fatal("Unhandled binary op case %d", expr->flags);
+    }
+}
+
+IRValue emit_expr_ternary(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Value *cond = emit_expr(self, expr->eternary.econd).val;
+    Value *pass = cond;
+    if (expr->eternary.epass)
+        pass = emit_expr(self, expr->eternary.epass).val;
+    Value *fail = emit_expr(self, expr->eternary.efail).val;
+    return irval(self->builder.CreateSelect(cond, pass, fail));
+}
+
+IRValue emit_expr_call(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr->ecall.expr);
+    std::vector<Value *> args;
+    bool is_cvargs = (operand.type->flags&FUNC_CVARGS) != 0;
+    for (i64 i = 0; i < arrlen(expr->ecall.args); i++) {
+        CallArg arg = expr->ecall.args[i];
+        Operand arg_operand = hmget(self->package->operands, arg.expr);
+        set_debug_pos(self, expr->range);
+        Value *val = emit_expr(self, arg.expr).val;
+        bool last_arg = i - 1 == arrlen(operand.type->tfunc.params);
+        if (is_cvargs && last_arg) { // C ABI rules (TODO: Apply to all parameters for c calls)
+            if (is_integer(arg_operand.type) && arg_operand.type->size < 4) {
+                val = is_signed(arg_operand.type) ?
+                    self->builder.CreateSExt(val, self->ty.i32) : self->builder.CreateZExt(val, self->ty.u32);
+            } else if (is_float(arg_operand.type) && arg_operand.type->size < 8) {
+                self->builder.CreateFPExt(val, self->ty.f64);
+            }
+        }
+        args.push_back(val);
+    }
+    Value *fn = emit_expr(self, expr->ecall.expr).val;
+    set_debug_pos(self, expr->range);
+    return irval(self->builder.CreateCall(fn, args));
+}
+
+IRValue emit_expr_index(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand value_operand = hmget(self->package->operands, expr->eindex.expr);
+    Operand index_operand = hmget(self->package->operands, expr->eindex.index);
+    Value *value = emit_expr(self, expr->eindex.expr, LVALUE).val;
+    Value *index = emit_expr(self, expr->eindex.index).val;
+    // NOTE: LLVM doesn't have unsigned integers and an index in the upper-half
+    // of an unsigned integer would get wrapped and become negative. We can
+    // prevent this by ZExt-ing the index
+    if (!is_signed(index_operand.type))
+        index = self->builder.CreateZExtOrBitCast(index, self->ty.u64);
+    switch (value_operand.type->kind) {
+        case TYPE_ARRAY: {
+            Value *zero = ConstantInt::get(self->ty.i32, 0);
+            Value *addr = self->builder.CreateGEP(value, {zero, index});
+            return irval(create_load(self, addr));
+        }
+        case TYPE_PTR: {
+            Value *addr = self->builder.CreateGEP(value, index);
+            return irval(create_load(self, addr));
+        }
+        default:
+            fatal("Unhandled case %s", describe_ast(self->package, expr));
+    }
+}
+
+IRValue emit_expr_slice(IRContext *self, Expr *expr) { return {}; }
+
+IRValue emit_expr_func(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, expr);
+    FunctionType *type = (FunctionType *) llvm_type(self, operand.type, true);
+    const char *name = NULL;
+    if (arrlen(self->symbols))
+        name = arrlast(self->symbols)->external_name ?: arrlast(self->symbols)->name;
+    Function::LinkageTypes linkage = Function::LinkageTypes::ExternalLinkage;
+    Function *fn = Function::Create(type, linkage, name ?: "", self->module);
+    if (compiler.flags.debug) {
+        DIType *dbg_type = llvm_debug_type(self, operand.type, true);
+        PosInfo pos = package_posinfo(self->package, expr->range.start);
+        DINode::DIFlags flags = strcmp(name, "main") == 0 ?
+            DISubprogram::DIFlags::FlagMainSubprogram : DINode::DIFlags::FlagZero;
+        DISubprogram *sp = self->dbg.builder->createFunction(
+            arrlast(self->dbg.scopes), name, fn->getName(), self->dbg.file, pos.line,
+            (DISubroutineType *) dbg_type, pos.line, flags,
+            DISubprogram::DISPFlags::SPFlagDefinition);
+        fn->setSubprogram(sp);
+        arrpush(self->dbg.scopes, sp);
+    }
+
+    BasicBlock *entry_block = BasicBlock::Create(self->context, "entry", fn);
+    BasicBlock *return_block = BasicBlock::Create(self->context, "return", fn);
+    {
+        IRFunction function = {fn, entry_block, return_block};
+        arrpush(self->fn, function);
+    }
+    IRFunction *function = &arrlast(self->fn);
+
+    // Unset the location for the prologue emission (leading instructions with no
+    // location in a function are considered part of the prologue and the debugger
+    // will run past them when breaking on a function)
+    llvm_debug_unset_pos(self);
+
+    self->builder.SetInsertPoint(entry_block);
+    if (operand.type->tfunc.result != type_void) {
+        function->result_value = emit_entry_alloca(
+            self, type->getReturnType(), "result", operand.type->tfunc.result->align);
+    }
+
+    Function::arg_iterator args = fn->arg_begin();
+    for (i64 i = 0; i < arrlen(expr->efunc.type->efunctype.params); i++) {
+        FuncParam param = expr->efunc.type->efunctype.params[i];
+        Argument *arg = args++;
+        arg->setName(param.name->ename);
+        Sym *sym = hmget(self->package->symbols, param.name);
+        Type *type = llvm_type(self, sym->type);
+        AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
+        sym->userdata = alloca;
+        self->builder.CreateAlignedStore(arg, alloca, sym->type->align);
+
+        if (compiler.flags.debug) {
+            PosInfo pos = package_posinfo(self->package, param.name->range.start);
+            DILocalVariable *var = self->dbg.builder->createParameterVariable(
+                arrlast(self->dbg.scopes), sym->name, (u32) i, self->dbg.file, pos.line,
+                llvm_debug_type(self, sym->type));
+            self->dbg.builder->insertDeclare(
+                alloca, var, self->dbg.builder->createExpression(),
+                DebugLoc::get(pos.line, pos.column, arrlast(self->dbg.scopes)), entry_block);
+        }
+    }
+    fn->arg_end();
+
+    emit_stmt(self, expr->efunc.body);
+    arrpop(self->fn);
+
+    if (!self->builder.GetInsertBlock()->getTerminator()) {
+        self->builder.CreateBr(function->return_block);
+    }
+
+    // Set insert point to the return block
+    self->builder.SetInsertPoint(function->return_block);
+    if (function->defer_blocks) {
+        function->return_block = BasicBlock::Create(self->context, "return_post_defer", fn);
+        self->builder.CreateBr(function->defer_blocks[0]);
+    }
+
+    for (i64 i = 0; i < arrlen(function->defer_blocks); i++) {
+        BasicBlock *block = function->defer_blocks[i];
+        self->builder.SetInsertPoint(block);
+        if (i < arrlen(function->defer_blocks) - 1) {
+            self->builder.CreateBr(function->defer_blocks[i + 1]);
+        } else {
+            self->builder.CreateBr(function->return_block);
+        }
+    }
+    if (function->defer_blocks) self->builder.SetInsertPoint(function->return_block);
+
+    if (arrlen(operand.type->tfunc.result->taggregate.fields) == 1) {
+        Value *return_value = create_load(self, function->result_value);
+        self->builder.CreateRet(return_value);
+    } else if (operand.type->tfunc.result->kind == TYPE_STRUCT) {
+        StructType *type = dyn_cast<StructType>(fn->getReturnType());
+        ASSERT(type);
+        DataLayout dl = self->module->getDataLayout();
+        Value *return_value = create_load(self, function->result_value);
+        self->builder.CreateRet(return_value);
+    } else {
+        ASSERT(operand.type->tfunc.result->kind == TYPE_VOID);
+        self->builder.CreateRetVoid();
+    }
+
+    // Move the return block to the end, just for readability
+    if (compiler.flags.dump_ir || compiler.flags.emit_ir)
+        function->return_block->moveAfter(self->builder.GetInsertBlock());
+
+    if (compiler.flags.debug) {
+        self->dbg.builder->finalizeSubprogram(fn->getSubprogram());
+        arrpop(self->dbg.scopes);
+    }
+
+//    if (verifyFunction(*fn, &errs())) {
+//        printf("\n====================\n");
+//        self->module->print(errs(), nullptr);
+//        ASSERT(false);
+//    }
+
+    return irval(fn);
+}
+
+IRValue emit_expr_functype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_slicetype(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_array(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_pointer(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_struct(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_union(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+IRValue emit_expr_enum(IRContext *self, Expr *expr) { fatal("Unimplemented %s", __FUNCTION__); }
+
+IRValue emit_expr_directive(IRContext *self, Expr *expr) {
+    TRACE(EMITTING);
+    Operand op = hmget(self->package->operands, expr);
+    switch ((Directive) expr->flags) {
+        case DIR_LINE: return irval(ConstantInt::get(self->ty.u32, op.val.u));
+        case DIR_FILE: // fallthrough
+        case DIR_FUNCTION: return irval(self->builder.CreateGlobalStringPtr((char *) op.val.p));
+        case DIR_UNDEF: {
+            Type *type = llvm_type(self, op.type);
+            return irval(UndefValue::get(type));
+        }
+        default: fatal("Unimplemented %s", __FUNCTION__);
+    }
+}
+
+IRValue emit_expr(IRContext *self, Expr *expr, bool is_lvalue) {
+    TRACE(EMITTING);
+    IRValue val;
+    switch (expr->kind) {
+        case EXPR_NIL:       val = emit_expr_nil(self, expr); break;
+        case EXPR_INT:       val = emit_expr_int(self, expr); break;
+        case EXPR_FLOAT:     val = emit_expr_float(self, expr); break;
+        case EXPR_STR:       val = emit_expr_str(self, expr); break;
+        case EXPR_NAME:      val = emit_expr_name(self, expr); break;
+        case EXPR_COMPOUND:  val = emit_expr_compound(self, expr); break;
+        case EXPR_CAST:      val = emit_expr_cast(self, expr); break;
+        case EXPR_PAREN:     val = emit_expr_paren(self, expr); break;
+        case EXPR_UNARY:     val = emit_expr_unary(self, expr); break;
+        case EXPR_BINARY:    val = emit_expr_binary(self, expr); break;
+        case EXPR_TERNARY:   val = emit_expr_ternary(self, expr); break;
+        case EXPR_CALL:      val = emit_expr_call(self, expr); break;
+        case EXPR_FIELD:     val = emit_expr_field(self, expr); break;
+        case EXPR_INDEX:     val = emit_expr_index(self, expr); break;
+        case EXPR_SLICE:     val = emit_expr_slice(self, expr); break;
+        case EXPR_FUNC:      val = emit_expr_func(self, expr); break;
+        case EXPR_FUNCTYPE:  val = emit_expr_functype(self, expr); break;
+        case EXPR_SLICETYPE: val = emit_expr_slicetype(self, expr); break;
+        case EXPR_ARRAY:     val = emit_expr_array(self, expr); break;
+        case EXPR_POINTER:   val = emit_expr_pointer(self, expr); break;
+        case EXPR_STRUCT:    val = emit_expr_struct(self, expr); break;
+        case EXPR_UNION:     val = emit_expr_union(self, expr); break;
+        case EXPR_ENUM:      val = emit_expr_enum(self, expr); break;
+        case EXPR_DIRECTIVE: val = emit_expr_directive(self, expr); break;
+        default:
+            fatal("Unrecognized ExprKind %s", describe_ast_kind(expr->kind));
+    }
+    if (is_lvalue) val.val = remove_load(self, val.val);
+    if (is_lvalue && !isa<PointerType>(val.val->getType())) {
+        // make the val into an lvalue using a temp alloca
+        u32 alignment = self->data_layout.getPrefTypeAlignment(val.val->getType());
+        AllocaInst *alloca = emit_entry_alloca(self, val.val->getType(), NULL, alignment);
+        create_store(self, val.val, alloca);
+        val.val = alloca;
+        val.is_temp_alloca = true;
+    }
+    val.val = create_coerce(self, val.val, expr, is_lvalue);
+    return val;
+}
+
+void emit_stmt_label(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    Sym *sym = hmget(self->package->symbols, stmt->slabel);
+    if (sym->userdata) { // Label has been previously emitted
+        BasicBlock *bb = (BasicBlock *) sym->userdata;
+        bb->moveAfter(self->builder.GetInsertBlock());
+        self->builder.SetInsertPoint(bb);
+    } else { // Label has not yet been emitted
+        BasicBlock *bb = BasicBlock::Create(self->context, sym->name, arrlast(self->fn).function);
+        self->builder.SetInsertPoint(bb);
+        sym->userdata = bb;
+    }
+}
+
+void emit_stmt_assign(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    i64 num_lhs = arrlen(stmt->sassign.lhs);
+    i64 rhs_index = 0;
+    for (i64 lhs_index = 0; lhs_index < num_lhs;) {
+        Expr *expr = stmt->sassign.rhs[rhs_index++];
+        Value *rhs = emit_expr(self, expr).val;
+        if (expr->kind == EXPR_CALL) {
+            Operand operand = hmget(self->package->operands, expr->ecall.expr);
+            i64 num_results = arrlen(operand.type->tfunc.result->taggregate.fields);
+            if (num_results == 1) {
+                Value *lhs = emit_expr(self, stmt->sassign.lhs[lhs_index++], LVALUE).val;
+                set_debug_pos(self, stmt->range);
+                create_coerced_store(self, rhs, lhs);
+            } else {
+                // create some stack space to land the returned struct onto
+                AllocaInst *result_address = emit_entry_alloca(self, rhs->getType(), nullptr, 0);
+                create_coerced_store(self, rhs, result_address);
+
+                for (i64 result_index = 0; result_index < num_lhs; result_index++) {
+                    Expr *lhs_expr = stmt->sassign.lhs[lhs_index++];
+                    Value *lhs = emit_expr(self, lhs_expr, LVALUE).val;
+
+                    Value *addr = self->builder.CreateStructGEP(
+                        rhs->getType(), result_address, (u32) result_index);
+                    Value *val = create_load(self, addr);
+
+                    set_debug_pos(self, stmt->range);
+                    create_coerced_store(self, val, lhs);
+                }
+            }
+        } else {
+            Expr *lhs_expr = stmt->sassign.lhs[lhs_index++];
+            Value *lhs = emit_expr(self, lhs_expr, LVALUE).val;
+            set_debug_pos(self, stmt->range);
+            create_coerced_store(self, rhs, lhs);
+        }
+    }
+}
+
+void emit_stmt_return(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    i64 num_returns = arrlen(stmt->sreturn);
+    Value **values = NULL;
+    IRFunction fn = arrlast(self->fn);
+    Type *ret_type = fn.function->getReturnType();
+    for (i64 i = 0; i < num_returns; i++) {
+        Expr *expr = stmt->sreturn[i];
+        Value *val = emit_expr(self, expr).val;
+        arrpush(values, val);
+    }
+    llvm_debug_unset_pos(self);
+    if (num_returns > 1) {
+        for (u32 i = 0; i < num_returns; i++) {
+            Value *result_el_ptr = self->builder.CreateStructGEP(ret_type, fn.result_value, i);
+            create_store(self, values[i], result_el_ptr);
+        }
+    } else if (num_returns == 1) {
+        create_coerced_store(self, values[0], fn.result_value);
+    }
+    arrfree(values);
+    set_debug_pos(self, stmt->range);
+    self->builder.CreateBr(fn.return_block);
+}
+
+void emit_stmt_defer(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    IRFunction *fn = &arrlast(self->fn);
+    BasicBlock *block = BasicBlock::Create(self->context, "defer", arrlast(self->fn).function);
+    arrpush(fn->defer_blocks, block);
+    BasicBlock *prev = self->builder.GetInsertBlock();
+    self->builder.SetInsertPoint(block);
+    emit_stmt(self, stmt->sdefer);
+    self->builder.SetInsertPoint(prev);
+}
+
+void emit_stmt_using(IRContext *self, Stmt *stmt) {}
+void emit_stmt_goto(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    IRFunction *fn = &arrlast(self->fn);
+    BasicBlock *target;
+    if (stmt->sgoto) {
+        Sym *label = hmget(self->package->symbols, stmt->slabel);
+        if (label->userdata) {
+            target = (BasicBlock *) label->userdata;
+        } else {
+            target = BasicBlock::Create(self->context, label->name, fn->function);
+            label->userdata = target;
+        }
+    } else {
+        switch ((GotoKind) stmt->flags) {
+            case GOTO_GOTO:
+                fatal("Should always have target, and be handled above");
+            case GOTO_BREAK:
+                target = arrlast(fn->post_blocks);
+                break;
+            case GOTO_CONTINUE:
+                target = arrlast(fn->loop_cond_blocks);
+                break;
+            case GOTO_FALLTHROUGH:
+                target = arrlast(fn->next_cases);
+                break;
+            default:
+                fatal("Unrecognized goto kind %d", stmt->flags);
+        }
+    }
+    self->builder.CreateBr(target);
+}
+
+void emit_stmt_block(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    if (compiler.flags.debug) {
+        PosInfo pos = package_posinfo(self->package, stmt->range.start);
+        DILexicalBlock *block = self->dbg.builder->createLexicalBlock(
+            arrlast(self->dbg.scopes), self->dbg.file, pos.line, pos.column);
+        arrpush(self->dbg.scopes, block);
+    }
+    for (i64 i = 0; i < arrlen(stmt->sblock); i++) {
+        emit_stmt(self, stmt->sblock[i]);
+    }
+    if (compiler.flags.debug) {
+        arrpop(self->dbg.scopes);
+    }
+}
+
+void emit_stmt_if(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    Function *fn = arrlast(self->fn).function;
+    BasicBlock *pass = BasicBlock::Create(self->context, "if.pass", fn);
+    BasicBlock *fail = stmt->sif.fail ? BasicBlock::Create(self->context, "if.fail", fn) : nullptr;
+    BasicBlock *post = BasicBlock::Create(self->context, "if.post", fn);
+    Value *cond = emit_expr(self, stmt->sif.cond).val;
+    set_debug_pos(self, stmt->range);
+    self->builder.CreateCondBr(cond, pass, fail ?: post);
+    self->builder.SetInsertPoint(pass);
+    emit_stmt(self, stmt->sif.pass);
+    if (!pass->getTerminator()) self->builder.CreateBr(post);
+    if (stmt->sif.fail) {
+        self->builder.SetInsertPoint(fail);
+        emit_stmt(self, stmt->sif.fail);
+        if (!fail->getTerminator()) self->builder.CreateBr(post);
+    }
+    self->builder.SetInsertPoint(post);
+}
+
+void emit_stmt_for(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    IRFunction *fn = &arrlast(self->fn);
+    BasicBlock *body, *post, *cond, *step;
+    body = post = cond = step = NULL;
+    if (compiler.flags.debug) {
+        PosInfo pos = package_posinfo(self->package, stmt->range.start);
+        DILexicalBlock *block = self->dbg.builder->createLexicalBlock(
+            arrlast(self->dbg.scopes), self->dbg.file, pos.line, pos.column);
+        arrpush(self->dbg.scopes, block);
+    }
+    if (stmt->flags == FOR_AGGREGATE) {
+        Constant *zero = ConstantInt::get(self->ty.intptr, 0);
+        Constant *one = ConstantInt::get(self->ty.intptr, 1);
+        Sym *value_sym = hmget(self->package->symbols, stmt->sfor.value_name);
+        Type *value_type = llvm_type(self, value_sym->type);
+        Sym *index_sym = NULL;
+        if (stmt->sfor.index_name) hmget(self->package->symbols, stmt->sfor.index_name);
+        u32 value_align = self->data_layout.getPrefTypeAlignment(value_type);
+        u32 index_align = self->data_layout.getPrefTypeAlignment(self->ty.intptr);
+        const char *index_name = index_sym ? index_sym->name : "index";
+        Value *value = emit_entry_alloca(self, value_type, value_sym->name ?: "value", value_align);
+        Value *index = emit_entry_alloca(self, self->ty.intptr, index_name, index_align);
+        create_store(self, zero, index);
+        value_sym->userdata = value;
+        if (index_sym) index_sym->userdata = index;
+
+        Value *aggregate;
+        Value *length;
+        Operand op = hmget(self->package->operands, stmt->sfor.aggregate);
+        switch (op.type->kind) {
+            case TYPE_ARRAY: {
+                aggregate = emit_expr(self, stmt->sfor.aggregate, LVALUE).val;
+                length = Constant::getNullValue(self->ty.intptr);
+                break;
+            }
+            default: fatal("Unhandled type for emission of for aggregate");
+        }
+        cond = BasicBlock::Create(self->context, "for.cond", fn->function);
+        step = BasicBlock::Create(self->context, "for.step", fn->function);
+        body = BasicBlock::Create(self->context, "for.body", fn->function);
+        post = BasicBlock::Create(self->context, "for.post", fn->function);
+
+        self->builder.CreateBr(cond);
+        self->builder.SetInsertPoint(cond);
+
+        set_debug_pos(self, stmt->sfor.aggregate->range);
+        Value *within_bounds = self->builder.CreateICmpSLT(create_load(self, index), length);
+        self->builder.CreateCondBr(within_bounds, body, post);
+        arrpush(fn->loop_cond_blocks, cond);
+        arrpush(fn->post_blocks, post);
+
+        self->builder.SetInsertPoint(body);
+        Value *elptr = self->builder.CreateGEP(aggregate, {zero, create_load(self, index)});
+        set_debug_pos(self, stmt->sfor.value_name->range);
+        create_store(self, create_load(self, elptr), value);
+
+        emit_stmt(self, stmt->sfor.body);
+
+        b32 has_jump = self->builder.GetInsertBlock()->getTerminator() != NULL;
+        if (!has_jump) self->builder.CreateBr(step);
+        self->builder.SetInsertPoint(step);
+        Value *index_incr = self->builder.CreateAdd(create_load(self, index), one);
+        if (stmt->sfor.index_name) set_debug_pos(self, stmt->sfor.index_name->range);
+        create_store(self, index_incr, index);
+        self->builder.CreateBr(cond);
+        self->builder.SetInsertPoint(post);
+        if (compiler.flags.dump_ir || compiler.flags.emit_ir)
+            post->moveAfter(self->builder.GetInsertBlock());
+        return;
+    }
+    if (stmt->sfor.init) {
+        set_debug_pos(self, stmt->sfor.init->range);
+        emit_stmt(self, stmt->sfor.init);
+    }
+    if (stmt->sfor.cond) {
+        cond = BasicBlock::Create(self->context, "for.cond", fn->function);
+        if (stmt->sfor.step) {
+            step = BasicBlock::Create(self->context, "for.step", fn->function);
+        }
+        body = BasicBlock::Create(self->context, "for.body", fn->function);
+        post = BasicBlock::Create(self->context, "for.post", fn->function);
+        self->builder.CreateBr(cond ?: body);
+        self->builder.SetInsertPoint(cond);
+        set_debug_pos(self, stmt->sfor.cond->range);
+        Value *cond_val = emit_expr(self, stmt->sfor.cond).val;
+        self->builder.CreateCondBr(cond_val, body, post);
+    }
+    arrpush(fn->loop_cond_blocks, cond);
+    arrpush(fn->post_blocks, post);
+    self->builder.SetInsertPoint(body);
+    emit_stmt(self, stmt->sfor.body);
+    b32 has_jump = self->builder.GetInsertBlock()->getTerminator() != NULL;
+    if (stmt->sfor.step) { // for init; cond; step { ... }
+        if (!has_jump) self->builder.CreateBr(step);
+        self->builder.SetInsertPoint(step);
+        set_debug_pos(self, stmt->sfor.step->range);
+        emit_stmt(self, stmt->sfor.step);
+        self->builder.CreateBr(cond);
+    } else if (cond) { // for cond { ... }
+        if (!has_jump) self->builder.CreateBr(cond);
+    } else if (!has_jump) { // for { ... }
+        self->builder.CreateBr(body);
+    }
+    arrpop(fn->loop_cond_blocks);
+    arrpop(fn->post_blocks);
+    if (!self->builder.GetInsertBlock()->getTerminator()) self->builder.CreateBr(post);
+    self->builder.SetInsertPoint(post);
+    if (compiler.flags.debug) arrpop(self->dbg.scopes);
+    if (compiler.flags.dump_ir || compiler.flags.emit_ir)
+        post->moveAfter(self->builder.GetInsertBlock());
+}
+
+void emit_stmt_switch(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    BasicBlock *current_block = self->builder.GetInsertBlock();
+    IRFunction *fn = &arrlast(self->fn);
+    BasicBlock *post = BasicBlock::Create(self->context, "switch.post", fn->function);
+    BasicBlock *default_block = NULL;
+    arrpush(fn->post_blocks, post);
+    size_t num_cases = arrlen(stmt->sswitch.cases);
+    std::vector<BasicBlock *> case_blocks;
+    for (i64 i = 0; i < num_cases; i++) {
+        if (arrlen(stmt->sswitch.cases[i].matches)) {
+            BasicBlock *then = BasicBlock::Create(self->context, "switch.then.case", fn->function);
+            case_blocks.push_back(then);
+        } else {
+            BasicBlock *then = BasicBlock::Create(self->context, "switch.default", fn->function);
+            default_block = then;
+            case_blocks.push_back(then);
+        }
+    }
+    set_debug_pos(self, stmt->sswitch.subject->range);
+    Value *value = emit_expr(self, stmt->sswitch.subject).val;
+    std::vector<std::vector<Value *>> matches;
+    for (i64 i = 0; i < num_cases; i++) {
+        if (i + 1 < num_cases) arrpush(fn->next_cases, case_blocks[i + 1]);
+        BasicBlock *case_block = case_blocks[i];
+        self->builder.SetInsertPoint(case_block);
+        SwitchCase scase = stmt->sswitch.cases[i];
+        i64 num_matches = arrlen(scase.matches);
+        if (num_matches) {
+            std::vector<Value *> vals;
+            for (i64 match_index = 0; match_index < num_matches; match_index++) {
+                set_debug_pos(self, scase.matches[match_index]->range);
+                Value *val = emit_expr(self, scase.matches[match_index]).val;
+                vals.push_back(val);
+            }
+            matches.push_back(vals);
+        }
+        emit_stmt(self, scase.body);
+        if (!self->builder.GetInsertBlock()->getTerminator()) self->builder.CreateBr(post);
+    }
+    self->builder.SetInsertPoint(current_block);
+    SwitchInst *sswitch = self->builder.CreateSwitch(
+        value, default_block ?: post, (u32) case_blocks.size());
+    for (i64 i = 0; i < case_blocks.size(); i++) {
+        for (i64 match_index = 0; match_index < matches[i].size(); match_index++) {
+            sswitch->addCase((ConstantInt *)matches[i][match_index], case_blocks[i]);
+        }
+    }
+    self->builder.SetInsertPoint(post);
+}
+
+void emit_decl_var_global(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
+    Expr *name = *decl->dvar.names;
+    Sym *sym = hmget(self->package->symbols, name);
+    if (sym->userdata) return; // Already emitted
+    Constant *init = NULL;
+    if (decl->dvar.vals) {
+        Expr *expr = *decl->dvar.vals;
+        Value *val = emit_expr(self, expr).val;
+        init = dyn_cast<Constant>(val);
+        if (!init) fatal("unimplemented non constant global variables");
+    } else {
+        init = Constant::getNullValue(llvm_type(self, sym->type));
+    }
+    Type *type = llvm_type(self, sym->type);
+    GlobalVariable *global = new GlobalVariable(
+        *self->module, type, /* IsConstant */ false, GlobalValue::ExternalLinkage,
+        init, sym->external_name ?: sym->name);
+    global->setAlignment(sym->type->align);
+    global->setExternallyInitialized(false);
+    sym->userdata = global;
+    if (compiler.flags.debug) {
+        PosInfo pos = package_posinfo(self->package, sym->decl->range.start);
+        self->dbg.builder->createGlobalVariableExpression(
+            arrlast(self->dbg.scopes), sym->name, sym->external_name ?: sym->name,
+            self->dbg.file, pos.line, llvm_debug_type(self, sym->type),
+            /* LocalToUnit */ false, /* Expr */ NULL, /* Decl */ NULL,
+            /* TemplateParams */ NULL, sym->type->align * 8);
+    }
+    // TODO: Complete handling of global variable intialization using function calls
+}
+
+void declare_auto_variable(IRContext *self, Sym *sym) {
+    TRACE(EMITTING);
+    PosInfo pos = package_posinfo(self->package, sym->decl->range.start);
+    BasicBlock *block = self->builder.GetInsertBlock();
+    DIScope *scope = arrlast(self->dbg.scopes);
+    DIExpression *expr = self->dbg.builder->createExpression();
+    DILocation *loc = DebugLoc::get(pos.line, pos.column, scope);
+    DIType *type = llvm_debug_type(self, sym->type);
+    DILocalVariable *d = self->dbg.builder->createAutoVariable(scope, sym->name, self->dbg.file, pos.line, type);
+    self->dbg.builder->insertDeclare((Value *) sym->userdata, d, expr, loc, block);
+}
+
+void emit_decl_var(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
+    for (u32 index = 0; index < arrlen(decl->dvar.names); index++) {
+        Expr *name = decl->dvar.names[index];
+        Sym *sym = hmget(self->package->symbols, name);
+        if (sym->userdata) return; // Already emitted
+
+        Value *rhs = NULL;
+        bool rhs_is_alloca = false;
+        if (decl->dvar.vals) {
+            Expr *expr = decl->dvar.vals[index];
+            Operand operand = hmget(self->package->operands, expr);
+            set_debug_pos(self, decl->range);
+            IRValue res = emit_expr(self, expr);
+            rhs_is_alloca = res.is_temp_alloca;
+            rhs = res.val;
+
+            if (expr->kind == EXPR_CALL && operand.type->kind == TYPE_STRUCT &&
+                (operand.type->flags&TUPLE)) {
+                while (index < arrlen(decl->dvar.names)) {
+                    name = decl->dvar.names[index];
+                    sym = hmget(self->package->symbols, name);
+                    Type *type = llvm_type(self, sym->type);
+                    AllocaInst *alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
+                    sym->userdata = alloca;
+                    if (compiler.flags.debug) declare_auto_variable(self, sym);
+                    Value *result = self->builder.CreateExtractValue(rhs, {index++});
+                    create_coerced_store(self, result, alloca);
+                }
+                return;
+            }
+        }
+        Type *type = llvm_type(self, sym->type);
+
+        Value *alloca;
+        if (rhs_is_alloca) {
+            alloca = rhs;
+        } else {
+            // FIXME: Alloca can't happen at global scope instead use a global variable and add
+            //  check that we only initialize with global variables.
+            alloca = emit_entry_alloca(self, type, sym->name, sym->type->align);
+            set_debug_pos(self, decl->range);
+            if (rhs) create_coerced_store(self, rhs, alloca);
+        }
+        sym->userdata = alloca;
+        if (compiler.flags.debug) declare_auto_variable(self, sym);
+    }
+}
+
+void emit_decl_val(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
+    Sym *sym = hmget(self->package->symbols, decl->dval.name);
+    if (sym->userdata) return; // Already emitted
+    set_debug_pos(self, decl->dval.name->range);
+    Type *type = llvm_type(self, sym->type);
+    if (sym->type->kind & SYM_TYPE) return;
+    arrpush(self->symbols, sym);
+    Value *value = emit_expr(self, decl->dval.val).val;
+    arrpop(self->symbols);
+    if (isa<Function>(value)) {
+        sym->userdata = value;
+        return;
+    }
+
+    GlobalValue::LinkageTypes linkage = self->fn ?
+    GlobalValue::CommonLinkage : GlobalValue::ExternalLinkage;
+    GlobalVariable *global = new GlobalVariable(
+        *self->module, type, true, linkage, (Constant *) value, sym->name);
+    sym->userdata = global;
+}
+
+void emit_decl_import(IRContext *self, Decl *decl) {}
+void emit_decl_library(IRContext *self, Decl *decl) {}
+
+void emit_decl_foreign(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
+    Operand operand = hmget(self->package->operands, decl->dforeign.type);
+    Sym *sym = hmget(self->package->symbols, decl->dforeign.name);
+    set_debug_pos(self, decl->range);
+
+    // FIXME: Check for existing decl
+
+    Type *type = llvm_type(self, operand.type);
+    if (operand.type->kind == TYPE_FUNC) {
+        FunctionType *fn_ty = (FunctionType *) type->getPointerElementType();
+        Function *fn = (Function *) self->module->getOrInsertFunction(sym->external_name, fn_ty);
+        fn->setCallingConv(CallingConv::C);
+
+//        Function *fn = Function::Create(
+//            fn_ty, Function::ExternalLinkage, sym->external_name, self->module);
+        // FIXME: Calling convention
+//        fn->setCallingConv(CallingConv::C);
+//        if (compiler.flags.debug) {
+//            DIType *dbg_type = llvm_debug_type(self, operand.type);
+//            PosInfo pos = package_posinfo(self->package, decl->dforeign.name->range.start);
+//            DISubprogram *sp = self->dbg.builder->createFunction(
+//                arrlast(self->dbg.scopes), sym->name, fn->getName(), self->dbg.file, pos.line,
+//                (DISubroutineType *) dbg_type, pos.line, DINode::DIFlags::FlagZero);
+//            fn->setSubprogram(sp);
+//            self->dbg.builder->finalizeSubprogram(sp);
+//        }
+        sym->userdata = fn;
+        return;
+    }
+
+    Constant *val = self->module->getOrInsertGlobal(sym->external_name ?: sym->name, type);
+    GlobalVariable *var = (GlobalVariable *) val;
+    var->setExternallyInitialized(true);
+    var->setConstant(false);
+    sym->userdata = var;
+}
+
+void emit_decl_foreignblock(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
+    for (i64 i = 0; i < arrlen(decl->dforeign_block.decls); i++) {
+        emit_decl_foreign(self, decl->dforeign_block.decls[i]);
+    }
+}
+
+void emit_stmt(IRContext *self, Stmt *stmt) {
+    TRACE(EMITTING);
+    switch (stmt->kind) {
+        case (StmtKind) DECL_FILE: {
+            if (!compiler.flags.debug) return;
+            Source *file = ((Decl *) stmt)->dfile;
+            self->dbg.source_file = file;
+            self->dbg.file = self->dbg.builder->createFile(file->filename, self->package->path);
+            arrsetlen(self->dbg.scopes, 1); // 1 so we keep the compile unit at the top.
+            arrpush(self->dbg.scopes, self->dbg.file);
+            break;
+        }
+        case (StmtKind) DECL_VAR:
+            if (!arrlen(self->fn)) return emit_decl_var_global(self, (Decl *) stmt);
+            else return emit_decl_var(self, (Decl *) stmt);
+        case (StmtKind) DECL_VAL: return emit_decl_val(self, (Decl *) stmt);
+        case (StmtKind) DECL_IMPORT: return emit_decl_import(self, (Decl *) stmt);
+        case (StmtKind) DECL_LIBRARY: return emit_decl_library(self, (Decl *) stmt);
+        case (StmtKind) DECL_FOREIGN: return emit_decl_foreign(self, (Decl *) stmt);
+        case (StmtKind) DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, (Decl *) stmt);
+        case STMT_LABEL:
+            emit_stmt_label(self, stmt);
+            break;
+        case STMT_ASSIGN:
+            emit_stmt_assign(self, stmt);
+            break;
+        case STMT_RETURN:
+            emit_stmt_return(self, stmt);
+            break;
+        case STMT_DEFER:
+            emit_stmt_defer(self, stmt);
+            break;
+        case STMT_USING:
+            emit_stmt_using(self, stmt);
+            break;
+        case STMT_GOTO:
+            emit_stmt_goto(self, stmt);
+            break;
+        case STMT_BLOCK:
+            emit_stmt_block(self, stmt);
+            break;
+        case STMT_IF:
+            emit_stmt_if(self, stmt);
+            break;
+        case STMT_FOR:
+            emit_stmt_for(self, stmt);
+            break;
+        case STMT_SWITCH:
+            emit_stmt_switch(self, stmt);
+            break;
+        case STMT_NAMES:
+            fatal("Shouldn't see this here");
+            break;
+    }
+    if (ISEXPR(stmt)) emit_expr(self, (Expr *) stmt);
+}
+
+void emit_decl(IRContext *self, Decl *decl) {
+    TRACE(EMITTING);
+    switch (decl->kind) {
+        case DECL_VAR:
+            if (!arrlen(self->fn)) return emit_decl_var_global(self, decl);
+            else return emit_decl_var(self, decl);
+        case DECL_VAL: return emit_decl_val(self, decl);
+        case DECL_IMPORT: return emit_decl_import(self, decl);
+        case DECL_LIBRARY: return emit_decl_library(self, decl);
+        case DECL_FOREIGN: return emit_decl_foreign(self, decl);
+        case DECL_FOREIGN_BLOCK: return emit_decl_foreignblock(self, decl);
+        default:
+            fatal("Unrecognized DeclKind %s", describe_ast_kind(decl->kind));
+    }
+}
+
+static void addDiscriminatorsPass(const PassManagerBuilder &Builder, legacy::PassManagerBase &PM) {
+    PM.add(createAddDiscriminatorsPass());
+}
+
+bool llvm_emit_object(Package *package) {
+    TRACE(LLVM);
+    IRContext *self = (IRContext *) package->userdata;
+
+    char object_name[MAX_PATH];
+    package_object_path(package, object_name);
 
     std::error_code ec;
-    llvm::raw_fd_ostream dest(objectName, ec, llvm::sys::fs::F_None);
+    raw_fd_ostream dest(object_name, ec);
 
     if (ec) {
-        llvm::errs() << "Could not open object file: " << ec.message();
-        return 1;
+        fatal("Could not open object file: %s\n", ec.message().c_str());
+        return false;
     }
 
-    llvm::legacy::PassManager pass;
-    llvm::TargetMachine::CodeGenFileType fileType = llvm::TargetMachine::CGFT_ObjectFile;
-    if (ctx->targetMachine->addPassesToEmitFile(pass, dest, fileType)) {
-        llvm::errs() << "TargetMachine can't emit a file of this type";
-        return 1;
+//    if (compiler.flags.dump_ir) {
+//        std::string buf;
+//        raw_string_ostream os(buf);
+//        self->module->print(os, nullptr);
+//        os.flush();
+//        puts(buf.c_str());
+//    }
+
+    PassManagerBuilder *pm_builder = new(std::nothrow) PassManagerBuilder();
+    if (pm_builder == nullptr) {
+        fatal("memory allocation failure\n");
+        return true;
     }
 
-    pass.run(*ctx->m);
+    pm_builder->OptLevel = self->target->getOptLevel();
+    pm_builder->SizeLevel = compiler.flags.small ? 2 : 0;
+
+    pm_builder->DisableTailCalls = compiler.flags.debug;
+    pm_builder->DisableUnitAtATime = compiler.flags.debug;
+    pm_builder->DisableUnrollLoops = compiler.flags.debug;
+    pm_builder->SLPVectorize = !compiler.flags.debug;
+    pm_builder->LoopVectorize = !compiler.flags.debug;
+    pm_builder->RerollLoops = !compiler.flags.debug;
+    pm_builder->DisableGVNLoadPRE = compiler.flags.debug;
+    pm_builder->VerifyInput = compiler.flags.assertions;
+    pm_builder->VerifyOutput = compiler.flags.assertions;
+    pm_builder->MergeFunctions = !compiler.flags.debug;
+    pm_builder->PrepareForLTO = false;
+    pm_builder->PrepareForThinLTO = false;
+    pm_builder->PerformThinLTO = false;
+
+    Triple triple = Triple(self->module->getTargetTriple());
+    TargetLibraryInfoImpl tlii(triple);
+    pm_builder->LibraryInfo = &tlii;
+
+    if (compiler.flags.debug) {
+        pm_builder->Inliner = createAlwaysInlinerLegacyPass(false);
+    } else {
+        self->target->adjustPassManager(*pm_builder);
+        pm_builder->addExtension(PassManagerBuilder::EP_EarlyAsPossible, addDiscriminatorsPass);
+        pm_builder->Inliner = createFunctionInliningPass(
+            pm_builder->OptLevel, pm_builder->SizeLevel, false);
+    }
+
+    legacy::FunctionPassManager function_pm = legacy::FunctionPassManager(self->module);
+    pm_builder->populateFunctionPassManager(function_pm);
+
+    legacy::PassManager module_pm;
+    TargetMachine::CodeGenFileType file_type = TargetMachine::CGFT_ObjectFile; // TODO: Assembly
+
+    if (compiler.flags.disable_all_passes) {
+        if (self->target->addPassesToEmitFile(module_pm, dest, nullptr, file_type)) {
+            errs() << "TargetMachine cannot emit a file of this type";
+            return false;
+        }
+        module_pm.run(*self->module);
+    } else {
+        pm_builder->populateModulePassManager(module_pm);
+
+        module_pm.add(createBasicAAWrapperPass());
+        module_pm.add(createInstructionCombiningPass());
+        module_pm.add(createAggressiveDCEPass());
+        module_pm.add(createReassociatePass());
+        module_pm.add(createPromoteMemoryToRegisterPass());
+
+        if (self->target->addPassesToEmitFile(module_pm, dest, nullptr, file_type)) {
+            errs() << "TargetMachine cannot emit a file of this type";
+            return false;
+        }
+
+        // run per function optimization passes
+        function_pm.doInitialization();
+        for (Function &function : *self->module)
+            if (!function.isDeclaration())
+                function_pm.run(function);
+        function_pm.doFinalization();
+
+        module_pm.run(*self->module);
+    }
     dest.flush();
 
-    if (!FlagLink)
-        return 0;
-
-    // Linking and debug symbols
-#ifdef SYSTEM_OSX
-    bool isStatic = OutputType == OutputType_Static;
-
-    DynamicArray(u8) linkerFlags = NULL;
-    if (isStatic) {
-        ArrayPrintf(linkerFlags, "libtool -static -o %s %s", OutputName, objectName);
-    } else {
-        const char *outputType = OutputType == OutputType_Exec ? "execute" : "dynamic -dylib";
-        ArrayPrintf(linkerFlags, "ld %s -o %s -lSystem -%s -macosx_version_min 10.13", objectName, OutputName, outputType);
+    if (compiler.flags.dump_ir) {
+        std::string buf;
+        raw_string_ostream os(buf);
+        self->module->print(os, nullptr);
+        os.flush();
+        puts(buf.c_str());
     }
 
-    if (FlagVerbose) {
-        printf("%s\n", linkerFlags);
-    }
-    system((char *)linkerFlags);
-
-    if (FlagDebug && !isStatic) {
-        DynamicArray(u8) symutilFlags = NULL;
-        ArrayPrintf(symutilFlags, "dsymutil %s", OutputName);
-
-        if (FlagVerbose) {
-            printf("%s\n", symutilFlags);
+    if (compiler.flags.emit_ir) {
+        std::error_code error_code;
+        raw_fd_ostream dest(package->path, error_code);
+        if (error_code) return false;
+        self->module->print(dest, nullptr);
+        dest.close();
+        if (dest.has_error()) {
+            warn("Error printing to file: %s", dest.error().message().c_str());
+            return false;
         }
-        system((char *)symutilFlags);
     }
-#else
-    // TODO: linking on Windows and Linux
-    UNIMPLEMENTED();
+
+    if (true) { // TODO: compiler.flags.timing
+        TimerGroup::printAll(errs());
+    }
+
+    return false; // no error
+}
+
+bool llvm_build_module(Package *package) {
+    TRACE(EMITTING);
+    IRContext *context = llvm_create_context(package);
+    package->userdata = context;
+    for (int i = 0; i < arrlen(package->stmts); i++) {
+        emit_stmt(context, package->stmts[i]);
+    }
+    return llvm_validate(context);
+}
+
+#if DEBUG
+void print(Value *val) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    val->print(os);
+    os.flush();
+    puts(buf.c_str());
+}
+
+void print(Type *ty) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    ty->print(os);
+    os.flush();
+    puts(buf.c_str());
+}
+
+void print(BasicBlock *bb) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    bb->print(os);
+    os.flush();
+    puts(buf.c_str());
+}
+
+void print(Metadata *metadata) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    metadata->print(os);
+    os.flush();
+    puts(buf.c_str());
+}
+
+void print(Module *module) {
+    std::string buf;
+    raw_string_ostream os(buf);
+    module->print(os, nullptr);
+    os.flush();
+    puts(buf.c_str());
+}
 #endif
-
-    return 0;
-}
-
-void clearDebugPos(Context *ctx) {
-    if (!FlagDebug) return;
-    ctx->b.SetCurrentDebugLocation(llvm::DebugLoc());
-}
-
-void debugPos(Context *ctx, SourceRange pos) {
-    if (!FlagDebug) return;
-    ctx->b.SetCurrentDebugLocation(llvm::DebugLoc::get(pos.line, pos.column, ctx->d.scope));
-}
-
-void printIR(llvm::Module *value) {
-    value->print(llvm::outs(), nullptr, true, true);
-    puts("\n");
-}
-
-void printIR(llvm::Value *value) {
-    value->print(llvm::outs());
-    puts("\n");
-}
-
-void printIR(llvm::Type *value) {
-    value->print(llvm::outs());
-    puts("\n");
-}
-
-#pragma clang diagnostic pop

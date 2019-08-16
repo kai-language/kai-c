@@ -1,0 +1,1585 @@
+
+// Swapping argument orders:
+//     (\*)fn(i8|u8|i16|u16|i32|u32|i64|u64|f32|f64|rawptr|i32|uint) ([\w_]+)
+//     $3: $1$2
+
+
+/*
+Type conversion overview:
+    typedef unsigned i32 GLenum;     -> u32
+    typedef unsigned char GLboolean; -> u8
+    typedef unsigned i32 GLbitfield; -> u32
+    typedef signed char GLbyte;      -> i8
+    typedef short GLshort;           -> i16
+    typedef i32 GLint;               -> i32
+    typedef unsigned char GLubyte;   -> u8
+    typedef unsigned short GLushort; -> u16
+    typedef unsigned i32 GLuint;     -> u32
+    typedef i32 GLsizei;             -> i32
+    typedef float GLfloat;           -> f32
+    typedef double GLdouble;         -> f64
+    typedef char GLchar;             -> u8
+    typedef ptrdiff_t GLintptr;      -> i32
+    typedef ptrdiff_t GLsizeiptr;    -> i32
+    typedef i3264_t GLint64;         -> i64
+    typedef uint64_t GLuint64;       -> u64
+
+    void*                            -> rawptr
+*/
+
+sync_t :: struct #opaque
+debug_proc_t :: fn(source: u32, type: u32, id: u32, severity: u32, length: i32, message: *u8, userParam: rawptr) -> void
+
+
+// VERSION_1_0
+CullFace:               fn(mode: u32) -> void
+FrontFace:              fn(mode: u32) -> void
+Hint:                   fn(target: u32, mode: u32) -> void
+LineWidth:              fn(width: f32) -> void
+PointSize:              fn(size: f32) -> void
+PolygonMode:            fn(face: u32, mode: u32) -> void
+Scissor:                fn(x: i32, y: i32, width: i32, height: i32) -> void
+TexParameterf:          fn(target: u32, pname: u32, param: f32) -> void
+TexParameterfv:         fn(target: u32, pname: u32, params: *f32) -> void
+TexParameteri:          fn(target: u32, pname: u32, param: i32) -> void
+TexParameteriv:         fn(target: u32, pname: u32, params: *i32) -> void
+TexImage1D:             fn(target: u32, level: i32, internalformat: i32, width: i32, border: i32, format: u32, type: u32, pixels: rawptr) -> void
+TexImage2D:             fn(target: u32, level: i32, internalformat: i32, width: i32, height: i32, border: i32, format: u32, type: u32, pixels: rawptr) -> void
+DrawBuffer:             fn(buf: u32) -> void
+Clear:                  fn(mask: u32) -> void
+ClearColor:             fn(red: f32, green: f32, blue: f32, alpha: f32) -> void
+ClearStencil:           fn(s: i32) -> void
+ClearDepth:             fn(depth: f64) -> void
+StencilMask:            fn(mask: u32) -> void
+ColorMask:              fn(red: u8, green: u8, blue: u8, alpha: u8) -> void
+DepthMask:              fn(flag: u8) -> void
+Disable:                fn(cap: u32) -> void
+Enable:                 fn(cap: u32) -> void
+Finish:                 fn() -> void
+Flush:                  fn() -> void
+BlendFunc:              fn(sfactor: u32, dfactor: u32) -> void
+LogicOp:                fn(opcode: u32) -> void
+StencilFunc:            fn(func: u32, ref: i32, mask: u32) -> void
+StencilOp:              fn(fail: u32, zfail: u32, zpass: u32) -> void
+DepthFunc:              fn(func: u32) -> void
+PixelStoref:            fn(pname: u32, param: f32) -> void
+PixelStorei:            fn(pname: u32, param: i32) -> void
+ReadBuffer:             fn(src: u32) -> void
+ReadPixels:             fn(x: i32, y: i32, width: i32, height: i32, format: u32, type: u32, pixels: rawptr) -> void
+GetBooleanv:            fn(pname: u32, data: *u8) -> void
+GetDoublev:             fn(pname: u32, data: *f64) -> void
+GetError:               fn() -> u32
+GetFloatv:              fn(pname: u32, data: *f32) -> void
+GetIntegerv:            fn(pname: u32, data: *i32) -> void
+GetString:              fn(name: u32) -> *u8
+GetTexImage:            fn(target: u32,  level: i32, format: u32, type: u32, pixels: rawptr) -> void
+GetTexParameterfv:      fn(target: u32, pname: u32, params: *f32) -> void
+GetTexParameteriv:      fn(target: u32, pname: u32, params: *i32) -> void
+GetTexLevelParameterfv: fn(target: u32, level: i32, pname: u32, params: *f32) -> void
+GetTexLevelParameteriv: fn(target: u32, level: i32, pname: u32, params: *i32) -> void
+IsEnabled:              fn(cap: u32) -> u8
+DepthRange:             fn(near: f64, far: f64) -> void
+Viewport:               fn(x: i32, y: i32, width: i32, height: i32) -> void
+
+load1_0 :: fn(getProcAddress: fn(*u8) -> rawptr) -> void {
+    CullFace               = getProcAddress("glCullFace")
+    FrontFace              = getProcAddress("glFrontFace")
+    Hint                   = getProcAddress("glHint")
+    LineWidth              = getProcAddress("glLineWidth")
+    PointSize              = getProcAddress("glPointSize")
+    PolygonMode            = getProcAddress("glPolygonMode")
+    Scissor                = getProcAddress("glScissor")
+    TexParameterf          = getProcAddress("glTexParameterf")
+    TexParameterfv         = getProcAddress("glTexParameterfv")
+    TexParameteri          = getProcAddress("glTexParameteri")
+    TexParameteriv         = getProcAddress("glTexParameteriv")
+    TexImage1D             = getProcAddress("glTexImage1D")
+    TexImage2D             = getProcAddress("glTexImage2D")
+    DrawBuffer             = getProcAddress("glDrawBuffer")
+    Clear                  = getProcAddress("glClear")
+    ClearColor             = getProcAddress("glClearColor")
+    ClearStencil           = getProcAddress("glClearStencil")
+    ClearDepth             = getProcAddress("glClearDepth")
+    StencilMask            = getProcAddress("glStencilMask")
+    ColorMask              = getProcAddress("glColorMask")
+    DepthMask              = getProcAddress("glDepthMask")
+    Disable                = getProcAddress("glDisable")
+    Enable                 = getProcAddress("glEnable")
+    Finish                 = getProcAddress("glFinish")
+    Flush                  = getProcAddress("glFlush")
+    BlendFunc              = getProcAddress("glBlendFunc")
+    LogicOp                = getProcAddress("glLogicOp")
+    StencilFunc            = getProcAddress("glStencilFunc")
+    StencilOp              = getProcAddress("glStencilOp")
+    DepthFunc              = getProcAddress("glDepthFunc")
+    PixelStoref            = getProcAddress("glPixelStoref")
+    PixelStorei            = getProcAddress("glPixelStorei")
+    ReadBuffer             = getProcAddress("glReadBuffer")
+    ReadPixels             = getProcAddress("glReadPixels")
+    GetBooleanv            = getProcAddress("glGetBooleanv")
+    GetDoublev             = getProcAddress("glGetDoublev")
+    GetError               = getProcAddress("glGetError")
+    GetFloatv              = getProcAddress("glGetFloatv")
+    GetIntegerv            = getProcAddress("glGetIntegerv")
+    GetString              = getProcAddress("glGetString")
+    GetTexImage            = getProcAddress("glGetTexImage")
+    GetTexParameterfv      = getProcAddress("glGetTexParameterfv")
+    GetTexParameteriv      = getProcAddress("glGetTexParameteriv")
+    GetTexLevelParameterfv = getProcAddress("glGetTexLevelParameterfv")
+    GetTexLevelParameteriv = getProcAddress("glGetTexLevelParameteriv")
+    IsEnabled              = getProcAddress("glIsEnabled")
+    DepthRange             = getProcAddress("glDepthRange")
+    Viewport               = getProcAddress("glViewport")
+}
+
+// VERSION_1_1
+DrawArrays:        fn(mode: u32, first: i32, count: i32) -> void
+DrawElements:      fn(mode: u32, count: i32, type: u32, indices: rawptr) -> void
+PolygonOffset:     fn(factor: f32, units: f32) -> void
+CopyTexImage1D:    fn(target: u32, level: i32, internalformat: u32, x: i32, y: i32, width: i32, border: i32) -> void
+CopyTexImage2D:    fn(target: u32, level: i32, internalformat: u32, x: i32, y: i32, width: i32, height: i32, border: i32) -> void
+CopyTexSubImage1D: fn(target: u32, level: i32, xoffset: i32, x: i32, y: i32, width: i32) -> void
+CopyTexSubImage2D: fn(target: u32, level: i32, xoffset: i32, yoffset: i32, x: i32, y: i32, width: i32, height: i32) -> void
+TexSubImage1D:     fn(target: u32, level: i32, xoffset: i32, width: i32, format: u32, type: u32, pixels: rawptr) -> void
+TexSubImage2D:     fn(target: u32, level: i32, xoffset: i32, yoffset: i32, width: i32, height: i32, format: u32, type: u32, pixels: rawptr) -> void
+BindTexture:       fn(target: u32, texture: u32) -> void
+DeleteTextures:    fn(n: i32, textures: *u32) -> void
+GenTextures:       fn(n: i32, textures: *u32) -> void
+IsTexture:         fn(texture: u32) -> u8
+
+load1_1 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    DrawArrays        = getProcAddress("glDrawArrays")
+    DrawElements      = getProcAddress("glDrawElements")
+    PolygonOffset     = getProcAddress("glPolygonOffset")
+    CopyTexImage1D    = getProcAddress("glCopyTexImage1D")
+    CopyTexImage2D    = getProcAddress("glCopyTexImage2D")
+    CopyTexSubImage1D = getProcAddress("glCopyTexSubImage1D")
+    CopyTexSubImage2D = getProcAddress("glCopyTexSubImage2D")
+    TexSubImage1D     = getProcAddress("glTexSubImage1D")
+    TexSubImage2D     = getProcAddress("glTexSubImage2D")
+    BindTexture       = getProcAddress("glBindTexture")
+    DeleteTextures    = getProcAddress("glDeleteTextures")
+    GenTextures       = getProcAddress("glGenTextures")
+    IsTexture         = getProcAddress("glIsTexture")
+}
+
+
+// VERSION_1_2
+DrawRangeElements: fn(mode: u32, start: u32, end: u32, count: i32, type: u32, indices: rawptr) -> void
+TexImage3D:        fn(target: u32, level: i32, internalformat: i32, width: i32, height: i32, depth: i32, border: i32, format: u32, type: u32, pixels: rawptr) -> void
+TexSubImage3D:     fn(target: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32, format: u32, type: u32, pixels: rawptr) -> void
+CopyTexSubImage3D: fn(target: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, x: i32, y: i32, width: i32, height: i32) -> void
+
+load1_2 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    DrawRangeElements = getProcAddress("glDrawRangeElements")
+    TexImage3D        = getProcAddress("glTexImage3D")
+    TexSubImage3D     = getProcAddress("glTexSubImage3D")
+    CopyTexSubImage3D = getProcAddress("glCopyTexSubImage3D")
+}
+
+
+// VERSION_1_3
+ActiveTexture:           fn(texture: u32) -> void
+SampleCoverage:          fn(value: f32, invert: u8) -> void
+CompressedTexImage3D:    fn(target: u32, level: i32, internalformat: u32, width: i32, height: i32, depth: i32, border: i32, imageSize: i32, data: rawptr) -> void
+CompressedTexImage2D:    fn(target: u32, level: i32, internalformat: u32, width: i32, height: i32, border: i32, imageSize: i32, data: rawptr) -> void
+CompressedTexImage1D:    fn(target: u32, level: i32, internalformat: u32, width: i32, border: i32, imageSize: i32, data: rawptr) -> void
+CompressedTexSubImage3D: fn(target: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32, format: u32, imageSize: i32, data: rawptr) -> void
+CompressedTexSubImage2D: fn(target: u32, level: i32, xoffset: i32, yoffset: i32, width: i32, height: i32, format: u32, imageSize: i32, data: rawptr) -> void
+CompressedTexSubImage1D: fn(target: u32, level: i32, xoffset: i32, width: i32, format: u32, imageSize: i32, data: rawptr) -> void
+GetCompressedTexImage:   fn(target: u32, level: i32, img: rawptr) -> void
+
+load1_3 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    ActiveTexture           = getProcAddress("glActiveTexture")
+    SampleCoverage          = getProcAddress("glSampleCoverage")
+    CompressedTexImage3D    = getProcAddress("glCompressedTexImage3D")
+    CompressedTexImage2D    = getProcAddress("glCompressedTexImage2D")
+    CompressedTexImage1D    = getProcAddress("glCompressedTexImage1D")
+    CompressedTexSubImage3D = getProcAddress("glCompressedTexSubImage3D")
+    CompressedTexSubImage2D = getProcAddress("glCompressedTexSubImage2D")
+    CompressedTexSubImage1D = getProcAddress("glCompressedTexSubImage1D")
+    GetCompressedTexImage   = getProcAddress("glGetCompressedTexImage")
+}
+
+
+// VERSION_1_4
+BlendFuncSeparate: fn(sfactorRGB: u32, dfactorRGB: u32, sfactorAlpha: u32, dfactorAlpha: u32) -> void
+MultiDrawArrays:   fn(mode: u32, first: *i32, count: *i32, drawcount: i32) -> void
+MultiDrawElements: fn(mode: u32, count: *i32, type: u32, indices: *rawptr, drawcount: i32) -> void
+PointParameterf:   fn(pname: u32, param: f32) -> void
+PointParameterfv:  fn(pname: u32, params: *f32) -> void
+PointParameteri:   fn(pname: u32, param: i32) -> void
+PointParameteriv:  fn(pname: u32, params: *i32) -> void
+BlendColor:        fn(red: f32, green: f32, blue: f32, alpha: f32) -> void
+BlendEquation:     fn(mode: u32) -> void
+
+
+load1_4 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    BlendFuncSeparate = getProcAddress("glBlendFuncSeparate")
+    MultiDrawArrays   = getProcAddress("glMultiDrawArrays")
+    MultiDrawElements = getProcAddress("glMultiDrawElements")
+    PointParameterf   = getProcAddress("glPointParameterf")
+    PointParameterfv  = getProcAddress("glPointParameterfv")
+    PointParameteri   = getProcAddress("glPointParameteri")
+    PointParameteriv  = getProcAddress("glPointParameteriv")
+    BlendColor        = getProcAddress("glBlendColor")
+    BlendEquation     = getProcAddress("glBlendEquation")
+}
+
+
+// VERSION_1_5
+GenQueries:           fn(n: i32, ids: *u32) -> void
+DeleteQueries:        fn(n: i32, ids: *u32) -> void
+IsQuery:              fn(id: u32) -> u8
+BeginQuery:           fn(target: u32, id: u32) -> void
+EndQuery:             fn(target: u32) -> void
+GetQueryiv:           fn(target: u32, pname: u32, params: *i32) -> void
+GetQueryObjectiv:     fn(id: u32, pname: u32, params: *i32) -> void
+GetQueryObjectuiv:    fn(id: u32, pname: u32, params: *u32) -> void
+BindBuffer:           fn(target: u32, buffer: u32) -> void
+DeleteBuffers:        fn(n: i32, buffers: *u32) -> void
+GenBuffers:           fn(n: i32, buffers: *u32) -> void
+IsBuffer:             fn(buffer: u32) -> u8
+BufferData:           fn(target: u32, size: i32, data: rawptr, usage: u32) -> void
+BufferSubData:        fn(target: u32, offset: i32, size: i32, data: rawptr) -> void
+GetBufferSubData:     fn(target: u32, offset: i32, size: i32, data: rawptr) -> void
+MapBuffer:            fn(target: u32, access: u32) -> rawptr
+UnmapBuffer:          fn(target: u32) -> u8
+GetBufferParameteriv: fn(target: u32, pname: u32, params: *i32) -> void
+GetBufferPointerv:    fn(target: u32, pname: u32, params: *rawptr) -> void
+
+load1_5 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    GenQueries           = getProcAddress("glGenQueries")
+    DeleteQueries        = getProcAddress("glDeleteQueries")
+    IsQuery              = getProcAddress("glIsQuery")
+    BeginQuery           = getProcAddress("glBeginQuery")
+    EndQuery             = getProcAddress("glEndQuery")
+    GetQueryiv           = getProcAddress("glGetQueryiv")
+    GetQueryObjectiv     = getProcAddress("glGetQueryObjectiv")
+    GetQueryObjectuiv    = getProcAddress("glGetQueryObjectuiv")
+    BindBuffer           = getProcAddress("glBindBuffer")
+    DeleteBuffers        = getProcAddress("glDeleteBuffers")
+    GenBuffers           = getProcAddress("glGenBuffers")
+    IsBuffer             = getProcAddress("glIsBuffer")
+    BufferData           = getProcAddress("glBufferData")
+    BufferSubData        = getProcAddress("glBufferSubData")
+    GetBufferSubData     = getProcAddress("glGetBufferSubData")
+    MapBuffer            = getProcAddress("glMapBuffer")
+    UnmapBuffer          = getProcAddress("glUnmapBuffer")
+    GetBufferParameteriv = getProcAddress("glGetBufferParameteriv")
+    GetBufferPointerv    = getProcAddress("glGetBufferPointerv")
+}
+
+
+// VERSION_2_0
+BlendEquationSeparate:    fn(modeRGB: u32, modeAlpha: u32) -> void
+DrawBuffers:              fn(n: i32, bufs: *u32) -> void
+StencilOpSeparate:        fn(face: u32, sfail: u32, dpfail: u32, dppass: u32) -> void
+StencilFuncSeparate:      fn(face: u32, func: u32, ref: i32, mask: u32) -> void
+StencilMaskSeparate:      fn(face: u32, mask: u32) -> void
+AttachShader:             fn(program: u32, shader: u32) -> void
+BindAttribLocation:       fn(program: u32, index: u32, name: *u8) -> void
+CompileShader:            fn(shader: u32) -> void
+CreateProgram:            fn() -> u32
+CreateShader:             fn(type: u32) -> u32
+DeleteProgram:            fn(program: u32) -> void
+DeleteShader:             fn(shader: u32) -> void
+DetachShader:             fn(program: u32, shader: u32) -> void
+DisableVertexAttribArray: fn(index: u32) -> void
+EnableVertexAttribArray:  fn(index: u32) -> void
+GetActiveAttrib:          fn(program: u32, index: u32, bufSize: i32, length: *i32, size: *i32, type: *u32, name: *u8) -> void
+GetActiveUniform:         fn(program: u32, index: u32, bufSize: i32, length: *i32, size: *i32, type: *u32, name: *u8) -> void
+GetAttachedShaders:       fn(program: u32, maxCount: i32, count: *i32, shaders: *u32) -> void
+GetAttribLocation:        fn(program: u32, name: *u8) -> i32
+GetProgramiv:             fn(program: u32, pname: u32, params: *i32) -> void
+GetProgramInfoLog:        fn(program: u32, bufSize: i32, length: *i32, infoLog: *u8) -> void
+GetShaderiv:              fn(shader: u32, pname: u32, params: *i32) -> void
+GetShaderInfoLog:         fn(shader: u32, bufSize: i32, length: *i32, infoLog: *u8) -> void
+GetShaderSource:          fn(shader: u32, bufSize: i32, length: *i32, source: *u8) -> void
+GetUniformLocation:       fn(program: u32, name: *u8) -> i32
+GetUniformfv:             fn(program: u32, location: i32, params: *f32) -> void
+GetUniformiv:             fn(program: u32, location: i32, params: *i32) -> void
+GetVertexAttribdv:        fn(index: u32, pname: u32, params: *f64) -> void
+GetVertexAttribfv:        fn(index: u32, pname: u32, params: *f32) -> void
+GetVertexAttribiv:        fn(index: u32, pname: u32, params: *i32) -> void
+GetVertexAttribPointerv:  fn(index: u32, pname: u32, pointer: *rawptr) -> void
+IsProgram:                fn(program: u32) -> u8
+IsShader:                 fn(shader: u32) -> u8
+LinkProgram:              fn(program: u32) -> void
+ShaderSource:             fn(shader: u32, count: i32, string: **u8, length: *i32) -> void
+UseProgram:               fn(program: u32) -> void
+Uniform1f:                fn(location: i32, v0: f32) -> void
+Uniform2f:                fn(location: i32, v0: f32, v1: f32) -> void
+Uniform3f:                fn(location: i32, v0: f32, v1: f32, v2: f32) -> void
+Uniform4f:                fn(location: i32, v0: f32, v1: f32, v2: f32, v3: f32) -> void
+Uniform1i:                fn(location: i32, v0: i32) -> void
+Uniform2i:                fn(location: i32, v0: i32, v1: i32) -> void
+Uniform3i:                fn(location: i32, v0: i32, v1: i32, v2: i32) -> void
+Uniform4i:                fn(location: i32, v0: i32, v1: i32, v2: i32, v3: i32) -> void
+Uniform1fv:               fn(location: i32, count: i32, value: *f32) -> void
+Uniform2fv:               fn(location: i32, count: i32, value: *f32) -> void
+Uniform3fv:               fn(location: i32, count: i32, value: *f32) -> void
+Uniform4fv:               fn(location: i32, count: i32, value: *f32) -> void
+Uniform1iv:               fn(location: i32, count: i32, value: *i32) -> void
+Uniform2iv:               fn(location: i32, count: i32, value: *i32) -> void
+Uniform3iv:               fn(location: i32, count: i32, value: *i32) -> void
+Uniform4iv:               fn(location: i32, count: i32, value: *i32) -> void
+UniformMatrix2fv:         fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+UniformMatrix3fv:         fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+UniformMatrix4fv:         fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+ValidateProgram:          fn(program: u32) -> void
+VertexAttrib1d:           fn(index: u32, x: f64) -> void
+VertexAttrib1dv:          fn(index: u32, v: *f64) -> void
+VertexAttrib1f:           fn(index: u32, x: f32) -> void
+VertexAttrib1fv:          fn(index: u32, v: *f32) -> void
+VertexAttrib1s:           fn(index: u32, x: i16) -> void
+VertexAttrib1sv:          fn(index: u32, v: *i16) -> void
+VertexAttrib2d:           fn(index: u32, x: f64, y: f64) -> void
+VertexAttrib2dv:          fn(index: u32, v: *f64) -> void
+VertexAttrib2f:           fn(index: u32, x: f32, y: f32) -> void
+VertexAttrib2fv:          fn(index: u32, v: *f32) -> void
+VertexAttrib2s:           fn(index: u32, x: i16, y: i16) -> void
+VertexAttrib2sv:          fn(index: u32, v: *i16) -> void
+VertexAttrib3d:           fn(index: u32, x: f64, y: f64, z: f64) -> void
+VertexAttrib3dv:          fn(index: u32, v: *f64) -> void
+VertexAttrib3f:           fn(index: u32, x: f32, y: f32, z: f32) -> void
+VertexAttrib3fv:          fn(index: u32, v: *f32) -> void
+VertexAttrib3s:           fn(index: u32, x: i16, y: i16, z: i16) -> void
+VertexAttrib3sv:          fn(index: u32, v: *i16) -> void
+VertexAttrib4Nbv:         fn(index: u32, v: *i8) -> void
+VertexAttrib4Niv:         fn(index: u32, v: *i32) -> void
+VertexAttrib4Nsv:         fn(index: u32, v: *i16) -> void
+VertexAttrib4Nub:         fn(index: u32, x: u8, y: u8, z: u8, w: u8) -> void
+VertexAttrib4Nubv:        fn(index: u32, v: *u8) -> void
+VertexAttrib4Nuiv:        fn(index: u32, v: *u32) -> void
+VertexAttrib4Nusv:        fn(index: u32, v: *u16) -> void
+VertexAttrib4bv:          fn(index: u32, v: *i8) -> void
+VertexAttrib4d:           fn(index: u32, x: f64, y: f64, z: f64, w: f64) -> void
+VertexAttrib4dv:          fn(index: u32, v: *f64) -> void
+VertexAttrib4f:           fn(index: u32, x: f32, y: f32, z: f32, w: f32) -> void
+VertexAttrib4fv:          fn(index: u32, v: *f32) -> void
+VertexAttrib4iv:          fn(index: u32, v: *i32) -> void
+VertexAttrib4s:           fn(index: u32, x: i16, y: i16, z: i16, w: i16) -> void
+VertexAttrib4sv:          fn(index: u32, v: *i16) -> void
+VertexAttrib4ubv:         fn(index: u32, v: *u8) -> void
+VertexAttrib4uiv:         fn(index: u32, v: *u32) -> void
+VertexAttrib4usv:         fn(index: u32, v: *u16) -> void
+VertexAttribPointer:      fn(index: u32, size: i32, type: u32, normalized: u8, stride: i32, pointer: rawptr) -> void
+
+load2_0 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    BlendEquationSeparate    = getProcAddress("glBlendEquationSeparate")
+    DrawBuffers              = getProcAddress("glDrawBuffers")
+    StencilOpSeparate        = getProcAddress("glStencilOpSeparate")
+    StencilFuncSeparate      = getProcAddress("glStencilFuncSeparate")
+    StencilMaskSeparate      = getProcAddress("glStencilMaskSeparate")
+    AttachShader             = getProcAddress("glAttachShader")
+    BindAttribLocation       = getProcAddress("glBindAttribLocation")
+    CompileShader            = getProcAddress("glCompileShader")
+    CreateProgram            = getProcAddress("glCreateProgram")
+    CreateShader             = getProcAddress("glCreateShader")
+    DeleteProgram            = getProcAddress("glDeleteProgram")
+    DeleteShader             = getProcAddress("glDeleteShader")
+    DetachShader             = getProcAddress("glDetachShader")
+    DisableVertexAttribArray = getProcAddress("glDisableVertexAttribArray")
+    EnableVertexAttribArray  = getProcAddress("glEnableVertexAttribArray")
+    GetActiveAttrib          = getProcAddress("glGetActiveAttrib")
+    GetActiveUniform         = getProcAddress("glGetActiveUniform")
+    GetAttachedShaders       = getProcAddress("glGetAttachedShaders")
+    GetAttribLocation        = getProcAddress("glGetAttribLocation")
+    GetProgramiv             = getProcAddress("glGetProgramiv")
+    GetProgramInfoLog        = getProcAddress("glGetProgramInfoLog")
+    GetShaderiv              = getProcAddress("glGetShaderiv")
+    GetShaderInfoLog         = getProcAddress("glGetShaderInfoLog")
+    GetShaderSource          = getProcAddress("glGetShaderSource")
+    GetUniformLocation       = getProcAddress("glGetUniformLocation")
+    GetUniformfv             = getProcAddress("glGetUniformfv")
+    GetUniformiv             = getProcAddress("glGetUniformiv")
+    GetVertexAttribdv        = getProcAddress("glGetVertexAttribdv")
+    GetVertexAttribfv        = getProcAddress("glGetVertexAttribfv")
+    GetVertexAttribiv        = getProcAddress("glGetVertexAttribiv")
+    GetVertexAttribPointerv  = getProcAddress("glGetVertexAttribPointerv")
+    IsProgram                = getProcAddress("glIsProgram")
+    IsShader                 = getProcAddress("glIsShader")
+    LinkProgram              = getProcAddress("glLinkProgram")
+    ShaderSource             = getProcAddress("glShaderSource")
+    UseProgram               = getProcAddress("glUseProgram")
+    Uniform1f                = getProcAddress("glUniform1f")
+    Uniform2f                = getProcAddress("glUniform2f")
+    Uniform3f                = getProcAddress("glUniform3f")
+    Uniform4f                = getProcAddress("glUniform4f")
+    Uniform1i                = getProcAddress("glUniform1i")
+    Uniform2i                = getProcAddress("glUniform2i")
+    Uniform3i                = getProcAddress("glUniform3i")
+    Uniform4i                = getProcAddress("glUniform4i")
+    Uniform1fv               = getProcAddress("glUniform1fv")
+    Uniform2fv               = getProcAddress("glUniform2fv")
+    Uniform3fv               = getProcAddress("glUniform3fv")
+    Uniform4fv               = getProcAddress("glUniform4fv")
+    Uniform1iv               = getProcAddress("glUniform1iv")
+    Uniform2iv               = getProcAddress("glUniform2iv")
+    Uniform3iv               = getProcAddress("glUniform3iv")
+    Uniform4iv               = getProcAddress("glUniform4iv")
+    UniformMatrix2fv         = getProcAddress("glUniformMatrix2fv")
+    UniformMatrix3fv         = getProcAddress("glUniformMatrix3fv")
+    UniformMatrix4fv         = getProcAddress("glUniformMatrix4fv")
+    ValidateProgram          = getProcAddress("glValidateProgram")
+    VertexAttrib1d           = getProcAddress("glVertexAttrib1d")
+    VertexAttrib1dv          = getProcAddress("glVertexAttrib1dv")
+    VertexAttrib1f           = getProcAddress("glVertexAttrib1f")
+    VertexAttrib1fv          = getProcAddress("glVertexAttrib1fv")
+    VertexAttrib1s           = getProcAddress("glVertexAttrib1s")
+    VertexAttrib1sv          = getProcAddress("glVertexAttrib1sv")
+    VertexAttrib2d           = getProcAddress("glVertexAttrib2d")
+    VertexAttrib2dv          = getProcAddress("glVertexAttrib2dv")
+    VertexAttrib2f           = getProcAddress("glVertexAttrib2f")
+    VertexAttrib2fv          = getProcAddress("glVertexAttrib2fv")
+    VertexAttrib2s           = getProcAddress("glVertexAttrib2s")
+    VertexAttrib2sv          = getProcAddress("glVertexAttrib2sv")
+    VertexAttrib3d           = getProcAddress("glVertexAttrib3d")
+    VertexAttrib3dv          = getProcAddress("glVertexAttrib3dv")
+    VertexAttrib3f           = getProcAddress("glVertexAttrib3f")
+    VertexAttrib3fv          = getProcAddress("glVertexAttrib3fv")
+    VertexAttrib3s           = getProcAddress("glVertexAttrib3s")
+    VertexAttrib3sv          = getProcAddress("glVertexAttrib3sv")
+    VertexAttrib4Nbv         = getProcAddress("glVertexAttrib4Nbv")
+    VertexAttrib4Niv         = getProcAddress("glVertexAttrib4Niv")
+    VertexAttrib4Nsv         = getProcAddress("glVertexAttrib4Nsv")
+    VertexAttrib4Nub         = getProcAddress("glVertexAttrib4Nub")
+    VertexAttrib4Nubv        = getProcAddress("glVertexAttrib4Nubv")
+    VertexAttrib4Nuiv        = getProcAddress("glVertexAttrib4Nuiv")
+    VertexAttrib4Nusv        = getProcAddress("glVertexAttrib4Nusv")
+    VertexAttrib4bv          = getProcAddress("glVertexAttrib4bv")
+    VertexAttrib4d           = getProcAddress("glVertexAttrib4d")
+    VertexAttrib4dv          = getProcAddress("glVertexAttrib4dv")
+    VertexAttrib4f           = getProcAddress("glVertexAttrib4f")
+    VertexAttrib4fv          = getProcAddress("glVertexAttrib4fv")
+    VertexAttrib4iv          = getProcAddress("glVertexAttrib4iv")
+    VertexAttrib4s           = getProcAddress("glVertexAttrib4s")
+    VertexAttrib4sv          = getProcAddress("glVertexAttrib4sv")
+    VertexAttrib4ubv         = getProcAddress("glVertexAttrib4ubv")
+    VertexAttrib4uiv         = getProcAddress("glVertexAttrib4uiv")
+    VertexAttrib4usv         = getProcAddress("glVertexAttrib4usv")
+    VertexAttribPointer      = getProcAddress("glVertexAttribPointer")
+}
+
+
+// VERSION_2_1
+UniformMatrix2x3fv: fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+UniformMatrix3x2fv: fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+UniformMatrix2x4fv: fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+UniformMatrix4x2fv: fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+UniformMatrix3x4fv: fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+UniformMatrix4x3fv: fn(location: i32, count: i32, transpose: u8, value: *f32) -> void
+
+load2_1 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    UniformMatrix2x3fv = getProcAddress("glUniformMatrix2x3fv")
+    UniformMatrix3x2fv = getProcAddress("glUniformMatrix3x2fv")
+    UniformMatrix2x4fv = getProcAddress("glUniformMatrix2x4fv")
+    UniformMatrix4x2fv = getProcAddress("glUniformMatrix4x2fv")
+    UniformMatrix3x4fv = getProcAddress("glUniformMatrix3x4fv")
+    UniformMatrix4x3fv = getProcAddress("glUniformMatrix4x3fv")
+}
+
+
+// VERSION_3_0
+ColorMaski:                          fn(index: u32, r: u8, g: u8, b: u8, a: u8) -> void
+GetBooleani_v:                       fn(target: u32, index: u32, data: *u8) -> void
+GetIntegeri_v:                       fn(target: u32, index: u32, data: *i32) -> void
+Enablei:                             fn(target: u32, index: u32) -> void
+Disablei:                            fn(target: u32, index: u32) -> void
+IsEnabledi:                          fn(target: u32, index: u32) -> u8
+BeginTransformFeedback:              fn(primitiveMode: u32) -> void
+EndTransformFeedback:                fn() -> void
+BindBufferRange:                     fn(target: u32, index: u32, buffer: u32, offset: i32, size: i32) -> void
+BindBufferBase:                      fn(target: u32, index: u32, buffer: u32) -> void
+TransformFeedbackVaryings:           fn(program: u32, count: i32, varyings: *u8, bufferMode: u32) -> void
+GetTransformFeedbackVarying:         fn(program: u32, index: u32, bufSize: i32, length: *i32, size: *i32, type: *u32, name: *u8) -> void
+ClampColor:                          fn(target: u32, clamp: u32) -> void
+BeginConditionalRender:              fn(id: u32, mode: u32) -> void
+EndConditionalRender:                fn() -> void
+VertexAttribIPointer:                fn(index: u32, size: i32, type: u32, stride: i32, pointer: rawptr) -> void
+GetVertexAttribIiv:                  fn(index: u32, pname: u32, params: *i32) -> void
+GetVertexAttribIuiv:                 fn(index: u32, pname: u32, params: *u32) -> void
+VertexAttribI1i:                     fn(index: u32, x: i32) -> void
+VertexAttribI2i:                     fn(index: u32, x: i32, y: i32) -> void
+VertexAttribI3i:                     fn(index: u32, x: i32, y: i32, z: i32) -> void
+VertexAttribI4i:                     fn(index: u32, x: i32, y: i32, z: i32, w: i32) -> void
+VertexAttribI1ui:                    fn(index: u32, x: u32) -> void
+VertexAttribI2ui:                    fn(index: u32, x: u32, y: u32) -> void
+VertexAttribI3ui:                    fn(index: u32, x: u32, y: u32, z: u32) -> void
+VertexAttribI4ui:                    fn(index: u32, x: u32, y: u32, z: u32, w: u32) -> void
+VertexAttribI1iv:                    fn(index: u32, v: *i32) -> void
+VertexAttribI2iv:                    fn(index: u32, v: *i32) -> void
+VertexAttribI3iv:                    fn(index: u32, v: *i32) -> void
+VertexAttribI4iv:                    fn(index: u32, v: *i32) -> void
+VertexAttribI1uiv:                   fn(index: u32, v: *u32) -> void
+VertexAttribI2uiv:                   fn(index: u32, v: *u32) -> void
+VertexAttribI3uiv:                   fn(index: u32, v: *u32) -> void
+VertexAttribI4uiv:                   fn(index: u32, v: *u32) -> void
+VertexAttribI4bv:                    fn(index: u32, v: *i8) -> void
+VertexAttribI4sv:                    fn(index: u32, v: *i16) -> void
+VertexAttribI4ubv:                   fn(index: u32, v: *u8) -> void
+VertexAttribI4usv:                   fn(index: u32, v: *u16) -> void
+GetUniformuiv:                       fn(program: u32, location: i32, params: *u32) -> void
+BindFragDataLocation:                fn(program: u32, color: u32, name: *u8) -> void
+GetFragDataLocation:                 fn(program: u32, name: *u8) -> i32
+Uniform1ui:                          fn(location: i32, v0: u32) -> void
+Uniform2ui:                          fn(location: i32, v0: u32, v1: u32) -> void
+Uniform3ui:                          fn(location: i32, v0: u32, v1: u32, v2: u32) -> void
+Uniform4ui:                          fn(location: i32, v0: u32, v1: u32, v2: u32, v3: u32) -> void
+Uniform1uiv:                         fn(location: i32, count: i32, value: *u32) -> void
+Uniform2uiv:                         fn(location: i32, count: i32, value: *u32) -> void
+Uniform3uiv:                         fn(location: i32, count: i32, value: *u32) -> void
+Uniform4uiv:                         fn(location: i32, count: i32, value: *u32) -> void
+TexParameterIiv:                     fn(target: u32, pname: u32, params: *i32) -> void
+TexParameterIuiv:                    fn(target: u32, pname: u32, params: *u32) -> void
+GetTexParameterIiv:                  fn(target: u32, pname: u32, params: *i32) -> void
+GetTexParameterIuiv:                 fn(target: u32, pname: u32, params: *u32) -> void
+ClearBufferiv:                       fn(buffer: u32, drawbuffer: i32, value: *i32) -> void
+ClearBufferuiv:                      fn(buffer: u32, drawbuffer: i32, value: *u32) -> void
+ClearBufferfv:                       fn(buffer: u32, drawbuffer: i32, value: *f32) -> void
+ClearBufferfi:                       fn(buffer: u32, drawbuffer: i32, depth: f32, stencil: i32) -> rawptr
+GetStringi:                          fn(name: u32, index: u32) -> u8
+IsRenderbuffer:                      fn(renderbuffer: u32) -> u8
+BindRenderbuffer:                    fn(target: u32, renderbuffer: u32) -> void
+DeleteRenderbuffers:                 fn(n: i32, renderbuffers: *u32) -> void
+GenRenderbuffers:                    fn(n: i32, renderbuffers: *u32) -> void
+RenderbufferStorage:                 fn(target: u32, internalformat: u32, width: i32, height: i32) -> void
+GetRenderbufferParameteriv:          fn(target: u32, pname: u32, params: *i32) -> void
+IsFramebuffer:                       fn(framebuffer: u32) -> u8
+BindFramebuffer:                     fn(target: u32, framebuffer: u32) -> void
+DeleteFramebuffers:                  fn(n: i32, framebuffers: *u32) -> void
+GenFramebuffers:                     fn(n: i32, framebuffers: *u32) -> void
+CheckFramebufferStatus:              fn(target: u32) -> u32
+FramebufferTexture1D:                fn(target: u32, attachment: u32, textarget: u32, texture: u32, level: i32) -> void
+FramebufferTexture2D:                fn(target: u32, attachment: u32, textarget: u32, texture: u32, level: i32) -> void
+FramebufferTexture3D:                fn(target: u32, attachment: u32, textarget: u32, texture: u32, level: i32, zoffset: i32) -> void
+FramebufferRenderbuffer:             fn(target: u32, attachment: u32, renderbuffertarget: u32, renderbuffer: u32) -> void
+GetFramebufferAttachmentParameteriv: fn(target: u32, attachment: u32, pname: u32, params: *i32) -> void
+GenerateMipmap:                      fn(target: u32) -> void
+BlitFramebuffer:                     fn(srcX0: i32, srcY0: i32, srcX1: i32, srcY1: i32, dstX0: i32, dstY0: i32, dstX1: i32, dstY1: i32, mask: u32, filter: u32) -> void
+RenderbufferStorageMultisample:      fn(target: u32, samples: i32, internalformat: u32, width: i32, height: i32) -> void
+FramebufferTextureLayer:             fn(target: u32, attachment: u32, texture: u32, level: i32, layer: i32) -> void
+MapBufferRange:                      fn(target: u32, offset: i32, length: i32, access: u32) -> rawptr
+FlushMappedBufferRange:              fn(target: u32, offset: i32, length: i32) -> void
+BindVertexArray:                     fn(array: u32) -> void
+DeleteVertexArrays:                  fn(n: i32, arrays: *u32) -> void
+GenVertexArrays:                     fn(n: i32, arrays: *u32) -> void
+IsVertexArray:                       fn(array: u32) -> u8
+
+load3_0 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    ColorMaski                          = getProcAddress("glColorMaski")
+    GetBooleani_v                       = getProcAddress("glGetBooleani_v")
+    GetIntegeri_v                       = getProcAddress("glGetIntegeri_v")
+    Enablei                             = getProcAddress("glEnablei")
+    Disablei                            = getProcAddress("glDisablei")
+    IsEnabledi                          = getProcAddress("glIsEnabledi")
+    BeginTransformFeedback              = getProcAddress("glBeginTransformFeedback")
+    EndTransformFeedback                = getProcAddress("glEndTransformFeedback")
+    BindBufferRange                     = getProcAddress("glBindBufferRange")
+    BindBufferBase                      = getProcAddress("glBindBufferBase")
+    TransformFeedbackVaryings           = getProcAddress("glTransformFeedbackVaryings")
+    GetTransformFeedbackVarying         = getProcAddress("glGetTransformFeedbackVarying")
+    ClampColor                          = getProcAddress("glClampColor")
+    BeginConditionalRender              = getProcAddress("glBeginConditionalRender")
+    EndConditionalRender                = getProcAddress("glEndConditionalRender")
+    VertexAttribIPointer                = getProcAddress("glVertexAttribIPointer")
+    GetVertexAttribIiv                  = getProcAddress("glGetVertexAttribIiv")
+    GetVertexAttribIuiv                 = getProcAddress("glGetVertexAttribIuiv")
+    VertexAttribI1i                     = getProcAddress("glVertexAttribI1i")
+    VertexAttribI2i                     = getProcAddress("glVertexAttribI2i")
+    VertexAttribI3i                     = getProcAddress("glVertexAttribI3i")
+    VertexAttribI4i                     = getProcAddress("glVertexAttribI4i")
+    VertexAttribI1ui                    = getProcAddress("glVertexAttribI1ui")
+    VertexAttribI2ui                    = getProcAddress("glVertexAttribI2ui")
+    VertexAttribI3ui                    = getProcAddress("glVertexAttribI3ui")
+    VertexAttribI4ui                    = getProcAddress("glVertexAttribI4ui")
+    VertexAttribI1iv                    = getProcAddress("glVertexAttribI1iv")
+    VertexAttribI2iv                    = getProcAddress("glVertexAttribI2iv")
+    VertexAttribI3iv                    = getProcAddress("glVertexAttribI3iv")
+    VertexAttribI4iv                    = getProcAddress("glVertexAttribI4iv")
+    VertexAttribI1uiv                   = getProcAddress("glVertexAttribI1uiv")
+    VertexAttribI2uiv                   = getProcAddress("glVertexAttribI2uiv")
+    VertexAttribI3uiv                   = getProcAddress("glVertexAttribI3uiv")
+    VertexAttribI4uiv                   = getProcAddress("glVertexAttribI4uiv")
+    VertexAttribI4bv                    = getProcAddress("glVertexAttribI4bv")
+    VertexAttribI4sv                    = getProcAddress("glVertexAttribI4sv")
+    VertexAttribI4ubv                   = getProcAddress("glVertexAttribI4ubv")
+    VertexAttribI4usv                   = getProcAddress("glVertexAttribI4usv")
+    GetUniformuiv                       = getProcAddress("glGetUniformuiv")
+    BindFragDataLocation                = getProcAddress("glBindFragDataLocation")
+    GetFragDataLocation                 = getProcAddress("glGetFragDataLocation")
+    Uniform1ui                          = getProcAddress("glUniform1ui")
+    Uniform2ui                          = getProcAddress("glUniform2ui")
+    Uniform3ui                          = getProcAddress("glUniform3ui")
+    Uniform4ui                          = getProcAddress("glUniform4ui")
+    Uniform1uiv                         = getProcAddress("glUniform1uiv")
+    Uniform2uiv                         = getProcAddress("glUniform2uiv")
+    Uniform3uiv                         = getProcAddress("glUniform3uiv")
+    Uniform4uiv                         = getProcAddress("glUniform4uiv")
+    TexParameterIiv                     = getProcAddress("glTexParameterIiv")
+    TexParameterIuiv                    = getProcAddress("glTexParameterIuiv")
+    GetTexParameterIiv                  = getProcAddress("glGetTexParameterIiv")
+    GetTexParameterIuiv                 = getProcAddress("glGetTexParameterIuiv")
+    ClearBufferiv                       = getProcAddress("glClearBufferiv")
+    ClearBufferuiv                      = getProcAddress("glClearBufferuiv")
+    ClearBufferfv                       = getProcAddress("glClearBufferfv")
+    ClearBufferfi                       = getProcAddress("glClearBufferfi")
+    GetStringi                          = getProcAddress("glGetStringi")
+    IsRenderbuffer                      = getProcAddress("glIsRenderbuffer")
+    BindRenderbuffer                    = getProcAddress("glBindRenderbuffer")
+    DeleteRenderbuffers                 = getProcAddress("glDeleteRenderbuffers")
+    GenRenderbuffers                    = getProcAddress("glGenRenderbuffers")
+    RenderbufferStorage                 = getProcAddress("glRenderbufferStorage")
+    GetRenderbufferParameteriv          = getProcAddress("glGetRenderbufferParameteriv")
+    IsFramebuffer                       = getProcAddress("glIsFramebuffer")
+    BindFramebuffer                     = getProcAddress("glBindFramebuffer")
+    DeleteFramebuffers                  = getProcAddress("glDeleteFramebuffers")
+    GenFramebuffers                     = getProcAddress("glGenFramebuffers")
+    CheckFramebufferStatus              = getProcAddress("glCheckFramebufferStatus")
+    FramebufferTexture1D                = getProcAddress("glFramebufferTexture1D")
+    FramebufferTexture2D                = getProcAddress("glFramebufferTexture2D")
+    FramebufferTexture3D                = getProcAddress("glFramebufferTexture3D")
+    FramebufferRenderbuffer             = getProcAddress("glFramebufferRenderbuffer")
+    GetFramebufferAttachmentParameteriv = getProcAddress("glGetFramebufferAttachmentParameteriv")
+    GenerateMipmap                      = getProcAddress("glGenerateMipmap")
+    BlitFramebuffer                     = getProcAddress("glBlitFramebuffer")
+    RenderbufferStorageMultisample      = getProcAddress("glRenderbufferStorageMultisample")
+    FramebufferTextureLayer             = getProcAddress("glFramebufferTextureLayer")
+    MapBufferRange                      = getProcAddress("glMapBufferRange")
+    FlushMappedBufferRange              = getProcAddress("glFlushMappedBufferRange")
+    BindVertexArray                     = getProcAddress("glBindVertexArray")
+    DeleteVertexArrays                  = getProcAddress("glDeleteVertexArrays")
+    GenVertexArrays                     = getProcAddress("glGenVertexArrays")
+    IsVertexArray                       = getProcAddress("glIsVertexArray")
+}
+
+
+// VERSION_3_1
+DrawArraysInstanced:       fn(mode: u32, first: i32, count: i32, instancecount: i32) -> void
+DrawElementsInstanced:     fn(mode: u32, count: i32, type: u32, indices: rawptr, instancecount: i32) -> void
+TexBuffer:                 fn(target: u32, internalformat: u32, buffer: u32) -> void
+PrimitiveRestartIndex:     fn(index: u32) -> void
+CopyBufferSubData:         fn(readTarget: u32, writeTarget: u32, readOffset: i32, writeOffset: i32, size: i32) -> void
+GetUniformIndices:         fn(program: u32, uniformCount: i32, uniformNames: *u8, uniformIndices: *u32) -> void
+GetActiveUniformsiv:       fn(program: u32, uniformCount: i32, uniformIndices: *u32, pname: u32, params: *i32) -> void
+GetActiveUniformName:      fn(program: u32, uniformIndex: u32, bufSize: i32, length: *i32, uniformName: *u8) -> void
+GetUniformBlockIndex:      fn(program: u32, uniformBlockName: *u8) -> u32
+GetActiveUniformBlockiv:   fn(program: u32, uniformBlockIndex: u32, pname: u32, params: *i32) -> void
+GetActiveUniformBlockName: fn(program: u32, uniformBlockIndex: u32, bufSize: i32, length: *i32, uniformBlockName: *u8) -> void
+UniformBlockBinding:       fn(program: u32, uniformBlockIndex: u32, uniformBlockBinding: u32) -> void
+
+load3_1 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    DrawArraysInstanced       = getProcAddress("glDrawArraysInstanced")
+    DrawElementsInstanced     = getProcAddress("glDrawElementsInstanced")
+    TexBuffer                 = getProcAddress("glTexBuffer")
+    PrimitiveRestartIndex     = getProcAddress("glPrimitiveRestartIndex")
+    CopyBufferSubData         = getProcAddress("glCopyBufferSubData")
+    GetUniformIndices         = getProcAddress("glGetUniformIndices")
+    GetActiveUniformsiv       = getProcAddress("glGetActiveUniformsiv")
+    GetActiveUniformName      = getProcAddress("glGetActiveUniformName")
+    GetUniformBlockIndex      = getProcAddress("glGetUniformBlockIndex")
+    GetActiveUniformBlockiv   = getProcAddress("glGetActiveUniformBlockiv")
+    GetActiveUniformBlockName = getProcAddress("glGetActiveUniformBlockName")
+    UniformBlockBinding       = getProcAddress("glUniformBlockBinding")
+}
+
+
+// VERSION_3_2
+DrawElementsBaseVertex:          fn(mode: u32, count: i32, type: u32, indices: rawptr, basevertex: i32) -> void
+DrawRangeElementsBaseVertex:     fn(mode: u32, start: u32, end: u32, count: i32, type: u32, indices: rawptr, basevertex: i32) -> void
+DrawElementsInstancedBaseVertex: fn(mode: u32, count: i32, type: u32, indices: rawptr, instancecount: i32, basevertex: i32) -> void
+MultiDrawElementsBaseVertex:     fn(mode: u32, count: *i32, type: u32, indices: *rawptr, drawcount: i32, basevertex: *i32) -> void
+ProvokingVertex:                 fn(mode: u32) -> void
+FenceSync:                       fn(condition: u32, flags: u32) -> sync_t
+IsSync:                          fn(sync: sync_t) -> u8
+DeleteSync:                      fn(sync: sync_t) -> void
+ClientWaitSync:                  fn(sync: sync_t, flags: u32, timeout: u64) -> u32
+WaitSync:                        fn(sync: sync_t, flags: u32, timeout: u64) -> void
+GetInteger64v:                   fn(pname: u32, data: *i64) -> void
+GetSynciv:                       fn(sync: sync_t, pname: u32, bufSize: i32, length: *i32, values: *i32) -> void
+GetInteger64i_v:                 fn(target: u32, index: u32, data: *i64) -> void
+GetBufferParameteri64v:          fn(target: u32, pname: u32, params: *i64) -> void
+FramebufferTexture:              fn(target: u32, attachment: u32, texture: u32, level: i32) -> void
+TexImage2DMultisample:           fn(target: u32, samples: i32, internalformat: u32, width: i32, height: i32, fixedsamplelocations: u8) -> void
+TexImage3DMultisample:           fn(target: u32, samples: i32, internalformat: u32, width: i32, height: i32, depth: i32, fixedsamplelocations: u8) -> void
+GetMultisamplefv:                fn(pname: u32, index: u32, val: *f32) -> void
+SampleMaski:                     fn(maskNumber: u32, mask: u32) -> void
+
+load3_2 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    DrawElementsBaseVertex          = getProcAddress("glDrawElementsBaseVertex")
+    DrawRangeElementsBaseVertex     = getProcAddress("glDrawRangeElementsBaseVertex")
+    DrawElementsInstancedBaseVertex = getProcAddress("glDrawElementsInstancedBaseVertex")
+    MultiDrawElementsBaseVertex     = getProcAddress("glMultiDrawElementsBaseVertex")
+    ProvokingVertex                 = getProcAddress("glProvokingVertex")
+    FenceSync                       = getProcAddress("glFenceSync")
+    IsSync                          = getProcAddress("glIsSync")
+    DeleteSync                      = getProcAddress("glDeleteSync")
+    ClientWaitSync                  = getProcAddress("glClientWaitSync")
+    WaitSync                        = getProcAddress("glWaitSync")
+    GetInteger64v                   = getProcAddress("glGetInteger64v")
+    GetSynciv                       = getProcAddress("glGetSynciv")
+    GetInteger64i_v                 = getProcAddress("glGetInteger64i_v")
+    GetBufferParameteri64v          = getProcAddress("glGetBufferParameteri64v")
+    FramebufferTexture              = getProcAddress("glFramebufferTexture")
+    TexImage2DMultisample           = getProcAddress("glTexImage2DMultisample")
+    TexImage3DMultisample           = getProcAddress("glTexImage3DMultisample")
+    GetMultisamplefv                = getProcAddress("glGetMultisamplefv")
+    SampleMaski                     = getProcAddress("glSampleMaski")
+}
+
+
+// VERSION_3_3
+BindFragDataLocationIndexed: fn(program: u32, colorNumber: u32, index: u32, name: *u8) -> void
+GetFragDataIndex:            fn(program: u32, name: *u8) -> i32
+GenSamplers:                 fn(count: i32, samplers: *u32) -> void
+DeleteSamplers:              fn(count: i32, samplers: *u32) -> void
+IsSampler:                   fn(sampler: u32) -> u8
+BindSampler:                 fn(unit: u32, sampler: u32) -> void
+SamplerParameteri:           fn(sampler: u32, pname: u32, param: i32) -> void
+SamplerParameteriv:          fn(sampler: u32, pname: u32, param: *i32) -> void
+SamplerParameterf:           fn(sampler: u32, pname: u32, param: f32) -> void
+SamplerParameterfv:          fn(sampler: u32, pname: u32, param: *f32) -> void
+SamplerParameterIiv:         fn(sampler: u32, pname: u32, param: *i32) -> void
+SamplerParameterIuiv:        fn(sampler: u32, pname: u32, param: *u32) -> void
+GetSamplerParameteriv:       fn(sampler: u32, pname: u32, params: *i32) -> void
+GetSamplerParameterIiv:      fn(sampler: u32, pname: u32, params: *i32) -> void
+GetSamplerParameterfv:       fn(sampler: u32, pname: u32, params: *f32) -> void
+GetSamplerParameterIuiv:     fn(sampler: u32, pname: u32, params: *u32) -> void
+QueryCounter:                fn(id: u32, target: u32) -> void
+GetQueryObjecti64v:          fn(id: u32, pname: u32, params: *i64) -> void
+GetQueryObjectui64v:         fn(id: u32, pname: u32, params: *u64) -> void
+VertexAttribDivisor:         fn(index: u32, divisor: u32) -> void
+VertexAttribP1ui:            fn(index: u32, type: u32, normalized: u8, value: u32) -> void
+VertexAttribP1uiv:           fn(index: u32, type: u32, normalized: u8, value: *u32) -> void
+VertexAttribP2ui:            fn(index: u32, type: u32, normalized: u8, value: u32) -> void
+VertexAttribP2uiv:           fn(index: u32, type: u32, normalized: u8, value: *u32) -> void
+VertexAttribP3ui:            fn(index: u32, type: u32, normalized: u8, value: u32) -> void
+VertexAttribP3uiv:           fn(index: u32, type: u32, normalized: u8, value: *u32) -> void
+VertexAttribP4ui:            fn(index: u32, type: u32, normalized: u8, value: u32) -> void
+VertexAttribP4uiv:           fn(index: u32, type: u32, normalized: u8, value: *u32) -> void
+VertexP2ui:                  fn(type: u32, value: u32) -> void
+VertexP2uiv:                 fn(type: u32, value: *u32) -> void
+VertexP3ui:                  fn(type: u32, value: u32) -> void
+VertexP3uiv:                 fn(type: u32, value: *u32) -> void
+VertexP4ui:                  fn(type: u32, value: u32) -> void
+VertexP4uiv:                 fn(type: u32, value: *u32) -> void
+TexCoordP1ui:                fn(type: u32, coords: u32) -> void
+TexCoordP1uiv:               fn(type: u32, coords: *u32) -> void
+TexCoordP2ui:                fn(type: u32, coords: u32) -> void
+TexCoordP2uiv:               fn(type: u32, coords: *u32) -> void
+TexCoordP3ui:                fn(type: u32, coords: u32) -> void
+TexCoordP3uiv:               fn(type: u32, coords: *u32) -> void
+TexCoordP4ui:                fn(type: u32, coords: u32) -> void
+TexCoordP4uiv:               fn(type: u32, coords: *u32) -> void
+MultiTexCoordP1ui:           fn(texture: u32, type: u32, coords: u32) -> void
+MultiTexCoordP1uiv:          fn(texture: u32, type: u32, coords: *u32) -> void
+MultiTexCoordP2ui:           fn(texture: u32, type: u32, coords: u32) -> void
+MultiTexCoordP2uiv:          fn(texture: u32, type: u32, coords: *u32) -> void
+MultiTexCoordP3ui:           fn(texture: u32, type: u32, coords: u32) -> void
+MultiTexCoordP3uiv:          fn(texture: u32, type: u32, coords: *u32) -> void
+MultiTexCoordP4ui:           fn(texture: u32, type: u32, coords: u32) -> void
+MultiTexCoordP4uiv:          fn(texture: u32, type: u32, coords: *u32) -> void
+NormalP3ui:                  fn(type: u32, coords: u32) -> void
+NormalP3uiv:                 fn(type: u32, coords: *u32) -> void
+ColorP3ui:                   fn(type: u32, color: u32) -> void
+ColorP3uiv:                  fn(type: u32, color: *u32) -> void
+ColorP4ui:                   fn(type: u32, color: u32) -> void
+ColorP4uiv:                  fn(type: u32, color: *u32) -> void
+SecondaryColorP3ui:          fn(type: u32, color: u32) -> void
+SecondaryColorP3uiv:         fn(type: u32, color: *u32) -> void
+
+load3_3 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    BindFragDataLocationIndexed = getProcAddress("glBindFragDataLocationIndexed")
+    GetFragDataIndex            = getProcAddress("glGetFragDataIndex")
+    GenSamplers                 = getProcAddress("glGenSamplers")
+    DeleteSamplers              = getProcAddress("glDeleteSamplers")
+    IsSampler                   = getProcAddress("glIsSampler")
+    BindSampler                 = getProcAddress("glBindSampler")
+    SamplerParameteri           = getProcAddress("glSamplerParameteri")
+    SamplerParameteriv          = getProcAddress("glSamplerParameteriv")
+    SamplerParameterf           = getProcAddress("glSamplerParameterf")
+    SamplerParameterfv          = getProcAddress("glSamplerParameterfv")
+    SamplerParameterIiv         = getProcAddress("glSamplerParameterIiv")
+    SamplerParameterIuiv        = getProcAddress("glSamplerParameterIuiv")
+    GetSamplerParameteriv       = getProcAddress("glGetSamplerParameteriv")
+    GetSamplerParameterIiv      = getProcAddress("glGetSamplerParameterIiv")
+    GetSamplerParameterfv       = getProcAddress("glGetSamplerParameterfv")
+    GetSamplerParameterIuiv     = getProcAddress("glGetSamplerParameterIuiv")
+    QueryCounter                = getProcAddress("glQueryCounter")
+    GetQueryObjecti64v          = getProcAddress("glGetQueryObjecti64v")
+    GetQueryObjectui64v         = getProcAddress("glGetQueryObjectui64v")
+    VertexAttribDivisor         = getProcAddress("glVertexAttribDivisor")
+    VertexAttribP1ui            = getProcAddress("glVertexAttribP1ui")
+    VertexAttribP1uiv           = getProcAddress("glVertexAttribP1uiv")
+    VertexAttribP2ui            = getProcAddress("glVertexAttribP2ui")
+    VertexAttribP2uiv           = getProcAddress("glVertexAttribP2uiv")
+    VertexAttribP3ui            = getProcAddress("glVertexAttribP3ui")
+    VertexAttribP3uiv           = getProcAddress("glVertexAttribP3uiv")
+    VertexAttribP4ui            = getProcAddress("glVertexAttribP4ui")
+    VertexAttribP4uiv           = getProcAddress("glVertexAttribP4uiv")
+    VertexP2ui                  = getProcAddress("glVertexP2ui")
+    VertexP2uiv                 = getProcAddress("glVertexP2uiv")
+    VertexP3ui                  = getProcAddress("glVertexP3ui")
+    VertexP3uiv                 = getProcAddress("glVertexP3uiv")
+    VertexP4ui                  = getProcAddress("glVertexP4ui")
+    VertexP4uiv                 = getProcAddress("glVertexP4uiv")
+    TexCoordP1ui                = getProcAddress("glTexCoordP1ui")
+    TexCoordP1uiv               = getProcAddress("glTexCoordP1uiv")
+    TexCoordP2ui                = getProcAddress("glTexCoordP2ui")
+    TexCoordP2uiv               = getProcAddress("glTexCoordP2uiv")
+    TexCoordP3ui                = getProcAddress("glTexCoordP3ui")
+    TexCoordP3uiv               = getProcAddress("glTexCoordP3uiv")
+    TexCoordP4ui                = getProcAddress("glTexCoordP4ui")
+    TexCoordP4uiv               = getProcAddress("glTexCoordP4uiv")
+    MultiTexCoordP1ui           = getProcAddress("glMultiTexCoordP1ui")
+    MultiTexCoordP1uiv          = getProcAddress("glMultiTexCoordP1uiv")
+    MultiTexCoordP2ui           = getProcAddress("glMultiTexCoordP2ui")
+    MultiTexCoordP2uiv          = getProcAddress("glMultiTexCoordP2uiv")
+    MultiTexCoordP3ui           = getProcAddress("glMultiTexCoordP3ui")
+    MultiTexCoordP3uiv          = getProcAddress("glMultiTexCoordP3uiv")
+    MultiTexCoordP4ui           = getProcAddress("glMultiTexCoordP4ui")
+    MultiTexCoordP4uiv          = getProcAddress("glMultiTexCoordP4uiv")
+    NormalP3ui                  = getProcAddress("glNormalP3ui")
+    NormalP3uiv                 = getProcAddress("glNormalP3uiv")
+    ColorP3ui                   = getProcAddress("glColorP3ui")
+    ColorP3uiv                  = getProcAddress("glColorP3uiv")
+    ColorP4ui                   = getProcAddress("glColorP4ui")
+    ColorP4uiv                  = getProcAddress("glColorP4uiv")
+    SecondaryColorP3ui          = getProcAddress("glSecondaryColorP3ui")
+    SecondaryColorP3uiv         = getProcAddress("glSecondaryColorP3uiv")
+}
+
+
+// VERSION_4_0
+MinSampleShading:               fn(value: f32) -> void
+BlendEquationi:                 fn(buf: u32, mode: u32) -> void
+BlendEquationSeparatei:         fn(buf: u32, modeRGB: u32, modeAlpha: u32) -> void
+BlendFunci:                     fn(buf: u32, src: u32, dst: u32) -> void
+BlendFuncSeparatei:             fn(buf: u32, srcRGB: u32, dstRGB: u32, srcAlpha: u32, dstAlpha: u32) -> void
+DrawArraysIndirect:             fn(mode: u32, indirect: rawptr) -> void
+DrawElementsIndirect:           fn(mode: u32, type: u32, indirect: rawptr) -> void
+Uniform1d:                      fn(location: i32, x: f64) -> void
+Uniform2d:                      fn(location: i32, x: f64, y: f64) -> void
+Uniform3d:                      fn(location: i32, x: f64, y: f64, z: f64) -> void
+Uniform4d:                      fn(location: i32, x: f64, y: f64, z: f64, w: f64) -> void
+Uniform1dv:                     fn(location: i32, count: i32, value: *f64) -> void
+Uniform2dv:                     fn(location: i32, count: i32, value: *f64) -> void
+Uniform3dv:                     fn(location: i32, count: i32, value: *f64) -> void
+Uniform4dv:                     fn(location: i32, count: i32, value: *f64) -> void
+UniformMatrix2dv:               fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix3dv:               fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix4dv:               fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix2x3dv:             fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix2x4dv:             fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix3x2dv:             fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix3x4dv:             fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix4x2dv:             fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+UniformMatrix4x3dv:             fn(location: i32, count: i32, transpose: u8, value: *f64) -> void
+GetUniformdv:                   fn(program: u32, location: i32, params: *f64) -> void
+GetSubroutineUniformLocation:   fn(program: u32, shadertype: u32, name: *u8) -> i32
+GetSubroutineIndex:             fn(program: u32, shadertype: u32, name: *u8) -> u32
+GetActiveSubroutineUniformiv:   fn(program: u32, shadertype: u32, index: u32, pname: u32, values: *i32) -> void
+GetActiveSubroutineUniformName: fn(program: u32, shadertype: u32, index: u32, bufsize: i32, length: *i32, name: *u8) -> void
+GetActiveSubroutineName:        fn(program: u32, shadertype: u32, index: u32, bufsize: i32, length: *i32, name: *u8) -> void
+UniformSubroutinesuiv:          fn(shadertype: u32, count: i32, indices: *u32) -> void
+GetUniformSubroutineuiv:        fn(shadertype: u32, location: i32, params: *u32) -> void
+GetProgramStageiv:              fn(program: u32, shadertype: u32, pname: u32, values: *i32) -> void
+PatchParameteri:                fn(pname: u32, value: i32) -> void
+PatchParameterfv:               fn(pname: u32, values: *f32) -> void
+BindTransformFeedback:          fn(target: u32, id: u32) -> void
+DeleteTransformFeedbacks:       fn(n: i32, ids: *u32) -> void
+GenTransformFeedbacks:          fn(n: i32, ids: *u32) -> void
+IsTransformFeedback:            fn(id: u32) -> u8
+PauseTransformFeedback:         fn() -> void
+ResumeTransformFeedback:        fn() -> void
+DrawTransformFeedback:          fn(mode: u32, id: u32) -> void
+DrawTransformFeedbackStream:    fn(mode: u32, id: u32, stream: u32) -> void
+BeginQueryIndexed:              fn(target: u32, index: u32, id: u32) -> void
+EndQueryIndexed:                fn(target: u32, index: u32) -> void
+GetQueryIndexediv:              fn(target: u32, index: u32, pname: u32, params: *i32) -> void
+
+load4_0 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    MinSampleShading               = getProcAddress("glMinSampleShading")
+    BlendEquationi                 = getProcAddress("glBlendEquationi")
+    BlendEquationSeparatei         = getProcAddress("glBlendEquationSeparatei")
+    BlendFunci                     = getProcAddress("glBlendFunci")
+    BlendFuncSeparatei             = getProcAddress("glBlendFuncSeparatei")
+    DrawArraysIndirect             = getProcAddress("glDrawArraysIndirect")
+    DrawElementsIndirect           = getProcAddress("glDrawElementsIndirect")
+    Uniform1d                      = getProcAddress("glUniform1d")
+    Uniform2d                      = getProcAddress("glUniform2d")
+    Uniform3d                      = getProcAddress("glUniform3d")
+    Uniform4d                      = getProcAddress("glUniform4d")
+    Uniform1dv                     = getProcAddress("glUniform1dv")
+    Uniform2dv                     = getProcAddress("glUniform2dv")
+    Uniform3dv                     = getProcAddress("glUniform3dv")
+    Uniform4dv                     = getProcAddress("glUniform4dv")
+    UniformMatrix2dv               = getProcAddress("glUniformMatrix2dv")
+    UniformMatrix3dv               = getProcAddress("glUniformMatrix3dv")
+    UniformMatrix4dv               = getProcAddress("glUniformMatrix4dv")
+    UniformMatrix2x3dv             = getProcAddress("glUniformMatrix2x3dv")
+    UniformMatrix2x4dv             = getProcAddress("glUniformMatrix2x4dv")
+    UniformMatrix3x2dv             = getProcAddress("glUniformMatrix3x2dv")
+    UniformMatrix3x4dv             = getProcAddress("glUniformMatrix3x4dv")
+    UniformMatrix4x2dv             = getProcAddress("glUniformMatrix4x2dv")
+    UniformMatrix4x3dv             = getProcAddress("glUniformMatrix4x3dv")
+    GetUniformdv                   = getProcAddress("glGetUniformdv")
+    GetSubroutineUniformLocation   = getProcAddress("glGetSubroutineUniformLocation")
+    GetSubroutineIndex             = getProcAddress("glGetSubroutineIndex")
+    GetActiveSubroutineUniformiv   = getProcAddress("glGetActiveSubroutineUniformiv")
+    GetActiveSubroutineUniformName = getProcAddress("glGetActiveSubroutineUniformName")
+    GetActiveSubroutineName        = getProcAddress("glGetActiveSubroutineName")
+    UniformSubroutinesuiv          = getProcAddress("glUniformSubroutinesuiv")
+    GetUniformSubroutineuiv        = getProcAddress("glGetUniformSubroutineuiv")
+    GetProgramStageiv              = getProcAddress("glGetProgramStageiv")
+    PatchParameteri                = getProcAddress("glPatchParameteri")
+    PatchParameterfv               = getProcAddress("glPatchParameterfv")
+    BindTransformFeedback          = getProcAddress("glBindTransformFeedback")
+    DeleteTransformFeedbacks       = getProcAddress("glDeleteTransformFeedbacks")
+    GenTransformFeedbacks          = getProcAddress("glGenTransformFeedbacks")
+    IsTransformFeedback            = getProcAddress("glIsTransformFeedback")
+    PauseTransformFeedback         = getProcAddress("glPauseTransformFeedback")
+    ResumeTransformFeedback        = getProcAddress("glResumeTransformFeedback")
+    DrawTransformFeedback          = getProcAddress("glDrawTransformFeedback")
+    DrawTransformFeedbackStream    = getProcAddress("glDrawTransformFeedbackStream")
+    BeginQueryIndexed              = getProcAddress("glBeginQueryIndexed")
+    EndQueryIndexed                = getProcAddress("glEndQueryIndexed")
+    GetQueryIndexediv              = getProcAddress("glGetQueryIndexediv")
+}
+
+
+// VERSION_4_1
+ReleaseShaderCompiler:     fn() -> void
+ShaderBinary:              fn(count: i32, shaders: *u32, binaryformat: u32, binary: rawptr, length: i32) -> void
+GetShaderPrecisionFormat:  fn(shadertype: u32, precisiontype: u32, range: *i32, precision: *i32) -> void
+DepthRangef:               fn(n: f32, f: f32) -> void
+ClearDepthf:               fn(d: f32) -> void
+GetProgramBinary:          fn(program: u32, bufSize: i32, length: *i32, binaryFormat: *u32, binary: rawptr) -> void
+ProgramBinary:             fn(program: u32, binaryFormat: u32, binary: rawptr, length: i32) -> void
+ProgramParameteri:         fn(program: u32, pname: u32, value: i32) -> void
+UseProgramStages:          fn(pipeline: u32, stages: u32, program: u32) -> void
+ActiveShaderProgram:       fn(pipeline: u32, program: u32) -> void
+CreateShaderProgramv:      fn(type: u32, count: i32, strings: *u8) -> u32
+BindProgramPipeline:       fn(pipeline: u32) -> void
+DeleteProgramPipelines:    fn(n: i32, pipelines: *u32) -> void
+GenProgramPipelines:       fn(n: i32, pipelines: *u32) -> void
+IsProgramPipeline:         fn(pipeline: u32) -> u8
+GetProgramPipelineiv:      fn(pipeline: u32, pname: u32, params: *i32) -> void
+ProgramUniform1i:          fn(program: u32, location: i32, v0: i32) -> void
+ProgramUniform1iv:         fn(program: u32, location: i32, count: i32, value: *i32) -> void
+ProgramUniform1f:          fn(program: u32, location: i32, v0: f32) -> void
+ProgramUniform1fv:         fn(program: u32, location: i32, count: i32, value: *f32) -> void
+ProgramUniform1d:          fn(program: u32, location: i32, v0: f64) -> void
+ProgramUniform1dv:         fn(program: u32, location: i32, count: i32, value: *f64) -> void
+ProgramUniform1ui:         fn(program: u32, location: i32, v0: u32) -> void
+ProgramUniform1uiv:        fn(program: u32, location: i32, count: i32, value: *u32) -> void
+ProgramUniform2i:          fn(program: u32, location: i32, v0: i32, v1: i32) -> void
+ProgramUniform2iv:         fn(program: u32, location: i32, count: i32, value: *i32) -> void
+ProgramUniform2f:          fn(program: u32, location: i32, v0: f32, v1: f32) -> void
+ProgramUniform2fv:         fn(program: u32, location: i32, count: i32, value: *f32) -> void
+ProgramUniform2d:          fn(program: u32, location: i32, v0: f64, v1: f64) -> void
+ProgramUniform2dv:         fn(program: u32, location: i32, count: i32, value: *f64) -> void
+ProgramUniform2ui:         fn(program: u32, location: i32, v0: u32, v1: u32) -> void
+ProgramUniform2uiv:        fn(program: u32, location: i32, count: i32, value: *u32) -> void
+ProgramUniform3i:          fn(program: u32, location: i32, v0: i32, v1: i32, v2: i32) -> void
+ProgramUniform3iv:         fn(program: u32, location: i32, count: i32, value: *i32) -> void
+ProgramUniform3f:          fn(program: u32, location: i32, v0: f32, v1: f32, v2: f32) -> void
+ProgramUniform3fv:         fn(program: u32, location: i32, count: i32, value: *f32) -> void
+ProgramUniform3d:          fn(program: u32, location: i32, v0: f64, v1: f64, v2: f64) -> void
+ProgramUniform3dv:         fn(program: u32, location: i32, count: i32, value: *f64) -> void
+ProgramUniform3ui:         fn(program: u32, location: i32, v0: u32, v1: u32, v2: u32) -> void
+ProgramUniform3uiv:        fn(program: u32, location: i32, count: i32, value: *u32) -> void
+ProgramUniform4i:          fn(program: u32, location: i32, v0: i32, v1: i32, v2: i32, v3: i32) -> void
+ProgramUniform4iv:         fn(program: u32, location: i32, count: i32, value: *i32) -> void
+ProgramUniform4f:          fn(program: u32, location: i32, v0: f32, v1: f32, v2: f32, v3: f32) -> void
+ProgramUniform4fv:         fn(program: u32, location: i32, count: i32, value: *f32) -> void
+ProgramUniform4d:          fn(program: u32, location: i32, v0: f64, v1: f64, v2: f64, v3: f64) -> void
+ProgramUniform4dv:         fn(program: u32, location: i32, count: i32, value: *f64) -> void
+ProgramUniform4ui:         fn(program: u32, location: i32, v0: u32, v1: u32, v2: u32, v3: u32) -> void
+ProgramUniform4uiv:        fn(program: u32, location: i32, count: i32, value: *u32) -> void
+ProgramUniformMatrix2fv:   fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix3fv:   fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix4fv:   fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix2dv:   fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix3dv:   fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix4dv:   fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix2x3fv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix3x2fv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix2x4fv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix4x2fv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix3x4fv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix4x3fv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f32) -> void
+ProgramUniformMatrix2x3dv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix3x2dv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix2x4dv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix4x2dv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix3x4dv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ProgramUniformMatrix4x3dv: fn(program: u32, location: i32, count: i32, transpose: u8, value: *f64) -> void
+ValidateProgramPipeline:   fn(pipeline: u32) -> void
+GetProgramPipelineInfoLog: fn(pipeline: u32, bufSize: i32, length: *i32, infoLog: *u8) -> void
+VertexAttribL1d:           fn(index: u32, x: f64) -> void
+VertexAttribL2d:           fn(index: u32, x: f64, y: f64) -> void
+VertexAttribL3d:           fn(index: u32, x: f64, y: f64, z: f64) -> void
+VertexAttribL4d:           fn(index: u32, x: f64, y: f64, z: f64, w: f64) -> void
+VertexAttribL1dv:          fn(index: u32, v: *f64) -> void
+VertexAttribL2dv:          fn(index: u32, v: *f64) -> void
+VertexAttribL3dv:          fn(index: u32, v: *f64) -> void
+VertexAttribL4dv:          fn(index: u32, v: *f64) -> void
+VertexAttribLPointer:      fn(index: u32, size: i32, type: u32, stride: i32, pointer: rawptr) -> void
+GetVertexAttribLdv:        fn(index: u32, pname: u32, params: *f64) -> void
+ViewportArrayv:            fn(first: u32, count: i32, v: *f32) -> void
+ViewportIndexedf:          fn(index: u32, x: f32, y: f32, w: f32, h: f32) -> void
+ViewportIndexedfv:         fn(index: u32, v: *f32) -> void
+ScissorArrayv:             fn(first: u32, count: i32, v: *i32) -> void
+ScissorIndexed:            fn(index: u32, left: i32, bottom: i32, width: i32, height: i32) -> void
+ScissorIndexedv:           fn(index: u32, v: *i32) -> void
+DepthRangeArrayv:          fn(first: u32, count: i32, v: *f64) -> void
+DepthRangeIndexed:         fn(index: u32, n: f64, f: f64) -> void
+GetFloati_v:               fn(target: u32, index: u32, data: *f32) -> void
+GetDoublei_v:              fn(target: u32, index: u32, data: *f64) -> void
+
+load4_1 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    ReleaseShaderCompiler     = getProcAddress("glReleaseShaderCompiler")
+    ShaderBinary              = getProcAddress("glShaderBinary")
+    GetShaderPrecisionFormat  = getProcAddress("glGetShaderPrecisionFormat")
+    DepthRangef               = getProcAddress("glDepthRangef")
+    ClearDepthf               = getProcAddress("glClearDepthf")
+    GetProgramBinary          = getProcAddress("glGetProgramBinary")
+    ProgramBinary             = getProcAddress("glProgramBinary")
+    ProgramParameteri         = getProcAddress("glProgramParameteri")
+    UseProgramStages          = getProcAddress("glUseProgramStages")
+    ActiveShaderProgram       = getProcAddress("glActiveShaderProgram")
+    CreateShaderProgramv      = getProcAddress("glCreateShaderProgramv")
+    BindProgramPipeline       = getProcAddress("glBindProgramPipeline")
+    DeleteProgramPipelines    = getProcAddress("glDeleteProgramPipelines")
+    GenProgramPipelines       = getProcAddress("glGenProgramPipelines")
+    IsProgramPipeline         = getProcAddress("glIsProgramPipeline")
+    GetProgramPipelineiv      = getProcAddress("glGetProgramPipelineiv")
+    ProgramUniform1i          = getProcAddress("glProgramUniform1i")
+    ProgramUniform1iv         = getProcAddress("glProgramUniform1iv")
+    ProgramUniform1f          = getProcAddress("glProgramUniform1f")
+    ProgramUniform1fv         = getProcAddress("glProgramUniform1fv")
+    ProgramUniform1d          = getProcAddress("glProgramUniform1d")
+    ProgramUniform1dv         = getProcAddress("glProgramUniform1dv")
+    ProgramUniform1ui         = getProcAddress("glProgramUniform1ui")
+    ProgramUniform1uiv        = getProcAddress("glProgramUniform1uiv")
+    ProgramUniform2i          = getProcAddress("glProgramUniform2i")
+    ProgramUniform2iv         = getProcAddress("glProgramUniform2iv")
+    ProgramUniform2f          = getProcAddress("glProgramUniform2f")
+    ProgramUniform2fv         = getProcAddress("glProgramUniform2fv")
+    ProgramUniform2d          = getProcAddress("glProgramUniform2d")
+    ProgramUniform2dv         = getProcAddress("glProgramUniform2dv")
+    ProgramUniform2ui         = getProcAddress("glProgramUniform2ui")
+    ProgramUniform2uiv        = getProcAddress("glProgramUniform2uiv")
+    ProgramUniform3i          = getProcAddress("glProgramUniform3i")
+    ProgramUniform3iv         = getProcAddress("glProgramUniform3iv")
+    ProgramUniform3f          = getProcAddress("glProgramUniform3f")
+    ProgramUniform3fv         = getProcAddress("glProgramUniform3fv")
+    ProgramUniform3d          = getProcAddress("glProgramUniform3d")
+    ProgramUniform3dv         = getProcAddress("glProgramUniform3dv")
+    ProgramUniform3ui         = getProcAddress("glProgramUniform3ui")
+    ProgramUniform3uiv        = getProcAddress("glProgramUniform3uiv")
+    ProgramUniform4i          = getProcAddress("glProgramUniform4i")
+    ProgramUniform4iv         = getProcAddress("glProgramUniform4iv")
+    ProgramUniform4f          = getProcAddress("glProgramUniform4f")
+    ProgramUniform4fv         = getProcAddress("glProgramUniform4fv")
+    ProgramUniform4d          = getProcAddress("glProgramUniform4d")
+    ProgramUniform4dv         = getProcAddress("glProgramUniform4dv")
+    ProgramUniform4ui         = getProcAddress("glProgramUniform4ui")
+    ProgramUniform4uiv        = getProcAddress("glProgramUniform4uiv")
+    ProgramUniformMatrix2fv   = getProcAddress("glProgramUniformMatrix2fv")
+    ProgramUniformMatrix3fv   = getProcAddress("glProgramUniformMatrix3fv")
+    ProgramUniformMatrix4fv   = getProcAddress("glProgramUniformMatrix4fv")
+    ProgramUniformMatrix2dv   = getProcAddress("glProgramUniformMatrix2dv")
+    ProgramUniformMatrix3dv   = getProcAddress("glProgramUniformMatrix3dv")
+    ProgramUniformMatrix4dv   = getProcAddress("glProgramUniformMatrix4dv")
+    ProgramUniformMatrix2x3fv = getProcAddress("glProgramUniformMatrix2x3fv")
+    ProgramUniformMatrix3x2fv = getProcAddress("glProgramUniformMatrix3x2fv")
+    ProgramUniformMatrix2x4fv = getProcAddress("glProgramUniformMatrix2x4fv")
+    ProgramUniformMatrix4x2fv = getProcAddress("glProgramUniformMatrix4x2fv")
+    ProgramUniformMatrix3x4fv = getProcAddress("glProgramUniformMatrix3x4fv")
+    ProgramUniformMatrix4x3fv = getProcAddress("glProgramUniformMatrix4x3fv")
+    ProgramUniformMatrix2x3dv = getProcAddress("glProgramUniformMatrix2x3dv")
+    ProgramUniformMatrix3x2dv = getProcAddress("glProgramUniformMatrix3x2dv")
+    ProgramUniformMatrix2x4dv = getProcAddress("glProgramUniformMatrix2x4dv")
+    ProgramUniformMatrix4x2dv = getProcAddress("glProgramUniformMatrix4x2dv")
+    ProgramUniformMatrix3x4dv = getProcAddress("glProgramUniformMatrix3x4dv")
+    ProgramUniformMatrix4x3dv = getProcAddress("glProgramUniformMatrix4x3dv")
+    ValidateProgramPipeline   = getProcAddress("glValidateProgramPipeline")
+    GetProgramPipelineInfoLog = getProcAddress("glGetProgramPipelineInfoLog")
+    VertexAttribL1d           = getProcAddress("glVertexAttribL1d")
+    VertexAttribL2d           = getProcAddress("glVertexAttribL2d")
+    VertexAttribL3d           = getProcAddress("glVertexAttribL3d")
+    VertexAttribL4d           = getProcAddress("glVertexAttribL4d")
+    VertexAttribL1dv          = getProcAddress("glVertexAttribL1dv")
+    VertexAttribL2dv          = getProcAddress("glVertexAttribL2dv")
+    VertexAttribL3dv          = getProcAddress("glVertexAttribL3dv")
+    VertexAttribL4dv          = getProcAddress("glVertexAttribL4dv")
+    VertexAttribLPointer      = getProcAddress("glVertexAttribLPointer")
+    GetVertexAttribLdv        = getProcAddress("glGetVertexAttribLdv")
+    ViewportArrayv            = getProcAddress("glViewportArrayv")
+    ViewportIndexedf          = getProcAddress("glViewportIndexedf")
+    ViewportIndexedfv         = getProcAddress("glViewportIndexedfv")
+    ScissorArrayv             = getProcAddress("glScissorArrayv")
+    ScissorIndexed            = getProcAddress("glScissorIndexed")
+    ScissorIndexedv           = getProcAddress("glScissorIndexedv")
+    DepthRangeArrayv          = getProcAddress("glDepthRangeArrayv")
+    DepthRangeIndexed         = getProcAddress("glDepthRangeIndexed")
+    GetFloati_v               = getProcAddress("glGetFloati_v")
+    GetDoublei_v              = getProcAddress("glGetDoublei_v")
+}
+
+
+// VERSION_4_2
+DrawArraysInstancedBaseInstance:             fn(mode: u32, first: i32, count: i32, instancecount: i32, baseinstance: u32) -> void
+DrawElementsInstancedBaseInstance:           fn(mode: u32, count: i32, type: u32, indices: rawptr, instancecount: i32, baseinstance: u32) -> void
+DrawElementsInstancedBaseVertexBaseInstance: fn(mode: u32, count: i32, type: u32, indices: rawptr, instancecount: i32, basevertex: i32, baseinstance: u32) -> void
+GetInternalformativ:                         fn(target: u32, Internalformat: u32, pname: u32, bufSize: i32, params: *i32) -> void
+GetActiveAtomicCounterBufferiv:              fn(program: u32, bufferIndex: u32, pname: u32, params: *i32) -> void
+BindImageTexture:                            fn(unit: u32, texture: u32, level: i32, layered: u8, layer: i32, access: u32, format: u32) -> void
+MemoryBarrier:                               fn(barriers: u32) -> void
+TexStorage1D:                                fn(target: u32, levels: i32, internalformat: u32, width: i32) -> void
+TexStorage2D:                                fn(target: u32, levels: i32, internalformat: u32, width: i32, height: i32) -> void
+TexStorage3D:                                fn(target: u32, levels: i32, internalformat: u32, width: i32, height: i32, depth: i32) -> void
+DrawTransformFeedbackInstanced:              fn(mode: u32, id: u32, instancecount: i32) -> void
+DrawTransformFeedbackStreamInstanced:        fn(mode: u32, id: u32, stream: u32, instancecount: i32) -> void
+
+load4_2 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    DrawArraysInstancedBaseInstance             = getProcAddress("glDrawArraysInstancedBaseInstance")
+    DrawElementsInstancedBaseInstance           = getProcAddress("glDrawElementsInstancedBaseInstance")
+    DrawElementsInstancedBaseVertexBaseInstance = getProcAddress("glDrawElementsInstancedBaseVertexBaseInstance")
+    GetInternalformativ                         = getProcAddress("glGetInternalformativ")
+    GetActiveAtomicCounterBufferiv              = getProcAddress("glGetActiveAtomicCounterBufferiv")
+    BindImageTexture                            = getProcAddress("glBindImageTexture")
+    MemoryBarrier                               = getProcAddress("glMemoryBarrier")
+    TexStorage1D                                = getProcAddress("glTexStorage1D")
+    TexStorage2D                                = getProcAddress("glTexStorage2D")
+    TexStorage3D                                = getProcAddress("glTexStorage3D")
+    DrawTransformFeedbackInstanced              = getProcAddress("glDrawTransformFeedbackInstanced")
+    DrawTransformFeedbackStreamInstanced        = getProcAddress("glDrawTransformFeedbackStreamInstanced")
+}
+
+// VERSION_4_3
+ClearBufferData:                 fn(target: u32, internalformat: u32, format: u32, type: u32, data: rawptr) -> void
+ClearBufferSubData:              fn(target: u32, internalformat: u32, offset: i32, size: i32, format: u32, type: u32, data: rawptr) -> void
+DispatchCompute:                 fn(num_groups_x: u32, num_groups_y: u32, num_groups_z: u32) -> void
+DispatchComputeIndirect:         fn(indirect: i32) -> void
+CopyImageSubData:                fn(srcName: u32, srcTarget: u32, srcLevel: i32, srcX: i32, srcY: i32, srcZ: i32, dstName: u32, dstTarget: u32, dstLevel: i32, dstX: i32, dstY: i32, dstZ: i32, srcWidth: i32, srcHeight: i32, srcDepth: i32) -> void
+FramebufferParameteri:           fn(target: u32, pname: u32, param: i32) -> void
+GetFramebufferParameteriv:       fn(target: u32, pname: u32, params: *i32) -> void
+GetInternalformati64v:           fn(target: u32, internalformat: u32, pname: u32, bufSize: i32, params: *i64) -> void
+InvalidateTexSubImage:           fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32) -> void
+InvalidateTexImage:              fn(texture: u32, level: i32) -> void
+InvalidateBufferSubData:         fn(buffer: u32, offset: i32, length: i32) -> void
+InvalidateBufferData:            fn(buffer: u32) -> void
+InvalidateFramebuffer:           fn(target: u32, numAttachments: i32, attachments: *u32) -> void
+InvalidateSubFramebuffer:        fn(target: u32, numAttachments: i32, attachments: *u32, x: i32, y: i32, width: i32, height: i32) -> void
+MultiDrawArraysIndirect:         fn(mode: u32, indirect: rawptr, drawcount: i32, stride: i32) -> void
+MultiDrawElementsIndirect:       fn(mode: u32, type: u32, indirect: rawptr, drawcount: i32, stride: i32) -> void
+GetProgramInterfaceiv:           fn(program: u32, programinterface: u32, pname: u32, params: *i32) -> void
+GetProgramResourceIndex:         fn(program: u32, programinterface: u32, name: *u8) -> u32
+GetProgramResourceName:          fn(program: u32, programinterface: u32, index: u32, bufSize: i32, length: *i32, name: *u8) -> void
+GetProgramResourceiv:            fn(program: u32, programinterface: u32, index: u32, propCount: i32, props: *u32, bufSize: i32, length: *i32, params: *i32) -> void
+GetProgramResourceLocation:      fn(program: u32, programinterface: u32, name: *u8) -> i32
+GetProgramResourceLocationIndex: fn(program: u32, programinterface: u32, name: *u8) -> i32
+ShaderStorageBlockBinding:       fn(program: u32, storageBlockIndex: u32, storageBlockBinding: u32) -> void
+TexBufferRange:                  fn(target: u32, internalformat: u32, buffer: u32, offset: i32, size: i32) -> void
+TexStorage2DMultisample:         fn(target: u32, samples: i32, internalformat: u32, width: i32, height: i32, fixedsamplelocations: u8) -> void
+TexStorage3DMultisample:         fn(target: u32, samples: i32, internalformat: u32, width: i32, height: i32, depth: i32, fixedsamplelocations: u8) -> void
+TextureView:                     fn(texture: u32, target: u32, origtexture: u32, internalformat: u32, minlevel: u32, numlevels: u32, minlayer: u32, numlayers: u32) -> void
+BindVertexBuffer:                fn(bindingindex: u32, buffer: u32, offset: i32, stride: i32) -> void
+VertexAttribFormat:              fn(attribindex: u32, size: i32, type: u32, normalized: u8, relativeoffset: u32) -> void
+VertexAttribIFormat:             fn(attribindex: u32, size: i32, type: u32, relativeoffset: u32) -> void
+VertexAttribLFormat:             fn(attribindex: u32, size: i32, type: u32, relativeoffset: u32) -> void
+VertexAttribBinding:             fn(attribindex: u32, bindingindex: u32) -> void
+VertexBindingDivisor:            fn(bindingindex: u32, divisor: u32) -> void
+DebugMessageControl:             fn(source: u32, type: u32, severity: u32, count: i32, ids: *u32, enabled: u8) -> void
+DebugMessageInsert:              fn(source: u32, type: u32, id: u32, severity: u32, length: i32, buf: *u8) -> void
+DebugMessageCallback:            fn(callback: debug_proc_t, userParam: rawptr) -> void
+GetDebugMessageLog:              fn(count: u32, bufSize: i32, sources: *u32, types: *u32, ids: *u32, severities: *u32, lengths: *i32, messageLog: *u8) -> u32
+PushDebugGroup:                  fn(source: u32, id: u32, length: i32, message: *u8) -> void
+PopDebugGroup:                   fn() -> void
+ObjectLabel:                     fn(identifier: u32, name: u32, length: i32, label: *u8) -> void
+GetObjectLabel:                  fn(identifier: u32, name: u32, bufSize: i32, length: *i32, label: *u8) -> void
+ObjectPtrLabel:                  fn(ptr: rawptr, length: i32, label: *u8) -> void
+GetObjectPtrLabel:               fn(ptr: rawptr, bufSize: i32, length: *i32, label: *u8) -> void
+
+load4_3 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    ClearBufferData                 = getProcAddress("glClearBufferData")
+    ClearBufferSubData              = getProcAddress("glClearBufferSubData")
+    DispatchCompute                 = getProcAddress("glDispatchCompute")
+    DispatchComputeIndirect         = getProcAddress("glDispatchComputeIndirect")
+    CopyImageSubData                = getProcAddress("glCopyImageSubData")
+    FramebufferParameteri           = getProcAddress("glFramebufferParameteri")
+    GetFramebufferParameteriv       = getProcAddress("glGetFramebufferParameteriv")
+    GetInternalformati64v           = getProcAddress("glGetInternalformati64v")
+    InvalidateTexSubImage           = getProcAddress("glInvalidateTexSubImage")
+    InvalidateTexImage              = getProcAddress("glInvalidateTexImage")
+    InvalidateBufferSubData         = getProcAddress("glInvalidateBufferSubData")
+    InvalidateBufferData            = getProcAddress("glInvalidateBufferData")
+    InvalidateFramebuffer           = getProcAddress("glInvalidateFramebuffer")
+    InvalidateSubFramebuffer        = getProcAddress("glInvalidateSubFramebuffer")
+    MultiDrawArraysIndirect         = getProcAddress("glMultiDrawArraysIndirect")
+    MultiDrawElementsIndirect       = getProcAddress("glMultiDrawElementsIndirect")
+    GetProgramInterfaceiv           = getProcAddress("glGetProgramInterfaceiv")
+    GetProgramResourceIndex         = getProcAddress("glGetProgramResourceIndex")
+    GetProgramResourceName          = getProcAddress("glGetProgramResourceName")
+    GetProgramResourceiv            = getProcAddress("glGetProgramResourceiv")
+    GetProgramResourceLocation      = getProcAddress("glGetProgramResourceLocation")
+    GetProgramResourceLocationIndex = getProcAddress("glGetProgramResourceLocationIndex")
+    ShaderStorageBlockBinding       = getProcAddress("glShaderStorageBlockBinding")
+    TexBufferRange                  = getProcAddress("glTexBufferRange")
+    TexStorage2DMultisample         = getProcAddress("glTexStorage2DMultisample")
+    TexStorage3DMultisample         = getProcAddress("glTexStorage3DMultisample")
+    TextureView                     = getProcAddress("glTextureView")
+    BindVertexBuffer                = getProcAddress("glBindVertexBuffer")
+    VertexAttribFormat              = getProcAddress("glVertexAttribFormat")
+    VertexAttribIFormat             = getProcAddress("glVertexAttribIFormat")
+    VertexAttribLFormat             = getProcAddress("glVertexAttribLFormat")
+    VertexAttribBinding             = getProcAddress("glVertexAttribBinding")
+    VertexBindingDivisor            = getProcAddress("glVertexBindingDivisor")
+    DebugMessageControl             = getProcAddress("glDebugMessageControl")
+    DebugMessageInsert              = getProcAddress("glDebugMessageInsert")
+    DebugMessageCallback            = getProcAddress("glDebugMessageCallback")
+    GetDebugMessageLog              = getProcAddress("glGetDebugMessageLog")
+    PushDebugGroup                  = getProcAddress("glPushDebugGroup")
+    PopDebugGroup                   = getProcAddress("glPopDebugGroup")
+    ObjectLabel                     = getProcAddress("glObjectLabel")
+    GetObjectLabel                  = getProcAddress("glGetObjectLabel")
+    ObjectPtrLabel                  = getProcAddress("glObjectPtrLabel")
+    GetObjectPtrLabel               = getProcAddress("glGetObjectPtrLabel")
+}
+
+// VERSION_4_4
+BufferStorage:     fn(target: u32, size: i32, data: rawptr, flags: u32) -> void
+ClearTexImage:     fn(texture: u32, level: i32, format: u32, type: u32, data: rawptr) -> void
+ClearTexSubImage:  fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32, format: u32, type: u32, data: rawptr) -> void
+BindBuffersBase:   fn(target: u32, first: u32, count: i32, buffers: *u32) -> void
+BindBuffersRange:  fn(target: u32, first: u32, count: i32, buffers: *u32, offsets: *i32, sizes: *i32) -> void
+BindTextures:      fn(first: u32, count: i32, textures: *u32) -> void
+BindSamplers:      fn(first: u32, count: i32, samplers: *u32) -> void
+BindImageTextures: fn(first: u32, count: i32, textures: *u32) -> void
+BindVertexBuffers: fn(first: u32, count: i32, buffers: *u32, offsets: *i32, strides: *i32) -> void
+
+load4_4 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    BufferStorage     = getProcAddress("glBufferStorage")
+    ClearTexImage     = getProcAddress("glClearTexImage")
+    ClearTexSubImage  = getProcAddress("glClearTexSubImage")
+    BindBuffersBase   = getProcAddress("glBindBuffersBase")
+    BindBuffersRange  = getProcAddress("glBindBuffersRange")
+    BindTextures      = getProcAddress("glBindTextures")
+    BindSamplers      = getProcAddress("glBindSamplers")
+    BindImageTextures = getProcAddress("glBindImageTextures")
+    BindVertexBuffers = getProcAddress("glBindVertexBuffers")
+}
+
+// VERSION_4_5
+ClipControl:                              fn(origin: u32, depth: u32) -> void
+CreateTransformFeedbacks:                 fn(n: i32, ids: *u32) -> void
+TransformFeedbackBufferBase:              fn(xfb: u32, index: u32, buffer: u32) -> void
+TransformFeedbackBufferRange:             fn(xfb: u32, index: u32, buffer: u32, offset: i32, size: i32) -> void
+GetTransformFeedbackiv:                   fn(xfb: u32, pname: u32, param: *i32) -> void
+GetTransformFeedbacki_v:                  fn(xfb: u32, pname: u32, index: u32, param: *i32) -> void
+GetTransformFeedbacki64_v:                fn(xfb: u32, pname: u32, index: u32, param: *i64) -> void
+CreateBuffers:                            fn(n: i32, buffers: *u32) -> void
+NamedBufferStorage:                       fn(buffer: u32, size: i32, data: rawptr, flags: u32) -> void
+NamedBufferData:                          fn(buffer: u32, size: i32, data: rawptr, usage: u32) -> void
+NamedBufferSubData:                       fn(buffer: u32, offset: i32, size: i32, data: rawptr) -> void
+CopyNamedBufferSubData:                   fn(readBuffer: u32, writeBuffer: u32, readOffset: i32, writeOffset: i32, size: i32) -> void
+ClearNamedBufferData:                     fn(buffer: u32, internalformat: u32, format: u32, type: u32, data: rawptr) -> void
+ClearNamedBufferSubData:                  fn(buffer: u32, internalformat: u32, offset: i32, size: i32, format: u32, type: u32, data: rawptr) -> void
+MapNamedBuffer:                           fn(buffer: u32, access: u32) -> rawptr
+MapNamedBufferRange:                      fn(buffer: u32, offset: i32, length: i32, access: u32) -> rawptr
+UnmapNamedBuffer:                         fn(buffer: u32) -> u8
+FlushMappedNamedBufferRange:              fn(buffer: u32, offset: i32, length: i32) -> void
+GetNamedBufferParameteriv:                fn(buffer: u32, pname: u32, params: *i32) -> void
+GetNamedBufferParameteri64v:              fn(buffer: u32, pname: u32, params: *i64) -> void
+GetNamedBufferPointerv:                   fn(buffer: u32, pname: u32, params: *rawptr) -> void
+GetNamedBufferSubData:                    fn(buffer: u32, offset: i32, size: i32, data: rawptr) -> void
+CreateFramebuffers:                       fn(n: i32, framebuffers: *u32) -> void
+NamedFramebufferRenderbuffer:             fn(framebuffer: u32, attachment: u32, renderbuffertarget: u32, renderbuffer: u32) -> void
+NamedFramebufferParameteri:               fn(framebuffer: u32, pname: u32, param: i32) -> void
+NamedFramebufferTexture:                  fn(framebuffer: u32, attachment: u32, texture: u32, level: i32) -> void
+NamedFramebufferTextureLayer:             fn(framebuffer: u32, attachment: u32, texture: u32, level: i32, layer: i32) -> void
+NamedFramebufferDrawBuffer:               fn(framebuffer: u32, buf: u32) -> void
+NamedFramebufferDrawBuffers:              fn(framebuffer: u32, n: i32, bufs: *u32) -> void
+NamedFramebufferReadBuffer:               fn(framebuffer: u32, src: u32) -> void
+InvalidateNamedFramebufferData:           fn(framebuffer: u32, numAttachments: i32, attachments: *u32) -> void
+InvalidateNamedFramebufferSubData:        fn(framebuffer: u32, numAttachments: i32, attachments: *u32, x: i32, y: i32, width: i32, height: i32) -> void
+ClearNamedFramebufferiv:                  fn(framebuffer: u32, buffer: u32, drawbuffer: i32, value: *i32) -> void
+ClearNamedFramebufferuiv:                 fn(framebuffer: u32, buffer: u32, drawbuffer: i32, value: *u32) -> void
+ClearNamedFramebufferfv:                  fn(framebuffer: u32, buffer: u32, drawbuffer: i32, value: *f32) -> void
+ClearNamedFramebufferfi:                  fn(framebuffer: u32, buffer: u32, drawbuffer: i32, depth: f32, stencil: i32) -> void
+BlitNamedFramebuffer:                     fn(readFramebuffer: u32, drawFramebuffer: u32, srcX0: i32, srcY0: i32, srcX1: i32, srcY1: i32, dstX0: i32, dstY0: i32, dstX1: i32, dstY1: i32, mask: u32, filter: u32) -> void
+CheckNamedFramebufferStatus:              fn(framebuffer: u32, target: u32) -> u32
+GetNamedFramebufferParameteriv:           fn(framebuffer: u32, pname: u32, param: *i32) -> void
+GetNamedFramebufferAttachmentParameteriv: fn(framebuffer: u32, attachment: u32, pname: u32, params: *i32) -> void
+CreateRenderbuffers:                      fn(n: i32, renderbuffers: *u32) -> void
+NamedRenderbufferStorage:                 fn(renderbuffer: u32, internalformat: u32, width: i32, height: i32) -> void
+NamedRenderbufferStorageMultisample:      fn(renderbuffer: u32, samples: i32, internalformat: u32, width: i32, height: i32) -> void
+GetNamedRenderbufferParameteriv:          fn(renderbuffer: u32, pname: u32, params: *i32) -> void
+CreateTextures:                           fn(target: u32, n: i32, textures: *u32) -> void
+TextureBuffer:                            fn(texture: u32, internalformat: u32, buffer: u32) -> void
+TextureBufferRange:                       fn(texture: u32, internalformat: u32, buffer: u32, offset: i32, size: i32) -> void
+TextureStorage1D:                         fn(texture: u32, levels: i32, internalformat: u32, width: i32) -> void
+TextureStorage2D:                         fn(texture: u32, levels: i32, internalformat: u32, width: i32, height: i32) -> void
+TextureStorage3D:                         fn(texture: u32, levels: i32, internalformat: u32, width: i32, height: i32, depth: i32) -> void
+TextureStorage2DMultisample:              fn(texture: u32, samples: i32, internalformat: u32, width: i32, height: i32, fixedsamplelocations: u8) -> void
+TextureStorage3DMultisample:              fn(texture: u32, samples: i32, internalformat: u32, width: i32, height: i32, depth: i32, fixedsamplelocations: u8) -> void
+TextureSubImage1D:                        fn(texture: u32, level: i32, xoffset: i32, width: i32, format: u32, type: u32, pixels: rawptr) -> void
+TextureSubImage2D:                        fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, width: i32, height: i32, format: u32, type: u32, pixels: rawptr) -> void
+TextureSubImage3D:                        fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32, format: u32, type: u32, pixels: rawptr) -> void
+CompressedTextureSubImage1D:              fn(texture: u32, level: i32, xoffset: i32, width: i32, format: u32, imageSize: i32, data: rawptr) -> void
+CompressedTextureSubImage2D:              fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, width: i32, height: i32, format: u32, imageSize: i32, data: rawptr) -> void
+CompressedTextureSubImage3D:              fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32, format: u32, imageSize: i32, data: rawptr) -> void
+CopyTextureSubImage1D:                    fn(texture: u32, level: i32, xoffset: i32, x: i32, y: i32, width: i32) -> void
+CopyTextureSubImage2D:                    fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, x: i32, y: i32, width: i32, height: i32) -> void
+CopyTextureSubImage3D:                    fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, x: i32, y: i32, width: i32, height: i32) -> void
+TextureParameterf:                        fn(texture: u32, pname: u32, param: f32) -> void
+TextureParameterfv:                       fn(texture: u32, pname: u32, param: *f32) -> void
+TextureParameteri:                        fn(texture: u32, pname: u32, param: i32) -> void
+TextureParameterIiv:                      fn(texture: u32, pname: u32, params: *i32) -> void
+TextureParameterIuiv:                     fn(texture: u32, pname: u32, params: *u32) -> void
+TextureParameteriv:                       fn(texture: u32, pname: u32, param: *i32) -> void
+GenerateTextureMipmap:                    fn(texture: u32) -> void
+BindTextureUnit:                          fn(unit: u32, texture: u32) -> void
+GetTextureImage:                          fn(texture: u32, level: i32, format: u32, type: u32, bufSize: i32, pixels: rawptr) -> void
+GetCompressedTextureImage:                fn(texture: u32, level: i32, bufSize: i32, pixels: rawptr) -> void
+GetTextureLevelParameterfv:               fn(texture: u32, level: i32, pname: u32, params: *f32) -> void
+GetTextureLevelParameteriv:               fn(texture: u32, level: i32, pname: u32, params: *i32) -> void
+GetTextureParameterfv:                    fn(texture: u32, pname: u32, params: *f32) -> void
+GetTextureParameterIiv:                   fn(texture: u32, pname: u32, params: *i32) -> void
+GetTextureParameterIuiv:                  fn(texture: u32, pname: u32, params: *u32) -> void
+GetTextureParameteriv:                    fn(texture: u32, pname: u32, params: *i32) -> void
+CreateVertexArrays:                       fn(n: i32, arrays: *u32) -> void
+DisableVertexArrayAttrib:                 fn(vaobj: u32, index: u32) -> void
+EnableVertexArrayAttrib:                  fn(vaobj: u32, index: u32) -> void
+VertexArrayElementBuffer:                 fn(vaobj: u32, buffer: u32) -> void
+VertexArrayVertexBuffer:                  fn(vaobj: u32, bindingindex: u32, buffer: u32, offset: i32, stride: i32) -> void
+VertexArrayVertexBuffers:                 fn(vaobj: u32, first: u32, count: i32, buffers: *u32, offsets: *i32, strides: *i32) -> void
+VertexArrayAttribBinding:                 fn(vaobj: u32, attribindex: u32, bindingindex: u32) -> void
+VertexArrayAttribFormat:                  fn(vaobj: u32, attribindex: u32, size: i32, type: u32, normalized: u8, relativeoffset: u32) -> void
+VertexArrayAttribIFormat:                 fn(vaobj: u32, attribindex: u32, size: i32, type: u32, relativeoffset: u32) -> void
+VertexArrayAttribLFormat:                 fn(vaobj: u32, attribindex: u32, size: i32, type: u32, relativeoffset: u32) -> void
+VertexArrayBindingDivisor:                fn(vaobj: u32, bindingindex: u32, divisor: u32) -> void
+GetVertexArrayiv:                         fn(vaobj: u32, pname: u32, param: *i32) -> void
+GetVertexArrayIndexediv:                  fn(vaobj: u32, index: u32, pname: u32, param: *i32) -> void
+GetVertexArrayIndexed64iv:                fn(vaobj: u32, index: u32, pname: u32, param: *i64) -> void
+CreateSamplers:                           fn(n: i32, samplers: *u32) -> void
+CreateProgramPipelines:                   fn(n: i32, pipelines: *u32) -> void
+CreateQueries:                            fn(target: u32, n: i32, ids: *u32) -> void
+GetQueryBufferObjecti64v:                 fn(id: u32, buffer: u32, pname: u32, offset: i32) -> void
+GetQueryBufferObjectiv:                   fn(id: u32, buffer: u32, pname: u32, offset: i32) -> void
+GetQueryBufferObjectui64v:                fn(id: u32, buffer: u32, pname: u32, offset: i32) -> void
+GetQueryBufferObjectuiv:                  fn(id: u32, buffer: u32, pname: u32, offset: i32) -> void
+MemoryBarrierByRegion:                    fn(barriers: u32) -> void
+GetTextureSubImage:                       fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32, format: u32, type: u32, bufSize: i32, pixels: rawptr) -> void
+GetCompressedTextureSubImage:             fn(texture: u32, level: i32, xoffset: i32, yoffset: i32, zoffset: i32, width: i32, height: i32, depth: i32, bufSize: i32, pixels: rawptr) -> void
+GetGraphicsResetStatus:                   fn() -> u32
+GetnCompressedTexImage:                   fn(target: u32, lod: i32, bufSize: i32, pixels: rawptr) -> void
+GetnTexImage:                             fn(target: u32, level: i32, format: u32, type: u32, bufSize: i32, pixels: rawptr) -> void
+GetnUniformdv:                            fn(program: u32, location: i32, bufSize: i32, params: *f64) -> void
+GetnUniformfv:                            fn(program: u32, location: i32, bufSize: i32, params: *f32) -> void
+GetnUniformiv:                            fn(program: u32, location: i32, bufSize: i32, params: *i32) -> void
+GetnUniformuiv:                           fn(program: u32, location: i32, bufSize: i32, params: *u32) -> void
+ReadnPixels:                              fn(x: i32, y: i32, width: i32, height: i32, format: u32, type: u32, bufSize: i32, data: rawptr) -> void
+GetnMapdv:                                fn(target: u32, query: u32, bufSize: i32, v: *f64) -> void
+GetnMapfv:                                fn(target: u32, query: u32, bufSize: i32, v: *f32) -> void
+GetnMapiv:                                fn(target: u32, query: u32, bufSize: i32, v: *i32) -> void
+GetnPixelMapusv:                          fn(map_: u32, bufSize: i32, values: *u16) -> void
+GetnPixelMapfv:                           fn(map_: u32, bufSize: i32, values: *f32) -> void
+GetnPixelMapuiv:                          fn(map_: u32, bufSize: i32, values: *u32) -> void
+GetnPolygonStipple:                       fn(bufSize: i32, pattern: *u8) -> void
+GetnColorTable:                           fn(target: u32, format: u32, type: u32, bufSize: i32, table: rawptr) -> void
+GetnConvolutionFilter:                    fn(target: u32, format: u32, type: u32, bufSize: i32, image: rawptr) -> void
+GetnSeparableFilter:                      fn(target: u32, format: u32, type: u32, rowBufSize: i32, row: rawptr, columnBufSize: i32, column: rawptr, span: rawptr) -> void
+GetnHistogram:                            fn(target: u32, reset: u8, format: u32, type: u32, bufSize: i32, values: rawptr) -> void
+GetnMinmax:                               fn(target: u32, reset: u8, format: u32, type: u32, bufSize: i32, values: rawptr) -> void
+TextureBarrier:                           fn() -> void
+
+load4_5 :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+    ClipControl                              = getProcAddress("glClipControl")
+    CreateTransformFeedbacks                 = getProcAddress("glCreateTransformFeedbacks")
+    TransformFeedbackBufferBase              = getProcAddress("glTransformFeedbackBufferBase")
+    TransformFeedbackBufferRange             = getProcAddress("glTransformFeedbackBufferRange")
+    GetTransformFeedbackiv                   = getProcAddress("glGetTransformFeedbackiv")
+    GetTransformFeedbacki_v                  = getProcAddress("glGetTransformFeedbacki_v")
+    GetTransformFeedbacki64_v                = getProcAddress("glGetTransformFeedbacki64_v")
+    CreateBuffers                            = getProcAddress("glCreateBuffers")
+    NamedBufferStorage                       = getProcAddress("glNamedBufferStorage")
+    NamedBufferData                          = getProcAddress("glNamedBufferData")
+    NamedBufferSubData                       = getProcAddress("glNamedBufferSubData")
+    CopyNamedBufferSubData                   = getProcAddress("glCopyNamedBufferSubData")
+    ClearNamedBufferData                     = getProcAddress("glClearNamedBufferData")
+    ClearNamedBufferSubData                  = getProcAddress("glClearNamedBufferSubData")
+    MapNamedBuffer                           = getProcAddress("glMapNamedBuffer")
+    MapNamedBufferRange                      = getProcAddress("glMapNamedBufferRange")
+    UnmapNamedBuffer                         = getProcAddress("glUnmapNamedBuffer")
+    FlushMappedNamedBufferRange              = getProcAddress("glFlushMappedNamedBufferRange")
+    GetNamedBufferParameteriv                = getProcAddress("glGetNamedBufferParameteriv")
+    GetNamedBufferParameteri64v              = getProcAddress("glGetNamedBufferParameteri64v")
+    GetNamedBufferPointerv                   = getProcAddress("glGetNamedBufferPointerv")
+    GetNamedBufferSubData                    = getProcAddress("glGetNamedBufferSubData")
+    CreateFramebuffers                       = getProcAddress("glCreateFramebuffers")
+    NamedFramebufferRenderbuffer             = getProcAddress("glNamedFramebufferRenderbuffer")
+    NamedFramebufferParameteri               = getProcAddress("glNamedFramebufferParameteri")
+    NamedFramebufferTexture                  = getProcAddress("glNamedFramebufferTexture")
+    NamedFramebufferTextureLayer             = getProcAddress("glNamedFramebufferTextureLayer")
+    NamedFramebufferDrawBuffer               = getProcAddress("glNamedFramebufferDrawBuffer")
+    NamedFramebufferDrawBuffers              = getProcAddress("glNamedFramebufferDrawBuffers")
+    NamedFramebufferReadBuffer               = getProcAddress("glNamedFramebufferReadBuffer")
+    InvalidateNamedFramebufferData           = getProcAddress("glInvalidateNamedFramebufferData")
+    InvalidateNamedFramebufferSubData        = getProcAddress("glInvalidateNamedFramebufferSubData")
+    ClearNamedFramebufferiv                  = getProcAddress("glClearNamedFramebufferiv")
+    ClearNamedFramebufferuiv                 = getProcAddress("glClearNamedFramebufferuiv")
+    ClearNamedFramebufferfv                  = getProcAddress("glClearNamedFramebufferfv")
+    ClearNamedFramebufferfi                  = getProcAddress("glClearNamedFramebufferfi")
+    BlitNamedFramebuffer                     = getProcAddress("glBlitNamedFramebuffer")
+    CheckNamedFramebufferStatus              = getProcAddress("glCheckNamedFramebufferStatus")
+    GetNamedFramebufferParameteriv           = getProcAddress("glGetNamedFramebufferParameteriv")
+    GetNamedFramebufferAttachmentParameteriv = getProcAddress("glGetNamedFramebufferAttachmentParameteriv")
+    CreateRenderbuffers                      = getProcAddress("glCreateRenderbuffers")
+    NamedRenderbufferStorage                 = getProcAddress("glNamedRenderbufferStorage")
+    NamedRenderbufferStorageMultisample      = getProcAddress("glNamedRenderbufferStorageMultisample")
+    GetNamedRenderbufferParameteriv          = getProcAddress("glGetNamedRenderbufferParameteriv")
+    CreateTextures                           = getProcAddress("glCreateTextures")
+    TextureBuffer                            = getProcAddress("glTextureBuffer")
+    TextureBufferRange                       = getProcAddress("glTextureBufferRange")
+    TextureStorage1D                         = getProcAddress("glTextureStorage1D")
+    TextureStorage2D                         = getProcAddress("glTextureStorage2D")
+    TextureStorage3D                         = getProcAddress("glTextureStorage3D")
+    TextureStorage2DMultisample              = getProcAddress("glTextureStorage2DMultisample")
+    TextureStorage3DMultisample              = getProcAddress("glTextureStorage3DMultisample")
+    TextureSubImage1D                        = getProcAddress("glTextureSubImage1D")
+    TextureSubImage2D                        = getProcAddress("glTextureSubImage2D")
+    TextureSubImage3D                        = getProcAddress("glTextureSubImage3D")
+    CompressedTextureSubImage1D              = getProcAddress("glCompressedTextureSubImage1D")
+    CompressedTextureSubImage2D              = getProcAddress("glCompressedTextureSubImage2D")
+    CompressedTextureSubImage3D              = getProcAddress("glCompressedTextureSubImage3D")
+    CopyTextureSubImage1D                    = getProcAddress("glCopyTextureSubImage1D")
+    CopyTextureSubImage2D                    = getProcAddress("glCopyTextureSubImage2D")
+    CopyTextureSubImage3D                    = getProcAddress("glCopyTextureSubImage3D")
+    TextureParameterf                        = getProcAddress("glTextureParameterf")
+    TextureParameterfv                       = getProcAddress("glTextureParameterfv")
+    TextureParameteri                        = getProcAddress("glTextureParameteri")
+    TextureParameterIiv                      = getProcAddress("glTextureParameterIiv")
+    TextureParameterIuiv                     = getProcAddress("glTextureParameterIuiv")
+    TextureParameteriv                       = getProcAddress("glTextureParameteriv")
+    GenerateTextureMipmap                    = getProcAddress("glGenerateTextureMipmap")
+    BindTextureUnit                          = getProcAddress("glBindTextureUnit")
+    GetTextureImage                          = getProcAddress("glGetTextureImage")
+    GetCompressedTextureImage                = getProcAddress("glGetCompressedTextureImage")
+    GetTextureLevelParameterfv               = getProcAddress("glGetTextureLevelParameterfv")
+    GetTextureLevelParameteriv               = getProcAddress("glGetTextureLevelParameteriv")
+    GetTextureParameterfv                    = getProcAddress("glGetTextureParameterfv")
+    GetTextureParameterIiv                   = getProcAddress("glGetTextureParameterIiv")
+    GetTextureParameterIuiv                  = getProcAddress("glGetTextureParameterIuiv")
+    GetTextureParameteriv                    = getProcAddress("glGetTextureParameteriv")
+    CreateVertexArrays                       = getProcAddress("glCreateVertexArrays")
+    DisableVertexArrayAttrib                 = getProcAddress("glDisableVertexArrayAttrib")
+    EnableVertexArrayAttrib                  = getProcAddress("glEnableVertexArrayAttrib")
+    VertexArrayElementBuffer                 = getProcAddress("glVertexArrayElementBuffer")
+    VertexArrayVertexBuffer                  = getProcAddress("glVertexArrayVertexBuffer")
+    VertexArrayVertexBuffers                 = getProcAddress("glVertexArrayVertexBuffers")
+    VertexArrayAttribBinding                 = getProcAddress("glVertexArrayAttribBinding")
+    VertexArrayAttribFormat                  = getProcAddress("glVertexArrayAttribFormat")
+    VertexArrayAttribIFormat                 = getProcAddress("glVertexArrayAttribIFormat")
+    VertexArrayAttribLFormat                 = getProcAddress("glVertexArrayAttribLFormat")
+    VertexArrayBindingDivisor                = getProcAddress("glVertexArrayBindingDivisor")
+    GetVertexArrayiv                         = getProcAddress("glGetVertexArrayiv")
+    GetVertexArrayIndexediv                  = getProcAddress("glGetVertexArrayIndexediv")
+    GetVertexArrayIndexed64iv                = getProcAddress("glGetVertexArrayIndexed64iv")
+    CreateSamplers                           = getProcAddress("glCreateSamplers")
+    CreateProgramPipelines                   = getProcAddress("glCreateProgramPipelines")
+    CreateQueries                            = getProcAddress("glCreateQueries")
+    GetQueryBufferObjecti64v                 = getProcAddress("glGetQueryBufferObjecti64v")
+    GetQueryBufferObjectiv                   = getProcAddress("glGetQueryBufferObjectiv")
+    GetQueryBufferObjectui64v                = getProcAddress("glGetQueryBufferObjectui64v")
+    GetQueryBufferObjectuiv                  = getProcAddress("glGetQueryBufferObjectuiv")
+    MemoryBarrierByRegion                    = getProcAddress("glMemoryBarrierByRegion")
+    GetTextureSubImage                       = getProcAddress("glGetTextureSubImage")
+    GetCompressedTextureSubImage             = getProcAddress("glGetCompressedTextureSubImage")
+    GetGraphicsResetStatus                   = getProcAddress("glGetGraphicsResetStatus")
+    GetnCompressedTexImage                   = getProcAddress("glGetnCompressedTexImage")
+    GetnTexImage                             = getProcAddress("glGetnTexImage")
+    GetnUniformdv                            = getProcAddress("glGetnUniformdv")
+    GetnUniformfv                            = getProcAddress("glGetnUniformfv")
+    GetnUniformiv                            = getProcAddress("glGetnUniformiv")
+    GetnUniformuiv                           = getProcAddress("glGetnUniformuiv")
+    ReadnPixels                              = getProcAddress("glReadnPixels")
+    GetnMapdv                                = getProcAddress("glGetnMapdv")
+    GetnMapfv                                = getProcAddress("glGetnMapfv")
+    GetnMapiv                                = getProcAddress("glGetnMapiv")
+    GetnPixelMapfv                           = getProcAddress("glGetnPixelMapfv")
+    GetnPixelMapuiv                          = getProcAddress("glGetnPixelMapuiv")
+    GetnPixelMapusv                          = getProcAddress("glGetnPixelMapusv")
+    GetnPolygonStipple                       = getProcAddress("glGetnPolygonStipple")
+    GetnColorTable                           = getProcAddress("glGetnColorTable")
+    GetnConvolutionFilter                    = getProcAddress("glGetnConvolutionFilter")
+    GetnSeparableFilter                      = getProcAddress("glGetnSeparableFilter")
+    GetnHistogram                            = getProcAddress("glGetnHistogram")
+    GetnMinmax                               = getProcAddress("glGetnMinmax")
+    TextureBarrier                           = getProcAddress("glTextureBarrier")
+}
+
+loadUpTo :: fn(major, minor: i32, getProcAddress: fn(*u8) -> rawptr) -> void {
+    switch major*10+minor {
+        case 45: load4_5(getProcAddress); fallthrough;
+        case 44: load4_4(getProcAddress); fallthrough;
+        case 43: load4_3(getProcAddress); fallthrough;
+        case 42: load4_2(getProcAddress); fallthrough;
+        case 41: load4_1(getProcAddress); fallthrough;
+        case 40: load4_0(getProcAddress); fallthrough;
+        case 33: load3_3(getProcAddress); fallthrough;
+        case 32: load3_2(getProcAddress); fallthrough;
+        case 31: load3_1(getProcAddress); fallthrough;
+        case 30: load3_0(getProcAddress); fallthrough;
+        case 21: load2_1(getProcAddress); fallthrough;
+        case 20: load2_0(getProcAddress); fallthrough;
+        case 15: load1_5(getProcAddress); fallthrough;
+        case 14: load1_4(getProcAddress); fallthrough;
+        case 13: load1_3(getProcAddress); fallthrough;
+        case 12: load1_2(getProcAddress); fallthrough;
+        case 11: load1_1(getProcAddress); fallthrough;
+        case 10: load1_0(getProcAddress);
+    }
+}
+
+#library "libc"
+#foreign libc {
+    sscanf :: fn(buf: *u8, format: *u8, args: any.. #cvargs) -> i32
+    strlen :: fn(*u8) -> i64
+    strncmp :: fn(lhs, rhs: *u8, count: i64) -> i32
+}
+
+findVersion :: fn() -> (major: i32, minor: i32) {
+
+    major, minor: i32
+
+    version := GetString(VERSION)
+    if version == nil return 0, 0
+
+    prefixes := { "OpenGL ES-CM ", "OpenGL ES-CL ", "OpenGL ES " }
+
+    for prefix in prefixes {
+        length := strlen(prefix)
+        if strncmp(version, prefix, length) == 0 {
+            version += length
+            break
+        }
+    }
+
+    sscanf(version, "%d.%d", &major, &minor)
+
+    return major, minor
+}
+
+init :: fn(getProcAddress: fn(name: *u8) -> rawptr) -> void {
+
+    // glGetString is used to determine version
+    GetString = getProcAddress("glGetString")
+    major, minor := findVersion()
+    loadUpTo(major, minor, getProcAddress)
+}
+

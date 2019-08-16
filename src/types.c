@@ -1,488 +1,496 @@
 
+#include "all.h"
+#include "ast.h"
 #include "types.h"
+#include "arena.h"
+#include "queue.h"
+#include "package.h"
+#include "checker.h"
+#include "string.h"
+#include "compiler.h"
 
-TargetMetrics *TargetTypeMetrics = NULL;
-
-Type *InvalidType;
-Type *FileType;
-
-Type *AnyType;
-Type *VoidType;
-
-Type *BoolType;
-
-Type *I8Type;
-Type *I16Type;
-Type *I32Type;
-Type *I64Type;
-
-Type *U8Type;
-Type *U16Type;
-Type *U32Type;
-Type *U64Type;
-
-Type *F32Type;
-Type *F64Type;
-
-Type *IntType;
-Type *UintType;
-
-Type *IntptrType;
-Type *UintptrType;
-Type *RawptrType;
-
-Type *StringType;
-
-// TODO: Mechanism to lookup type by their ID
-u32 nextTypeId = 1;
-
-u32 TypeRank(Type *type) {
-    return type->TypeId;
-}
-
-Symbol *FalseSymbol;
-Symbol *TrueSymbol;
-
-const char *TypeKindDescriptions[] = {
-#define FOR_EACH(kind, text) [TypeKind_##kind] = "" #text "",
-    TYPE_KINDS
-#undef FOR_EACH
+typedef struct InternedType InternedType;
+struct InternedType {
+    void *key;
+    Ty *value;
 };
 
-const char *DescribeTypeKind(TypeKind kind) {
-    return TypeKindDescriptions[kind];
+Ty *type_invalid = &(Ty){ TYPE_INVALID };
+
+Ty *type_any  = &(Ty){ TYPE_ANY, NONE };
+Ty *type_cvarg = &(Ty){ TYPE_ANY, CVARG };
+Ty *type_void = &(Ty){ TYPE_VOID, NONE };
+Ty *type_bool = &(Ty){ TYPE_BOOL, NONE, 1, 1 };
+
+Ty *type_i8  = &(Ty){ TYPE_INT, SIGNED, 1, 1 };
+Ty *type_i16 = &(Ty){ TYPE_INT, SIGNED, 2, 2 };
+Ty *type_i32 = &(Ty){ TYPE_INT, SIGNED, 4, 4 };
+Ty *type_i64 = &(Ty){ TYPE_INT, SIGNED, 8, 8 };
+
+Ty *type_u8  = &(Ty){ TYPE_INT, NONE, 1, 1 };
+Ty *type_u16 = &(Ty){ TYPE_INT, NONE, 2, 2 };
+Ty *type_u32 = &(Ty){ TYPE_INT, NONE, 4, 4 };
+Ty *type_u64 = &(Ty){ TYPE_INT, NONE, 8, 8 };
+
+Ty *type_f32 = &(Ty){ TYPE_FLOAT, NONE, 4, 4 };
+Ty *type_f64 = &(Ty){ TYPE_FLOAT, NONE, 8, 8 };
+
+Ty *type_int  = &(Ty){ TYPE_INT, NONE, 8, 8 };
+Ty *type_uint = &(Ty){ TYPE_INT, NONE, 8, 8 };
+Ty *type_intptr  = &(Ty){ TYPE_INT, NONE, 8, 8 };
+Ty *type_uintptr = &(Ty){ TYPE_INT, NONE, 8, 8 }; // FIXME: Non constant sizes
+
+Ty *type_u8ptr;
+Ty *type_rawptr;
+Ty *type_string;
+
+void init_types() {
+    type_u8ptr = type_ptr(type_u8, NONE);
+    type_rawptr = type_u8ptr;
+    type_string = type_slice(type_u8, STRING);
+
+#define DECLARE_BUILTIN_TYPE(TYPE, NAME) \
+{ \
+Sym *sym = arena_calloc(&compiler.arena, sizeof *sym); \
+sym->name = str_intern(NAME); \
+sym->state = SYM_CHECKED; \
+sym->kind = SYM_TYPE; \
+sym->type = TYPE; \
+TYPE->sym = sym; \
+scope_declare(compiler.global_scope, sym); \
+}
+    DECLARE_BUILTIN_TYPE(type_any, "any");
+    DECLARE_BUILTIN_TYPE(type_void, "void");
+    DECLARE_BUILTIN_TYPE(type_bool, "bool");
+    DECLARE_BUILTIN_TYPE(type_i8, "i8");
+    DECLARE_BUILTIN_TYPE(type_i16, "i16");
+    DECLARE_BUILTIN_TYPE(type_i32, "i32");
+    DECLARE_BUILTIN_TYPE(type_i64, "i64");
+    DECLARE_BUILTIN_TYPE(type_u8, "u8");
+    DECLARE_BUILTIN_TYPE(type_u16, "u16");
+    DECLARE_BUILTIN_TYPE(type_u32, "u32");
+    DECLARE_BUILTIN_TYPE(type_u64, "u64");
+    DECLARE_BUILTIN_TYPE(type_f32, "f32");
+    DECLARE_BUILTIN_TYPE(type_f64, "f64");
+    DECLARE_BUILTIN_TYPE(type_int, "int");
+    DECLARE_BUILTIN_TYPE(type_uint, "uint");
+    DECLARE_BUILTIN_TYPE(type_intptr, "intptr");
+    DECLARE_BUILTIN_TYPE(type_uintptr, "uintptr");
+    DECLARE_BUILTIN_TYPE(type_rawptr, "rawptr");
+    DECLARE_BUILTIN_TYPE(type_string, "string");
 }
 
-Type *SmallestIntTypeForNegativeValue(i64 val) {
+bool is_ptr(Ty *type) {
+    return type && type->kind == TYPE_PTR;
+}
+
+bool is_func(Ty *type) {
+    return type && type->kind == TYPE_FUNC;
+}
+
+bool is_ptr_like_type(Ty *type) {
+    return type && (type->kind == TYPE_PTR || type->kind == TYPE_FUNC);
+}
+
+bool is_array(Ty *type) {
+    return type && type->kind == TYPE_ARRAY;
+}
+
+bool is_vector(Ty *type) {
+    return type && type->kind == TYPE_VECTOR;
+}
+
+bool is_slice(Ty *type) {
+    return type && type->kind == TYPE_SLICE;
+}
+
+bool is_bool(Ty *type) {
+    return type && type->kind == TYPE_PTR;
+}
+
+bool is_integer(Ty *type) {
+    return type && (TYPE_BOOL <= type->kind && type->kind <= TYPE_ENUM);
+}
+
+bool is_float(Ty *type) {
+    return type && type->kind == TYPE_FLOAT;
+}
+
+bool is_arithmetic(Ty *type) {
+    return type && (TYPE_BOOL <= type->kind && type->kind <= TYPE_FLOAT);
+}
+
+bool is_arithmetic_or_ptr(Ty *type) {
+    return type && (TYPE_BOOL <= type->kind && type->kind <= TYPE_PTR);
+}
+
+bool is_scalar(Ty *type) {
+    return type && (TYPE_BOOL <= type->kind && type->kind <= TYPE_FUNC);
+}
+
+bool is_aggregate(Ty *type) {
+    return type->kind == TYPE_STRUCT || type->kind == TYPE_UNION;
+}
+
+bool is_signed(Ty *type) {
+    return is_integer(type) && (type->flags & SIGNED) != 0;
+}
+
+bool is_bitwisable(Ty *type) {
+    return is_integer(type) || (type && type->kind == TYPE_ENUM && (type->flags & ENUM_FLAGS) != 0);
+}
+
+bool is_equatable(Ty *type) {
+    static b32 equatables[NUM_TYPE_KINDS] = {
+        [TYPE_INT] = true,
+        [TYPE_PTR] = true,
+        [TYPE_ENUM] = true,
+        [TYPE_FLOAT] = true,
+    };
+    return equatables[type->kind];
+}
+
+bool is_comparable(Ty *type) {
+    if (!type) return false;
+    switch (type->kind) {
+        case TYPE_INT:
+        case TYPE_PTR:
+        case TYPE_ENUM:
+        case TYPE_FLOAT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool is_logical(Ty *type) {
+    if (!type) return false;
+    switch (type->kind) {
+        case TYPE_INT:
+        case TYPE_PTR:
+        case TYPE_BOOL:
+            return true;
+        default:
+            return false;
+    }
+}
+
+Ty *smallest_signed_int_for_value(i64 val) {
     val = MIN(val, INT8_MIN);
-    if (val == INT8_MIN) return I8Type;
-
+    if (val == INT8_MIN) return type_i8;
     val = MIN(val, INT16_MIN);
-    if (val == INT16_MIN) return I16Type;
-
+    if (val == INT16_MIN) return type_i16;
     val = MIN(val, INT32_MIN);
-    if (val == INT32_MIN) return I32Type;
-
-    return I64Type;
+    if (val == INT32_MIN) return type_i32;
+    return type_i64;
 }
 
-Type *SmallestIntTypeForPositiveValue(u64 val) {
+Ty *smallest_unsigned_int_for_value(u64 val) {
     val = MAX(val, UINT8_MAX);
-    if (val == UINT8_MAX) return U8Type;
-
+    if (val == UINT8_MAX) return type_u8;
     val = MAX(val, UINT16_MAX);
-    if (val == UINT16_MAX) return U16Type;
-
+    if (val == UINT16_MAX) return type_u16;
     val = MAX(val, UINT32_MAX);
-    if (val == UINT32_MAX) return U32Type;
-
-    return U64Type;
+    if (val == UINT32_MAX) return type_u32;
+    return type_u64;
 }
 
-u64 MaxValueForIntOrPointerType(Type *type) {
-    if (type->Flags & TypeFlag_Signed) {
-        return IntegerPower(2, type->Width) / 2 - 1;
-    } else {
-        // Unsigned
-        return IntegerPower(2, type->Width) - 1;
+u32 aggregate_field_index(Ty *type, const char *name) {
+    ASSERT(is_aggregate(type));
+    for (u32 i = 0; i < arrlen(type->taggregate.fields); i++) {
+        if (type->taggregate.fields[i].name == name) return i;
     }
+    return -1;
 }
 
-// FIXME: This doesn't sign extend to the target size currently, only 64 bits.
-i64 SignExtend(Type *type, Type *target, Val val) {
-    if (type->Width == 64) return val.i64;
-    u64 v = val.u64 & ((1ull << type->Width) - 1);
-    u64 mask = 1ull << (type->Width - 1);
-    return (v ^ mask) - mask;
+u64 type_max_value(Ty *type) {
+    ASSERT(is_integer(type) || is_ptr(type));
+    if (type->flags & SIGNED)
+        return powi(2, type->size * 8) / 2 - 1;
+    return powi(2, type->size * 8) - 1;
 }
 
-i64 SignExtendTo64Bits(Type *source, Val val) {
-    if (source->Width == 64) return val.i64;
-    u64 v = val.u64 & ((1ull << source->Width) - 1);
-    u64 mask = 1ull << (source->Width - 1);
-    return (v ^ mask) - mask;
-}
-
-b32 isAlias(Type *type);
-b32 TypesIdentical(Type *type, Type *target) {
-    if (target == NULL) return false;
-    while (isAlias(type)) {
-        type = type->Symbol->type;
+u64 powi(u64 base, u64 exp) {
+    u64 result = 1;
+    for (;;) {
+        if (exp & 1) result *= base;
+        exp >>= 1;
+        if (!exp) break;
+        base *= base;
     }
-    while (isAlias(target)) {
-        target = target->Symbol->type;
-    }
-    return type == target;
+    return result;
 }
 
-StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name) {
-
-    u32 index = 0;
-    TypeField *field = NULL;
-    for (u32 i = 0; i < type.numMembers; i++) {
-        if (type.members[i].name == name) {
-            index = i;
-            field = &type.members[i];
-            break;
-        }
-    }
-    
-    return (StructFieldLookupResult){index, field};
+Ty *min_int_for_neg_value(i64 val) {
+    val = MIN(val, INT8_MIN);
+    if (val == INT8_MIN) return type_i8;
+    val = MIN(val, INT16_MIN);
+    if (val == INT16_MIN) return type_i16;
+    val = MIN(val, INT32_MIN);
+    if (val == INT32_MIN) return type_i32;
+    return type_i64;
 }
 
-#if TEST
-void test_SmallestIntTypeForValue() {
-    INIT_COMPILER();
-
-    ASSERT(SmallestIntTypeForPositiveValue(0) == U8Type);
-    ASSERT(SmallestIntTypeForPositiveValue(UINT8_MAX) == U8Type);
-    ASSERT(SmallestIntTypeForPositiveValue(UINT16_MAX) == U16Type);
-    ASSERT(SmallestIntTypeForPositiveValue(UINT32_MAX) == U32Type);
-    ASSERT(SmallestIntTypeForPositiveValue(UINT64_MAX) == U64Type);
+Ty *min_int_for_pos_value(u64 val) {
+    val = MAX(val, UINT8_MAX);
+    if (val == UINT8_MAX) return type_u8;
+    val = MAX(val, UINT16_MAX);
+    if (val == UINT16_MAX) return type_u16;
+    val = MAX(val, UINT32_MAX);
+    if (val == UINT32_MAX) return type_u32;
+    return type_u64;
 }
-#endif
 
-Type *AllocType(TypeKind kind) {
-    Type *type = Calloc(DefaultAllocator, 1, sizeof(Type));
-    type->kind = kind;
-    type->TypeId = nextTypeId++;
+Ty *type_base(Ty *a) {
+    while (a->base) a = a->base;
+    return a;
+}
+
+bool types_eql(Ty *a, Ty *b) {
+    return type_base(a) == type_base(b);
+}
+
+Ty *type_scalar(Ty *ty) {
+    if (ty->kind == TYPE_VECTOR) return ty->tvector.eltype;
+    return ty;
+}
+
+#define type_size(type, member) offsetof(type, member) + sizeof(((type *)0)->member)
+
+Ty *type_alloc(TyKind kind, u8 flags, size_t size) {
+    Ty *type = arena_alloc(&compiler.arena, size);
+    Ty template = {kind, flags};
+    memcpy(type, &template, size);
     return type;
 }
 
-void completeType(Type *type) {
-    // TODO: @CircularTypes
-}
+InternedType *interned_func_tys;
 
-Map internPointerTypes;
-
-Type *NewTypePointer(TypeFlag flags, Type *pointeeType) {
-    Type *type = MapGet(&internPointerTypes, pointeeType);
+Ty *type_func(Ty **params, Ty *result, FuncFlags flags) {
+    TRACE(CHECKING);
+    void *params_hash = (void *) stbds_hash_bytes(params, arrlen(params) * sizeof *params, 0x31415926);
+    void *bytes[] = {params_hash, result, (void *) flags};
+    void *hash = (void *) stbds_hash_bytes(&bytes, sizeof bytes, 0x31415926);
+    Ty *type = hmget(interned_func_tys, hash);
     if (!type) {
-        type = AllocType(TypeKind_Pointer);
-        type->Width = RawptrType->Width;
-        type->Align = RawptrType->Align;
-        type->Flags = flags;
-        type->Pointer.pointeeType = pointeeType;
-        MapSet(&internPointerTypes, pointeeType, type);
+        type = type_alloc(TYPE_FUNC, (u8) flags, type_size(Ty, tfunc));
+        type->size = compiler.target_metrics.width;
+        type->align = compiler.target_metrics.align;
+        type->tfunc.params = params;
+        type->tfunc.result = result;
+        hmput(interned_func_tys, hash, type);
     }
     return type;
 }
 
-Map internSliceTypes;
+InternedType *interned_struct_tuple_tys;
 
-Type *NewTypeSlice(TypeFlag flags, Type *elementType)  {
-    Type *type = MapGet(&internSliceTypes, elementType);
+Ty *type_struct(TyField *fields, u32 size, u32 align, u8 flags) {
+    TRACE(CHECKING);
+    void *hash;
+    Ty *type;
+    if (flags&TUPLE) {
+        hash = (void *) stbds_hash_bytes(fields, arrlen(fields) * sizeof *fields, 0x31415926);
+        type = hmget(interned_struct_tuple_tys, hash);
+        if (type) return type;
+    }
+    type = type_alloc(TYPE_STRUCT, flags, type_size(Ty, taggregate));
+    type->size = size;
+    type->align = align;
+    type->taggregate.fields = fields;
+    if (flags&TUPLE) hmput(interned_struct_tuple_tys, hash, type);
+    return type;
+}
+
+Ty *type_union(TyField *fields, u32 size, u32 align, u8 flags) {
+    TRACE(CHECKING);
+    Ty *type = type_alloc(TYPE_UNION, flags, type_size(Ty, taggregate));
+    type->taggregate.fields = fields;
+    return type;
+}
+
+Ty *type_enum(u8 flags) {
+    TRACE(CHECKING);
+    Ty *type = type_alloc(TYPE_ENUM, flags, type_size(Ty, tenum));
+    return type;
+}
+
+InternedType *interned_ptr_tys;
+
+Ty *type_ptr(Ty *base, u8 flags) {
+    TRACE(CHECKING);
+    Ty *type = hmget(interned_ptr_tys, base);
     if (!type) {
-        type = AllocType(TypeKind_Slice);
-        type->Width = RawptrType->Width;
-        type->Flags = flags;
-        type->Slice.elementType = elementType;
-        MapSet(&internSliceTypes, elementType, type);
+        type = type_alloc(TYPE_PTR, flags, type_size(Ty, tptr));
+        type->size = compiler.target_metrics.width;
+        type->align = compiler.target_metrics.align;
+        type->tptr.base = base;
+        hmput(interned_ptr_tys, base, type);
     }
     return type;
 }
 
-typedef struct InternType InternType;
-struct InternType {
-    Type *type;
-    InternType *next;
+InternedType *interned_array_tys;
+
+Ty *type_array(Ty *eltype, u64 length, u8 flags) { // FIXME: IMPL_LENGTH handling & interning
+    TRACE(CHECKING);
+    void *bytes[] = {eltype, (void *) length};
+    void *hash = (void *) stbds_hash_bytes(bytes, sizeof bytes, 0x31415926);
+    Ty *type = hmget(interned_array_tys, hash);
+    if (!type) {
+        type = type_alloc(TYPE_ARRAY, flags, type_size(Ty, tarray));
+        u64 size = eltype->size * length;
+        ASSERT(size <= UINT32_MAX);
+        type->size = (u32) size;
+        type->align = eltype->align;
+        type->tarray.eltype = eltype;
+        type->tarray.length = length;
+        hmput(interned_array_tys, hash, type);
+    }
+    return type;
+}
+
+InternedType *interned_vector_tys;
+
+Ty *type_vector(Ty *eltype, u64 length, u8 flags) {
+    TRACE(CHECKING);
+    void *bytes[] = {eltype, (void *) length};
+    void *hash = (void *) stbds_hash_bytes(bytes, sizeof bytes, 0x31415926);
+    Ty *type = hmget(interned_vector_tys, hash);
+    if (!type) {
+        type = type_alloc(TYPE_VECTOR, flags, type_size(Ty, tvector));
+        u64 size = eltype->size * length;
+        ASSERT(size <= UINT32_MAX);
+        type->size = (u32) size;
+        type->align = eltype->align;
+        type->tvector.eltype = eltype;
+        type->tvector.length = length;
+        hmput(interned_vector_tys, hash, type);
+    }
+    return type;
+}
+
+InternedType *interned_slice_tys;
+
+Ty *type_slice(Ty *eltype, u8 flags) {
+    TRACE(CHECKING);
+    Ty *type = hmget(interned_slice_tys, eltype);
+    if (!type) {
+        type = type_alloc(TYPE_SLICE, flags, type_size(Ty, tslice));
+        type->size = compiler.target_metrics.width * 3; // ptr, len, cap
+        type->align = compiler.target_metrics.align;
+        type->tslice.eltype = eltype;
+        hmput(interned_slice_tys, eltype, type);
+    }
+    return type;
+}
+
+int type_kind_alloc_sizes[] = {
+    [TYPE_INVALID] = 0,
+    [TYPE_COMPLETING] = 0,
+    [TYPE_VOID] = sizeof(Ty),
+    [TYPE_BOOL] = sizeof(Ty),
+    [TYPE_INT] = sizeof(Ty),
+    [TYPE_ENUM] = type_size(Ty, tenum),
+    [TYPE_FLOAT] = sizeof(Ty),
+    [TYPE_PTR] = type_size(Ty, tptr),
+    [TYPE_FUNC] = type_size(Ty, tfunc),
+    [TYPE_ARRAY] = type_size(Ty, tarray),
+    [TYPE_SLICE] = type_size(Ty, tslice),
+    [TYPE_VECTOR] = type_size(Ty, tvector),
+    [TYPE_STRUCT] = type_size(Ty, taggregate),
+    [TYPE_UNION] = type_size(Ty, taggregate),
+    [TYPE_ANY] = sizeof(Ty),
 };
 
-Map internArrayTypes;
+Ty *type_alias(Ty *base, Sym *sym) {
+    TRACE(CHECKING);
+    if (base->kind == TYPE_INVALID) return base;
+    int size = type_kind_alloc_sizes[base->kind];
+    Ty *type = arena_alloc(&compiler.arena, size);
+    memcpy(type, base, size);
+    type->base = base;
+    type->sym = sym;
+    return type;
+}
 
-Type *NewTypeArray(TypeFlag flags, u64 length, Type *elementType) {
-    u64 hash = HashMix(HashPtr(elementType), HashU64(length));
-    u64 key = hash ? hash : 1;
-    InternType *intern = MapGet(&internArrayTypes, (void*) key);
-    for (InternType *it = intern; it; it = it->next) {
-        Type *type = it->type;
-        if (type->Array.elementType == elementType && type->Array.length == type->Array.length) {
-            return type;
+const char *tyname(Ty *type) {
+    if (type->sym) return type->sym->name;
+    switch (type->kind) {
+        case TYPE_INVALID:    return "invalid";
+        case TYPE_COMPLETING: return "completing";
+        case TYPE_VOID:       return "void";
+        case TYPE_BOOL:       return "bool";
+        case TYPE_INT:        return "int";
+        case TYPE_ENUM:       return "enum";
+        case TYPE_FLOAT:      return "float";
+        case TYPE_PTR: return str_join("*", tyname(type->tptr.base));
+        case TYPE_FUNC: {
+            char buf[1024];
+            int len = 0;
+            len += snprintf(buf + len, sizeof buf - len, "fn(");
+            for (int i = 0; i < arrlen(type->tfunc.params); i++) {
+                len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tfunc.params[i]));
+                if (i != arrlen(type->tfunc.params) - 1)
+                    len += snprintf(buf + len, sizeof buf - len, ", ");
+            }
+            len += snprintf(buf + len, sizeof buf - len, ")");
+            if (type->tfunc.result) {
+                len += snprintf(buf + len, sizeof buf - len, " -> %s", tyname(type->tfunc.result));
+            }
+            buf[len] = '\0';
+            return str_intern(buf);
         }
-    }
-    completeType(elementType);
-    Type *type = AllocType(TypeKind_Array);
-    ASSERT(length * elementType->Width < UINT32_MAX); // FIXME: Error for oversized arrays
-    type->Width = (u32) length * elementType->Width;
-    type->Align = elementType->Align;
-    type->Flags = flags;
-    type->Array.length = length;
-    type->Array.elementType = elementType;
-
-    InternType *newIntern = Alloc(DefaultAllocator, sizeof(InternType));
-    newIntern->type = type;
-    newIntern->next = intern;
-    MapSet(&internArrayTypes, (void*) key, newIntern);
-    return type;
-}
-
-Map internFunctionTypes;
-
-Type *NewTypeFunction(TypeFlag flags, DynamicArray(Type *) params, DynamicArray(Type *) results) {
-    ASSERT(ArrayLen(params) < UINT32_MAX);
-    ASSERT(ArrayLen(results) < UINT32_MAX);
-
-    u32 numParams = (u32) ArrayLen(params);
-    u32 numResults = (u32) ArrayLen(results);
-
-    bool isVoid = numResults == 1 && results[0] == VoidType;
-    if (isVoid) {
-        numResults = 0;
-        results = NULL;
-    }
-
-    u64 hash = HashMix(HashBytes(params, numParams * sizeof(params)), HashBytes(results, numResults * sizeof(results)));
-    u64 key = hash ? hash : 1;
-    InternType *intern = MapGet(&internFunctionTypes, (void*) key);
-    for (InternType *it = intern; it; it = it->next) {
-        Type *type = it->type;
-
-        bool nParamsEql    = numParams  == type->Function.numParams;
-        bool nResultsEql   = numResults == type->Function.numResults;
-        bool flagsEql      = flags      == type->Function.Flags;
-        bool paramsPtrEql  = params     == type->Function.params;
-        bool resultsPtrEql = results    == type->Function.results;
-
-        if (nParamsEql && nResultsEql && flagsEql &&
-            ((paramsPtrEql && resultsPtrEql) ||
-             (memcmp(params,  type->Function.params,  numParams) == 0 &&
-              memcmp(results, type->Function.results, numResults) == 0)))
-        {
-            return type;
+        case TYPE_ARRAY: {
+            char buf[1024];
+            int len = 0;
+            len += snprintf(buf + len, sizeof buf - len, "[%llu]", type->tarray.length);
+            len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tarray.eltype));
+            buf[len] = '\0';
+            return str_intern(buf);
         }
-    }
-    Type *type = AllocType(TypeKind_Function);
-    type->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-    type->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
-    type->Flags = flags;
-
-    Type **p = Alloc(DefaultAllocator, numParams * sizeof *p);
-    Type **r = Alloc(DefaultAllocator, numResults * sizeof *r);
-
-    type->Function.params  = memcpy(p, params, numParams * sizeof *p);
-    type->Function.results = memcpy(r, results, numResults * sizeof *p);
-
-    type->Function.numParams = numParams;
-    type->Function.numResults = numResults;
-
-    InternType *newIntern = Alloc(DefaultAllocator, sizeof *newIntern);
-    newIntern->type = type;
-    newIntern->next = intern;
-    MapSet(&internFunctionTypes, (void*) key, newIntern);
-    return type;
-}
-
-Type *NewTypeTupleFromFunctionResults(TypeFlag flags, Type_Function function) {
-    Type *type = AllocType(TypeKind_Tuple);
-    type->Flags = flags;
-
-    type->Tuple.numTypes = function.numResults;
-    type->Tuple.types = function.results;
-    return type;
-}
-
-Type *NewTypeStruct(u32 Align, u32 Width, TypeFlag flags, DynamicArray(TypeField) members) {
-    ASSERT(ArrayLen(members) < UINT32_MAX);
-
-    u32 numMembers = (u32) ArrayLen(members);
-
-    Type *type = AllocType(TypeKind_Struct);
-    type->Align = Align;
-    type->Width = Width;
-    type->Flags = flags;
-
-    type->Struct.members = Alloc(DefaultAllocator, sizeof(TypeField) * numMembers);
-    memcpy(type->Struct.members, members, sizeof(TypeField) * numMembers);
-
-    type->Struct.numMembers = numMembers;
-    return type;
-}
-
-Type *NewTypeUnion(TypeFlag flags, DynamicArray(Type *) cases)  {
-    UNIMPLEMENTED();
-    return NULL;
-}
-
-Scope *pushScope(Package *pkg, Scope *parent);
-b32 declareSymbol(Package *pkg, Scope *scope, const char *name, Symbol **symbol, Decl *decl);
-
-void declareBuiltinSymbol(const char *name, Symbol **symbol, SymbolKind kind, Type *type, Val val) {
-    b32 dup = declareSymbol(&builtinPackage, builtinPackage.scope, StrIntern(name), symbol, NULL);
-    ASSERT(!dup);
-    (*symbol)->type = type;
-    (*symbol)->val = val;
-    (*symbol)->used = true;
-    (*symbol)->state = SymbolState_Resolved;
-    (*symbol)->kind = kind;
-}
-
-void declareBuiltinType(const char *name, Type *type) {
-    name = StrIntern(name);
-    Symbol *symbol;
-    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, NULL);
-    symbol->state = SymbolState_Resolved;
-    symbol->type = type;
-    symbol->kind = SymbolKind_Type;
-    type->Symbol = symbol;
-}
-
-void declareBuiltinTypeAlias(const char *name, Type *type, Type *alias) {
-    name = StrIntern(name);
-    Symbol *symbol;
-    declareSymbol(&builtinPackage, builtinPackage.scope, name, &symbol, NULL);
-    symbol->state = SymbolState_Resolved;
-    symbol->type = type;
-    symbol->kind = SymbolKind_Type;
-    alias->Symbol = symbol;
-}
-
-bool HaveInitializedBuiltins = false;
-void InitBuiltins() {
-    if (HaveInitializedBuiltins) return;
-    HaveInitializedBuiltins = true;
-
-    switch (TargetOs) {
-        case Os_Linux:
-            TargetTypeMetrics = Os_Linux_ArchSupport[TargetArch];
-            break;
-        case Os_Darwin:
-            TargetTypeMetrics = Os_Darwin_ArchSupport[TargetArch];
-            break;
-        case Os_Windows:
-            TargetTypeMetrics = Os_Windows_ArchSupport[TargetArch];
-            break;
-
+        case TYPE_VECTOR: {
+            char buf[1024];
+            int len = 0;
+            len += snprintf(buf + len, sizeof buf - len, "#vector(%llu)", type->tarray.length);
+            len += snprintf(buf + len, sizeof buf - len, "%s", tyname(type->tarray.eltype));
+            buf[len] = '\0';
+            return str_intern(buf);
+        }
+        case TYPE_SLICE: return str_join("[]", tyname(type->tslice.eltype));
+        case TYPE_STRUCT: {
+            if (type->flags&OPAQUE) return "struct #opaque";
+            char buf[1024];
+            int len = 0;
+            if (type->flags&TUPLE) {
+                if (arrlen(type->taggregate.fields) == 1)
+                    return tyname(type->taggregate.fields->type);
+                len += snprintf(buf + len, sizeof buf - len, "(");
+                for (int i = 0; i < arrlen(type->taggregate.fields); i++) {
+                    TyField field = type->taggregate.fields[i];
+                    len += snprintf(buf + len, sizeof buf - len, "%s", tyname(field.type));
+                    if (i != arrlen(type->taggregate.fields) - 1)
+                        len += snprintf(buf + len, sizeof buf - len, ", ");
+                }
+                len += snprintf(buf + len, sizeof buf - len, ")");
+                return str_intern(buf);
+            }
+            len += snprintf(buf + len, sizeof buf - len, "struct {");
+            for (int i = 0; i < arrlen(type->taggregate.fields); i++) {
+                TyField field = type->taggregate.fields[i];
+                if (field.name)
+                    len += snprintf(buf + len, sizeof buf - len, "%s: ", field.name);
+                len += snprintf(buf + len, sizeof buf - len, "%s", tyname(field.type));
+                if (i != arrlen(type->taggregate.fields) - 1)
+                    len += snprintf(buf + len, sizeof buf - len, "; ");
+            }
+            len += snprintf(buf + len, sizeof buf - len, "}");
+            buf[len] = '\0';
+            return str_intern(buf);
+        }
+        case TYPE_UNION:      return "union";
+        case TYPE_ANY:        return "any";
         default:
-            break;
+            fatal("Unhandled type");
     }
-    if (!TargetTypeMetrics) {
-        printf("Unsupported os & arch combination: %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
-        exit(1);
-    }
-
-    builtinPackage.scope = pushScope(&builtinPackage, NULL);
-
-#define TYPE(_global, _name, _kind, _width, _flags) \
-    _global = AllocType(TypeKind_##_kind); \
-    _global->Width = _width; \
-    _global->Align = _width; \
-    _global->Flags = _flags; \
-    declareBuiltinType(_name, _global)
-
-#define TYPEALIAS(_global, _name, _alias) \
-    _global = Alloc(DefaultAllocator, sizeof(Type)); \
-    memcpy(_global, _alias, sizeof(Type)); \
-    _global->Flags |= TypeFlag_Alias; \
-    declareBuiltinTypeAlias(_name, _alias, _global)
-
-    TYPE(InvalidType, "<invalid>", Invalid, 0, TypeFlag_None);
-    TYPE(FileType, "<file>", Invalid, 0, TypeFlag_None);
-    nextTypeId -= 2;
-
-    // @IMPORTANT: The order is important here as it sets up the TypeId's
-    TYPE(AnyType,   "any",  Any, 128, TypeFlag_None); // typeid = 1
-    TYPE(VoidType, "void", Tuple, 0, TypeFlag_None);
-
-    TYPE(BoolType, "bool", Int, 1, TypeFlag_Boolean);
-    BoolType->Align = 8; // Must be byte aligned
-
-    TYPE(F32Type, "f32", Float, 32, TypeFlag_None);
-    TYPE(F64Type, "f64", Float, 64, TypeFlag_None);
-
-    TYPE(I8Type,  "i8",  Int,  8, TypeFlag_Signed);
-    TYPE(I16Type, "i16", Int, 16, TypeFlag_Signed);
-    TYPE(I32Type, "i32", Int, 32, TypeFlag_Signed);
-    TYPE(I64Type, "i64", Int, 64, TypeFlag_Signed);
-    TYPE(U8Type,  "u8",  Int,  8, TypeFlag_None);
-    TYPE(U16Type, "u16", Int, 16, TypeFlag_None);
-    TYPE(U32Type, "u32", Int, 32, TypeFlag_None);
-    TYPE(U64Type, "u64", Int, 64, TypeFlag_None);
-    // TODO: Do we need an UntypedUintType? ... UntypedIntType cannot represent values over INT64_MAX;
-
-    TYPE(RawptrType, "rawptr", Pointer, 64, TypeFlag_None);
-
-    // Aliases behave in promotion just as the types they alias do.
-    TYPEALIAS(IntType,   "int", I32Type);
-    TYPEALIAS(UintType, "uint", U32Type);
-
-    TYPE(StringType, "string", Struct, 128, TypeFlag_None);
-
-    switch (TargetTypeMetrics[TargetMetrics_Pointer].Width) {
-        case 32:
-            TYPEALIAS(IntptrType,   "intptr", I32Type);
-            TYPEALIAS(UintptrType, "uintptr", U32Type);
-            break;
-        case 64:
-            TYPEALIAS(IntptrType,   "intptr", I64Type);
-            TYPEALIAS(UintptrType, "uintptr", U64Type);
-            break;
-        default:
-            printf("Unsupported pointer width on os & arch %s/%s\n", OsNames[TargetOs], ArchNames[TargetArch]);
-            exit(1);
-    }
-
-    declareBuiltinSymbol("false", &FalseSymbol, SymbolKind_Constant, BoolType, (Val){.i64 = 0});
-    declareBuiltinSymbol("true",  &TrueSymbol,  SymbolKind_Constant, BoolType, (Val){.i64 = 1});
-
-    RawptrType->Pointer.pointeeType = U8Type;
-
-    AnyType->Align = TargetTypeMetrics[TargetMetrics_Pointer].Align;
-    AnyType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width * 2;
-
-    RawptrType->Align = RawptrType->Width = TargetTypeMetrics[TargetMetrics_Pointer].Width;
-
-#undef TYPE
 }
-
-const char *DescribeType(Type *type) {
-    if (!type) return DescribeTypeKind(TypeKind_Invalid);
-
-    // TODO: Something about aliased type names ie. 'rawptr' aka '*u8'
-    if (type->Symbol) {
-        return type->Symbol->name;
-    }
-
-    return DescribeTypeKind(type->kind);
-}
-
-#if TEST
-void test_TypeIntern() {
-    TargetArch = Arch_x86_64;
-    INIT_COMPILER();
-
-    ASSERT(InvalidType);
-    ASSERT(AnyType);
-    ASSERT(VoidType);
-    ASSERT(BoolType);
-
-    ASSERT(I8Type);
-    ASSERT(I16Type);
-    ASSERT(I32Type);
-    ASSERT(I64Type);
-    ASSERT(U8Type);
-    ASSERT(U16Type);
-    ASSERT(U32Type);
-    ASSERT(U64Type);
-
-    ASSERT(I8Type->Width  ==  8);
-    ASSERT(I16Type->Width == 16);
-    ASSERT(I32Type->Width == 32);
-    ASSERT(I64Type->Width == 64);
-    ASSERT(U8Type->Width  ==  8);
-    ASSERT(U16Type->Width == 16);
-    ASSERT(U32Type->Width == 32);
-    ASSERT(U64Type->Width == 64);
-
-    ASSERT(F32Type->Width == 32);
-    ASSERT(F64Type->Width == 64);
-
-    ASSERT(IntptrType->Symbol->type == I64Type);
-    ASSERT(UintptrType->Symbol->type == U64Type);
-
-    ASSERT(IntptrType->Width == 64);
-    ASSERT(UintptrType->Width == 64);
-
-    ASSERT(RawptrType->Width == 64);
-    ASSERT(AnyType->Width == 128);
-}
-#endif

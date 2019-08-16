@@ -1,1460 +1,1302 @@
 
-i32 PrecedenceForTokenKind[NUM_TOKEN_KINDS] = {
-    0,
+#include "all.h"
+#include "os.h"
+#include "lexer.h"
+#include "parser.h"
+#include "arena.h"
+#include "package.h"
+#include "ast.h"
+#include "checker.h"
+#include "ast.h"
+#include "types.h"
+#include "string.h"
+#include "checker.h"
+#include "queue.h"
+#include "compiler.h"
+
+#define error(self, range, fmt, ...) (self->was_error_in_line = true, add_error(self->package, range, fmt, ##__VA_ARGS__))
+#define note(self, range, fmt, ...) add_note(self->package, range, fmt, ##__VA_ARGS__)
+
+void parse_source(Package *package, Source *source);
+Stmt *parse_stmt(Parser *self);
+Expr *parse_expr(Parser *self);
+const char *name_for_import(const char *in_path);
+INLINE Token eat_tok(Parser *self);
+INLINE bool is_eof(Parser *self);
+
+const char *keywords[] = {
+    [KW_IF] = "if",
+    [KW_FN] = "fn",
+    [KW_FOR] = "for",
+    [KW_NIL] = "nil",
+    [KW_ENUM] = "enum",
+    [KW_UNION] = "union",
+    [KW_STRUCT] = "struct",
+    [KW_ELSE] = "else",
+    [KW_CASE] = "case",
+    [KW_USING] = "using",
+    [KW_DEFER] = "defer",
+    [KW_CAST] = "cast",
+    [KW_AUTOCAST] = "autocast", // FIXME: Determine fate
+    [KW_GOTO] = "goto",
+    [KW_BREAK] = "break",
+    [KW_RETURN] = "return",
+    [KW_SWITCH] = "switch",
+    [KW_CONTINUE] = "continue",
+    [KW_FALLTHROUGH] = "fallthrough",
+};
+
+const char *directives[] = {
+    [DIR_FLAGS] = "flags",
+    [DIR_CVARGS] = "cvargs",
+    [DIR_LOCATION] = "location",
+    [DIR_FILE] = "file",
+    [DIR_FUNCTION] = "function",
+    [DIR_LINE] = "line",
+    [DIR_UNDEF] = "undef",
+    [DIR_OPAQUE] = "opaque",
+    [DIR_IMPORT] = "import",
+    [DIR_VECTOR] = "vector",
+    [DIR_LIBRARY] = "library",
+    [DIR_FOREIGN] = "foreign",
+    [DIR_CALLCONV] = "callconv",
+    [DIR_LINKNAME] = "linkname",
+    [DIR_LINKPREFIX] = "linkprefix",
+};
+
+i32 token_precedence[255] = {
     [TK_Question] = 1,
     [TK_Lor] = 1,
     [TK_Land] = 2,
     [TK_Eql] = 3,
     [TK_Neq] = 3,
     [TK_Lss] = 3,
-    [TK_Leq] = 3, 
-    [TK_Gtr] = 3, 
+    [TK_Leq] = 3,
+    [TK_Gtr] = 3,
     [TK_Geq] = 3,
     [TK_Add] = 4,
-    [TK_Sub] = 4, 
-    [TK_Or]  = 4, 
+    [TK_Sub] = 4,
+    [TK_Or]  = 4,
     [TK_Xor] = 4,
     [TK_Mul] = 5,
     [TK_Div] = 5,
     [TK_Rem] = 5,
-    [TK_Shl] = 5, 
-    [TK_Shr] = 5, 
+    [TK_Shl] = 5,
+    [TK_Shr] = 5,
     [TK_And] = 5,
     [TK_Assign] = 0,
+    [TK_AddAssign] = 0,
+    [TK_SubAssign] = 0,
+    [TK_MulAssign] = 0,
+    [TK_DivAssign] = 0,
+    [TK_RemAssign] = 0,
+    [TK_AndAssign] = 0,
+    [TK_OrAssign]  = 0,
+    [TK_XorAssign] = 0,
+    [TK_ShlAssign] = 0,
+    [TK_ShrAssign] = 0,
 };
 
-SourceRange rangeFromTokens(Token start, Token end) {
-    u32 endOffset = (u32) (end.end - start.start) + start.pos.offset;
-    SourceRange range = {
-        start.pos.name,
-        start.pos.offset, endOffset,
-        start.pos.line, start.pos.column
+void ensure_interned_string(Parser *self, Expr *expr) {
+    ASSERT(expr->kind == EXPR_STR);
+    if (expr->estr.mapped) {
+        expr->estr.mapped = false;
+        expr->estr.str = (char *) str_intern_range(expr->estr.str, expr->estr.str + expr->estr.len);
+    }
+}
+
+void parser_online(Parser *self, u32 offset) {
+    TRACE(PARSING);
+    self->was_newline = true;
+    self->was_error_in_line = false;
+    arrput(self->source->line_offsets, offset);
+}
+
+const char *parser_onname(Parser *self, Token *tok, const char *str, u32 len) {
+    TRACE(PARSING);
+    str = str_intern_range(str, str + len);
+    int num_keywords = sizeof keywords / sizeof *keywords;
+    for (int i = 0; i < num_keywords; i++) {
+        if (keywords[i] == str) {
+            tok->kind = TK_Keyword;
+            break;
+        }
+    }
+    return str;
+}
+
+const char *parser_onstr(Parser *self, Token *tok, const char *str, u32 len, bool is_temp) {
+    TRACE(PARSING);
+    self->str_len = len;
+    self->str_mapped = !is_temp;
+    if (!is_temp) return str;
+    char *mem = arena_alloc(&self->package->arena, len + 1);
+    memcpy(mem, str, len);
+    mem[len] = '\0';
+    return mem;
+}
+
+void parser_onmsg(Parser *self, u32 offset, const char *str, u32 len) {
+    TRACE(PARSING);
+    Range range = {offset, offset};
+    error(self, range, str);
+}
+
+void parse_package(Package *package) {
+    TRACE1(PARSING, STR("package.path", package->path));
+    for (int i = 0; i < arrlen(package->sources); i++) {
+        verbose("Parsing %s/%s", package->path, package->sources[i].filename);
+        parse_source(package, package->sources + i);
+    }
+}
+
+void parse_source(Package *package, Source *source) {
+    TRACE(PARSING);
+    Parser parser = {
+        .package = package,
+        .source = source,
     };
+    lexer_init(&parser.lexer, source->code);
+    parser.lexer.client.data = &parser;
+    parser.lexer.client.online = (void *) parser_online;
+    parser.lexer.client.onname = (void *) parser_onname;
+    parser.lexer.client.onstr  = (void *) parser_onstr;
+    parser.lexer.client.onmsg  = (void *) parser_onmsg;
+    Decl *dfile = new_decl_file(package, source);
+    arrput(parser.stmts, (Stmt *) dfile);
+    eat_tok(&parser);
+    while (!is_eof(&parser)) {
+        Stmt *stmt = parse_stmt(&parser);
+        arrput(parser.stmts, stmt);
+    }
+    for (int i = 0; i < hmlen(package->imports); i++) {
+        ImportMapEntry import = package->imports[i];
+        if (import.value->state == SYM_CHECKED) continue;
+        const char *path = resolve_value(package, import.key->dimport.path).p;
+        if (!import.key->dimport.alias) {
+            import.value->name = name_for_import(path);
+            scope_declare(package->scope, import.value);
+            verbose("Resolved name '%s' for import path '%s'", import.value->name, path);
+        }
+        import.value->package = import_path(path, package);
+        import.value->state = SYM_CHECKED;
+        if (!import.value->package)
+            add_error(package, import.key->range, "Failed to resolve package path for %s", path);
+    }
+    for (i64 i = 0; i < arrlen(parser.stmts); i++) {
+        arrput(package->stmts, parser.stmts[i]); // @Optimize memcpy?
+        CheckerWork *work = arena_alloc(&package->arena, sizeof *work);
+        work->package = package;
+        work->stmt = parser.stmts[i];
+        queue_push_back(&compiler.checking_queue, work);
+    }
+}
+
+INLINE
+Token eat_tok(Parser *self) {
+    TRACE(PARSING);
+    self->olast = self->oend;
+    self->tok = lexer_next_token(&self->lexer);
+    self->ostart = self->source->start + self->tok.offset_start;
+    self->oend = self->source->start + self->tok.offset_end;
+    return self->tok;
+}
+
+INLINE
+Range parser_range(Parser *self) {
+    Range range = {self->ostart, self->oend};
     return range;
 }
 
-SourceRange rangeFromTokenToEndOffset(Token token, u32 endOffset) {
-    SourceRange range = {
-        token.pos.name,
-        token.pos.offset, endOffset,
-        token.pos.line, token.pos.column,
-    };
+INLINE
+Range r(u32 start, u32 end) {
+    Range range = {start, end};
     return range;
 }
 
-SourceRange rangeFromNodes(AstNode start, AstNode end) {
-    Stmt *s = (Stmt*) start;
-    Stmt *e = (Stmt*) end;
-    SourceRange range = {
-        s->pos.name,
-        s->pos.offset, e->pos.endOffset,
-        s->pos.line, s->pos.column,
-    };
-    return range;
+INLINE
+bool is_tok(Parser *self, TokenKind kind) {
+    return self->tok.kind == kind;
 }
 
-SourceRange rangeFromTokenToEndOfNode(Token token, AstNode node) {
-    Stmt *stmt = (Stmt *) node;
-    SourceRange range = {
-        token.pos.name,
-        token.pos.offset, stmt->pos.endOffset,
-        token.pos.line, token.pos.column,
-    };
-    return range;
+INLINE
+bool is_eof(Parser *self) {
+    return self->tok.kind == TK_Eof;
 }
 
-typedef struct Parser Parser;
-struct Parser {
-    Lexer lexer;
-    Position prevStart;
-    Position prevEnd;
-    Token tok;
-    Package *package;
-
-    const char *callingConvention;
-    const char *linkPrefix;
-};
-
-#define nextToken() \
-    p->prevStart = p->tok.pos; \
-    p->prevEnd = p->lexer.pos; \
-    p->tok = NextToken(&p->lexer)
-
-b32 isToken(Parser *p, TokenKind kind) {
-    return p->tok.kind == kind;
+INLINE
+bool is_tok_name(Parser *self, const char *name) {
+    return self->tok.kind == TK_Name && self->tok.tname == name;
 }
 
-b32 isTokenEof(Parser *p) {
-    return p->tok.kind == TK_Eof;
+INLINE
+bool is_kw(Parser *self, Keyword keyword) {
+    return is_tok(self, TK_Keyword) && self->tok.tname == keywords[keyword];
 }
 
-b32 isTokenIdent(Parser *p, const char *ident) {
-    return p->tok.kind == TK_Ident && p->tok.val.s == ident;
+INLINE
+bool is_directive(Parser *self, Directive directive) {
+    return is_tok(self, TK_Directive) && self->tok.tname == directives[directive];
 }
 
-b32 isDirective(Parser *p, const char *ident) {
-    return isToken(p, TK_Directive) && p->tok.val.ident == ident;
-}
-
-b32 isPrefixOrLoneDirective(Parser *p) {
-    if (p->tok.val.ident == internCallConv) return true;
-    if (p->tok.val.ident == internLinkPrefix) return true;
-    if (p->tok.val.ident == internForeign) return true;
-    if (p->tok.val.ident == internImport) return true;
-    return false;
-}
-
-b32 isSuffixDirective(Parser *p) {
-    if (p->tok.val.ident == internLinkName) return true;
-    return false;
-}
-
-b32 isKeyword(Parser *p, const char *ident) {
-    return isToken(p, TK_Keyword) && p->tok.val.s == ident;
-}
-
-b32 isKeywordBranch(Parser *p, const char *ident) {
-    return p->tok.kind == TK_Keyword &&
-    (p->tok.val.s == Keyword_goto ||
-     p->tok.val.s == Keyword_break ||
-     p->tok.val.s == Keyword_continue ||
-     p->tok.val.s == Keyword_fallthrough);
-}
-
-b32 isNotRbraceOrEOF(Parser *p) {
-    if (p->tok.kind == TK_Rbrace) return false;
-    else if (p->tok.kind == TK_Eof) return false;
+INLINE
+bool match_kw(Parser *self, Keyword keyword) {
+    if (!is_kw(self, keyword)) return false;
+    eat_tok(self);
     return true;
 }
 
-b32 matchKeyword(Parser *p, const char *ident) {
-    if (isKeyword(p, ident)) {
-        nextToken();
+INLINE
+bool match_directive(Parser *self, Directive directive) {
+    if (!is_directive(self, directive)) return false;
+    eat_tok(self);
+    return true;
+}
+
+INLINE
+bool match_tok(Parser *self, TokenKind kind) {
+    if (!is_tok(self, kind)) return false;
+    eat_tok(self);
+    return true;
+}
+
+INLINE
+bool expect_tok(Parser *self, TokenKind kind) {
+    if (!is_tok(self, kind)) {
+        if (!self->was_error_in_line)
+            error(self, parser_range(self), "Expected token %s, got %s",
+                  token_name(kind), token_info(self->tok));
+        return false;
+    }
+    eat_tok(self);
+    return true;
+}
+
+INLINE
+bool is_terminator(Parser *self) {
+    if (self->was_newline) return true;
+    if (is_eof(self)) return true;
+    if (is_tok(self, TK_Rbrace)) return true;
+    if (is_tok(self, TK_Rparen)) return true;
+    if (is_tok(self, TK_Terminator)) return true;
+    return false;
+}
+
+INLINE
+bool match_terminator(Parser *self) {
+    if (is_eof(self)) return true;
+    return match_tok(self, TK_Terminator);
+}
+
+INLINE
+bool expect_terminator(Parser *self) {
+    bool result = false;
+    if (is_tok(self, TK_Terminator)) {
+        self->tok = lexer_next_token(&self->lexer);
         return true;
     }
-    return false;
-}
-
-b32 matchDirective(Parser *p, const char *ident) {
-    if (isDirective(p, ident)) {
-        nextToken();
+    if (self->was_newline || self->was_terminator) result = true;
+    else if (is_tok(self, TK_Rbrace)) result = true;
+    else if (is_tok(self, TK_Eof))    result = true;
+    else if (is_kw(self, KW_ELSE))    result = true;
+    if (result) {
+        self->was_terminator = result;
         return true;
     }
+    // Check for error on line.
+    if (!self->was_error_in_line)
+        error(self, parser_range(self), "Expected ';' or newline");
+
+    // Eat to the next terminator, loosely resetting the parser
+    while (!is_tok(self, TK_Terminator) && !self->was_newline) eat_tok(self);
+    match_terminator(self);
+
     return false;
 }
 
-b32 matchToken(Parser *p, TokenKind kind) {
-    if (isToken(p, kind)) {
-        nextToken();
-        return true;
+INLINE
+void expect_single_expr(Parser *self, Expr **exprs) {
+    TRACE(PARSING);
+    if (arrlen(exprs) > 1) {
+        error(self, r(exprs[1]->range.start, arrlast(exprs)->range.end),
+              "Unsupported multiple values");
     }
-    return false;
 }
 
-b32 expectToken(Parser *p, TokenKind kind) {
-    if (matchToken(p, kind)) return true;
-    ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Expected token %s, got %s", DescribeTokenKind(kind), DescribeToken(p->tok));
-    nextToken();
-    return false;
+INLINE
+void expect_expr_is_name(Parser *self, Expr *expr) {
+    TRACE(PARSING);
+    if (expr->kind != EXPR_NAME) {
+        error(self, expr->range, "Expected identifier");
+    }
 }
 
-b32 expectTerminator(Parser *p) {
-    if (matchToken(p, TK_Terminator) || isToken(p, TK_Rbrace) || isToken(p, TK_Eof)) return true;
-    ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Expected terminator, got %s", DescribeToken(p->tok));
-    return false;
+INLINE
+void expect_exprs_are_name(Parser *self, Expr **exprs) {
+    TRACE(PARSING);
+    for (int i = 0; i < arrlen(exprs); i++)
+        expect_expr_is_name(self, exprs[i]);
 }
 
-const char *parseIdent(Parser *p) {
-    const char *ident = p->tok.val.ident;
-    expectToken(p, TK_Ident);
-    return ident;
+const char *name_for_import(const char *in_path) {
+    ASSERT(in_path);
+    char path[MAX_PATH];
+    char name[MAX_NAME];
+    path_copy(path, in_path);
+    char *last_component = path_file(path);
+    strncpy(name, last_component, MAX_NAME);
+    name[MAX_NAME - 1] = 0;
+    char *ext = (char *) path_ext(name);
+    if (ext != name) *ext = '\0';
+    return str_intern(name);
 }
 
-DynamicArray(const char *) parseIdentList(Parser *p) {
-    DynamicArray(const char *) names = NULL;
-
-    do  {
-        ArrayPush(names, parseIdent(p));
-    } while (matchToken(p, TK_Comma));
-
-    return names;
+Sym *parser_new_sym(Parser *self, Decl *decl, SymKind kind) {
+    Sym *sym = arena_calloc(&self->package->arena, sizeof *sym);
+    sym->kind = kind;
+    sym->owning_package = self->package;
+    sym->decl = decl;
+    return sym;
 }
 
-Expr *parseType(Parser *p);
-Expr *parseExpr(Parser *p, b32 noCompoundLiteral);
-Expr *parseFunctionType(Parser *p);
-KeyValue parseExprCompoundField(Parser *p);
-DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral);
-Stmt *parseBlock(Parser *p);
-Stmt *parseStmt(Parser *p);
+// FIXME: Report collisions!
+void parser_declare(Parser *self, Decl *decl) {
+    TRACE(PARSING);
+    switch (decl->kind) {
+        case DECL_VAL: {
+            Sym *sym = parser_new_sym(self, decl, SYM_VAL);
+            sym->name = decl->dval.name->ename;
+            scope_declare(self->package->scope, sym);
+            break;
+        }
+        case DECL_VAR: {
+            for (int i = 0; i < arrlen(decl->dvar.names); i++) {
+                Sym *sym = parser_new_sym(self, decl, SYM_VAR);
+                const char *name = decl->dvar.names[i]->ename;
+                sym->name = name;
+                scope_declare(self->package->scope, sym);
+            }
+            break;
+        }
+        case DECL_IMPORT: {
+            Sym *sym = parser_new_sym(self, decl, SYM_PKG);
+            if (decl->dimport.alias) {
+                sym->name = decl->dimport.alias->ename;
+                scope_declare(self->package->scope, sym);
+            }
+            ImportMapEntry entry = {decl, sym};
+            hmputs(self->package->imports, entry);
+            break;
+        }
+        case DECL_FOREIGN: {
+            Sym *sym = parser_new_sym(self, decl, decl->flags&DECL_CONSTANT ? SYM_VAL : SYM_VAR);
+            sym->name = decl->dforeign.name->ename;
+            scope_declare(self->package->scope, sym);
+            break;
+        }
+        case DECL_FOREIGN_BLOCK: {
+            fatal("Parser should call parser_declare for each member of the block");
+        }
+        default:
+            break;
+    }
+}
 
-Expr *parseExprAtom(Parser *p) {
-    Package *pkg = p->package;
-    Token start = p->tok;
+CompoundField parse_compound_field(Parser *self) {
+    TRACE(PARSING);
+    CompoundField field = {0};
+    if (match_tok(self, TK_Lbrack)) {
+        field.kind = FIELD_INDEX;
+        field.key = parse_expr(self);
+        expect_tok(self, TK_Rbrack);
+        expect_tok(self, TK_Colon);
+        field.val = parse_expr(self);
+        return field;
+    }
+    field.val = parse_expr(self);
+    if (match_tok(self, TK_Colon)) {
+        field.key = field.val;
+        expect_expr_is_name(self, field.key); // TODO: Support deep init { ._union.ptr = x }
+        field.val = parse_expr(self);
+    }
+    return field;
+}
 
-    switch (p->tok.kind) {
-        case TK_Ident: {
-            SourceRange range = rangeFromTokens(start, start);
-            Expr *e = NewExprIdent(pkg, range, p->tok.val.ident);
-            nextToken();
-            if (p->tok.kind == TK_Dot) {  // package.Member
-                nextToken();
-                SourceRange range = rangeFromTokens(start, p->tok);
-                const char *ident = parseIdent(p);
-                return NewExprSelector(pkg, range, e, ident);
+typedef Expr *(*ParseExprFn) (Parser *self);
+Expr **parse_expr_list(Parser *self, ParseExprFn fn) {
+    TRACE(PARSING);
+    Expr **exprs = NULL;
+    do {
+        Expr *expr = fn(self);
+        arrput(exprs, expr);
+    } while (match_tok(self, TK_Comma));
+    return exprs;
+}
+
+FuncParam *parse_single_param_or_many_with_same_type(Parser *self) {
+    TRACE(PARSING);
+    FuncParam *params = NULL;
+    bool named_params = false;
+    bool mixed = false;
+    do {
+        if (is_tok(self, TK_Rparen)) break;
+        Expr **exprs = parse_expr_list(self, parse_expr);
+        if (match_tok(self, TK_Colon)) {
+            named_params = true;
+            Expr *type = parse_expr(self);
+            for (int i = 0; i < arrlen(exprs); i++) {
+                expect_expr_is_name(self, exprs[i]);
+                FuncParam param = {exprs[i], type};
+                arrput(params, param);
+            }
+            arrfree(exprs);
+            continue;
+        }
+        if (named_params && !mixed) {
+            mixed = true;
+            error(self, parser_range(self),
+                  "Mixture of named and unnamed parameters is ambiguous");
+            note(self, parser_range(self), "Use '_:' instead");
+        }
+        for (int i = 0; i < arrlen(exprs); i++) {
+            FuncParam param = {NULL, exprs[i]}; // TODO: Store param names
+            arrput(params, param);
+        }
+        arrfree(exprs);
+    } while (match_tok(self, TK_Comma));
+    return params;
+}
+
+FuncParam *parse_params(Parser *self, FuncFlags *flags) {
+    TRACE(PARSING);
+    FuncParam *params = NULL;
+    for (;;) {
+        if (is_tok(self, TK_Rparen) || is_eof(self)) break;
+        FuncParam *some = parse_single_param_or_many_with_same_type(self);
+        for (int i = 0; i < arrlen(some); i++) {
+            arrput(params, some[i]);
+        }
+        arrfree(some);
+        if (match_tok(self, TK_Ellipsis)) {
+            *flags |= FUNC_VARGS;
+            if (match_directive(self, DIR_CVARGS)) *flags |= FUNC_CVARGS;
+            break;
+        }
+    }
+    return params;
+}
+
+FuncParam *parse_result(Parser *self) {
+    TRACE(PARSING);
+    FuncParam *params = NULL;
+    FuncParam param;
+    if (match_tok(self, TK_Lparen)) {
+        do {
+            param.name = NULL;
+            if (is_tok(self, TK_Rparen)) break;
+            param.type = parse_expr(self);
+            if (match_tok(self, TK_Colon)) {
+                param.name = param.type;
+                expect_expr_is_name(self, param.name);
+                param.type = parse_expr(self);
+            }
+            arrput(params, param);
+        } while (match_tok(self, TK_Comma));
+        expect_tok(self, TK_Rparen);
+        return params;
+    }
+    param.type = parse_expr(self);
+    arrput(params, param);
+    return params;
+}
+
+Expr *parse_function_type(Parser *self) {
+    TRACE(PARSING);
+    ASSERT(is_kw(self, KW_FN));
+    u32 start = self->ostart;
+    eat_tok(self);
+    FuncParam *params = NULL;
+    FuncParam *result = NULL;
+    FuncFlags flags = FUNC_NONE;
+    if (match_tok(self, TK_Lparen)) {
+        params = parse_params(self, &flags);
+        expect_tok(self, TK_Rparen);
+    }
+    if (match_tok(self, TK_RetArrow)) {
+        i32 prev_expr_level = self->expr_level;
+        self->expr_level = -1;
+        result = parse_result(self);
+        self->expr_level = prev_expr_level;
+    }
+    return new_expr_functype(self->package, r(start, self->olast), flags, params, result);
+}
+
+Expr *parse_name(Parser *self) {
+    TRACE(PARSING);
+    const char *ident = self->tok.tname;
+    Range range = parser_range(self);
+    expect_tok(self, TK_Name);
+    return new_expr_name(self->package, range, ident);
+}
+
+Expr *parse_str(Parser *self) {
+    TRACE(PARSING);
+    Range range = parser_range(self);
+    Expr *expr = new_expr_str(self->package, range, self->tok.tstr, self->str_len, self->str_mapped);
+    expect_tok(self, TK_String);
+    return expr;
+}
+
+Expr *parse_expr_atom(Parser *self) {
+    TRACE(PARSING);
+    u32 start = self->ostart;
+    switch (self->tok.kind) {
+        case TK_Name: {
+            Expr *e = new_expr_name(self->package, parser_range(self), self->tok.tname);
+            eat_tok(self);
+            if (match_tok(self, TK_Dot)) { // name.name
+                Expr *name = parse_name(self);
+                return new_expr_field(self->package, r(start, name->range.end), e, name);
             }
             return e;
         }
-
         case TK_Int: {
-            SourceRange range = rangeFromTokens(start, start);
-            Expr *e = NewExprLitInt(pkg, range, p->tok.val.i);
-            nextToken();
-            return e;
+            Expr *expr = new_expr_int(self->package, parser_range(self), self->tok.tint);
+            eat_tok(self);
+            return expr;
         }
-
         case TK_Float: {
-            SourceRange range = rangeFromTokens(start, start);
-            Expr *e = NewExprLitFloat(pkg, range, p->tok.val.f);
-            nextToken();
-            return e;
+            Expr *expr = new_expr_float(self->package, parser_range(self), self->tok.tfloat);
+            eat_tok(self);
+            return expr;
         }
-
         case TK_String: {
-            SourceRange range = rangeFromTokens(start, start);
-            Expr *e = NewExprLitString(pkg, range, p->tok.val.s);
-            nextToken();
-            return e;
+            Range range = parser_range(self);
+            Expr *expr = new_expr_str(self->package, range, self->tok.tstr, self->str_len, self->str_mapped);
+            eat_tok(self);
+            return expr;
         }
-
         case TK_Lparen: {
-            nextToken();
-            Expr *expr = parseExpr(p, false);
-            Token end = p->tok;
-            expectToken(p, TK_Rparen);
-
-            SourceRange range = rangeFromTokens(start, end);
-            return NewExprParen(pkg, range, expr);
+            eat_tok(self);
+            Expr *expr = parse_expr(self);
+            expect_tok(self, TK_Rparen);
+            return new_expr_paren(self->package, r(start, self->olast), expr);
         }
-
         case TK_Lbrack: {
-            nextToken();
-            if (matchToken(p, TK_Rbrack)) {
-                Expr *type = parseType(p);
-                SourceRange range = rangeFromTokenToEndOfNode(start, type);
-                return NewExprTypeSlice(pkg, range, type);
+            eat_tok(self);
+            if (match_tok(self, TK_Rbrack)) {
+                Expr *type = parse_expr(self);
+                return new_expr_slicetype(self->package, r(start, type->range.end), type);
             }
             Expr *length = NULL;
-            if (!matchToken(p, TK_Ellipsis)) {
-                length = parseExpr(p, false);
-            }
-            expectToken(p, TK_Rbrack);
-            Expr *type = parseType(p);
-            SourceRange range = rangeFromTokenToEndOfNode(start, type);
-            return NewExprTypeArray(pkg, range, length, type);
+            if (!match_tok(self, TK_Ellipsis)) length = parse_expr(self);
+            expect_tok(self, TK_Rbrack);
+            u32 prev_expr_level = self->expr_level;
+            self->expr_level = -1;
+            Expr *type = parse_expr(self);
+            self->expr_level = prev_expr_level;
+            return new_expr_array(self->package, r(start, type->range.end), type, length);
         }
-
         case TK_Lbrace: {
-            nextToken();
-
-            DynamicArray(KeyValue) elements = NULL;
-
-            if (!isToken(p, TK_Rbrace)) {
-                ArrayPush(elements, parseExprCompoundField(p));
-                while (matchToken(p, TK_Comma)) {
-                    if (isToken(p, TK_Rbrace)) break;
-                    ArrayPush(elements, parseExprCompoundField(p));
+            eat_tok(self);
+            CompoundField *fields = NULL;
+            if (!is_tok(self, TK_Rbrace)) {
+                CompoundField field = parse_compound_field(self);
+                arrput(fields, field);
+                while (match_tok(self, TK_Comma)) {
+                    if (is_tok(self, TK_Rbrace)) break;
+                    field = parse_compound_field(self);
+                    arrput(fields, field);
                 }
             }
-
-            SourceRange range = rangeFromTokens(start, p->tok);
-            expectToken(p, TK_Rbrace);
-            return NewExprLitCompound(pkg, range, NULL, elements);
+            expect_tok(self, TK_Rbrace);
+            return new_expr_compound(self->package, r(start, self->olast), NULL, fields);
         }
-
         case TK_Dollar: {
-            nextToken();
-            Token end = p->tok;
-            const char *name = parseIdent(p);
-            SourceRange range = rangeFromTokens(start, end);
-            return NewExprTypePolymorphic(pkg, range, name);
+            fatal("Unsupported polymorphism");
         }
-
-        caseEllipsis: // For `case TK_Directive` for #cvargs
-        case TK_Ellipsis: {
-            u8 flags = 0;
-            flags |= matchDirective(p, internCVargs) ? TypeVariadicFlag_CVargs : 0;
-            expectToken(p, TK_Ellipsis); // NOTE: We must expect here because we handle the case of having #cvargs prior
-            Expr *type = parseType(p);
-            SourceRange range = rangeFromTokenToEndOfNode(start, type);
-            return NewExprTypeVariadic(pkg, range, type, flags);
-        }
-
         case TK_Mul: {
-            nextToken();
-            Expr *type = parseType(p);
-            SourceRange range = rangeFromTokenToEndOfNode(start, type);
-            return NewExprTypePointer(pkg, range, type);
+            eat_tok(self);
+            Expr *type = parse_expr(self);
+            return new_expr_pointer(self->package, r(start, type->range.end), type);
         }
-
         case TK_Directive: {
-            if (p->tok.val.ident == internLocation || p->tok.val.ident == internFile || p->tok.val.ident == internLine || p->tok.val.ident == internFunction) {
-                SourceRange range = rangeFromTokens(start, start);
-                Expr *expr = NewExprLocationDirective(pkg, range, p->tok.val.ident);
-                nextToken();
-                return expr;
-            } else if (p->tok.val.ident == internCVargs) {
-                goto caseEllipsis;
+            if (match_directive(self, DIR_LINE)) {
+                return new_expr_directive(self->package, r(start, self->olast), DIR_LINE);
+            } else if (match_directive(self, DIR_FILE)) {
+                return new_expr_directive(self->package, r(start, self->olast), DIR_FILE);
+            } else if (match_directive(self, DIR_FUNCTION)) {
+                return new_expr_directive(self->package, r(start, self->olast), DIR_FUNCTION);
+            } else if (match_directive(self, DIR_LOCATION)) {
+                return new_expr_directive(self->package, r(start, self->olast), DIR_LOCATION);
+            } else if (match_directive(self, DIR_UNDEF)) {
+                return new_expr_directive(self->package, r(start, self->olast), DIR_UNDEF);
+            } else if (match_directive(self, DIR_VECTOR)) {
+                expect_tok(self, TK_Lparen);
+                Expr *len = parse_expr(self);
+                expect_tok(self, TK_Rparen);
+                Expr *base = parse_expr(self);
+                return new_expr_vector(self->package, r(start, self->olast), base, len);
             }
-            ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Unexpected directive '%s'", p->tok.val.ident);
-            break;
+            const char *name = self->tok.tname;
+            eat_tok(self);
+            error(self, r(start, self->olast), "Unexpected directive '%s'", name);
+            return new_ast_invalid(self->package, r(start, self->olast));
         }
-
         case TK_Keyword: {
-            const char *ident = p->tok.val.ident;
-            if (ident == Keyword_fn) {
-                return parseFunctionType(p);
-            } else if (ident == Keyword_nil) {
-                SourceRange range = rangeFromTokens(start, start);
-                Expr *expr = NewExprLitNil(pkg, range);
-                nextToken();
-                return expr;
-            } else if (ident == Keyword_struct) {
-                goto caseStruct;
-            } else if (ident == Keyword_union) {
-                goto caseUnion;
-            } else if (ident == Keyword_enum) {
-                goto caseEnum;
-            } else if (ident == Keyword_cast) {
-                goto caseCast;
-            } else if (ident == Keyword_autocast) {
-                goto caseAutocast;
+            const char *name = self->tok.tname;
+            if (name == keywords[KW_FN]) {
+                return parse_function_type(self);
+            } else if (name == keywords[KW_STRUCT]) {
+                goto case_struct;
+            } else if (name == keywords[KW_UNION]) {
+                goto case_union;
+            } else if (name == keywords[KW_ENUM]) {
+                goto case_enum;
+            } else if (name == keywords[KW_NIL]) {
+                eat_tok(self);
+                return new_expr_nil(self->package, r(start, self->olast));
+            } else if (name == keywords[KW_CAST]) {
+                eat_tok(self);
+                expect_tok(self, TK_Lparen);
+                Expr *type = parse_expr(self);
+                expect_tok(self, TK_Rparen);
+                Expr *expr = parse_expr(self);
+                return new_expr_cast(self->package, r(start, self->olast), type, expr);
             }
-            ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Unexpected keyword '%s'", p->tok.val.ident);
-            break;
+            eat_tok(self);
+            error(self, r(start, self->olast), "Unexpected keyword '%s'", name);
+            return new_ast_invalid(self->package, r(start, self->olast));
         }
-
-        caseCast: { // See `case TK_Keyword:`
-            nextToken();
-            expectToken(p, TK_Lparen);
-            Expr *type = parseType(p);
-            expectToken(p, TK_Rparen);
-            Expr *expr = parseExpr(p, false);
-            SourceRange range = rangeFromTokenToEndOfNode(start, expr);
-            return NewExprCast(pkg, range, type, expr);
-        }
-
-        caseAutocast: { // See `case TK_Keyword:`
-            nextToken();
-            Expr *expr = parseExpr(p, false);
-            SourceRange range = rangeFromTokenToEndOfNode(start, expr);
-            return NewExprAutocast(pkg, range, expr);
-        }
-
-        caseStruct: { // See `case TK_Keyword:`
-            nextToken();
-
-            // TODO(Brett, vdka): directives
-
-            if (isToken(p, TK_Lparen)) {
-                // TODO(Brett, vdka): polymorphic structs
-                UNIMPLEMENTED();
+        case_struct: {
+            eat_tok(self);
+            if (match_directive(self, DIR_OPAQUE)) {
+                match_tok(self, TK_Terminator);
+                return new_expr_struct(self->package, r(start, self->olast), NULL, OPAQUE);
             }
-
-            expectToken(p, TK_Lbrace);
-
-            DynamicArray(AggregateItem) items = NULL;
-
-            while (!isToken(p, TK_Rbrace)) {
-                Token start = p->tok;
-
-                DynamicArray(const char *) names = parseIdentList(p);
-
-                expectToken(p, TK_Colon);
-
-                Expr *type = parseType(p);
-
-                SourceRange range = rangeFromTokenToEndOfNode(start, type);
-                AggregateItem item = {range, .names = names, .type = type};
-                ArrayPush(items, item);
-
-                if (isToken(p, TK_Rbrace)) {
-                    break;
+            expect_tok(self, TK_Lbrace);
+            AggregateField *fields = NULL;
+            while (!is_tok(self, TK_Rbrace)) {
+                Expr **names = parse_expr_list(self, parse_name);
+                expect_tok(self, TK_Colon);
+                Expr *type = parse_expr(self);
+                AggregateField field = {names, type};
+                arrput(fields, field);
+                if (is_tok(self, TK_Rbrace)) break;
+                match_tok(self, TK_Terminator);
+                if (is_eof(self)) break;
+            }
+            expect_tok(self, TK_Rbrace);
+            return new_expr_struct(self->package, r(start, self->olast), fields, NONE);
+        }
+        case_union: {
+            eat_tok(self);
+            expect_tok(self, TK_Lbrace);
+            AggregateField *fields = NULL;
+            while (!is_tok(self, TK_Rbrace)) {
+                Expr **names = parse_expr_list(self, parse_name);
+                expect_tok(self, TK_Colon);
+                Expr *type = parse_expr(self);
+                AggregateField field = {names, type};
+                arrput(fields, field);
+                if (is_tok(self, TK_Rbrace)) break;
+                match_tok(self, TK_Terminator);
+                if (is_eof(self)) break;
+            }
+            expect_tok(self, TK_Rbrace);
+            return new_expr_union(self->package, r(start, self->olast), fields);
+        }
+        case_enum: {
+            eat_tok(self);
+            EnumFlags flags = 0;
+            Expr *type = NULL;
+            if (match_tok(self, TK_Lparen)) {
+                type = parse_expr(self);
+                expect_tok(self, TK_Rparen);
+            }
+            while (is_tok(self, TK_Directive) || is_eof(self)) {
+                if (match_directive(self, DIR_FLAGS)) {
+                    flags |= ENUM_FLAGS;
+                } else {
+                    error(self, parser_range(self),
+                          "Invalid directive '#%s'", token_info(self->tok));
+                    eat_tok(self);
                 }
-
-                expectTerminator(p);
-                if (isTokenEof(p)) break;
             }
-
-            SourceRange range = rangeFromTokens(start, p->tok);
-            expectToken(p, TK_Rbrace);
-
-            return NewExprTypeStruct(pkg, range, items);
+            expect_tok(self, TK_Lbrace);
+            EnumItem *items = NULL;
+            if (!is_tok(self, TK_Rbrace)) {
+                while (!is_tok(self, TK_Rbrace)) {
+                    Expr *name = parse_name(self);
+                    Expr *value = NULL;
+                    if (match_tok(self, TK_Colon)) {
+                        expect_tok(self, TK_Colon);
+                        value = parse_expr(self);
+                    }
+                    EnumItem item = {name, value};
+                    arrput(items, item);
+                    match_tok(self, TK_Terminator);
+                    if (is_eof(self)) break;
+                }
+            }
+            expect_tok(self, TK_Rbrace);
+            return new_expr_enum(self->package, r(start, self->olast), flags, type, items);
         }
-
-        caseUnion: { // See `case TK_Keyword:`
-            nextToken();
-
-            // TODO(Brett, vdka): directives
-
-            expectToken(p, TK_Lbrace);
-
-            DynamicArray(AggregateItem) items = NULL;
-
-            while (!isToken(p, TK_Rbrace)) {
-                Token start = p->tok;
-
-                DynamicArray(const char *) names = parseIdentList(p);
-
-                expectToken(p, TK_Colon);
-
-                Expr *type = parseType(p);
-                SourceRange range = rangeFromTokenToEndOfNode(start, type);
-                AggregateItem item = {range, .names = names, .type = type};
-                ArrayPush(items, item);
-
-                if (isToken(p, TK_Rbrace)) {
-                    break;
-                }
-
-                expectTerminator(p);
-                if (isTokenEof(p)) break;
-            }
-
-            SourceRange range = rangeFromTokens(start, p->tok);
-            expectToken(p, TK_Rbrace);
-
-            return NewExprTypeUnion(pkg, range, items);
+        default: {
+            error(self, r(start, self->oend),
+                  "Unexpected token '%s'", token_info(self->tok));
         }
-
-        caseEnum: { // See `case TK_Keyword:`
-            nextToken();
-
-            Expr *explicitType = NULL;
-            if (!isToken(p, TK_Lbrace) && !isToken(p, TK_Directive)) {
-                explicitType = parseType(p);
-            }
-
-            expectToken(p, TK_Lbrace);
-
-            DynamicArray(EnumItem) items = NULL;
-            while (!isToken(p, TK_Rbrace)) {
-                Token start = p->tok;
-                const char *name = parseIdent(p);
-                Expr *init = NULL;
-
-                if (matchToken(p, TK_Assign)) {
-                    ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Enum values are established at compile time and declared using '::'");
-
-                    // TODO(Brett): discard remaining stmt
-                    continue;
-                }
-
-                if (matchToken(p, TK_Colon)) {
-                    expectToken(p, TK_Colon);
-                    init = parseExpr(p, true);
-                }
-
-                SourceRange range = init ? rangeFromTokenToEndOfNode(start, init) : rangeFromTokens(start, start);
-                EnumItem item = {range, .name = name, .init = init};
-                ArrayPush(items, item);
-
-                if (isToken(p, TK_Rbrace)) {
-                    break;
-                }
-
-                expectTerminator(p);
-                if (isTokenEof(p)) break;
-            }
-
-            SourceRange range = rangeFromTokens(start, p->tok);
-            expectToken(p, TK_Rbrace);
-
-            return NewExprTypeEnum(pkg, range, explicitType, items);
-        }
-
-        default:
-            ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Unexpected token '%s'", DescribeToken(p->tok));
     }
-
-    SourceRange range = rangeFromTokens(start, start);
-    nextToken();
-    return NewExprInvalid(pkg, range);
+    eat_tok(self);
+    return new_ast_invalid(self->package, r(start, self->olast));
 }
 
-Expr *parseExprPrimary(Parser *p, b32 noCompoundLiteral) {
-    Package *pkg = p->package;
-    Token start = p->tok;
-    Expr *x = parseExprAtom(p);
+Expr *parse_expr_primary(Parser *self) {
+    TRACE(PARSING);
+    Expr *x = parse_expr_atom(self);
     for (;;) {
-        switch (p->tok.kind) {
-            case TK_Dot: { // Selector
-                nextToken();
-                SourceRange range = rangeFromTokens(start, p->tok);
-                x = NewExprSelector(pkg, range, x, parseIdent(p));
+        u32 start = self->ostart;
+        switch (self->tok.kind) {
+            case TK_Dot: { // Field
+                eat_tok(self);
+                Expr *name = parse_name(self);
+                x = new_expr_field(self->package, r(x->range.start, name->range.end), x, name);
                 continue;
             }
-
-            case TK_Lbrack: { // Slice | Subscript
-                nextToken();
-                if (matchToken(p, TK_Colon)) {
-                    Token end = p->tok;
-                    if (matchToken(p, TK_Rbrack)) {
-                        SourceRange range = rangeFromTokens(start, end);
-                        x = NewExprSlice(pkg, range, x, NULL, NULL);
+            case TK_Lbrack: { // Index | Slice
+                eat_tok(self);
+                if (match_tok(self, TK_Colon)) {
+                    if (match_tok(self, TK_Rbrack)) {
+                        x = new_expr_slice(
+                            self->package, r(x->range.start, self->olast), x, NULL, NULL);
                         continue;
                     }
-                    Expr *hi = parseExpr(p, noCompoundLiteral);
-                    end = p->tok;
-                    expectToken(p, TK_Rbrack);
-                    SourceRange range = rangeFromTokens(start, end);
-                    x = NewExprSlice(pkg, range, x, NULL, hi);
-                    continue;
+                    Expr *hi = parse_expr(self);
+                    expect_tok(self, TK_Rbrack);
+                    return new_expr_slice(
+                        self->package, r(x->range.start, self->olast), x, NULL, hi);
                 }
-                Expr *index = parseExpr(p, noCompoundLiteral);
-                if (matchToken(p, TK_Colon)) {
-                    Token end = p->tok;
-                    if (matchToken(p, TK_Rbrack)) {
-                        SourceRange range = rangeFromTokens(start, end);
-                        x = NewExprSlice(pkg, range, x, index, NULL);
+                Expr *index = parse_expr(self);
+                if (match_tok(self, TK_Colon)) {
+                    if (match_tok(self, TK_Rbrack)) {
+                        x = new_expr_slice(
+                            self->package, r(x->range.start, self->olast), x, index, NULL);
                         continue;
                     }
-                    Expr *hi = parseExpr(p, noCompoundLiteral);
-                    end = p->tok;
-                    expectToken(p, TK_Rbrack);
-                    SourceRange range = rangeFromTokens(start, end);
-                    x = NewExprSlice(pkg, range, x, index, hi);
+                    Expr *hi = parse_expr(self);
+                    expect_tok(self, TK_Rbrack);
+                    x = new_expr_slice(self->package, r(x->range.start, self->olast), x, index, hi);
                     continue;
                 }
-                Token end = p->tok;
-                expectToken(p, TK_Rbrack);
-                SourceRange range = rangeFromTokens(start, end);
-                x = NewExprSubscript(pkg, range, x, index);
+                expect_tok(self, TK_Rbrack);
+                x = new_expr_index(self->package, r(x->range.start, self->olast), x, index);
                 continue;
             }
-
-            case TK_Lparen: { // Call Expr
-                nextToken();
-                DynamicArray(KeyValue) args = NULL;
-                if (!isToken(p, TK_Rparen)) {
-                    Token start = p->tok;
-
-                    KeyValue arg = {0};
-                    arg.value = parseExpr(p, noCompoundLiteral);
-                    if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
-                        arg.key = arg.value;
-                        arg.value = parseExpr(p, noCompoundLiteral);
+            case TK_Lparen: { // Call
+                eat_tok(self);
+                CallArg *args = NULL;
+                if (!is_tok(self, TK_Rparen)) {
+                    CallArg arg = {0};
+                    arg.expr = parse_expr(self);
+                    if (is_tok(self, TK_Colon)) {
+                        arg.name = arg.expr;
+                        arg.expr = parse_expr(self);
                     }
-                    arg.pos = rangeFromTokenToEndOfNode(start, arg.value);
-                    ArrayPush(args, arg);
-                    while (matchToken(p, TK_Comma)) {
-                        if (isToken(p, TK_Rparen)) break; // Allow trailing comma in argument list
-                        start = p->tok;
-
-                        KeyValue arg = {0};
-                        arg.value = parseExpr(p, noCompoundLiteral);
-                        if (isToken(p, TK_Colon) && arg.value->kind == ExprKind_Ident) {
-                            arg.key = arg.value;
-                            arg.value = parseExpr(p, noCompoundLiteral);
+                    arrput(args, arg);
+                    while (match_tok(self, TK_Comma)) {
+                        if (is_tok(self, TK_Rparen)) break; // allow trailing comma
+                        arg.expr = parse_expr(self);
+                        if (is_tok(self, TK_Colon)) {
+                            arg.name = arg.expr;
+                            arg.expr = parse_expr(self);
                         }
-                        arg.pos = rangeFromTokenToEndOfNode(start, arg.value);
-                        ArrayPush(args, arg);
+                        arrput(args, arg);
                     }
                 }
-                SourceRange range = rangeFromTokens(start, p->tok);
-                expectToken(p, TK_Rparen);
-                x = NewExprCall(pkg, range, x, args);
+                expect_tok(self, TK_Rparen);
+                x = new_expr_call(self->package, r(x->range.start, self->olast), x, args);
                 continue;
             }
-
             case TK_Lbrace: {
-                if (x->kind == ExprKind_TypeFunction) {
-                    Token startOfBlock = p->tok;
-                    nextToken();
-                    DynamicArray(Stmt *) stmts = NULL;
-                    while (isNotRbraceOrEOF(p)) {
-                        ArrayPush(stmts, parseStmt(p));
-                        matchToken(p, TK_Terminator);
+                if (x->kind == EXPR_FUNCTYPE) {
+                    eat_tok(self);
+                    Stmt **stmts = NULL;
+                    self->expr_level++;
+                    while (!is_tok(self, TK_Rbrace) && !is_eof(self)) {
+                        Stmt *stmt = parse_stmt(self);
+                        arrput(stmts, stmt);
                     }
-                    SourceRange blockRange = rangeFromTokens(startOfBlock, p->tok);
-                    SourceRange functionRange = rangeFromTokens(start, p->tok);
-                    expectToken(p, TK_Rbrace);
-                    Stmt *body = NewStmtBlock(p->package, blockRange, stmts);
-                    x = NewExprLitFunction(pkg, functionRange, x, body, 0);
+                    self->expr_level--;
+                    expect_tok(self, TK_Rbrace);
+                    Stmt *body = new_stmt_block(self->package, r(start, self->olast), stmts);
+                    x = new_expr_func(self->package, r(x->range.start, self->olast), NONE, x, body);
                     continue;
                 }
-                if (noCompoundLiteral) return x;
-                nextToken();
-
-                matchToken(p, TK_Terminator);
-
-                DynamicArray(KeyValue) elements = NULL;
-                if (!isToken(p, TK_Rbrace)) {
-                    ArrayPush(elements, parseExprCompoundField(p));
-                    while (matchToken(p, TK_Comma)) {
-                        if (isToken(p, TK_Rbrace)) break;
-                        ArrayPush(elements, parseExprCompoundField(p));
-                        matchToken(p, TK_Terminator);
+                if (self->expr_level < 0) return x;
+                eat_tok(self);
+                match_tok(self, TK_Terminator);
+                CompoundField *fields = NULL;
+                if (!is_tok(self, TK_Rbrace)) {
+                    CompoundField field = parse_compound_field(self);
+                    arrput(fields, field);
+                    while (match_tok(self, TK_Comma)) {
+                        if (is_tok(self, TK_Rbrace)) break;
+                        field = parse_compound_field(self);
+                        arrput(fields, field);
                     }
                 }
-                SourceRange range = rangeFromTokens(start, p->tok);
-                expectToken(p, TK_Rbrace);
-                x = NewExprLitCompound(pkg, range, x, elements);
+                expect_tok(self, TK_Rbrace);
+                x = new_expr_compound(self->package, r(x->range.start, self->olast), x, fields);
                 continue;
             }
-
             default:
+                if (x->kind == EXPR_FUNCTYPE && !is_terminator(self)) {
+                    self->expr_level++;
+                    Stmt *body = parse_stmt(self);
+                    self->expr_level--;
+                    x = new_expr_func(self->package, r(x->range.start, self->olast), NONE, x, body);
+                    continue;
+                }
                 return x;
         }
     }
 }
 
-Expr *parseExprUnary(Parser *p, b32 noCompoundLiteral) {
-    Token start = p->tok;
-    if (matchToken(p, TK_Mul)) {
-        Expr *type = parseType(p);
-        SourceRange range = rangeFromTokenToEndOfNode(start, type);
-        return NewExprTypePointer(p->package, range, type);
-    }
-    switch (p->tok.kind) {
+Expr *parse_expr_unary(Parser *self) {
+    TRACE(PARSING);
+    u32 start = self->ostart;
+    switch (self->tok.kind) {
+        case TK_Mul: {
+            eat_tok(self);
+            Expr *type = parse_expr(self);
+            return new_expr_pointer(self->package, r(start, type->range.end), type);
+        }
         case TK_Add: case TK_Sub: case TK_Not: case TK_BNot: case TK_Xor: case TK_And: case TK_Lss: {
-            TokenKind op = p->tok.kind;
-            nextToken();
-            Expr *expr = parseExprUnary(p, noCompoundLiteral);
-            SourceRange range = rangeFromTokenToEndOfNode(start, expr);
-            return NewExprUnary(p->package, range, op, expr);
+            Op op = (Op) self->tok.kind;
+            eat_tok(self);
+            Expr *expr = parse_expr_unary(self);
+            return new_expr_unary(self->package, r(start, expr->range.end), op, expr);
         }
         default:
-            return parseExprPrimary(p, noCompoundLiteral);
+            return parse_expr_primary(self);
     }
 }
 
-Expr *parseExprBinary(Parser *p, i32 prec1, b32 noCompoundLiteral) {
-    Expr *lhs = parseExprUnary(p, noCompoundLiteral);
+Expr *parse_expr_binary(Parser *self, i32 prec1) {
+    TRACE(PARSING);
+    Expr *lhs = parse_expr_unary(self);
     for (;;) {
-        Token op = p->tok;
-        i32 precedence = PrecedenceForTokenKind[op.kind];
+        Token op = self->tok;
+        i32 precedence = token_precedence[op.kind];
         if (precedence < prec1) return lhs;
-        nextToken();
+        eat_tok(self);
         if (op.kind == TK_Question) {
-            // NOTE: Ternary supports missing pass expressions ie: `cond ?: default`
             Expr *pass = NULL;
-            if (!isToken(p, TK_Colon)) {
-                pass = parseExpr(p, noCompoundLiteral);
+            if (!is_tok(self, TK_Colon)) {
+                pass = parse_expr(self);
             }
-            expectToken(p, TK_Colon);
-            Expr *fail = parseExpr(p, noCompoundLiteral);
-            SourceRange range = rangeFromNodes(lhs, fail);
-            return NewExprTernary(p->package, range, lhs, pass, fail);
+            expect_tok(self, TK_Colon);
+            Expr *fail = parse_expr(self);
+            Range range = {lhs->range.start, fail->range.end};
+            return new_expr_ternary(self->package, range, lhs, pass, fail);
         }
-        Expr *rhs = parseExprBinary(p, precedence + 1, noCompoundLiteral);
-        SourceRange range = rangeFromNodes(lhs, rhs);
-        lhs = NewExprBinary(p->package, range, op, lhs, rhs);
+        Expr *rhs = parse_expr_binary(self, precedence + 1);
+        Range range = {lhs->range.start, rhs->range.end};
+        lhs = new_expr_binary(self->package, range, (Op) op.kind, lhs, rhs);
     }
 }
 
-Expr *parseExpr(Parser *p, b32 noCompoundLiteral) {
-    return parseExprBinary(p, 1, noCompoundLiteral);
+INLINE
+Expr *parse_expr(Parser *self) {
+    TRACE(PARSING);
+    return parse_expr_binary(self, 1);
 }
 
-KeyValue parseExprCompoundField(Parser *p) {
-    Token start = p->tok;
-    KeyValue field = {0};
-    if (matchToken(p, TK_Lbrack)) {
-        field.flags = KeyValueFlag_Index;
-        field.key = parseExpr(p, false);
-        expectToken(p, TK_Rbrack);
-        expectToken(p, TK_Colon);
-        field.value = parseExpr(p, false);
-        field.pos = rangeFromTokenToEndOfNode(start, field.value);
-        return field;
-    } else {
-        field.value = parseExpr(p, false);
-        if (matchToken(p, TK_Colon)) {
-            field.key = field.value;
-            if (field.key->kind != ExprKind_Ident) {
-                ReportError(p->package, SyntaxError, rangeFromPosition(p->prevStart), "Named initializer value must be an identifier or surrounded in '[]'");
-            }
-            field.value = parseExpr(p, false);
-        }
-        field.pos = rangeFromTokenToEndOfNode(start, field.value);
-        return field;
-    }
-}
-
-Expr *parseType(Parser *p) {
-    // NOTE: Right now parseType passes right onto parseAtom but, if types can be returned from
-    //   functions calls in the future (CTE) then we will want this.
-    // It is also clearer for intent
-    return parseExprAtom(p);
-}
-
-void parseFunctionParameters(u32 *nVarargs, b32 *namedParameters, Parser *p, DynamicArray(KeyValue) *params) {
-    expectToken(p, TK_Lparen);
-    *nVarargs = 0;
-    *namedParameters = false;
-    do {
-        if (isToken(p, TK_Rparen)) break; // allow trailing ',' in parameter list
-        DynamicArray(Expr *) exprs = parseExprList(p, false);
-        if (matchToken(p, TK_Colon)) {
-            *namedParameters = true;
-            Expr *type = parseType(p);
-            size_t numExprs = ArrayLen(exprs);
-            for (size_t i = 0; i < numExprs; i++) {
-                if (exprs[i]->kind != ExprKind_Ident) {
-                    ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
-                    continue;
-                }
-                KeyValue kv = {0};
-                kv.pos = exprs[i]->pos;
-                kv.key = exprs[i];
-                kv.value = type;
-                ArrayPush(*params, kv);
-            }
-            if (type->kind == ExprKind_TypeVariadic) {
-                *nVarargs += 1;
-                if (*nVarargs == 2) {
-                    ReportError(p->package, SyntaxError, type->pos, "Expected at most 1 Variadic as the final parameter");
-                }
-            }
-        } else if (*nVarargs <= 1) {
-            if (*namedParameters) {
-                ReportError(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
-            }
-            // The parameters are unnamed and the user may have entered a second variadic
-            size_t numExprs = ArrayLen(exprs);
-            for (size_t i = 0; i < numExprs; i++) {
-                if (exprs[i]->kind == ExprKind_TypeVariadic) {
-                    *nVarargs += 1;
-                    if (*nVarargs == 2) {
-                        ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected at most 1 Variadic as the final parameter");
-                    }
-                }
-                KeyValue kv = {0};
-                kv.value = exprs[i];
-                kv.pos = exprs[i]->pos;
-                ArrayPush(*params, kv);
-            }
-        }
-    } while (matchToken(p, TK_Comma));
-    expectToken(p, TK_Rparen);
-}
-
-Expr *parseFunctionType(Parser *p) {
-    Token start = p->tok;
-    nextToken();
-    DynamicArray(KeyValue) params = NULL;
-    u32 nVarargs;
-    b32 namedParameters;
-    parseFunctionParameters(&nVarargs, &namedParameters, p, &params);
-    expectToken(p, TK_RetArrow);
-
-    SourceRange range;
-    DynamicArray(Expr *) results = NULL;
-    if (matchToken(p, TK_Lparen)) { // We need to handle labels in the result list eg. `(Node, ok: bool)`
-        nVarargs = 0;
-        namedParameters = false;
-        do {
-            if (isToken(p, TK_Rparen) && results != NULL) break; // allow trailing ',' in result list
-            DynamicArray(Expr *) exprs = parseExprList(p, false);
-            if (matchToken(p, TK_Colon)) {
-                namedParameters = true;
-                Expr *type = parseType(p);
-                size_t numExprs = ArrayLen(exprs);
-                for (size_t i = 0; i < numExprs; i++) {
-                    if (exprs[i]->kind != ExprKind_Ident) {
-                        ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
-                        continue;
-                    }
-                    ArrayPush(results, type);
-                }
-            } else if (nVarargs <= 1) {
-                if (namedParameters) {
-                    ReportError(p->package, SyntaxError, exprs[0]->pos, "Mixture of named and unnamed parameters is unsupported");
-                }
-                size_t numExprs = ArrayLen(exprs);
-                for (size_t i = 0; i < numExprs; i++) {
-                    if (exprs[i]->kind == ExprKind_TypeVariadic) {
-                        nVarargs += 1;
-                        if (nVarargs == 1) {
-                            ReportError(p->package, SyntaxError, exprs[i]->pos, "Variadics are only valid in a functions parameters");
-                        }
-                    }
-                    ArrayPush(results, exprs[i]);
-                }
-            }
-        } while (matchToken(p, TK_Comma));
-        range = rangeFromTokens(start, p->tok);
-        expectToken(p, TK_Rparen);
-    } else { // Result list cannot have labels
-        ArrayPush(results, parseType(p));
-        while (matchToken(p, TK_Comma)) {
-            ArrayPush(results, parseType(p));
-        }
-        Expr *last = results[ArrayLen(results) - 1];
-        range = rangeFromTokenToEndOfNode(start, last);
-    }
-    return NewExprTypeFunction(p->package, range, params, results);
-}
-
-DynamicArray(Expr *) parseExprList(Parser *p, b32 noCompoundLiteral) {
-    DynamicArray(Expr *) exprs = NULL;
-    ArrayPush(exprs, parseExpr(p, noCompoundLiteral));
-    while (matchToken(p, TK_Comma)) {
-        ArrayPush(exprs, parseExpr(p, noCompoundLiteral));
-    }
-    return exprs;
-}
-
-Stmt *parseBlock(Parser *p) {
-    Token start = p->tok;
-    expectToken(p, TK_Lbrace);
-    DynamicArray(Stmt *) stmts = NULL;
-    while (isNotRbraceOrEOF(p)) {
-        ArrayPush(stmts, parseStmt(p));
-    }
-
-    SourceRange range = rangeFromTokens(start, p->tok);
-    expectToken(p, TK_Rbrace);
-    matchToken(p, TK_Terminator); // consume terminator if needed `if a {} else {}
-    return NewStmtBlock(p->package, range, stmts);
-}
-
-// isIdentList being non NULL indicates that an ident list is permitted (for ... in)
-Stmt *parseSimpleStmt(Parser *p, b32 noCompoundLiteral, b32 *isIdentList) {
-    Package *pkg = p->package;
-    Token start = p->tok;
-
-    DynamicArray(Expr *) exprs = parseExprList(p, noCompoundLiteral);
-    switch (p->tok.kind) {
+Stmt *parse_simple_stmt(Parser *self) {
+    TRACE(PARSING);
+    u32 start = self->ostart;
+    Expr **exprs = parse_expr_list(self, parse_expr);
+    switch (self->tok.kind) {
         case TK_Assign: {
-            nextToken();
-            DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
-            Expr *last = rhs[ArrayLen(rhs) - 1];
-            SourceRange range = rangeFromTokenToEndOfNode(start, last);
-            return NewStmtAssign(pkg, range, exprs, rhs);
+            eat_tok(self);
+            Expr **rhs = parse_expr_list(self, parse_expr);
+            return new_stmt_assign(self->package, r(start, arrlast(rhs)->range.end), exprs, rhs);
         }
-
         case TK_AddAssign: case TK_SubAssign: case TK_MulAssign: case TK_DivAssign:
         case TK_RemAssign: case TK_AndAssign: case TK_OrAssign:
         case TK_XorAssign: case TK_ShlAssign: case TK_ShrAssign: {
-            Token op = p->tok;
-            op.kind = TokenAssignOffset(op.kind);
-            nextToken();
-            DynamicArray(Expr *) rhs = parseExprList(p, noCompoundLiteral);
-            if (ArrayLen(rhs) > 1) {
-                ReportError(p->package, SyntaxError, rangeFromPosition(op.pos), "Only regular assignment may have multiple left or right values");
-            }
-            SourceRange range = rangeFromNodes(exprs[0], rhs[0]);
-            rhs[0] = NewExprBinary(pkg, range, op, exprs[0], rhs[0]);
-            return NewStmtAssign(pkg, range, exprs, rhs);
+            Op op = (Op) (self->tok.kind & ~0x80);
+            eat_tok(self);
+            Expr **rhs = parse_expr_list(self, parse_expr);
+            expect_single_expr(self, exprs);
+            expect_single_expr(self, rhs);
+            Range range = {exprs[0]->range.start, arrlast(rhs)->range.end};
+            Expr *lhs = ast_copy(self->package, exprs[0]);
+            rhs[0] = new_expr_binary(self->package, range, op, lhs, rhs[0]);
+            return new_stmt_assign(self->package, range, exprs, rhs);
         }
-
         case TK_Colon: {
-            Token colon = p->tok;
-            nextToken();
-            if (ArrayLen(exprs) == 1 && exprs[0]->kind == ExprKind_Ident && (matchToken(p, TK_Terminator) || isTokenEof(p))) {
-                SourceRange range = rangeFromTokens(start, colon);
-                return NewStmtLabel(pkg, range, exprs[0]->Ident.name);
+            eat_tok(self);
+            if (arrlen(exprs) == 1 && exprs[0]->kind == EXPR_NAME && match_terminator(self)) {
+                Expr *name = exprs[0];
+                arrfree(exprs);
+                return new_stmt_label(self->package, r(start, self->olast), name);
             }
-
-            Expr *start = exprs[0];
-
-            size_t numExprs = ArrayLen(exprs);
-            for (size_t i = 0; i < numExprs; i++) {
-                if (exprs[i]->kind != ExprKind_Ident) {
-                    ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
-                }
+            expect_exprs_are_name(self, exprs);
+            Expr *type = NULL;
+            Expr **rhs = NULL;
+            bool is_val = false;
+            if (match_tok(self, TK_Assign)) { // :=
+                rhs = parse_expr_list(self, parse_expr);
+                goto ret;
             }
-
-            DynamicArray(Expr *) rhs = NULL;
-
-            if (matchToken(p, TK_Assign)) {
-                rhs = parseExprList(p, noCompoundLiteral);
-                SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclVariable(pkg, range, exprs, NULL, rhs);
-            } 
-            
-            if (matchToken(p, TK_Colon)) {
-                rhs = parseExprList(p, noCompoundLiteral);
-                SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclConstant(pkg, range, exprs, NULL, rhs);
+            if (match_tok(self, TK_Colon)) { // ::
+                is_val = true;
+                rhs = parse_expr_list(self, parse_expr);
+                expect_single_expr(self, exprs);
+                expect_single_expr(self, rhs);
+                goto ret;
             }
-
-            Expr *type = parseExpr(p, noCompoundLiteral);
-            if (matchToken(p, TK_Assign)) {
-                rhs = parseExprList(p, noCompoundLiteral);
-                SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclVariable(pkg, range, exprs, type, rhs);
-            } 
-            
-            if (matchToken(p, TK_Colon)) {
-                rhs = parseExprList(p, noCompoundLiteral);
-                SourceRange range = rangeFromNodes(start, rhs[ArrayLen(rhs) - 1]);
-                return (Stmt *) NewDeclConstant(pkg, range, exprs, type, rhs);
+            type = parse_expr(self);
+            if (match_tok(self, TK_Assign)) { // : T =
+                rhs = parse_expr_list(self, parse_expr);
+                goto ret;
             }
-
-            SourceRange range = rangeFromNodes(start, type);
-            return (Stmt *) NewDeclVariable(pkg, range, exprs, type, NULL);
-        }
-
-        default:
-            break;
-    }
-
-    if (ArrayLen(exprs) > 1 && isIdentList) {
-        *isIdentList = true;
-
-        // Check that all the expresions are identifiers.
-        size_t numExprs = ArrayLen(exprs);
-        for (size_t i = 0; i < numExprs; i++) {
-            if (exprs[i]->kind != ExprKind_Ident) {
-                ReportError(p->package, SyntaxError, exprs[i]->pos, "Expected identifier");
+            if (match_tok(self, TK_Colon)) { // : T :
+                is_val = true;
+                rhs = parse_expr_list(self, parse_expr);
+                expect_single_expr(self, exprs);
+                expect_single_expr(self, rhs);
+                goto ret;
             }
-        }
-        // FIXME: Make a Stmt_IdentList
-        return (Stmt *) exprs;
-    } else if (ArrayLen(exprs) > 1) {
-        ReportError(p->package, SyntaxError, exprs[1]->pos, "Expected single expression");
-    }
-
-    // FIXME: What is going on here?
-    return (Stmt *) exprs[0];
-}
-
-Stmt *parseStmtFor(Parser *p, Package *pkg) {
-    ASSERT(p->tok.val.s == Keyword_for);
-    Token start = p->tok;
-    nextToken();
-    if (isToken(p, TK_Lbrace)) {
-        Stmt *body = parseBlock(p);
-        SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
-        return NewStmtFor(pkg, range, NULL, NULL, NULL, body);
-    }
-    Stmt *s1, *s2, *s3;
-    s1 = s2 = s3 = NULL;
-    if (!isToken(p, TK_Lbrace) && !isToken(p, TK_Terminator)) {
-        b32 isIdentList = false;
-        s2 = parseSimpleStmt(p, true, &isIdentList);
-        if (isIdentList) {
-            DynamicArray(Expr *) idents = (DynamicArray(Expr *)) s2;
-            Expr *aggregate = NULL;
-            if (isTokenIdent(p, internIn)) {
-                nextToken();
-                Expr *valueName = NULL;
-                Expr *indexName = NULL;
-                if (ArrayLen(idents) > 0) valueName = idents[0];
-                if (ArrayLen(idents) > 1) indexName = idents[1];
-                if (ArrayLen(idents) > 2) {
-                    ReportError(p->package, SyntaxError, idents[2]->pos, "For in iteration must provide at most 2 names to assign (value, index)");
-                }
-                aggregate = parseExpr(p, true);
-                Stmt *body = parseBlock(p);
-                SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
-                return NewStmtForIn(pkg, range, valueName, indexName, aggregate, body);
-            } else {
-                ReportError(p->package, SyntaxError, rangeFromPosition(p->tok.pos), "Expected single expression or 'in' for iterator");
+        ret:;
+            Range range = {start, rhs ? arrlast(rhs)->range.end : type->range.end};
+            Decl *decl = is_val ?
+                new_decl_val(self->package, range, exprs[0], type, rhs[0]) :
+                new_decl_var(self->package, range, exprs, type, rhs);
+            if (self->expr_level == 0) {
+                parser_declare(self, decl);
             }
+            return (Stmt *) decl;
         }
-    }
-    if (matchToken(p, TK_Terminator)) {
-        s1 = s2;
-        s2 = NULL;
-        if (!isToken(p, TK_Terminator)) {
-            s2 = parseSimpleStmt(p, true, NULL);
-        }
-        expectToken(p, TK_Terminator);
-        if (!isToken(p, TK_Rbrace) && !isToken(p, TK_Terminator)) {
-            s3 = parseSimpleStmt(p, true, NULL);
-        }
-    }
-    if (s2 && !isExpr(s2)) {
-        ReportError(p->package, SyntaxError, s2->pos, "Expected expression, got '%s'", AstDescriptions[s2->kind]);
-    }
-
-    Stmt *body = parseBlock(p);
-    SourceRange range = rangeFromTokenToEndOffset(start, body->pos.endOffset);
-    return NewStmtFor(pkg, range, s1, (Expr *) s2, s3, body);
-}
-
-Stmt *parseStmtSwitch(Parser *p, Package *pkg) {
-    ASSERT(p->tok.val.s == Keyword_switch);
-    Token start = p->tok;
-    nextToken();
-
-    Expr *match = NULL;
-    if (!isToken(p, TK_Lbrace)) match = parseExpr(p, true);
-    expectToken(p, TK_Lbrace);
-    DynamicArray(Stmt *) cases = NULL;
-    for (;;) {
-        if (!matchKeyword(p, Keyword_case)) break;
-
-        Token caseStart = p->tok;
-        Token bodyStart = p->tok;
-        DynamicArray(Expr *) exprs = NULL;
-        if (!matchToken(p, TK_Colon)) {
-            exprs = parseExprList(p, true);
-            bodyStart = p->tok;
-            expectToken(p, TK_Colon);
-        }
-
-        DynamicArray(Stmt *) stmts = NULL;
-        while (!(isKeyword(p, Keyword_case) || isToken(p, TK_Rbrace) || isTokenEof(p))) {
-            Stmt *stmt = parseStmt(p);
-            ArrayPush(stmts, stmt);
-        }
-
-        SourceRange range;
-        if (stmts) {
-            range = rangeFromTokenToEndOfNode(bodyStart, stmts[ArrayLen(stmts) - 1]);
-        } else {
-            range = rangeFromTokenToEndOffset(bodyStart, p->tok.pos.offset); // from the ':' to w/e is next
-        }
-        Stmt *body = NewStmtBlock(p->package, range, stmts);
-        range = rangeFromTokenToEndOfNode(caseStart, body);
-        Stmt *scase = NewStmtSwitchCase(pkg, range, exprs, body);
-        ArrayPush(cases, scase);
-    }
-
-    SourceRange range = rangeFromTokens(start, p->tok);
-    expectToken(p, TK_Rbrace);
-
-    return NewStmtSwitch(pkg, range, match, cases);
-}
-
-void parsePrefixDirectives(Parser *p) {
-    while (isPrefixOrLoneDirective(p) && !isTokenEof(p)) {
-        if (p->tok.val.ident == internCallConv) {
-            nextToken();
-            const char *val = p->tok.val.s;
-            if (expectToken(p, TK_String)) {
-                p->callingConvention = val;
+        default: {
+            if (self->expr_level == -2 && is_tok_name(self, intern_in)) {
+                Range range = {};
+                return new_stmt_names(self->package, range, exprs);
             }
-        } else if (p->tok.val.ident == internLinkPrefix) {
-            nextToken();
-            const char *val = p->tok.val.s;
-            if (expectToken(p, TK_String)) {
-                p->linkPrefix = val;
-            }
-        } else {
-            UNIMPLEMENTED();
+            expect_single_expr(self, exprs);
+            return (Stmt *) exprs[0]; // Statement is an expression
         }
-
-        matchToken(p, TK_Terminator);
     }
 }
 
-typedef struct SuffixDirectives SuffixDirectives;
-struct SuffixDirectives {
-    const char *linkname;
-    SourceRange pos;
-};
-
-SuffixDirectives parseSuffixDirectives(Parser *p) {
-    SuffixDirectives val = {0};
-    Token start = p->tok;
-    Token end = start;
-    while (isSuffixDirective(p) && !isTokenEof(p)) {
-        end = p->tok;
-        if (p->tok.val.ident == internLinkName) {
-            nextToken();
-            const char *name = p->tok.val.s;
-            if (val.linkname) {
-                SourceRange range = rangeFromTokens(start, end);
-                ReportError(p->package, TODOError, range, "Multiple linknames provided for declaration");
-            }
-            if (expectToken(p, TK_String)) {
-                val.linkname = name;
-            }
-        } else {
-            UNIMPLEMENTED();
-        }
-    }
-    val.pos = rangeFromTokens(start, end);
-    return val;
-}
-
-Decl *parseForeignDecl(Parser *p, Token start, Expr *library) {
-    const char *name = parseIdent(p);
-
-    bool isConstant = false;
-    expectToken(p, TK_Colon);
-    if (matchToken(p, TK_Colon)) {
-        isConstant = true;
-    }
-    Expr *type = parseType(p);
-
-    SuffixDirectives suffixDirectives = parseSuffixDirectives(p);
-
-    const char *linkname;
-    if (suffixDirectives.linkname) {
-        linkname = suffixDirectives.linkname;
-    } else if (p->linkPrefix) {
-        size_t prefixLen = strlen(p->linkPrefix);
-        size_t nameLen = strlen(name);
-        char *temp = Alloc(DefaultAllocator, prefixLen + nameLen + 1);
-        temp = strncpy(temp, p->linkPrefix, prefixLen);
-        temp = strncpy(temp + prefixLen, name, nameLen + 1);
-        linkname = StrInternRange(temp, temp + prefixLen + nameLen);
-        Free(DefaultAllocator, temp); // TODO: Some sort of scratch allocator on the package?
-    } else {
-        linkname = name;
-    }
-
-    SourceRange range = rangeFromTokenToEndOffset(start, suffixDirectives.pos.endOffset);
-    return NewDeclForeign(p->package, range, library, isConstant, name, type, linkname, p->callingConvention);
-}
-
-Decl *parseForeignDeclBlock(Parser *p, Token start, Expr *library) {
-
-    DynamicArray(char) tempStringBuffer = NULL;
-    DynamicArray(Decl_ForeignBlockMember) members = NULL;
-
-    while (!isToken(p, TK_Rbrace) && !isTokenEof(p)) {
-
-        Token start = p->tok;
-        const char *name = parseIdent(p);
-
-        bool isConstant = false;
-        expectToken(p, TK_Colon);
-        if (matchToken(p, TK_Colon)) {
-            isConstant = true;
-        }
-        Expr *type = parseType(p);
-
-        // FIXME: @position If there is no suffix directive then the end used from this is the start of the next token
-        SuffixDirectives suffixDirectives = parseSuffixDirectives(p);
-
-        const char *linkname;
-        if (suffixDirectives.linkname) {
-            linkname = suffixDirectives.linkname;
-        } else  if (p->linkPrefix) {
-            size_t prefixLen = strlen(p->linkPrefix);
-            size_t nameLen = strlen(name);
-            tempStringBuffer = ArrayFit(tempStringBuffer, prefixLen + nameLen + 1);
-            strncpy(tempStringBuffer, p->linkPrefix, prefixLen);
-            strncpy(tempStringBuffer + prefixLen, name, nameLen + 1);
-            linkname = StrInternRange(tempStringBuffer, tempStringBuffer + prefixLen + nameLen);
-        } else {
-            linkname = name;
-        }
-
-        expectTerminator(p);
-
-        SourceRange range = rangeFromTokenToEndOffset(start, suffixDirectives.pos.endOffset);
-        Decl_ForeignBlockMember member = {range, name, isConstant, type, linkname};
-        ArrayPush(members, member);
-    }
-
-    SourceRange range = rangeFromTokens(start, p->tok);
-    expectToken(p, TK_Rbrace);
-
-    return NewDeclForeignBlock(p->package, range, library, p->callingConvention, members);
-}
-
-Stmt *parseStmt(Parser *p) {
-    Package *pkg = p->package;
-    Token start = p->tok;
-
-    switch (p->tok.kind) {
-        exprStart:
-        case TK_Ident: case TK_Int: case TK_Float: case TK_String: case TK_Lparen:
+Stmt *parse_stmt(Parser *self) {
+    TRACE(PARSING);
+    self->was_newline = false;
+    self->was_terminator = false;
+begin:;
+    u32 start = self->ostart;
+    switch (self->tok.kind) {
+        case_expr:
+        case TK_Name: case TK_Int: case TK_Float: case TK_String: case TK_Lparen:
         case TK_Mul: case TK_Lbrack: case TK_Ellipsis: case TK_Dollar: // Beginning of Atom's
         case TK_Add: case TK_Sub: case TK_Not: case TK_BNot: case TK_Xor: case TK_And: case TK_Lss: // Unary's
         {
-            Stmt *s = parseSimpleStmt(p, false, NULL);
-            expectTerminator(p);
+            Stmt *s = parse_simple_stmt(self);
+            expect_terminator(self);
             return s;
         }
-
         case TK_Lbrace: {
-            return parseBlock(p);
-        }
-
-        case TK_Directive: {
-            if (isDirective(p, internFile) || isDirective(p, internLine) ||
-                isDirective(p, internLocation) || isDirective(p, internFunction) ||
-                isDirective(p, internCVargs)) goto exprStart;
-
-            if (!isPrefixOrLoneDirective(p)) {
-                // FIXME: Get the range for the directive
-                ReportError(pkg, TODOError, rangeFromPosition(start.pos), "Directive #%s cannot be used lone or as a prefix", p->tok.val.ident);
-                nextToken();
-                return NULL;
+            eat_tok(self);
+            self->expr_level++;
+            Stmt **stmts = NULL;
+            while (!is_tok(self, TK_Rbrace) || is_eof(self)) {
+                Stmt *stmt = parse_stmt(self);
+                arrput(stmts, stmt);
             }
-
-            if (isDirective(p, internForeign)) {
+            expect_tok(self, TK_Rbrace);
+            self->expr_level--;
+            Range range = {start, self->olast};
+            expect_terminator(self);
+            return new_stmt_block(self->package, range, stmts);
+        }
+        case TK_Directive: {
+            if (is_directive(self, DIR_FILE) || is_directive(self, DIR_LINE) ||
+                is_directive(self, DIR_LOCATION) || is_directive(self, DIR_FUNCTION) ||
+                is_directive(self, DIR_VECTOR) || is_directive(self, DIR_UNDEF))
+            {
+                goto case_expr;
+            }
+            if (match_directive(self, DIR_FOREIGN)) {
                 // #foreign glfw #callconv "c" #linkprefix "glfw"
-                nextToken();
-                Expr *library = parseExpr(p, false);
-                matchToken(p, TK_Terminator); // FIXME: Allow only @newlines_only
-
-                // This will update the parser state, setting callingConvention and linkPrefix
-                parsePrefixDirectives(p);
-
-                Decl *decl;
-                if (matchToken(p, TK_Lbrace)) {
-
-                    decl = parseForeignDeclBlock(p, start, library);
-                } else {
-                    if (p->linkPrefix) {
-                        // FIXME: Position should be the linkPrefix position
-                        ReportError(pkg, TODOError, rangeFromPosition(start.pos), "Use of linkprefix directive is only valid on foreign blocks");
+                u32 prev_expr_level = self->expr_level;
+                self->expr_level = -1;
+                Expr *library = parse_expr(self);
+                self->expr_level = prev_expr_level;
+                Expr *linkprefix = NULL;
+                Expr *linkname = NULL;
+                Expr *callconv = NULL;
+                for (;;) {
+                    if (match_directive(self, DIR_LINKNAME)) {
+                        if (linkname) error(self, parser_range(self), "Duplicate #linkname");
+                        linkname = parse_str(self);
+                    } else if (match_directive(self, DIR_LINKPREFIX)) {
+                        if (linkprefix) error(self, parser_range(self), "Duplicate #linkprefix");
+                        linkprefix = parse_str(self);
+                    } else if (match_directive(self, DIR_CALLCONV)) {
+                        if (callconv) error(self, parser_range(self), "Duplicate #callconv");
+                        callconv = parse_str(self);
+                    } else {
+                        break;
                     }
-
-                    decl = parseForeignDecl(p, start, library);
                 }
-
-                // clear the prefixDirectives
-                p->callingConvention = NULL;
-                p->linkPrefix = NULL;
-                expectTerminator(p);
+                Decl **decls = NULL;
+                Decl *block = NULL;
+                if (match_tok(self, TK_Lbrace)) {
+                    block = new_decl_foreign_block(
+                        self->package, parser_range(self), NULL, linkprefix, callconv);
+                }
+                do {
+                    u32 start = self->ostart;
+                    Expr *name = parse_name(self);
+                    DeclFlags flags = DECL_NONE;
+                    expect_tok(self, TK_Colon);
+                    if (match_tok(self, TK_Colon)) flags |= DECL_CONSTANT;
+                    Expr *type = parse_expr(self);
+                    for (;;) { // Parse trailing directives
+                        if (match_directive(self, DIR_LINKNAME)) {
+                            if (linkname) error(self, parser_range(self), "Duplicate #linkname");
+                            linkname = parse_str(self);
+                        } else if (match_directive(self, DIR_CALLCONV)) {
+                            if (callconv) error(self, parser_range(self), "Duplicate #callconv");
+                            callconv = parse_str(self);
+                        } else {
+                            break;
+                        }
+                    }
+                    expect_terminator(self);
+                    Decl *decl = new_decl_foreign(self->package, r(start, self->olast), flags,
+                                                  name, library, type, linkname, callconv, block);
+                    parser_declare(self, decl);
+                    linkname = NULL;
+                    callconv = NULL;
+                    if (!block) return (Stmt *) decl;
+                    arrput(decls, decl);
+                } while (!is_tok(self, TK_Rbrace) && !is_eof(self));
+                expect_tok(self, TK_Rbrace);
+                expect_terminator(self);
+                block->range = r(start, self->olast);
+                block->dforeign_block.decls = decls;
+                return (Stmt *) block;
+            }
+            if (match_directive(self, DIR_IMPORT)) {
+                Expr *path = parse_expr(self);
+                ensure_interned_string(self, path);
+                Expr *alias = NULL;
+                if (!is_terminator(self) && !is_tok(self, TK_Lbrace))
+                    alias = parse_name(self);
+                ImportItem *items = NULL;
+                if (match_tok(self, TK_Lbrace)) {
+                    do {
+                        if (match_tok(self, TK_Rbrace)) break;
+                        Expr *name = parse_name(self);
+                        Expr *alias = NULL;
+                        if (match_tok(self, TK_Assign)) {
+                            alias = parse_name(self);
+                        }
+                        ImportItem item = {name, alias};
+                        arrput(items, item);
+                    } while (match_tok(self, TK_Comma));
+                }
+                expect_terminator(self);
+                Range range = {start, self->olast};
+                Decl *decl = new_decl_import(self->package, range, path, alias, items);
+                parser_declare(self, decl);
                 return (Stmt *) decl;
             }
-
-            if (isDirective(p, internImport)) {
-                nextToken();
-                Expr *path = parseExpr(p, false);
-                SourceRange range = rangeFromTokenToEndOfNode(start, path);
-                const char *alias = NULL;
-                if (isToken(p, TK_Ident)) {
-                    range = rangeFromTokens(start, p->tok);
-                    alias = parseIdent(p);
-                }
-                expectTerminator(p);
-                return (Stmt *) NewDeclImport(pkg, range, path, alias);
+            if (match_directive(self, DIR_LIBRARY)) {
+                Expr *path = parse_expr(self);
+                ensure_interned_string(self, path);
+                Expr *alias = NULL;
+                if (!is_terminator(self))
+                    alias = parse_name(self);
+                expect_terminator(self);
+                Range range = {start, self->olast};
+                Decl *decl = new_decl_library(self->package, range, path, alias);
+                parser_declare(self, decl);
+                return (Stmt *) decl;
             }
-
-            return NULL;
+            error(self, parser_range(self), "Unexpected directive #%s", self->tok.tname);
+            eat_tok(self);
+            goto case_expr;
         }
-
         case TK_Keyword: {
-            if (isKeyword(p, Keyword_struct) || isKeyword(p, Keyword_union) ||
-                isKeyword(p, Keyword_enum) || isKeyword(p, Keyword_fn) || isKeyword(p, Keyword_nil)) goto exprStart;
-
-            if (matchKeyword(p, Keyword_if)) {
-                Expr *cond = parseExpr(p, true);
-                Stmt *pass = parseStmt(p);
+            if (is_kw(self, KW_STRUCT) || is_kw(self, KW_UNION) || is_kw(self, KW_ENUM)
+                || is_kw(self, KW_FN) || is_kw(self, KW_NIL) || is_kw(self, KW_USING)) {
+                goto case_expr; // these are all starts of expressions
+            }
+            if (match_kw(self, KW_IF)) {
+                i32 prev_expr_level = self->expr_level;
+                self->expr_level = -1;
+                Expr *cond = parse_expr(self);
+                self->expr_level = prev_expr_level;
+                Stmt *pass = parse_stmt(self);
                 Stmt *fail = NULL;
-                if (matchKeyword(p, Keyword_else)) {
-                    fail = parseStmt(p);
+                if (match_kw(self, KW_ELSE)) fail = parse_stmt(self);
+                expect_terminator(self);
+                return new_stmt_if(self->package, r(start, self->olast), cond, pass, fail);
+            }
+            if (match_kw(self, KW_DEFER)) {
+                Stmt *stmt = parse_stmt(self);
+                return new_stmt_defer(self->package, r(start, self->olast), stmt);
+            }
+            if (match_kw(self, KW_FALLTHROUGH)) {
+                expect_terminator(self);
+                return new_stmt_goto(self->package, r(start, self->olast), GOTO_FALLTHROUGH, NULL);
+            }
+            if (match_kw(self, KW_BREAK)) {
+                Expr *expr = NULL;
+                if (!is_terminator(self)) expr = parse_name(self);
+                expect_terminator(self);
+                return new_stmt_goto(self->package, r(start, self->olast), GOTO_BREAK, expr);
+            }
+            if (match_kw(self, KW_CONTINUE)) {
+                Expr *expr = NULL;
+                if (!is_terminator(self)) expr = parse_name(self);
+                return new_stmt_goto(self->package, r(start, self->olast), GOTO_CONTINUE, expr);
+            }
+            if (match_kw(self, KW_GOTO)) {
+                Expr *expr = parse_name(self);
+                expect_terminator(self);
+                return new_stmt_goto(self->package, r(start, self->olast), GOTO_GOTO, expr);
+            }
+            if (match_kw(self, KW_FOR)) {
+                if (is_tok(self, TK_Lbrace)) {
+                    Stmt *body = parse_stmt(self);
+                    expect_terminator(self);
+                    Range range = {start, body->range.end};
+                    return new_stmt_for(self->package, range, NULL, NULL, NULL, body);
                 }
-                SourceRange range = rangeFromTokenToEndOfNode(start, fail ? fail : pass);
-                return NewStmtIf(pkg, range, cond, pass, fail);
-            }
-            if (matchKeyword(p, Keyword_defer)) {
-                Stmt *stmt = parseStmt(p);
-                SourceRange range = rangeFromTokenToEndOfNode(start, stmt);
-                return NewStmtDefer(pkg, range, stmt);
-            }
-            if (isKeywordBranch(p, p->tok.val.s)) {
-                const char *keyword = p->tok.val.s;
-                nextToken();
-                SourceRange range = rangeFromTokens(start, start);
-                if (matchToken(p, TK_Terminator)) {
-                    return NewStmtGoto(pkg, range, keyword, NULL);
+                Stmt *s1, *s2, *s3;
+                s1 = s2 = s3 = NULL;
+                i32 prev_expr_level = self->expr_level;
+                self->expr_level = -2; // see default case of parse_simple_stmt
+                s2 = parse_simple_stmt(self);
+                if (s2->kind == STMT_NAMES) {
+                    Expr *aggregate = NULL;
+                    Expr *value = NULL;
+                    Expr *index = NULL;
+                    if (is_tok_name(self, intern_in)) {
+                        eat_tok(self);
+                        if (arrlen(s2->snames) > 0) value = s2->snames[0];
+                        if (arrlen(s2->snames) > 1) value = s2->snames[1];
+                        if (arrlen(s2->snames) > 2) {
+                            Range range = {s2->snames[2]->range.start, arrlast(s2->snames)->range.end};
+                            error(self, range,
+                                  "For in iteration permits at most 2 names (value, index)");
+                        }
+                        free(s2); // See new_stmt_names
+                        aggregate = parse_expr(self);
+                        self->expr_level = prev_expr_level;
+                        Stmt *body = parse_stmt(self);
+                        Range range = {start, self->olast};
+                        return new_stmt_for_aggregate(self->package, range, value, index, aggregate, body);
+                    } else if (arrlen(s2->snames) == 1) {
+                        Stmt *names = s2;
+                        s2 = (Stmt *) s2->snames[0];
+                        free(names);
+                    } else {
+                        error(self, parser_range(self),
+                              "Expected single expression or 'in' to follow");
+                    }
                 }
-                if (keyword == Keyword_fallthrough) {
-                    expectTerminator(p);
-                    return NewStmtGoto(pkg, range, keyword, NULL);
+                if (match_tok(self, TK_Terminator)) {
+                    s1 = s2;
+                    s2 = NULL;
+                    if (!is_tok(self, TK_Lbrace) && !is_tok(self, TK_Terminator)) {
+                        s2 = parse_simple_stmt(self);
+                    }
+                    expect_tok(self, TK_Terminator);
+                    if (!is_tok(self, TK_Lbrace) && !is_tok(self, TK_Terminator)) {
+                        s3 = parse_simple_stmt(self);
+                    }
+                    if (s2 && !ISEXPR(s2)) {
+                        error(self, s2->range, "Expected expression");
+                    }
                 }
-                if ((keyword == Keyword_break || keyword == Keyword_continue) &&
-                    (matchToken(p, TK_Terminator) || isToken(p, TK_Rbrace) || isToken(p, TK_Eof))) {
-                    return NewStmtGoto(pkg, range, keyword, NULL);
+                self->expr_level = prev_expr_level;
+                Stmt *body = parse_stmt(self);
+                Range range = {start, self->olast};
+                return new_stmt_for(self->package, range, s1, (Expr *) s2, s3, body);
+            }
+            if (match_kw(self, KW_SWITCH)) {
+                i32 prev_expr_level = self->expr_level;
+                self->expr_level = -1;
+                Expr *subject = parse_expr(self);
+                self->expr_level = prev_expr_level;
+                expect_tok(self, TK_Lbrace);
+                SwitchCase *cases = NULL;
+                for (;;) {
+                    if (!match_kw(self, KW_CASE)) break;
+                    u32 start = self->olast;
+                    Expr **exprs = NULL;
+                    if (!match_tok(self, TK_Colon)) {
+                        exprs = parse_expr_list(self, parse_expr);
+                        expect_tok(self, TK_Colon);
+                    }
+                    Stmt **stmts = NULL;
+                    while (!(is_kw(self, KW_CASE) || is_tok(self, TK_Rbrace) || is_eof(self))) {
+                        Stmt *stmt = parse_stmt(self);
+                        arrput(stmts, stmt);
+                    }
+                    Stmt *body = new_stmt_block(self->package, r(start, self->olast), stmts);
+                    SwitchCase c = {exprs, body};
+                    arrput(cases, c);
                 }
-                Expr *target = parseExpr(p, true);
-                range = rangeFromTokenToEndOfNode(start, target);
-                return NewStmtGoto(pkg, range, keyword, target);
+                expect_tok(self, TK_Rbrace);
+                expect_terminator(self);
+                return new_stmt_switch(self->package, r(start, self->olast), subject, cases);
             }
-            if (isKeyword(p, Keyword_for)) {
-                return parseStmtFor(p, pkg);
-            }
-            if (matchKeyword(p, Keyword_return)) {
-                DynamicArray(Expr *) exprs = NULL;
-                if (!isToken(p, TK_Terminator) && !isToken(p, TK_Eof) && !isToken(p, TK_Rbrace)) {
-                    exprs = parseExprList(p, false);
+            if (match_kw(self, KW_RETURN)) {
+                Expr **exprs = NULL;
+                if (!is_tok(self, TK_Terminator) && !is_eof(self) && !is_tok(self, TK_Rbrace)) {
+                    exprs = parse_expr_list(self, parse_expr);
                 }
-                if (p->tok.kind != TK_Rbrace) expectTerminator(p);
-                SourceRange range = exprs ?
-                    rangeFromTokenToEndOfNode(start, exprs[ArrayLen(exprs) - 1]) : rangeFromTokens(start, start);
-                return NewStmtReturn(pkg, range, exprs);
+                expect_terminator(self);
+                return new_stmt_return(self->package, r(start, self->olast), exprs);
             }
-            if (isKeyword(p, Keyword_switch)) {
-                return parseStmtSwitch(p, pkg);
-            }
-            if (matchKeyword(p, Keyword_using)) UNIMPLEMENTED();
-
-            // Maybe the expression is the start of a stmt? Such as cast or autocast?
-            return (Stmt *) parseExpr(p, false);
         }
-
+        case TK_Terminator: {
+            eat_tok(self);
+            goto begin;
+        }
         default:
-            UNIMPLEMENTED();
-            return NULL;
+            fatal("");
+            break;
     }
-
-    SourceRange range = rangeFromTokens(start, start);
-    return NewStmtInvalid(pkg, range);
+    eat_tok(self);
+    return new_ast_invalid(self->package, parser_range(self));
 }
 
-DynamicArray(Stmt *) parseStmts(Parser *p) {
-    DynamicArray(Stmt *) stmts = NULL;
-    while (!isToken(p, TK_Rbrace) && !isTokenEof(p)) {
-        ArrayPush(stmts, parseStmt(p));
+void parser_init_interns(void) {
+    TRACE(INIT);
+    int num_keywords = sizeof keywords / sizeof *keywords;
+    for (int i = KW_NONE + 1; i < num_keywords; i++) {
+        const char *keyword = keywords[i];
+        if (!keyword) continue;
+        keywords[i] = str_intern(keyword);
     }
-    return stmts;
+    int num_directives = sizeof directives / sizeof *directives;
+    for (int i = DIR_NONE + 1; i < num_directives; i++) {
+        const char *directive = directives[i];
+        if (!directive) continue;
+        directives[i] = str_intern(directive);
+    }
+    intern_in = str_intern("in");
+    intern_ptr = str_intern("ptr");
+    intern_len = str_intern("len");
+    intern_cap = str_intern("cap");
 }
 
-DynamicArray(Stmt *) parseStmtsUntilEof(Parser *p) {
-    DynamicArray(Stmt *) stmts = p->package->stmts;
-
-    while (!isTokenEof(p)) {
-        ArrayPush(stmts, parseStmt(p));
-    }
-    return stmts;
-}
-
-Stmt **parseAllStmts(Package *pkg, const char *code, u64 *numStmts) {
-    Lexer lexer = MakeLexer(code, pkg);
-    Token tok = NextToken(&lexer);
-    Parser parser = {lexer, .tok = tok, pkg};
-
-    size_t numExistingStmts = ArrayLen(pkg->stmts);
-
-    while (!isTokenEof(&parser)) {
-        Stmt *stmt = parseStmt(&parser);
-        ArrayPush(pkg->stmts, stmt);
-    }
-
-    *numStmts = ArrayLen(pkg->stmts) - numExistingStmts;
-    return &pkg->stmts[numExistingStmts];
-}
-
-void parseSourceCode(Package *pkg, const char *code) {
-    u64 numStmts;
-    Stmt **stmts = parseAllStmts(pkg, code, &numStmts);
-
-    if (HasErrors(pkg)) {
-        return;
-    }
-
-    for(size_t i = 0; i < numStmts; i++) {
-        Decl *decl = (Decl *) stmts[i];
-        Symbol *symbol;
-
-        switch (decl->kind) {
-            case StmtDeclKind_Constant: {
-                decl->owningScope = pkg->scope;
-                // Declare all names despite only supporting single declaration for Constants
-                size_t numNames = ArrayLen(decl->Constant.names);
-                for (size_t i = 0; i < numNames; i++) {
-                    declareSymbol(pkg, pkg->scope, decl->Constant.names[i]->Ident.name, &symbol, decl);
-                    symbol->kind = SymbolKind_Constant;
-                    symbol->state = SymbolState_Unresolved;
-                    symbol->flags |= SymbolFlag_Global;
-                    symbol->decl = decl;
-                }
-                break;
-            }
-            case StmtDeclKind_Variable: {
-                decl->owningScope = pkg->scope;
-                size_t numNames = ArrayLen(decl->Variable.names);
-                for (size_t i = 0; i < numNames; i++) {
-                    declareSymbol(pkg, pkg->scope, decl->Variable.names[i]->Ident.name, &symbol, decl);
-                    symbol->kind = SymbolKind_Variable;
-                    symbol->state = SymbolState_Unresolved;
-                    symbol->flags |= SymbolFlag_Global;
-                    symbol->decl = decl;
-                }
-                break;
-            }
-            case StmtDeclKind_Foreign: {
-                decl->owningScope = pkg->scope;
-                declareSymbol(pkg, pkg->scope, decl->Foreign.name, &symbol, decl);
-                symbol->kind = decl->Foreign.isConstant ? SymbolKind_Constant : SymbolKind_Variable;
-                symbol->state = SymbolState_Unresolved;
-                symbol->flags |= SymbolFlag_Global;
-                symbol->decl = decl;
-                break;
-            }
-            case StmtDeclKind_ForeignBlock: {
-                decl->owningScope = pkg->scope;
-                Decl_ForeignBlock block = decl->ForeignBlock;
-                size_t len = ArrayLen(block.members);
-                for (size_t i = 0; i < len; i++) {
-                    Decl_ForeignBlockMember *it = &block.members[i];
-                    declareSymbol(pkg, pkg->scope, it->name, &symbol, decl);
-                    symbol->kind = it->isConstant ? SymbolKind_Constant : SymbolKind_Variable;
-                    symbol->state = SymbolState_Unresolved;
-                    symbol->flags |= SymbolFlag_Global;
-                    symbol->decl = decl;
-                    it->symbol = symbol;
-                    symbol = NULL;
-                }
-                break;
-            }
-
-            case StmtDeclKind_Import: {
-                decl->owningScope = pkg->scope;
-                // TODO: To properly support out of order declarations things we will need to re-evaluate how we
-                //  evaluate imports. Because the code will potentially have to run through the entire compiler pipeline
-                //  before a constant string may be generated. Only then can we 'infer' the name from the import.
-                // For now we will just use the alias
-                //  -vdka August 2018
-                declareSymbol(pkg, pkg->scope, decl->Import.alias, &symbol, decl);
-                symbol->type = FileType;
-                symbol->kind = SymbolKind_Import;
-                symbol->state = SymbolState_Resolved;
-                symbol->flags |= SymbolFlag_Global;
-                symbol->decl = decl;
-                decl->Import.symbol = symbol;
-
-                decl->Import.symbol->backendUserdata = ImportPackage(decl->Import.path->LitString.val, pkg);
-                break;
-            }
-
-            default:
-                break;
-        }
-    }
-}
-
-void parseFile(SourceFile *file) {
-    if (file->parsed) return;
-    file->code = ReadEntireFile(file->fullpath);
-    if (!file->code) {
-        ReportError(file->package, FatalError, (SourceRange){ file->path }, "Failed to read source file");
-        return;
-    }
-
-    if (FlagVerbose) printf("Parsing file %s\n", file->path);
-    parseSourceCode(file->package, file->code);
-    file->parsed = true;
-
-    for (size_t i = 0; i < file->package->numFiles; i++) {
-        if (!file->package->files[i].parsed) return;
-    }
-
-    // All of the files in the package have been parsed. We are now ready for checking.
-
-    Package *package = file->package;
-
-    DynamicArray(CheckerInfo) checkerInfo = NULL;
-    ArrayFit(checkerInfo, package->astIdCount + 1);
-    memset(checkerInfo, 0, sizeof(CheckerInfo) * (package->astIdCount + 1));
-    package->checkerInfo = checkerInfo;
-
-    size_t len = ArrayLen(package->stmts);
-    for (int i = 0; i < len; i++) {
-        CheckerWork *work = ArenaAlloc(&checkingQueue.arena, sizeof(CheckerWork));
-        work->package = package;
-        work->stmt = package->stmts[i];
-        QueuePushBack(&checkingQueue, work);
-    }
-}
-
-#undef NextToken
-
-#if TEST
-#include "tests/parser.c"
-#endif
+#undef error
+#undef note

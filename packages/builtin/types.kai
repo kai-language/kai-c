@@ -1,0 +1,9 @@
+
+typeid :: u64
+
+TypeInfo :: struct {
+	size:  u64
+	align: u64
+	id:    typeid
+}
+

@@ -1,56 +1,93 @@
 CC = clang
 CXX = clang++
-PREFIX=/usr/local
 
-debug:   local_CFLAGS = -g -O0 -std=c11 -DDEBUG $(CFLAGS)
-release: local_CFLAGS = -O3 -std=c11 -march=native -DRELEASE $(CFLAGS)
+target = kai
 
-LLVM_VERSION := 6.0
+c_sources := $(wildcard src/*.c)
+cpp_sources := $(wildcard src/*.cpp)
+disasms := $(pathsubst src/%.c, src/%.S, $(c_sources))
 
-ifeq ($(shell which llvm-config),)
-	LLVM_CONFIG := llvm-config-$(LLVM_VERSION)
-else
-	LLVM_CONFIG := llvm-config
-endif
+objdir = .build
+c_objects := $(patsubst src/%.c, $(objdir)/%.o, $(c_sources))
+# cpp_objects := $(patsubst src/%.cpp, $(objdir)/%.o, $(sources))
+cpp_objects := $(patsubst src/%.cpp, $(objdir)/%.o, $(cpp_sources))
 
-LLVM_CXXFLAGS = $(shell $(LLVM_CONFIG) --cxxflags)
-LLVM_CXXLFLAGS = $(shell $(LLVM_CONFIG) --ldflags --link-static --system-libs --libs X86AsmParser X86CodeGen Core Support BitReader AsmParser Analysis TransformUtils ScalarOpts Target)
+includes = -Iincludes/ -Ideps/uu.spdr/include
 
-LFLAGS =
-DISABLED_WARNINGS = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
+ignored = -Wno-writable-strings -Wno-switch -Wno-c11-extensions -Wno-c99-extensions
+cflags = -g -O0 -std=c11 $(includes) -DDEBUG $(ignored) $(CFLAGS)
+cxxflags = -std=c++11 -stdlib=libc++ $(includes) -DDEBUG $(ignored)
 
-TARGET = kai
-TEST_TARGET = $(TARGET)_tests
-TEST_MAIN = $(TARGET)_tests.c
-TEST_LOG = $(TARGET)_tests.log
+LLVM_VERSION := 8.0
 
-all: debug
+LLVM_CONFIG := llvm-config
 
-debug:   clean $(TARGET)
-release: clean $(TARGET)
+LLVM_CXXFLAGS = $(shell llvm-config --cxxflags)
+LLVM_CXXLFLAGS = $(shell llvm-config --ldflags --link-static --system-libs --libs)
+# --libs X86AsmParser X86CodeGen Core Support BitReader AsmParser Analysis TransformUtils ScalarOpts Target
 
-$(TARGET): core.o llvm.o
-	$(CXX) -o $(TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
-core.o:
-	$(CC) src/main.c -c -o core.o $(local_CFLAGS) $(LFLAGS) $(DISABLED_WARNINGS)
-llvm.o:
-	$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
+test_main = test_main.c
+test_log = tests.log
 
-tools/genTests:
-	$(CXX) -o tools/genTests tools/gen_test_main.cpp
+release: cflags = -O3 -std=c11 $(includes) -march=native -DRELEASE $(CFLAGS)
 
-tests: clean tools/genTests
-	@./tools/genTests $(shell find src -maxdepth 1 -type d) > $(TEST_MAIN)
-	@$(CC) $(TEST_MAIN) -c -o core.o  -DTEST $(LFLAGS) $(DISABLED_WARNINGS) $(local_CFLAGS)
-	@$(CXX) src/llvm.cpp -c -o llvm.o $(LLVM_CXXFLAGS) $(DISABLED_WARNINGS)
-	@$(CXX) -o $(TEST_TARGET) core.o llvm.o $(LLVM_CXXFLAGS) $(LLVM_CXXLFLAGS)
-	@./$(TEST_TARGET) 2> $(TEST_LOG)
-	@rm -f $(TEST_TARGET) $(TEST_MAIN)
+all: mkdirs $(target)
 
-install:
-	cp $(TARGET) $(PREFIX)/bin/
+release: clean all
+
+# compile c_objects
+$(objdir)/%.o: src/%.c
+	$(CC) $(cflags) -o $@ -c $<
+
+# compile cpp_objects
+$(objdir)/%.o: src/%.cpp
+	$(CXX) $(cxxflags) $(LLVM_CXXFLAGS) -o $@ -c $<
+
+# link
+$(target): $(c_objects) $(cpp_objects)
+	$(CXX) $(cflags) $(LLVM_CXXLFLAGS) -o $@ $^
+
+# disassembly
+src/%.S: src/%.c
+	$(CC) $(cflags) -o $@ -S $<
+	
+disasm: $(disasms)
+
+unity:
+	$(CC) $(cflags) -o $(target) unity.c
+
+mkdirs:
+	@mkdir -p $(objdir)
+
+mktests: tools/mktests
+	./tools/mktests src > test_main.c
+
+mkxctests: tools/mkxctests
+	./tools/mkxctests src > test_xcmain.c
+
+tests: clean tools
+	@./tools/mktests $(shell find src -maxdepth 1 -type d) > $(test_main)
+	@$(CC) -o $@ $(cflags) -DTEST $(test_main)
+	@./$@ 2>&1 $(test_log)
+	@rm $@ $(test_main)
+
+tools: tools/mktests tools/mkxctests
+
+tools/mktests:
+	$(CXX) $(cxxflags) -o $@ tools/mktests.cpp
+
+tools/mkxctests:
+	$(CXX) $(cxxflags) -o $@ tools/mkxctests.cpp
+
+generate_db: clean
+	intercept-build --override-compiler make CC=intercept-cc CXX=intercept-c++ all
+
+.PHONY: clean
 
 clean:
-	rm -f $(TARGET) core.o llvm.o $(TEST_TARGET) $(TEST_LOG) $(TEST_MAIN)
-	
-.PHONY: all clean debug release tests tools/genTests
+	rm -rf $(objdir) $(test_log) $(test_main)
+ 
+# Debugging
+## allows you to print makefile variables with make-VARIABLE
+print-% : ; $(info $* is a $(flavor $*) variable set to [$($*)]) @true
+

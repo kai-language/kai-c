@@ -1,111 +1,50 @@
-#include "common.c"
 
-#include "error.c"
-#include "lexer.c"
-#include "compiler.c"
-#include "ast.c"
-#include "symbols.h"
-#include "types.c"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-result"
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
+#pragma clang diagnostic pop
 
-#include "checker.h"
-#include "parser.c"
-#include "checker.c"
-#include "header.c"
+#include "all.h"
+#include "arena.h"
+#include "queue.h"
+#include "package.h"
+#include "compiler.h"
+#include "string.h"
 
-#include "llvm.h"
+#define DEBUG_IMPLEMENTATION
+#include "debug.h"
 
-#define VERSION "0.0.0 (prerelease)"
+#define PROFILER_IMPLEMENTATION
+#include "profiler.h"
 
+Compiler compiler;
+u64 source_memory_usage = 0;
 
-void outputVersionAndBuildInfo() {
-    printf("%s\n\n", VERSION);
+#define hmsize(hm) hmlenu(hm) * sizeof *hm + sizeof *hm + sizeof(stbds_array_header)
+#define arrsize(arr) arrlenu(arr) * sizeof *arr + sizeof(stbds_array_header)
 
-    bool debug = false;
-
-#if DEBUG
-    debug = true;
-#endif
-
-    const char *y = "✔";
-    const char *n = "✘";
-
-    printf("-DDEBUG %s\n", debug ? y : n);
-}
-
-#ifndef TEST
+#if !TEST
 int main(int argc, const char **argv) {
-    const char *programName = argv[0];
-
-    ParseFlags(&argc, &argv);
-    if (FlagVersion) {
-        outputVersionAndBuildInfo();
-        exit(0);
+    profiler_init();
+    compiler_init(&compiler, argc, argv);
+    bool success = compile(&compiler);
+    if (!success) {
+        const char *stage = compiler_stage_name(compiler.failure_stage);
+        printf("error: Compilation failed during %s\n", stage);
     }
-    if (argc != 1 || FlagHelp) {
-        printf("Usage: %s [flags] <input>\n", programName);
-        PrintUsage();
-        exit(!FlagHelp);
+    profiler_output();
+
+    u64 total_memory_usage = source_memory_usage;
+    total_memory_usage += hmsize(compiler.interns);
+    total_memory_usage += arrsize(compiler.ordered_symbols);
+    total_memory_usage += compiler.arena.used_size;
+    total_memory_usage += compiler.strings.used_size;
+    for (i64 i = 0; i < hmlen(compiler.packages); i++) {
+        total_memory_usage += compiler.packages[i].value->arena.used_size;
     }
-
-    InitUnsetFlagsToDefaults();
-    InitKeywords();
-    InitBuiltins();
-    InitGlobalSearchPaths();
-
-    Package *builtinPackage = ImportPackage("builtin", NULL);
-    if (!builtinPackage) {
-        printf("error: Failed to compile builtin package\n");
-        exit(1);
-    }
-
-    Package *mainPackage = ImportPackage(InputName, NULL);
-    if (!mainPackage) {
-        printf("error: Failed to compile '%s'\n", InputName);
-        exit(1);
-    }
-    
-    while (true) {
-        SourceFile *file = QueuePopFront(&parsingQueue);
-        if (file) {
-            parseFile(file);
-            continue;
-        }
-        
-        CheckerWork *work = QueuePopFront(&checkingQueue);
-        if (work) {
-            if (FlagVerbose) printf("Checking package %s\n", work->package->path);
-            CheckerContext ctx = { .scope = work->package->scope };
-            checkStmt(work->stmt, &ctx, work->package);
-            if (ctx.mode == ExprMode_Unresolved) {
-                QueuePushBack(&checkingQueue, work);
-            }
-            continue;
-        }
-        
-        break;
-    }
-
-    b32 sawErrors = false;
-    size_t numPackages = ArrayLen(packages);
-    for (size_t i = 0; i < numPackages; i++) {
-        if (HasErrors(packages[i])) {
-            OutputReportedErrors(packages[i]);
-            sawErrors = true;
-        }
-    }
-
-    if (!sawErrors) {
-        CodegenLLVM(mainPackage);
-
-        if (OutputType != OutputType_Exec || FlagEmitHeader)
-            CodegenCHeader(mainPackage);
-    } else {
-        return 1;
-    }
-
-    ArenaFree(&parsingQueue.arena);
-    ArenaFree(&checkingQueue.arena);
-    
+    verbose("Processed %.2fKB of source files", (f64) source_memory_usage / 1024.f);
+    verbose("Memory usage: %.2fKB\n", (f64) total_memory_usage / 1024.f);
     return 0;
 }
 #endif

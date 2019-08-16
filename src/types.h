@@ -1,180 +1,178 @@
+#pragma once
 
-extern struct TargetMetrics *TargetTypeMetrics;
+// Requires ast.h
 
-extern Type *InvalidType;
-extern Type *FileType;
+// checker.h
+typedef struct Sym Sym;
 
-extern Type *AnyType;
-extern Type *VoidType;
+typedef struct Ty Ty;
 
-extern Type *BoolType;
+typedef enum IntegerFlags {
+    SIGNED = 0x01,
+} IntegerFlags;
 
-extern Type *I8Type;
-extern Type *I16Type;
-extern Type *I32Type;
-extern Type *I64Type;
+typedef enum StructFlags {
+    TUPLE  = 0x01,
+    OPAQUE = 0x04,
+} StructFlags;
 
-extern Type *U8Type;
-extern Type *U16Type;
-extern Type *U32Type;
-extern Type *U64Type;
+typedef enum SliceFlags {
+    STRING = 0x01, // allows coercion to *u8
+} SliceFlags;
 
-extern Type *F32Type;
-extern Type *F64Type;
+typedef enum ArrayFlags {
+    IMPL_LENGTH = 0x01,
+} ArrayFlags;
 
-extern Type *IntType;
-extern Type *UintType;
-extern Type *IntptrType;
-extern Type *UintptrType;
-extern Type *RawptrType;
+typedef enum AnyFlags {
+    CVARG = 0x01, // indicates to llvm backend not to perform the coercion
+} AnyFlags;
 
-extern Symbol *FalseSymbol;
-extern Symbol *TrueSymbol;
-
-#define TYPE_KINDS                  \
-    FOR_EACH(Invalid, "invalid")    \
-    FOR_EACH(Int, "int")            \
-    FOR_EACH(Float, "float")        \
-    FOR_EACH(Pointer, "pointer")    \
-    FOR_EACH(Array, "array")        \
-    FOR_EACH(Slice, "slice")        \
-    FOR_EACH(Any, "any")            \
-    FOR_EACH(Struct, "struct")      \
-    FOR_EACH(Union, "union")        \
-    FOR_EACH(Enum, "enum")          \
-    FOR_EACH(Function, "function")  \
-    FOR_EACH(Tuple, "tuple")        \
-
-typedef u8 TypeKind;
-enum Enum_TypeKind {
-#define FOR_EACH(kind, ...) TypeKind_##kind,
-    TYPE_KINDS
-#undef FOR_EACH
+typedef enum TyKind {
+    TYPE_INVALID = 0,
+    TYPE_COMPLETING,
+    TYPE_VOID,
+    TYPE_BOOL,
+    TYPE_INT,
+    TYPE_ENUM,
+    TYPE_FLOAT,
+    TYPE_PTR,
+    TYPE_FUNC,
+    TYPE_ARRAY,
+    TYPE_SLICE,
+    TYPE_VECTOR,
+    TYPE_STRUCT,
+    TYPE_UNION,
+    TYPE_ANY,
     NUM_TYPE_KINDS,
+} TyKind;
+
+typedef struct TyEnum TyEnum;
+struct TyEnum {
+    u32 filler;
 };
 
-#define FOR_EACH(kind, ...) typedef struct Type_##kind Type_##kind;
-    TYPE_KINDS
-#undef FOR_EACH
-
-typedef u8 TypeFlag;
-#define TypeFlag_None 0
-#define TypeFlag_Alias    0x80
-
-// Integer
-#define TypeFlag_Signed   0x1
-#define TypeFlag_Boolean  0x2
-
-// Slice & Function
-#define TypeFlag_Variadic 0x1
-#define TypeFlag_CVargs   0x2
-
-// Enum
-#define TypeFlag_EnumFlags 0x1
-
-// Tuple
-#define TypeFlag_NoReturn 0x1
-
-struct Type_Pointer {
-    TypeFlag Flags;
-    Type *pointeeType;
+typedef struct TyField TyField;
+struct TyField {
+    const char *name;
+    Ty *type;
+    u64 offset;
 };
 
-struct Type_Slice {
-    TypeFlag Flags;
-    Type *elementType;
+typedef struct TyAggregate TyAggregate;
+struct TyAggregate {
+    TyField *fields;
 };
 
-struct Type_Array {
-    TypeFlag Flags;
-    Type *elementType;
+typedef struct TyPointer TyPointer;
+struct TyPointer {
+    Ty *base;
+};
+
+typedef struct TySlice TySlice;
+struct TySlice {
+    Ty *eltype;
+};
+
+typedef struct TyArray TyArray;
+struct TyArray {
+    Ty *eltype;
     u64 length;
 };
 
-struct Type_Function {
-    TypeFlag Flags;
-    Type **params;
-    Type **results;
-    u32 numParams;
-    u32 numResults;
+typedef struct TyVector TyVector;
+struct TyVector {
+    Ty *eltype;
+    u64 length;
 };
 
-typedef struct TypeField TypeField;
-struct TypeField {
-    const char *name;
-    Type *type;
-    u32 offset;
+typedef struct TyFunc TyFunc;
+struct TyFunc {
+    Ty **params; // arr
+    Ty *result; // TypeStruct
 };
 
-struct Type_Struct {
-    TypeFlag Flags;
-    TypeField *members;
-    u32 numMembers;
-};
-
-struct Type_Union {
-    TypeFlag Flags;
-    u32 tagWidth;
-    u32 dataWidth;
-    Type **cases;
-    u32 numCases;
-};
-
-struct Type_Enum {
-    TypeFlag Flags;
-};
-
-struct Type_Tuple {
-    TypeFlag Flags;
-    Type **types;
-    u32 numTypes;
-};
-
-STATIC_ASSERT(offsetof(Type_Pointer,  Flags) == 0, "Flags must be at offset 0");
-STATIC_ASSERT(offsetof(Type_Array,    Flags) == 0, "Flags must be at offset 0");
-STATIC_ASSERT(offsetof(Type_Slice,    Flags) == 0, "Flags must be at offset 0");
-STATIC_ASSERT(offsetof(Type_Struct,   Flags) == 0, "Flags must be at offset 0");
-STATIC_ASSERT(offsetof(Type_Union,    Flags) == 0, "Flags must be at offset 0");
-STATIC_ASSERT(offsetof(Type_Function, Flags) == 0, "Flags must be at offset 0");
-STATIC_ASSERT(offsetof(Type_Tuple,    Flags) == 0, "Flags must be at offset 0");
-
-struct Type {
-    TypeKind kind;
-    u32 Width;
-    u32 Align;
-    u32 TypeId;
-    Symbol *Symbol;
-
+struct Ty {
+    TyKind kind : 8;
+    u8 flags;
+    u32 size;
+    u32 align;
+    u8 bitmask;
+    Sym *sym;
+    Ty *base;
+    u32 tyid;
     union {
-        TypeFlag Flags;
-        Type_Pointer Pointer;
-        Type_Array Array;
-        Type_Slice Slice;
-        Type_Struct Struct;
-        Type_Union Union;
-        Type_Function Function;
-        Type_Tuple Tuple;
+        TyFunc tfunc;
+        TyEnum tenum;
+        TyArray tarray;
+        TySlice tslice;
+        TyVector tvector;
+        TyPointer tptr;
+        TyAggregate taggregate;
     };
 };
 
-typedef struct StructFieldLookupResult StructFieldLookupResult;
-struct StructFieldLookupResult {
-    u32 index;
-    TypeField *field;
-};
+extern Ty *type_string;
+extern Ty *type_u8ptr;
+extern Ty *type_rawptr;
+extern Ty *type_uintptr;
+extern Ty *type_intptr;
+extern Ty *type_uint;
+extern Ty *type_int;
+extern Ty *type_f64;
+extern Ty *type_f32;
+extern Ty *type_u64;
+extern Ty *type_u32;
+extern Ty *type_u16;
+extern Ty *type_u8;
+extern Ty *type_i64;
+extern Ty *type_i32;
+extern Ty *type_i16;
+extern Ty *type_i8;
+extern Ty *type_bool;
+extern Ty *type_void;
+extern Ty *type_any;
+extern Ty *type_cvarg;
+extern Ty *type_invalid;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-const char *DescribeType(Type *type);
-const char *DescribeTypeKind(TypeKind kind);
-Type *SmallestIntTypeForPositiveValue(u64 val);
-Type *SmallestIntTypeForNegativeValue(i64 val);
-i64 SignExtend(Type *type, Type *target, Val val);
-i64 SignExtendTo64Bits(Type *source, Val val);
-b32 TypesIdentical(Type *type, Type *target);
-u64 MaxValueForIntOrPointerType(Type *type);
-StructFieldLookupResult StructFieldLookup(Type_Struct type, const char *name);
-#ifdef __cplusplus
-}
-#endif
+void init_types(void);
+
+Ty *type_func(Ty **params, Ty *result, FuncFlags flags);
+Ty *type_struct(TyField *fields, u32 size, u32 align, u8 flags);
+Ty *type_union(TyField *fields, u32 size, u32 align, u8 flags);
+Ty *type_enum(u8 flags);
+Ty *type_ptr(Ty *base, u8 flags);
+Ty *type_array(Ty *eltype, u64 length, u8 flags);
+Ty *type_vector(Ty *eltype, u64 length, u8 flags);
+Ty *type_slice(Ty *eltype, u8 flags);
+Ty *type_alias(Ty *base, Sym *sym);
+bool types_eql(Ty *a, Ty *b);
+Ty *type_scalar(Ty *ty);
+
+const char *tyname(Ty *type);
+u64 type_max_value(Ty *type);
+u64 powi(u64 base, u64 exp);
+Ty *min_int_for_neg_value(i64 val);
+Ty *min_int_for_pos_value(u64 val);
+u32 aggregate_field_index(Ty *type,const char *name);
+Ty *smallest_unsigned_int_for_value(u64 val);
+Ty *smallest_signed_int_for_value(i64 val);
+bool is_logical(Ty *type);
+bool is_comparable(Ty *type);
+bool is_equatable(Ty *type);
+bool is_bitwisable(Ty *type);
+bool is_signed(Ty *type);
+bool is_aggregate(Ty *type);
+bool is_scalar(Ty *type);
+bool is_arithmetic(Ty *type);
+bool is_arithmetic_or_ptr(Ty *type);
+bool is_float(Ty *type);
+bool is_bool(Ty *type);
+bool is_integer(Ty *type);
+bool is_vector(Ty *type);
+bool is_slice(Ty *type);
+bool is_array(Ty *type);
+bool is_ptr_like_type(Ty *type);
+bool is_func(Ty *type);
+bool is_ptr(Ty *type);
+
